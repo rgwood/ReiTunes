@@ -9,7 +9,7 @@
     mc:Ignorable="d"
     Background="{ThemeResource ApplicationPageBackgroundThemeBrush}">
 
-    <StackPanel MaxHeight="800">
+    <StackPanel VerticalAlignment="Center">
         <TextBlock HorizontalAlignment="Center" Margin="7" 
                    Text="The Avalanches &amp; Jamie XX - B2B DJ Set on NTS Radio - 15.05.20" />
         <MediaPlayerElement x:Name="musicPlayer" AreTransportControlsEnabled="True">
