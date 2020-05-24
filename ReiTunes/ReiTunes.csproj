@@ -119,7 +119,6 @@
     <Compile Include="App.xaml.cs">
       <DependentUpon>App.xaml</DependentUpon>
     </Compile>
-    <Compile Include="ExplorerItem.cs" />
     <Compile Include="FileList.xaml.cs">
       <DependentUpon>FileList.xaml</DependentUpon>
     </Compile>
@@ -164,6 +163,12 @@
     <PackageReference Include="Microsoft.UI.Xaml">
       <Version>2.4.2</Version>
     </PackageReference>
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\ReiTunes.Common\ReiTunes.Common.csproj">
+      <Project>{91559110-c1d7-4bfe-8d88-e171dbc060bb}</Project>
+      <Name>ReiTunes.Common</Name>
+    </ProjectReference>
   </ItemGroup>
   <PropertyGroup Condition=" '$(VisualStudioVersion)' == '' or '$(VisualStudioVersion)' &lt; '14.0' ">
     <VisualStudioVersion>14.0</VisualStudioVersion>
