@@ -20,6 +20,7 @@ using Windows.UI.WindowManagement;
 using Windows.UI.Xaml.Hosting;
 using System.Threading.Tasks;
 using System.Collections.ObjectModel;
+using Windows.UI.ViewManagement;
 
 // The Blank Page item template is documented at https://go.microsoft.com/fwlink/?LinkId=402352&clcid=0x409
 
@@ -37,13 +38,7 @@ namespace ReiTunes
         public Player()
         {
             this.InitializeComponent();
-            this.SizeChanged += Player_SizeChanged;
             ExplorerItems = ExplorerItem.GetSampleData();
-        }
-
-        private void Player_SizeChanged(object sender, SizeChangedEventArgs e)
-        {
-            //throw new NotImplementedException();
         }
 
         protected async override void OnNavigatedTo(NavigationEventArgs e)
