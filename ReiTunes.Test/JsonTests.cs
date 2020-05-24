@@ -15,7 +15,7 @@ namespace ReiTunes.Test
         [Test]
         public void CanSerializeAndDeserializeSampleData()
         {
-            ObservableCollection<ExplorerItem> sampleData = ExplorerItem.GetSampleData();
+            ObservableCollection<FileTreeItem> sampleData = FileTreeItem.GetSampleData();
             var serialized = JsonUtilities.Serialize(sampleData);
             JsonUtilities.Deserialize(serialized);
         }

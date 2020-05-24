@@ -33,12 +33,12 @@ namespace ReiTunes
     {
         private AppWindow appWindow;
         private Frame appWindowFrame = new Frame();
-        public ObservableCollection<ExplorerItem> ExplorerItems;
+        public ObservableCollection<FileTreeItem> ExplorerItems;
 
         public Player()
         {
             this.InitializeComponent();
-            ExplorerItems = ExplorerItem.GetSampleData();
+            ExplorerItems = FileTreeItem.GetSampleData();
         }
 
         protected async override void OnNavigatedTo(NavigationEventArgs e)

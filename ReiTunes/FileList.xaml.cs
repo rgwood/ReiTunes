@@ -1,4 +1,5 @@
-﻿using System;
+﻿using ReiTunes.Common;
+using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.IO;
@@ -23,11 +24,12 @@ namespace ReiTunes
     /// </summary>
     public sealed partial class FileList : Page
     {
-        public ObservableCollection<ExplorerItem> ExplorerItems;
+        public ObservableCollection<FileTreeItem> FileTreeItems;
         public FileList()
         {
             this.InitializeComponent();
-            ExplorerItems = ExplorerItem.GetSampleData();
+
+            FileTreeItems = FileTreeItemBuilder.GetSampleData();
         }
     }
 
@@ -38,8 +40,8 @@ namespace ReiTunes
 
         protected override DataTemplate SelectTemplateCore(object item)
         {
-            var explorerItem = (ExplorerItem)item;
-            return explorerItem.Type == ExplorerItem.ExplorerItemType.Folder ? FolderTemplate : FileTemplate;
+            var explorerItem = (FileTreeItem)item;
+            return explorerItem.Type == FileTreeItemType.Folder ? FolderTemplate : FileTemplate;
         }
     }
 }

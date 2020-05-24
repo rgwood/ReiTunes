@@ -7,17 +7,17 @@ using System.Text;
 
 namespace ReiTunes.Common
 {
-    // Helper to build a tree of ExplorerItems from text
-    public class ExplorerItemBuilder
+	// Helper to build a tree of FileTreeItems from text
+	public class FileTreeItemBuilder
     {
         /// <summary>
         /// 
         /// </summary>
         /// <param name="blobList">A string where each line is a file path, separated with /</param>
         /// <returns></returns>
-        public static ObservableCollection<ExplorerItem> ParseBlobList(string blobList)
+        public static ObservableCollection<FileTreeItem> ParseBlobList(string blobList)
         {
-			var root = new ExplorerItem("root", ExplorerItem.ExplorerItemType.Folder);
+			var root = new FileTreeItem("root", FileTreeItemType.Folder);
 
 			StringReader reader = new StringReader(blobList);
 			string line;
@@ -28,7 +28,7 @@ namespace ReiTunes.Common
 				var directories = new Queue<string>(splitPath.Take(splitPath.Count() - 1));
 				var fileName = splitPath.Last();
 
-				ExplorerItem currentDir = root;
+				FileTreeItem currentDir = root;
 
 				while (directories.Any())
 				{
@@ -36,7 +36,7 @@ namespace ReiTunes.Common
 
 					var existingDirectory = currentDir.Children
 						.Where(ei => ei.Name == dirName &&
-									 ei.Type == ReiTunes.ExplorerItem.ExplorerItemType.Folder)
+									 ei.Type == FileTreeItemType.Folder)
 									 .SingleOrDefault();
 
 					if (existingDirectory != null)
@@ -45,18 +45,18 @@ namespace ReiTunes.Common
 					}
 					else
 					{
-						var newDir = new ExplorerItem(dirName, ExplorerItem.ExplorerItemType.Folder);
+						var newDir = new FileTreeItem(dirName, FileTreeItemType.Folder);
 						currentDir.Children.Add(newDir);
 						currentDir = newDir;
 					}
 				}
 
-				currentDir.Children.Add(new ExplorerItem(fileName));
+				currentDir.Children.Add(new FileTreeItem(fileName));
 			}
 			return root.Children;
 		}
 
-		public static ObservableCollection<ExplorerItem> GetSampleData()
+		public static ObservableCollection<FileTreeItem> GetSampleData()
 		{
 			string rawBlobList = @"Avalanches/01 DJ Set - Brains Party @ St Jerome.mp3
 Avalanches/02 BeatsInSpace-04.01.14 Part2 with.mp3

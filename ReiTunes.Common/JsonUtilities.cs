@@ -8,16 +8,16 @@ namespace ReiTunes.Common
     public class JsonUtilities
     {
 
-        public static string Serialize(IEnumerable<ExplorerItem> items)
+        public static string Serialize(IEnumerable<FileTreeItem> items)
         {
             // Pretty-print for convenience. Revisit this if it ever becomes
             // a perf issue, but for now YAGNI
             return JsonConvert.SerializeObject(items, Formatting.Indented);
         }
 
-        public static IEnumerable<ExplorerItem> Deserialize(string json)
+        public static IEnumerable<FileTreeItem> Deserialize(string json)
         {
-            return JsonConvert.DeserializeObject<List<ExplorerItem>>(json);
+            return JsonConvert.DeserializeObject<List<FileTreeItem>>(json);
         }
     }
 }
