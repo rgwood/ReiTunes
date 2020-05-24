@@ -27,6 +27,7 @@ namespace ReiTunes
     {
         private AppWindow appWindow;
         private Frame appWindowFrame = new Frame();
+        private readonly Size PlayerWindowSize = new Size(500, 120);
 
         /// <summary>
         /// Initializes the singleton application object.  This is the first line of authored code
@@ -38,6 +39,7 @@ namespace ReiTunes
             this.Suspending += OnSuspending;
         }
 
+
         /// <summary>
         /// Invoked when the application is launched normally by the end user.  Other entry points
         /// will be used such as when the application is launched to open a specific file.
@@ -45,8 +47,14 @@ namespace ReiTunes
         /// <param name="e">Details about the launch request and process.</param>
         protected async override void OnLaunched(LaunchActivatedEventArgs e)
         {
-            // 192x48 = UWP minimum
-            ApplicationView.GetForCurrentView().SetPreferredMinSize(new Size(500, 120));
+
+            ApplicationView.GetForCurrentView().SetPreferredMinSize(PlayerWindowSize);
+            // Close the application when the primary window closes
+            ApplicationView.GetForCurrentView().Consolidated += PrimaryWindowClosed;
+
+            ApplicationView.PreferredLaunchViewSize = PlayerWindowSize;
+            ApplicationView.PreferredLaunchWindowingMode = ApplicationViewWindowingMode.PreferredLaunchViewSize;
+
             Frame rootFrame = Window.Current.Content as Frame;
 
             // Do not repeat app initialization when the Window already has content,
@@ -79,6 +87,11 @@ namespace ReiTunes
                 // Ensure the current window is active
                 Window.Current.Activate();
             }
+        }
+
+        private void PrimaryWindowClosed(ApplicationView sender, ApplicationViewConsolidatedEventArgs args)
+        {
+            Exit();
         }
 
         /// <summary>
