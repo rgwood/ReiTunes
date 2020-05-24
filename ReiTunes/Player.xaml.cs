@@ -18,10 +18,12 @@ using Windows.UI.Xaml.Navigation;
 using Windows.Media.Playback;
 using Windows.UI.WindowManagement;
 using Windows.UI.Xaml.Hosting;
+using System.Threading.Tasks;
+using System.Collections.ObjectModel;
 
 // The Blank Page item template is documented at https://go.microsoft.com/fwlink/?LinkId=402352&clcid=0x409
 
-namespace ReiPod
+namespace ReiTunes
 {
     /// <summary>
     /// An empty page that can be used on its own or navigated to within a Frame.
@@ -30,10 +32,18 @@ namespace ReiPod
     {
         private AppWindow appWindow;
         private Frame appWindowFrame = new Frame();
+        public ObservableCollection<ExplorerItem> ExplorerItems;
 
         public Player()
         {
             this.InitializeComponent();
+            this.SizeChanged += Player_SizeChanged;
+            ExplorerItems = ExplorerItem.GetSampleData();
+        }
+
+        private void Player_SizeChanged(object sender, SizeChangedEventArgs e)
+        {
+            //throw new NotImplementedException();
         }
 
         protected async override void OnNavigatedTo(NavigationEventArgs e)
@@ -42,21 +52,24 @@ namespace ReiPod
             var file = await StorageFile.GetFileFromPathAsync(@"C:\Users\reill\Music\AvalanchesJamie.mp3");
             var source = MediaSource.CreateFromStorageFile(file);
             //MediaPlaybackItem playbackItem = new MediaPlaybackItem(source);
-            
-            this.musicPlayer.Source = source;
-            
-            
-            this.musicPlayer.MediaPlayer.Play();
-            Debug.WriteLine("hello");
 
+            this.musicPlayer.Source = source;
+            this.musicPlayer.MediaPlayer.Play();
+
+            await OpenFileList();
+        }
+
+        private async Task OpenFileList()
+        {
             appWindow = await AppWindow.TryCreateAsync();
             appWindow.Title = "Files";
             appWindow.RequestSize(new Size(200, 200));
             appWindow.Closed += delegate { appWindow = null; appWindowFrame.Content = null; };
+
             ElementCompositionPreview.SetAppWindowContent(appWindow, appWindowFrame);
             await appWindow.TryShowAsync();
+
+            appWindowFrame.Navigate(typeof(FileList));
         }
-
-
     }
 }
