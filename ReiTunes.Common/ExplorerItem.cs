@@ -4,13 +4,17 @@ using System.ComponentModel;
 
 namespace ReiTunes
 {
-    public class ExplorerItem : INotifyPropertyChanged
+    public partial class ExplorerItem : INotifyPropertyChanged
     {
         public event PropertyChangedEventHandler PropertyChanged;
-        public enum ExplorerItemType { Folder, File };
         public string Name { get; set; }
         public ExplorerItemType Type { get; set; }
-        private ObservableCollection<ExplorerItem> m_children;
+        private ObservableCollection<ExplorerItem> _children;
+
+        // Needed for JSON deserialization
+        public ExplorerItem()
+        {
+        }
 
         public ExplorerItem(string fileName, ExplorerItemType type = ExplorerItemType.File)
         {
@@ -22,15 +26,15 @@ namespace ReiTunes
         {
             get
             {
-                if (m_children == null)
+                if (_children == null)
                 {
-                    m_children = new ObservableCollection<ExplorerItem>();
+                    _children = new ObservableCollection<ExplorerItem>();
                 }
-                return m_children;
+                return _children;
             }
             set
             {
-                m_children = value;
+                _children = value;
             }
         }
 
