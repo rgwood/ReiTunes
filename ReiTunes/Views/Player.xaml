@@ -31,6 +31,5 @@
                     IsZoomButtonVisible="False" />
             </MediaPlayerElement.TransportControls>
         </MediaPlayerElement>
-        <Button Click="Open_Files">Open Files</Button>
     </StackPanel>
 </Page>
