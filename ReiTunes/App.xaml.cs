@@ -1,22 +1,9 @@
-﻿using System;
-using System.Collections.Generic;
-using System.IO;
-using System.Linq;
-using System.Runtime.InteropServices.WindowsRuntime;
+﻿using ReiTunes.Services;
+using System;
 using Windows.ApplicationModel;
 using Windows.ApplicationModel.Activation;
-using Windows.Foundation;
-using Windows.Foundation.Collections;
-using Windows.UI.ViewManagement;
-using Windows.UI.WindowManagement;
 using Windows.UI.Xaml;
-using Windows.UI.Xaml.Controls;
-using Windows.UI.Xaml.Controls.Primitives;
-using Windows.UI.Xaml.Data;
-using Windows.UI.Xaml.Hosting;
-using Windows.UI.Xaml.Input;
-using Windows.UI.Xaml.Media;
-using Windows.UI.Xaml.Navigation;
+using ReiTunes.Core.Helpers;
 
 namespace ReiTunes
 {
@@ -25,9 +12,12 @@ namespace ReiTunes
     /// </summary>
     sealed partial class App : Application
     {
-        private AppWindow appWindow;
-        private Frame appWindowFrame = new Frame();
-        private readonly Size PlayerWindowSize = new Size(500, 120);
+        private Lazy<ActivationService> _activationService;
+
+        private ActivationService ActivationService
+        {
+            get { return _activationService.Value; }
+        }
 
         /// <summary>
         /// Initializes the singleton application object.  This is the first line of authored code
@@ -35,87 +25,54 @@ namespace ReiTunes
         /// </summary>
         public App()
         {
-            this.InitializeComponent();
-            this.Suspending += OnSuspending;
-        }
+            InitializeComponent();
 
+            EnteredBackground += App_EnteredBackground;
+            Resuming += App_Resuming;
+
+            // Deferred execution until used. Check https://msdn.microsoft.com/library/dd642331(v=vs.110).aspx for further info on Lazy<T> class.
+            _activationService = new Lazy<ActivationService>(CreateActivationService);
+        }
 
         /// <summary>
         /// Invoked when the application is launched normally by the end user.  Other entry points
         /// will be used such as when the application is launched to open a specific file.
         /// </summary>
-        /// <param name="e">Details about the launch request and process.</param>
-        protected async override void OnLaunched(LaunchActivatedEventArgs e)
+        /// <param name="args">Details about the launch request and process.</param>
+        protected override async void OnLaunched(LaunchActivatedEventArgs args)
         {
-
-            ApplicationView.GetForCurrentView().SetPreferredMinSize(PlayerWindowSize);
-            // Close the application when the primary window closes
-            ApplicationView.GetForCurrentView().Consolidated += PrimaryWindowClosed;
-
-            ApplicationView.PreferredLaunchViewSize = PlayerWindowSize;
-            ApplicationView.PreferredLaunchWindowingMode = ApplicationViewWindowingMode.PreferredLaunchViewSize;
-
-            Frame rootFrame = Window.Current.Content as Frame;
-
-            // Do not repeat app initialization when the Window already has content,
-            // just ensure that the window is active
-            if (rootFrame == null)
+            if (!args.PrelaunchActivated)
             {
-                // Create a Frame to act as the navigation context and navigate to the first page
-                rootFrame = new Frame();
-
-                rootFrame.NavigationFailed += OnNavigationFailed;
-
-                if (e.PreviousExecutionState == ApplicationExecutionState.Terminated)
-                {
-                    //TODO: Load state from previously suspended application
-                }
-
-                // Place the frame in the current Window
-                Window.Current.Content = rootFrame;
-            }
-
-            if (e.PrelaunchActivated == false)
-            {
-                if (rootFrame.Content == null)
-                {
-                    // When the navigation stack isn't restored navigate to the first page,
-                    // configuring the new page by passing required information as a navigation
-                    // parameter
-                    rootFrame.Navigate(typeof(Player), e.Arguments);
-                }
-                // Ensure the current window is active
-                Window.Current.Activate();
+                await ActivationService.ActivateAsync(args);
             }
         }
 
-        private void PrimaryWindowClosed(ApplicationView sender, ApplicationViewConsolidatedEventArgs args)
+        protected override async void OnActivated(IActivatedEventArgs args)
         {
-            Exit();
+            await ActivationService.ActivateAsync(args);
         }
 
-        /// <summary>
-        /// Invoked when Navigation to a certain page fails
-        /// </summary>
-        /// <param name="sender">The Frame which failed navigation</param>
-        /// <param name="e">Details about the navigation failure</param>
-        void OnNavigationFailed(object sender, NavigationFailedEventArgs e)
+        private ActivationService CreateActivationService()
         {
-            throw new Exception("Failed to load Page " + e.SourcePageType.FullName);
+            return new ActivationService(this, typeof(Player), new Lazy<UIElement>(CreateShell));
         }
 
-        /// <summary>
-        /// Invoked when application execution is being suspended.  Application state is saved
-        /// without knowing whether the application will be terminated or resumed with the contents
-        /// of memory still intact.
-        /// </summary>
-        /// <param name="sender">The source of the suspend request.</param>
-        /// <param name="e">Details about the suspend request.</param>
-        private void OnSuspending(object sender, SuspendingEventArgs e)
+        private UIElement CreateShell()
         {
-            var deferral = e.SuspendingOperation.GetDeferral();
-            //TODO: Save application state and stop any background activity
+            return null;
+            //return new Views.ShellPage();
+        }
+
+        private async void App_EnteredBackground(object sender, EnteredBackgroundEventArgs e)
+        {
+            var deferral = e.GetDeferral();
+            await Singleton<SuspendAndResumeService>.Instance.SaveStateAsync();
             deferral.Complete();
+        }
+
+        private void App_Resuming(object sender, object e)
+        {
+            Singleton<SuspendAndResumeService>.Instance.ResumeApp();
         }
     }
 }

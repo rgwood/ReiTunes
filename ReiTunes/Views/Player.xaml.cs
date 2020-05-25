@@ -21,6 +21,7 @@ using Windows.UI.Xaml.Hosting;
 using System.Threading.Tasks;
 using System.Collections.ObjectModel;
 using Windows.UI.ViewManagement;
+using ReiPod;
 
 // The Blank Page item template is documented at https://go.microsoft.com/fwlink/?LinkId=402352&clcid=0x409
 
@@ -34,16 +35,21 @@ namespace ReiTunes
         private AppWindow appWindow;
         private Frame appWindowFrame = new Frame();
         public ObservableCollection<FileTreeItem> ExplorerItems;
+        public ViewModel ViewModel { get; }
 
         public Player()
         {
-            this.InitializeComponent();
+            ViewModel = new ViewModel();
             ExplorerItems = FileTreeItem.GetSampleData();
+            this.InitializeComponent();
         }
 
         protected async override void OnNavigatedTo(NavigationEventArgs e)
         {
+
             base.OnNavigatedTo(e);
+            
+
             var file = await StorageFile.GetFileFromPathAsync(@"C:\Users\reill\Music\AvalanchesJamie.mp3");
             var source = MediaSource.CreateFromStorageFile(file);
             //MediaPlaybackItem playbackItem = new MediaPlaybackItem(source);
@@ -62,6 +68,10 @@ namespace ReiTunes
             appWindow.Closed += delegate { appWindow = null; appWindowFrame.Content = null; };
 
             ElementCompositionPreview.SetAppWindowContent(appWindow, appWindowFrame);
+
+            Point offset = new Point(x: 0, y: 170);
+            appWindow.RequestMoveRelativeToCurrentViewContent(offset);
+
             await appWindow.TryShowAsync();
 
             appWindowFrame.Navigate(typeof(FileList));
