@@ -1,7 +1,7 @@
-using NUnit.Framework;
-using ReiTunes.Common;
+using Xunit;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using ReiTunes.Helpers;
 
 namespace ReiTunes.Test
 {
@@ -12,16 +12,11 @@ Blah/DJ Set 2.mp3
 DJ sdofkmgokm.m4a
 ddoklmfglkm.mp3";
 
-        [SetUp]
-        public void Setup()
-        {
-        }
-
-        [Test]
+        [Fact]
         public void CanParseBlobList()
         {
             var explorerItems = FileTreeItemBuilder.ParseBlobList(rawBlobList);
-            Assert.AreEqual(3, explorerItems.Count);
+            Assert.Equal(3, explorerItems.Count);
         }
     }
 }
