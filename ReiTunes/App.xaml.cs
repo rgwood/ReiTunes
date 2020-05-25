@@ -4,6 +4,7 @@ using Windows.ApplicationModel;
 using Windows.ApplicationModel.Activation;
 using Windows.UI.Xaml;
 using ReiTunes.Core.Helpers;
+using ReiPod;
 
 namespace ReiTunes
 {
@@ -54,13 +55,7 @@ namespace ReiTunes
 
         private ActivationService CreateActivationService()
         {
-            return new ActivationService(this, typeof(Player), new Lazy<UIElement>(CreateShell));
-        }
-
-        private UIElement CreateShell()
-        {
-            return null;
-            //return new Views.ShellPage();
+            return new ActivationService(this, typeof(Player));
         }
 
         private async void App_EnteredBackground(object sender, EnteredBackgroundEventArgs e)

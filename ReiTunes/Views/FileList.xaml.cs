@@ -1,7 +1,10 @@
-﻿using ReiTunes.Helpers;
+﻿using ReiPod;
+using ReiTunes.Core.Helpers;
+using ReiTunes.Helpers;
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices.WindowsRuntime;
@@ -20,28 +23,26 @@ using Windows.UI.Xaml.Navigation;
 namespace ReiTunes
 {
     /// <summary>
-    /// An empty page that can be used on its own or navigated to within a Frame.
+    /// List of music files
     /// </summary>
     public sealed partial class FileList : Page
     {
-        public ObservableCollection<FileTreeItem> FileTreeItems;
+        public FileListViewModel ViewModel { get; } = new FileListViewModel();
         public FileList()
         {
             this.InitializeComponent();
-
-            FileTreeItems = FileTreeItemBuilder.GetSampleData();
         }
-    }
 
-    class ExplorerItemTemplateSelector : DataTemplateSelector
-    {
-        public DataTemplate FolderTemplate { get; set; }
-        public DataTemplate FileTemplate { get; set; }
-
-        protected override DataTemplate SelectTemplateCore(object item)
+        protected async override void OnNavigatedTo(NavigationEventArgs e)
         {
-            var explorerItem = (FileTreeItem)item;
-            return explorerItem.Type == FileTreeItemType.Folder ? FolderTemplate : FileTemplate;
+            base.OnNavigatedTo(e);
+            await ViewModel.Initialize();
+        }
+
+        private void TreeViewItem_DoubleTapped(object sender, DoubleTappedRoutedEventArgs e)
+        {
+            var selected = (FileTreeItem) FileTreeView.SelectedItem;
+            Singleton<PlayerViewModel>.Instance.ChangeSource(selected.Name);
         }
     }
 }

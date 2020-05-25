@@ -2,27 +2,24 @@
     x:Class="ReiTunes.FileList"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-    xmlns:local="using:ReiTunes"
-    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
-    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     xmlns:controls="using:Microsoft.UI.Xaml.Controls"
-    mc:Ignorable="d"
-    Background="{ThemeResource ApplicationPageBackgroundThemeBrush}">
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:local="using:ReiTunes"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    Background="{ThemeResource ApplicationPageBackgroundThemeBrush}"
+    mc:Ignorable="d">
 
     <Grid>
-        <controls:TreeView ItemsSource="{x:Bind FileTreeItems}">
+        <controls:TreeView Name="FileTreeView" ItemsSource="{x:Bind ViewModel.FileTreeItems}">
             <controls:TreeView.ItemTemplate>
                 <DataTemplate x:DataType="local:FileTreeItem">
-                    <controls:TreeViewItem ItemsSource="{x:Bind Children}">
+                    <controls:TreeViewItem DoubleTapped="TreeViewItem_DoubleTapped" ItemsSource="{x:Bind Children}">
                         <StackPanel Orientation="Horizontal">
-                            <!--<TextBlock Margin="0,0,10,0"/>-->
                             <TextBlock Text="{x:Bind Name}" />
                         </StackPanel>
                     </controls:TreeViewItem>
                 </DataTemplate>
             </controls:TreeView.ItemTemplate>
-
         </controls:TreeView>
-
     </Grid>
 </Page>

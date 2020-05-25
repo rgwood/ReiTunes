@@ -22,59 +22,81 @@ using System.Threading.Tasks;
 using System.Collections.ObjectModel;
 using Windows.UI.ViewManagement;
 using ReiPod;
+using ReiTunes.Core.Helpers;
 
 // The Blank Page item template is documented at https://go.microsoft.com/fwlink/?LinkId=402352&clcid=0x409
 
 namespace ReiTunes
 {
     /// <summary>
-    /// An empty page that can be used on its own or navigated to within a Frame.
+    /// The main UI of ReiTunes, a simple music player control.
     /// </summary>
     public sealed partial class Player : Page
     {
-        private AppWindow appWindow;
+        private AppWindow fileWindow;
         private Frame appWindowFrame = new Frame();
-        public ObservableCollection<FileTreeItem> ExplorerItems;
-        public ViewModel ViewModel { get; }
+        private bool _layoutUpdatedHasFired = false;
+        public PlayerViewModel ViewModel { get; }
 
         public Player()
         {
-            ViewModel = new ViewModel();
-            ExplorerItems = FileTreeItem.GetSampleData();
+            ViewModel = Singleton<PlayerViewModel>.Instance;
             this.InitializeComponent();
+            LayoutUpdated += OpenFileWindowHandler;
+        }
+
+        /* HACK ALERT! We open the file viewer on the first LayoutUpdated event, because I
+         * couldn't get AppWindow.TryShowAsync() to work correctly earlier. I tried opening
+         * it during OnNavigatedTo and Loaded, but that results in intermittent crashes with
+         * a "0x80070490 Element not found." error. I suspect this is a bug in the preview
+         * AppWindow code, but I'm not 100% sure.
+         * 
+         * This was the only mention of that bug I could find: https://stackoverflow.com/q/61929691
+         * But the asker just gave up and called TryShowAsync later.
+         * 
+         * Based on, this I decided to try LayoutUpdated: https://stackoverflow.com/a/34364213
+         * "LayoutUpdated is the last object lifetime event to occur in the XAML load sequence before
+         * a control is ready for interaction. However, LayoutUpdated can also occur at run time 
+         * during the object lifetime, for a variety of reasons"
+         */
+        private async void OpenFileWindowHandler(object sender, object e)
+        {
+            if(!_layoutUpdatedHasFired)
+            {
+                _layoutUpdatedHasFired = true;
+                await OpenFileWindow();
+            }
         }
 
         protected async override void OnNavigatedTo(NavigationEventArgs e)
         {
-
             base.OnNavigatedTo(e);
-            
-
-            var file = await StorageFile.GetFileFromPathAsync(@"C:\Users\reill\Music\AvalanchesJamie.mp3");
-            var source = MediaSource.CreateFromStorageFile(file);
-            //MediaPlaybackItem playbackItem = new MediaPlaybackItem(source);
-
-            this.musicPlayer.Source = source;
-            this.musicPlayer.MediaPlayer.Play();
-
-            await OpenFileList();
+            await ViewModel.Initialize();
         }
 
-        private async Task OpenFileList()
+        private async Task OpenFileWindow()
         {
-            appWindow = await AppWindow.TryCreateAsync();
-            appWindow.Title = "Files";
-            appWindow.RequestSize(new Size(200, 200));
-            appWindow.Closed += delegate { appWindow = null; appWindowFrame.Content = null; };
+            if(fileWindow == null)
+            {
+                fileWindow = await AppWindow.TryCreateAsync();
+                fileWindow.Title = "Files";
+                fileWindow.RequestSize(new Size(200, 200));
+                fileWindow.Closed += delegate { fileWindow = null; appWindowFrame.Content = null; };
 
-            ElementCompositionPreview.SetAppWindowContent(appWindow, appWindowFrame);
+                ElementCompositionPreview.SetAppWindowContent(fileWindow, appWindowFrame);
 
-            Point offset = new Point(x: 0, y: 170);
-            appWindow.RequestMoveRelativeToCurrentViewContent(offset);
+                Point offset = new Point(x: 0, y: 170);
+                fileWindow.RequestMoveRelativeToCurrentViewContent(offset);
 
-            await appWindow.TryShowAsync();
+                await fileWindow.TryShowAsync();
 
-            appWindowFrame.Navigate(typeof(FileList));
+                appWindowFrame.Navigate(typeof(FileList));
+            }
+        }
+
+        private async void Open_Files(object sender, RoutedEventArgs e)
+        {
+            await OpenFileWindow();
         }
     }
 }

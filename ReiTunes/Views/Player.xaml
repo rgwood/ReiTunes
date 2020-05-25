@@ -2,27 +2,35 @@
     x:Class="ReiTunes.Player"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-    xmlns:local="using:ReiTunes"
-    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
-    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     xmlns:controls="using:Microsoft.UI.Xaml.Controls"
-    mc:Ignorable="d"
-    Background="{ThemeResource ApplicationPageBackgroundThemeBrush}">
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:local="using:ReiTunes"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    Background="{ThemeResource ApplicationPageBackgroundThemeBrush}"
+    mc:Ignorable="d">
 
     <StackPanel VerticalAlignment="Center">
-        <TextBlock HorizontalAlignment="Center" Margin="7" 
-                   Text="The Avalanches &amp; Jamie XX - B2B DJ Set on NTS Radio - 15.05.20" />
-        <MediaPlayerElement x:Name="musicPlayer" AreTransportControlsEnabled="True">
+        <TextBlock
+            Margin="7"
+            HorizontalAlignment="Center"
+            Text="{x:Bind ViewModel.SourceFileName, Mode=OneWay}" />
+        <MediaPlayerElement
+            x:Name="musicPlayer"
+            AreTransportControlsEnabled="True"
+            AutoPlay="True"
+            Source="{x:Bind ViewModel.Source, Mode=OneWay}">
             <MediaPlayerElement.TransportControls>
-                <MediaTransportControls IsCompactOverlayEnabled="False"
-                                        IsCompact="False"
-                    IsZoomButtonVisible="False"
-                                        IsFullWindowButtonVisible="False"
-                                        IsFastForwardButtonVisible="True"
-                                        IsFastForwardEnabled="True"
-                                        IsFastRewindButtonVisible="True"
-                                        IsFastRewindEnabled="True"/>
+                <MediaTransportControls
+                    IsCompact="False"
+                    IsCompactOverlayEnabled="False"
+                    IsFastForwardButtonVisible="True"
+                    IsFastForwardEnabled="True"
+                    IsFastRewindButtonVisible="True"
+                    IsFastRewindEnabled="True"
+                    IsFullWindowButtonVisible="False"
+                    IsZoomButtonVisible="False" />
             </MediaPlayerElement.TransportControls>
         </MediaPlayerElement>
+        <Button Click="Open_Files">Open Files</Button>
     </StackPanel>
 </Page>
