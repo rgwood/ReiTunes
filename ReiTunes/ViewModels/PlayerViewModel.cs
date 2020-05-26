@@ -49,7 +49,7 @@ namespace ReiPod
             var file = await StorageFile.GetFileFromPathAsync(@"C:\Users\reill\Music\AvalanchesJamie.mp3");
             Source = MediaSource.CreateFromStorageFile(file);
             SourceFileName = "AvalanchesJamie.mp3";
-            FileTreeItems = FileTreeItemBuilder.GetSampleData();
+            FileTreeItems = FileTreeBuilder.GetSampleData();
         }
 
         public async void ChangeSource(string fileName)

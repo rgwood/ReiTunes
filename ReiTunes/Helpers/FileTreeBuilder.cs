@@ -8,7 +8,7 @@ using System.Text;
 namespace ReiTunes.Helpers
 {
 	// Helper to build a tree of FileTreeItems from text
-	public class FileTreeItemBuilder
+	public class FileTreeBuilder
     {
         /// <summary>
         /// 
@@ -17,7 +17,8 @@ namespace ReiTunes.Helpers
         /// <returns></returns>
         public static ObservableCollection<FileTreeItem> ParseBlobList(string blobList)
         {
-			var root = new FileTreeItem("root", FileTreeItemType.Folder);
+			// just creating this to hold results
+			var root = new FileTreeItem("root","foo", FileTreeItemType.Folder);
 
 			StringReader reader = new StringReader(blobList);
 			string line;
@@ -45,13 +46,13 @@ namespace ReiTunes.Helpers
 					}
 					else
 					{
-						var newDir = new FileTreeItem(dirName, FileTreeItemType.Folder);
+						var newDir = new FileTreeItem(dirName, fullPath: line, FileTreeItemType.Folder);
 						currentDir.Children.Add(newDir);
 						currentDir = newDir;
 					}
 				}
 
-				currentDir.Children.Add(new FileTreeItem(fileName));
+				currentDir.Children.Add(new FileTreeItem(fileName, line));
 			}
 			return root.Children;
 		}

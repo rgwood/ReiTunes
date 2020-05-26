@@ -131,7 +131,7 @@
     <Compile Include="Helpers\ResourceExtensions.cs" />
     <Compile Include="Helpers\SettingsStorageExtensions.cs" />
     <Compile Include="Models\FileTreeItem.cs" />
-    <Compile Include="Helpers\FileTreeItemBuilder.cs" />
+    <Compile Include="Helpers\FileTreeBuilder.cs" />
     <Compile Include="Models\FileTreeItemType.cs" />
     <Compile Include="Services\ActivationService.cs" />
     <Compile Include="Services\FirstRunDisplayService.cs" />

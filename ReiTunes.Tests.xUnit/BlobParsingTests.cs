@@ -15,7 +15,7 @@ ddoklmfglkm.mp3";
         [Fact]
         public void CanParseBlobList()
         {
-            var explorerItems = FileTreeItemBuilder.ParseBlobList(rawBlobList);
+            var explorerItems = FileTreeBuilder.ParseBlobList(rawBlobList);
             Assert.Equal(3, explorerItems.Count);
         }
     }
