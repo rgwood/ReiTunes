@@ -90,5 +90,11 @@ namespace ReiTunes
                 sender.ItemsSource = fuzzyMatchResults.ToList();
             }
         }
+
+        private void SearchBox_QuerySubmitted(AutoSuggestBox sender, AutoSuggestBoxQuerySubmittedEventArgs args)
+        {
+            var selection = (FileTreeItem) args.ChosenSuggestion;
+            ViewModel.ChangeSource(selection.FullPath);
+        }
     }
 }

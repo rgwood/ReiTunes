@@ -13,13 +13,6 @@
         <StaticResource x:Key="MediaTransportControlsPanelBackground" ResourceKey="ApplicationPageBackgroundThemeBrush" />
     </Page.Resources>-->
     <StackPanel>
-        <AutoSuggestBox
-            x:Name="SearchBox"
-            HorizontalAlignment="Stretch"
-            DisplayMemberPath="FullPath"
-            QueryIcon="Find"
-            TextChanged="SearchBox_TextChanged"
-            TextMemberPath="FullPath" />
         <TextBlock
             Margin="7"
             HorizontalAlignment="Center"
@@ -41,7 +34,15 @@
                     IsZoomButtonVisible="False" />
             </MediaPlayerElement.TransportControls>
         </MediaPlayerElement>
-
+        <AutoSuggestBox
+            x:Name="SearchBox"
+            Margin="10"
+            HorizontalAlignment="Stretch"
+            DisplayMemberPath="FullPath"
+            QueryIcon="Find"
+            QuerySubmitted="SearchBox_QuerySubmitted"
+            TextChanged="SearchBox_TextChanged"
+            TextMemberPath="FullPath" />
         <winui:TreeView Name="FileTreeView" ItemsSource="{x:Bind ViewModel.FileTreeItems, Mode=OneWay}">
             <winui:TreeView.ItemTemplate>
                 <DataTemplate x:DataType="local:FileTreeItem">
