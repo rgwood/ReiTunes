@@ -17,5 +17,17 @@ namespace ReiTunes.Core.Tests.XUnit
             var deserialized = await Json.ToObjectAsync<List<int>>(serialized);
             Assert.Equal(3, deserialized.Count);
         }
+
+        [Fact]
+        public void FuzzyMatchWorks()
+        {
+            var goodResult = FuzzyMatcher.FuzzyMatch("Reilly Wood", "rei");
+            Assert.True(goodResult.isMatch);
+
+            var badResult = FuzzyMatcher.FuzzyMatch("Reilly Wood", "xcv");
+            Assert.False(badResult.isMatch);
+
+            Assert.True(goodResult.score > badResult.score);
+        }
     }
 }
