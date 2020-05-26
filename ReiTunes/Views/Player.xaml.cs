@@ -33,39 +33,14 @@ namespace ReiTunes
     /// </summary>
     public sealed partial class Player : Page
     {
-        private AppWindow fileWindow;
-        private Frame appWindowFrame = new Frame();
         private bool _layoutUpdatedHasFired = false;
         public PlayerViewModel ViewModel { get; }
 
         public Player()
         {
+            // Only ever have one player in the application, and we want it to be controllable by other components
             ViewModel = Singleton<PlayerViewModel>.Instance;
             this.InitializeComponent();
-            LayoutUpdated += OpenFileWindowHandler;
-        }
-
-        /* HACK ALERT! We open the file viewer on the first LayoutUpdated event, because I
-         * couldn't get AppWindow.TryShowAsync() to work correctly earlier. I tried opening
-         * it during OnNavigatedTo and Loaded, but that results in intermittent crashes with
-         * a "0x80070490 Element not found." error. I suspect this is a bug in the preview
-         * AppWindow code, but I'm not 100% sure.
-         * 
-         * This was the only mention of that bug I could find: https://stackoverflow.com/q/61929691
-         * But the asker just gave up and called TryShowAsync later.
-         * 
-         * Based on, this I decided to try LayoutUpdated: https://stackoverflow.com/a/34364213
-         * "LayoutUpdated is the last object lifetime event to occur in the XAML load sequence before
-         * a control is ready for interaction. However, LayoutUpdated can also occur at run time 
-         * during the object lifetime, for a variety of reasons"
-         */
-        private async void OpenFileWindowHandler(object sender, object e)
-        {
-            if(!_layoutUpdatedHasFired)
-            {
-                _layoutUpdatedHasFired = true;
-                await OpenFileWindow();
-            }
         }
 
         protected async override void OnNavigatedTo(NavigationEventArgs e)
@@ -74,29 +49,10 @@ namespace ReiTunes
             await ViewModel.Initialize();
         }
 
-        private async Task OpenFileWindow()
+        private void TreeViewItem_DoubleTapped(object sender, DoubleTappedRoutedEventArgs e)
         {
-            if(fileWindow == null)
-            {
-                fileWindow = await AppWindow.TryCreateAsync();
-                fileWindow.Title = "Files";
-                fileWindow.RequestSize(new Size(200, 200));
-                fileWindow.Closed += delegate { fileWindow = null; appWindowFrame.Content = null; };
-
-                ElementCompositionPreview.SetAppWindowContent(fileWindow, appWindowFrame);
-
-                Point offset = new Point(x: 0, y: 170);
-                fileWindow.RequestMoveRelativeToCurrentViewContent(offset);
-
-                await fileWindow.TryShowAsync();
-
-                appWindowFrame.Navigate(typeof(FileList));
-            }
-        }
-
-        private async void Open_Files(object sender, RoutedEventArgs e)
-        {
-            await OpenFileWindow();
+            var selected = (FileTreeItem)FileTreeView.SelectedItem;
+            ViewModel.ChangeSource(selected.Name);
         }
     }
 }

@@ -1,6 +1,8 @@
-﻿using ReiTunes.Helpers;
+﻿using ReiTunes;
+using ReiTunes.Helpers;
 using System;
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Linq;
 using System.Runtime.CompilerServices;
@@ -30,6 +32,14 @@ namespace ReiPod
             set { Set(ref _sourceFileName, value);  }
         }
 
+        private ObservableCollection<FileTreeItem> _fileTreeItems;
+
+        public ObservableCollection<FileTreeItem> FileTreeItems
+        {
+            get { return _fileTreeItems; }
+            set { Set(ref _fileTreeItems, value); }
+        }
+
         public PlayerViewModel()
         {
         }
@@ -39,6 +49,7 @@ namespace ReiPod
             var file = await StorageFile.GetFileFromPathAsync(@"C:\Users\reill\Music\AvalanchesJamie.mp3");
             Source = MediaSource.CreateFromStorageFile(file);
             SourceFileName = "AvalanchesJamie.mp3";
+            FileTreeItems = FileTreeItemBuilder.GetSampleData();
         }
 
         public async void ChangeSource(string fileName)

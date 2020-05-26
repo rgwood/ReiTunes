@@ -9,7 +9,10 @@
     Background="{ThemeResource ApplicationPageBackgroundThemeBrush}"
     mc:Ignorable="d">
 
-    <StackPanel VerticalAlignment="Center">
+    <!--<Page.Resources>
+        <StaticResource x:Key="MediaTransportControlsPanelBackground" ResourceKey="ApplicationPageBackgroundThemeBrush" />
+    </Page.Resources>-->
+    <StackPanel>
         <TextBlock
             Margin="7"
             HorizontalAlignment="Center"
@@ -31,5 +34,17 @@
                     IsZoomButtonVisible="False" />
             </MediaPlayerElement.TransportControls>
         </MediaPlayerElement>
+
+        <controls:TreeView Name="FileTreeView" ItemsSource="{x:Bind ViewModel.FileTreeItems, Mode=OneWay}">
+            <controls:TreeView.ItemTemplate>
+                <DataTemplate x:DataType="local:FileTreeItem">
+                    <controls:TreeViewItem DoubleTapped="TreeViewItem_DoubleTapped" ItemsSource="{x:Bind Children}">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="{x:Bind Name}" />
+                        </StackPanel>
+                    </controls:TreeViewItem>
+                </DataTemplate>
+            </controls:TreeView.ItemTemplate>
+        </controls:TreeView>
     </StackPanel>
 </Page>
