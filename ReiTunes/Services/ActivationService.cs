@@ -23,7 +23,7 @@ namespace ReiTunes.Services
         private readonly Type _defaultNavItem;
         private Lazy<UIElement> _shell;
 
-        private readonly Size MainWindowSize = new Size(500, 120);
+        private readonly Size MainWindowSize = new Size(500, 400);
 
         private object _lastActivationArgs;
 
