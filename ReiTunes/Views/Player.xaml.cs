@@ -29,18 +29,33 @@ using ReiTunes.Core.Helpers;
 namespace ReiTunes
 {
     /// <summary>
-    /// The main UI of ReiTunes, a simple music player control.
+    /// The main UI of ReiTunes, a simple music player
     /// </summary>
     public sealed partial class Player : Page
     {
-        private bool _layoutUpdatedHasFired = false;
         public PlayerViewModel ViewModel { get; }
 
         public Player()
         {
+            this.InitializeComponent();
             // Only ever have one player in the application, and we want it to be controllable by other components
             ViewModel = Singleton<PlayerViewModel>.Instance;
-            this.InitializeComponent();
+            SetUpKeyboardAccelerators();
+        }
+
+        private void SetUpKeyboardAccelerators()
+        {
+            var searchAccelerator = new KeyboardAccelerator()
+            {
+                Modifiers = Windows.System.VirtualKeyModifiers.Control,
+                Key = Windows.System.VirtualKey.F
+            };
+            searchAccelerator.Invoked += (sender, args) =>
+            {
+                SearchBox.Focus(FocusState.Keyboard);
+                args.Handled = true;
+            };
+            KeyboardAccelerators.Add(searchAccelerator);
         }
 
         protected async override void OnNavigatedTo(NavigationEventArgs e)

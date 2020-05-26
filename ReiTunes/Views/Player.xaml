@@ -13,6 +13,11 @@
         <StaticResource x:Key="MediaTransportControlsPanelBackground" ResourceKey="ApplicationPageBackgroundThemeBrush" />
     </Page.Resources>-->
     <StackPanel>
+        <AutoSuggestBox
+            x:Name="SearchBox"
+            HorizontalAlignment="Stretch"
+            HorizontalContentAlignment="Stretch"
+            QueryIcon="Find" />
         <TextBlock
             Margin="7"
             HorizontalAlignment="Center"
