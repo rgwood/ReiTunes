@@ -8,17 +8,14 @@ namespace ReiTunes
     {
         public event PropertyChangedEventHandler PropertyChanged;
         public string Name { get; set; }
+        public string FullPath { get; set; }
         public FileTreeItemType Type { get; set; }
         private ObservableCollection<FileTreeItem> _children;
 
-        // Needed for JSON deserialization
-        public FileTreeItem()
-        {
-        }
-
-        public FileTreeItem(string fileName, FileTreeItemType type = FileTreeItemType.File)
+        public FileTreeItem(string fileName, string fullPath,  FileTreeItemType type = FileTreeItemType.File)
         {
             Name = fileName;
+            FullPath = fullPath;
             Type = type;
         }
 
@@ -36,24 +33,6 @@ namespace ReiTunes
             {
                 _children = value;
             }
-        }
-
-        public static ObservableCollection<FileTreeItem> GetSampleData()
-        {
-            var ret = new ObservableCollection<FileTreeItem>();
-            FileTreeItem folder = new FileTreeItem("SoundCloud DJ sets", FileTreeItemType.Folder)
-            {
-                Children =
-                        {
-                         new FileTreeItem("Between Villains (Earl Sweatshirt, Captain Murphy, MF DOOM)"),
-                         new FileTreeItem("Daphni - 7.5 hr DJ Mix - Live from the Bussey Building. Oct 5, 2012. Part II"),
-                         new FileTreeItem("Ingress - Burning Man Sunrise Set 2017"),
-                         new FileTreeItem("Inversion - Burning Man Sunrise Set 2019")
-                        }
-            };
-            ret.Add(folder);
-
-            return new ObservableCollection<FileTreeItem>() { folder };
         }
 
         private bool m_isExpanded;

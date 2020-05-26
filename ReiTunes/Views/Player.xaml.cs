@@ -69,5 +69,26 @@ namespace ReiTunes
             var selected = (FileTreeItem)FileTreeView.SelectedItem;
             ViewModel.ChangeSource(selected.Name);
         }
+
+        private void SearchBox_TextChanged(AutoSuggestBox sender, AutoSuggestBoxTextChangedEventArgs args)
+        {
+            if (args.Reason == AutoSuggestionBoxTextChangeReason.UserInput)
+            {
+                var typedText = sender.Text;
+                
+                //todo: handle folders
+                var files = ViewModel.FileTreeItems.Where(i => i.Type == FileTreeItemType.File);
+
+                var fuzzyMatchResults =
+                    from file in files
+                    let fuzzyResult = FuzzyMatcher.FuzzyMatch(file.FullPath, typedText)
+                    where fuzzyResult.isMatch
+                    orderby fuzzyResult.score descending
+                    select file;
+
+                //Set the ItemsSource to be your filtered dataset
+                sender.ItemsSource = fuzzyMatchResults.ToList();
+            }
+        }
     }
 }

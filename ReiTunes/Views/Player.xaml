@@ -2,10 +2,10 @@
     x:Class="ReiTunes.Player"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-    xmlns:controls="using:Microsoft.UI.Xaml.Controls"
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
     xmlns:local="using:ReiTunes"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    xmlns:winui="using:Microsoft.UI.Xaml.Controls"
     Background="{ThemeResource ApplicationPageBackgroundThemeBrush}"
     mc:Ignorable="d">
 
@@ -16,8 +16,10 @@
         <AutoSuggestBox
             x:Name="SearchBox"
             HorizontalAlignment="Stretch"
-            HorizontalContentAlignment="Stretch"
-            QueryIcon="Find" />
+            DisplayMemberPath="FullPath"
+            QueryIcon="Find"
+            TextChanged="SearchBox_TextChanged"
+            TextMemberPath="FullPath" />
         <TextBlock
             Margin="7"
             HorizontalAlignment="Center"
@@ -40,16 +42,16 @@
             </MediaPlayerElement.TransportControls>
         </MediaPlayerElement>
 
-        <controls:TreeView Name="FileTreeView" ItemsSource="{x:Bind ViewModel.FileTreeItems, Mode=OneWay}">
-            <controls:TreeView.ItemTemplate>
+        <winui:TreeView Name="FileTreeView" ItemsSource="{x:Bind ViewModel.FileTreeItems, Mode=OneWay}">
+            <winui:TreeView.ItemTemplate>
                 <DataTemplate x:DataType="local:FileTreeItem">
-                    <controls:TreeViewItem DoubleTapped="TreeViewItem_DoubleTapped" ItemsSource="{x:Bind Children}">
+                    <winui:TreeViewItem DoubleTapped="TreeViewItem_DoubleTapped" ItemsSource="{x:Bind Children}">
                         <StackPanel Orientation="Horizontal">
                             <TextBlock Text="{x:Bind Name}" />
                         </StackPanel>
-                    </controls:TreeViewItem>
+                    </winui:TreeViewItem>
                 </DataTemplate>
-            </controls:TreeView.ItemTemplate>
-        </controls:TreeView>
+            </winui:TreeView.ItemTemplate>
+        </winui:TreeView>
     </StackPanel>
 </Page>
