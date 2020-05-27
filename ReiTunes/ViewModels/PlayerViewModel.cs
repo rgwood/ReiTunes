@@ -12,6 +12,7 @@ using System.Text;
 using System.Threading.Tasks;
 using Windows.Media.Core;
 using Windows.Media.Playback;
+using Windows.Networking.BackgroundTransfer;
 using Windows.Storage;
 using Windows.UI.Core;
 
@@ -68,12 +69,23 @@ namespace ReiPod
 
         public async void ChangeSource(string fileName)
         {
+            var cloudLibraryBaseUri = new Uri("https://reitunes.blob.core.windows.net/reitunes/");
+
+
             var musicLib = await FileHelper.ReiTunesLibrary();
             var storageItem = await musicLib.TryGetItemAsync(fileName);
 
             if(storageItem == null) // file not found, download it
             {
-                throw new NotImplementedException();
+                var downloadUri = new Uri(cloudLibraryBaseUri, fileName);
+
+                var downloadFile = await musicLib.CreateFileAsync(fileName);
+                BackgroundDownloader downloader = new BackgroundDownloader();
+                DownloadOperation download = downloader.CreateDownload(downloadUri, downloadFile);
+
+                //TODO: provide some progess indicators while it's downloading
+                await download.StartAsync();
+                storageItem = downloadFile;
             }
 
             if(storageItem.IsOfType(StorageItemTypes.Folder))
