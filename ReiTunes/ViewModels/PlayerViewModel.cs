@@ -4,6 +4,7 @@ using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
+using System.IO;
 using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Text;
@@ -46,17 +47,33 @@ namespace ReiPod
 
         public async Task Initialize()
         {
-            var file = await StorageFile.GetFileFromPathAsync(@"C:\Users\reill\Music\AvalanchesJamie.mp3");
-            Source = MediaSource.CreateFromStorageFile(file);
-            SourceFileName = "AvalanchesJamie.mp3";
+            //var file = await StorageFile.GetFileFromPathAsync(@"C:\Users\reill\Music\AvalanchesJamie.mp3");
+            //Source = MediaSource.CreateFromStorageFile(file);
+            //SourceFileName = "AvalanchesJamie.mp3";
             FileTreeItems = FileTreeBuilder.GetSampleData();
         }
 
         public async void ChangeSource(string fileName)
         {
-            var file = await StorageFile.GetFileFromPathAsync(@"C:\Users\reill\Music\" + fileName);
-            Source = MediaSource.CreateFromStorageFile(file);
-            SourceFileName = fileName;
+            var musicLib = KnownFolders.MusicLibrary;
+            var storageItem = await musicLib.TryGetItemAsync("ReiTunes"+ Path.DirectorySeparatorChar + fileName);
+
+            if(storageItem == null) // file not found, download it
+            {
+                throw new NotImplementedException();
+            }
+
+            if(storageItem.IsOfType(StorageItemTypes.Folder))
+            {
+                return;
+            }
+
+            if(storageItem.IsOfType(StorageItemTypes.File))
+            {
+                var file = (StorageFile) storageItem;
+                Source = MediaSource.CreateFromStorageFile(file);
+                SourceFileName = fileName;
+            }
         }
 
     }
