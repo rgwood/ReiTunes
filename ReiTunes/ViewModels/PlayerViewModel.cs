@@ -1,4 +1,5 @@
-﻿using ReiTunes;
+﻿using ReiPod.Helpers;
+using ReiTunes;
 using ReiTunes.Helpers;
 using System;
 using System.Collections.Generic;
@@ -50,13 +51,25 @@ namespace ReiPod
             //var file = await StorageFile.GetFileFromPathAsync(@"C:\Users\reill\Music\AvalanchesJamie.mp3");
             //Source = MediaSource.CreateFromStorageFile(file);
             //SourceFileName = "AvalanchesJamie.mp3";
-            FileTreeItems = FileTreeBuilder.GetSampleData();
+
+            var library = await FileHelper.ReiTunesLibrary();
+            var libraryFile = await library.TryGetItemAsync("ReiTunesLibrary.txt");
+
+            if(libraryFile == null)
+            {
+                //todo: download it
+                throw new NotImplementedException("Library downloading not ready yet");
+            }
+
+            var libraryString = await FileIO.ReadTextAsync((IStorageFile) libraryFile);
+
+            FileTreeItems = FileTreeBuilder.ParseBlobList(libraryString);
         }
 
         public async void ChangeSource(string fileName)
         {
-            var musicLib = KnownFolders.MusicLibrary;
-            var storageItem = await musicLib.TryGetItemAsync("ReiTunes"+ Path.DirectorySeparatorChar + fileName);
+            var musicLib = await FileHelper.ReiTunesLibrary();
+            var storageItem = await musicLib.TryGetItemAsync(fileName);
 
             if(storageItem == null) // file not found, download it
             {
@@ -70,8 +83,7 @@ namespace ReiPod
 
             if(storageItem.IsOfType(StorageItemTypes.File))
             {
-                var file = (StorageFile) storageItem;
-                Source = MediaSource.CreateFromStorageFile(file);
+                Source = MediaSource.CreateFromStorageFile((StorageFile)storageItem);
                 SourceFileName = fileName;
             }
         }
