@@ -17,6 +17,7 @@
             Margin="7"
             HorizontalAlignment="Center"
             Text="{x:Bind ViewModel.SourceFileName, Mode=OneWay}" />
+
         <MediaPlayerElement
             x:Name="musicPlayer"
             AreTransportControlsEnabled="True"
@@ -43,6 +44,7 @@
             QuerySubmitted="SearchBox_QuerySubmitted"
             TextChanged="SearchBox_TextChanged"
             TextMemberPath="FullPath" />
+        <TextBlock Margin="10" Text="{x:Bind ViewModel.DownloadStatus, Mode=OneWay}" />
         <winui:TreeView Name="FileTreeView" ItemsSource="{x:Bind ViewModel.FileTreeItems, Mode=OneWay}">
             <winui:TreeView.ItemTemplate>
                 <DataTemplate x:DataType="local:FileTreeItem">
