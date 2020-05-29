@@ -12,7 +12,14 @@
     <!--<Page.Resources>
         <StaticResource x:Key="MediaTransportControlsPanelBackground" ResourceKey="ApplicationPageBackgroundThemeBrush" />
     </Page.Resources>-->
-    <StackPanel>
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
         <TextBlock
             Margin="7"
             HorizontalAlignment="Center"
@@ -20,6 +27,7 @@
 
         <MediaPlayerElement
             x:Name="musicPlayer"
+            Grid.Row="1"
             AreTransportControlsEnabled="True"
             AutoPlay="True"
             Source="{x:Bind ViewModel.Source, Mode=OneWay}">
@@ -37,6 +45,7 @@
         </MediaPlayerElement>
         <AutoSuggestBox
             x:Name="SearchBox"
+            Grid.Row="2"
             Margin="10"
             HorizontalAlignment="Stretch"
             DisplayMemberPath="FullPath"
@@ -44,17 +53,21 @@
             QuerySubmitted="SearchBox_QuerySubmitted"
             TextChanged="SearchBox_TextChanged"
             TextMemberPath="FullPath" />
-        <TextBlock Margin="10" Text="{x:Bind ViewModel.DownloadStatus, Mode=OneWay}" />
-        <winui:TreeView Name="FileTreeView" ItemsSource="{x:Bind ViewModel.FileTreeItems, Mode=OneWay}">
+        <TextBlock
+            Grid.Row="3"
+            Margin="10"
+            Text="{x:Bind ViewModel.DownloadStatus, Mode=OneWay}" />
+        <winui:TreeView
+            Name="FileTreeView"
+            Grid.Row="4"
+            ItemsSource="{x:Bind ViewModel.FileTreeItems, Mode=OneWay}">
             <winui:TreeView.ItemTemplate>
                 <DataTemplate x:DataType="local:FileTreeItem">
                     <winui:TreeViewItem DoubleTapped="TreeViewItem_DoubleTapped" ItemsSource="{x:Bind Children}">
-                        <StackPanel Orientation="Horizontal">
-                            <TextBlock Text="{x:Bind Name}" />
-                        </StackPanel>
+                        <TextBlock Text="{x:Bind Name}" />
                     </winui:TreeViewItem>
                 </DataTemplate>
             </winui:TreeView.ItemTemplate>
         </winui:TreeView>
-    </StackPanel>
+    </Grid>
 </Page>
