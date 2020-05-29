@@ -23,7 +23,7 @@ namespace ReiPod
     {
         private IMediaPlaybackSource _source;
         private string _sourceFileName;
-        private string _downloadStatus = "placeholder";
+        private string _downloadStatus = "Download Progress Placeholder";
 
         public IMediaPlaybackSource Source
         {
