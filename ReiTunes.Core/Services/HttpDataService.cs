@@ -16,6 +16,11 @@ namespace ReiTunes.Services
         private readonly Dictionary<string, object> responseCache;
         private HttpClient client;
 
+        // Need a parameterless constructor to use this as a singleton
+        public HttpDataService() : this("")
+        {
+        }
+
         public HttpDataService(string defaultBaseUrl = "")
         {
             client = new HttpClient();
@@ -26,6 +31,13 @@ namespace ReiTunes.Services
             }
 
             responseCache = new Dictionary<string, object>();
+        }
+
+        public async Task<string> GetStringAsync(Uri uri)
+        {
+            var response = await client.GetAsync(uri);
+            response.EnsureSuccessStatusCode();
+            return await response.Content.ReadAsStringAsync();
         }
 
         public async Task<T> GetAsync<T>(string uri, string accessToken = null, bool forceRefresh = false)
