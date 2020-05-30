@@ -5,7 +5,8 @@
   xmlns:mp="http://schemas.microsoft.com/appx/2014/phone/manifest"
   xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
   xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities"
-  IgnorableNamespaces="uap mp rescap">
+  xmlns:uap3="http://schemas.microsoft.com/appx/manifest/uap/windows10/3"
+  IgnorableNamespaces="uap mp rescap uap3">
 
   <Identity
     Name="2b3c53fd-b804-4e1e-b26c-cae302ea1108"
@@ -48,5 +49,6 @@
     <Capability Name="internetClient" />
     <uap:Capability Name="musicLibrary"/>
     <rescap:Capability Name="broadFileSystemAccess"/>
+    <uap3:Capability Name="backgroundMediaPlayback"/>
   </Capabilities>
 </Package>
