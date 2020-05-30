@@ -28,7 +28,8 @@ namespace ReiPod
         private const string _libraryFileName = "ReiTunesLibrary.txt";
         private IMediaPlaybackSource _source;
         private string _sourceFileName;
-        private string _downloadStatus = "Download Progress Placeholder";
+        private string _downloadStatus = "";
+        private bool _downloadInProgress = false;
         
         public IMediaPlaybackSource Source
         {
@@ -54,6 +55,12 @@ namespace ReiPod
         {
             get { return _downloadStatus; }
             set { Set(ref _downloadStatus, value); }
+        }
+
+        public bool DownloadInProgress
+        {
+            get { return _downloadInProgress; }
+            set { Set(ref _downloadInProgress, value); }
         }
 
         public PlayerViewModel()
@@ -132,13 +139,19 @@ namespace ReiPod
 
             if (storageItem == null) // file not found, download it
             {
+                // Bad things happen if we try to download a 2nd file while one is already in progress
+                if (DownloadInProgress)
+                    return;
+
                 var downloadUri = new Uri(_cloudBaseUri, filePath);
 
                 var downloadFile = await folder.CreateFileAsync(fileName);
+                DownloadInProgress = true;
                 BackgroundDownloader downloader = new BackgroundDownloader();
                 DownloadOperation download = downloader.CreateDownload(downloadUri, downloadFile);
                 Progress<DownloadOperation> progressCallback = new Progress<DownloadOperation>(HandleDownloadProgress);
                 await download.StartAsync().AsTask(progressCallback);
+                DownloadInProgress = false;
                 storageItem = downloadFile;
             }
 
@@ -168,9 +181,9 @@ namespace ReiPod
             }
             else
             {
-                var kbReceived = progress.BytesReceived / 1024;
-                var totalKb = progress.TotalBytesToReceive / 1024;
-                message = $"{kbReceived} / {totalKb}";
+                var mbReceived = progress.BytesReceived / 1024d / 1024d;
+                var totalMb = progress.TotalBytesToReceive / 1024d / 1024d;
+                message = $"Downloading: {mbReceived:N1} mb / {totalMb:N1} mb";
             }
 
             // The ignore variable is to silence an async warning. Seems bad but

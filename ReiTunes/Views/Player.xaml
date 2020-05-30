@@ -20,14 +20,25 @@
             <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
+        <AutoSuggestBox
+            x:Name="SearchBox"
+            Grid.Row="0"
+            Margin="10"
+            HorizontalAlignment="Stretch"
+            DisplayMemberPath="FullPath"
+            QueryIcon="Find"
+            QuerySubmitted="SearchBox_QuerySubmitted"
+            TextChanged="SearchBox_TextChanged"
+            TextMemberPath="FullPath" />
         <TextBlock
+            Grid.Row="1"
             Margin="7"
             HorizontalAlignment="Center"
             Text="{x:Bind ViewModel.SourceFileName, Mode=OneWay}" />
 
         <MediaPlayerElement
             x:Name="musicPlayer"
-            Grid.Row="1"
+            Grid.Row="2"
             AreTransportControlsEnabled="True"
             AutoPlay="True"
             Source="{x:Bind ViewModel.Source, Mode=OneWay}">
@@ -43,20 +54,11 @@
                     IsZoomButtonVisible="False" />
             </MediaPlayerElement.TransportControls>
         </MediaPlayerElement>
-        <AutoSuggestBox
-            x:Name="SearchBox"
-            Grid.Row="2"
-            Margin="10"
-            HorizontalAlignment="Stretch"
-            DisplayMemberPath="FullPath"
-            QueryIcon="Find"
-            QuerySubmitted="SearchBox_QuerySubmitted"
-            TextChanged="SearchBox_TextChanged"
-            TextMemberPath="FullPath" />
         <TextBlock
             Grid.Row="3"
             Margin="10"
-            Text="{x:Bind ViewModel.DownloadStatus, Mode=OneWay}" />
+            Text="{x:Bind ViewModel.DownloadStatus, Mode=OneWay}"
+            Visibility="{x:Bind ViewModel.DownloadInProgress, Mode=OneWay}" />
         <winui:TreeView
             Name="FileTreeView"
             Grid.Row="4"
