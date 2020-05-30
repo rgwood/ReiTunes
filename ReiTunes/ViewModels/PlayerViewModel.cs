@@ -75,19 +75,47 @@ namespace ReiPod
             FileTreeItems = FileTreeBuilder.ParseBlobList(libraryString);
         }
 
-        public async void ChangeSource(string fileName)
+        public async void ChangeSource(string filePath)
         {
             var cloudLibraryBaseUri = new Uri("https://reitunes.blob.core.windows.net/reitunes/");
 
 
             var musicLib = await FileHelper.ReiTunesLibrary();
-            var storageItem = await musicLib.TryGetItemAsync(fileName);
+
+            //todo: get to the right folder
+            var split = filePath.Split('/');
+            var directories = new Queue<string>(split.Take(split.Length - 1));
+            var fileName = split.Last();
+
+            var folder = musicLib;
+
+            while(directories.Any())
+            {
+                var curr = directories.Dequeue();
+                var subFolder = await folder.TryGetItemAsync(curr);
+                if(subFolder == null)
+                {
+                    folder = await folder.CreateFolderAsync(curr);
+                }
+                else if(!subFolder.IsOfType(StorageItemTypes.Folder))
+                {
+                    throw new IOException($"Unexpected file found with name '{curr}'");
+                }
+                else // we found a folder that already exists
+                {
+                    folder = (StorageFolder) subFolder;
+                }
+
+            }
+
+
+            var storageItem = await folder.TryGetItemAsync(fileName);
 
             if (storageItem == null) // file not found, download it
             {
-                var downloadUri = new Uri(cloudLibraryBaseUri, fileName);
+                var downloadUri = new Uri(cloudLibraryBaseUri, filePath);
 
-                var downloadFile = await musicLib.CreateFileAsync(fileName);
+                var downloadFile = await folder.CreateFileAsync(fileName);
                 BackgroundDownloader downloader = new BackgroundDownloader();
                 DownloadOperation download = downloader.CreateDownload(downloadUri, downloadFile);
                 Progress<DownloadOperation> progressCallback = new Progress<DownloadOperation>(HandleDownloadProgress);
@@ -103,7 +131,7 @@ namespace ReiPod
             if (storageItem.IsOfType(StorageItemTypes.File))
             {
                 Source = MediaSource.CreateFromStorageFile((StorageFile)storageItem);
-                SourceFileName = fileName;
+                SourceFileName = filePath;
             }
         }
 

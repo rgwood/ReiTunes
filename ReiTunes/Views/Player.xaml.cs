@@ -78,7 +78,7 @@ namespace ReiTunes
         private void TreeViewItem_DoubleTapped(object sender, DoubleTappedRoutedEventArgs e)
         {
             var selected = (FileTreeItem)FileTreeView.SelectedItem;
-            ViewModel.ChangeSource(selected.Name);
+            ViewModel.ChangeSource(selected.FullPath);
         }
 
         private void SearchBox_TextChanged(AutoSuggestBox sender, AutoSuggestBoxTextChangedEventArgs args)
