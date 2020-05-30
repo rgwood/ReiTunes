@@ -1,6 +1,6 @@
 ﻿using Microsoft.Toolkit.Uwp.Helpers;
-using ReiPod.Configuration;
-using ReiPod.Helpers;
+using ReiTunes.Configuration;
+using ReiTunes.Helpers;
 using ReiTunes;
 using ReiTunes.Core.Helpers;
 using ReiTunes.Helpers;
@@ -21,7 +21,7 @@ using Windows.Networking.BackgroundTransfer;
 using Windows.Storage;
 using Windows.UI.Core;
 
-namespace ReiPod
+namespace ReiTunes
 {
     public class PlayerViewModel : Observable
     {

@@ -21,9 +21,9 @@ using Windows.UI.Xaml.Hosting;
 using System.Threading.Tasks;
 using System.Collections.ObjectModel;
 using Windows.UI.ViewManagement;
-using ReiPod;
+using ReiTunes;
 using ReiTunes.Core.Helpers;
-using ReiPod.Configuration;
+using ReiTunes.Configuration;
 
 // The Blank Page item template is documented at https://go.microsoft.com/fwlink/?LinkId=402352&clcid=0x409
 

@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.Extensions.DependencyInjection;
-using ReiPod.Configuration;
+using ReiTunes.Configuration;
 using ReiTunes.Activation;
 using ReiTunes.Core.Helpers;
 using ReiTunes.Services;

@@ -5,7 +5,7 @@ using System.Text;
 using System.Threading.Tasks;
 using Windows.Storage;
 
-namespace ReiPod.Helpers
+namespace ReiTunes.Helpers
 {
     public class FileHelper
     {

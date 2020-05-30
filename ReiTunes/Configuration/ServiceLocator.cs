@@ -5,7 +5,7 @@ using Microsoft.Extensions.DependencyInjection;
 using ReiTunes.Services;
 using ReiTunes.Activation;
 
-namespace ReiPod.Configuration
+namespace ReiTunes.Configuration
 {
     public class ServiceLocator : IDisposable
     {

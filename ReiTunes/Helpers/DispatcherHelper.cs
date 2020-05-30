@@ -6,7 +6,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Windows.UI.Core;
 
-namespace ReiPod.Helpers
+namespace ReiTunes.Helpers
 {
     public static class DispatcherHelper
     {

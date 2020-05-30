@@ -4,10 +4,9 @@ using Windows.ApplicationModel;
 using Windows.ApplicationModel.Activation;
 using Windows.UI.Xaml;
 using ReiTunes.Core.Helpers;
-using ReiPod;
 using Windows.UI.ViewManagement;
 using Windows.Foundation;
-using ReiPod.Configuration;
+using ReiTunes.Configuration;
 
 namespace ReiTunes
 {
