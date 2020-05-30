@@ -123,6 +123,7 @@
       <DependentUpon>App.xaml</DependentUpon>
     </Compile>
     <Compile Include="Behaviors\TreeViewCollapseBehavior.cs" />
+    <Compile Include="Configuration\ServiceLocator.cs" />
     <Compile Include="Helpers\DispatcherHelper.cs" />
     <Compile Include="Helpers\EnumToBooleanConverter.cs" />
     <Compile Include="Helpers\FileHelper.cs" />
@@ -134,7 +135,7 @@
     <Compile Include="Models\FileTreeItem.cs" />
     <Compile Include="Helpers\FileTreeBuilder.cs" />
     <Compile Include="Models\FileTreeItemType.cs" />
-    <Compile Include="Services\ActivationService.cs" />
+    <Compile Include="Configuration\Startup.cs" />
     <Compile Include="Services\FirstRunDisplayService.cs" />
     <Compile Include="Services\NavigationService.cs" />
     <Compile Include="Services\SuspendAndResumeArgs.cs" />
@@ -200,6 +201,9 @@
     </Page>
   </ItemGroup>
   <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection">
+      <Version>3.1.4</Version>
+    </PackageReference>
     <PackageReference Include="Microsoft.NETCore.UniversalWindowsPlatform">
       <Version>6.2.10</Version>
     </PackageReference>

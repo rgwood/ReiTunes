@@ -5,6 +5,9 @@ using Windows.ApplicationModel.Activation;
 using Windows.UI.Xaml;
 using ReiTunes.Core.Helpers;
 using ReiPod;
+using Windows.UI.ViewManagement;
+using Windows.Foundation;
+using ReiPod.Configuration;
 
 namespace ReiTunes
 {
@@ -13,12 +16,7 @@ namespace ReiTunes
     /// </summary>
     sealed partial class App : Application
     {
-        private Lazy<ActivationService> _activationService;
-
-        private ActivationService ActivationService
-        {
-            get { return _activationService.Value; }
-        }
+        private readonly Size MainWindowSize = new Size(500, 400);
 
         /// <summary>
         /// Initializes the singleton application object.  This is the first line of authored code
@@ -28,11 +26,26 @@ namespace ReiTunes
         {
             InitializeComponent();
 
+            //ApplicationView.GetForCurrentView().SetPreferredMinSize(MainWindowSize);
+            // Close the application when the primary window closes
+            //ApplicationView.GetForCurrentView().Consolidated += App_Consolidated;
+            ApplicationView.PreferredLaunchViewSize = MainWindowSize;
+            ApplicationView.PreferredLaunchWindowingMode = ApplicationViewWindowingMode.PreferredLaunchViewSize;
+
             EnteredBackground += App_EnteredBackground;
             Resuming += App_Resuming;
+            UnhandledException += App_UnhandledException;
+        }
 
-            // Deferred execution until used. Check https://msdn.microsoft.com/library/dd642331(v=vs.110).aspx for further info on Lazy<T> class.
-            _activationService = new Lazy<ActivationService>(CreateActivationService);
+        private void App_Consolidated(ApplicationView sender, ApplicationViewConsolidatedEventArgs args)
+        {
+            throw new NotImplementedException();
+        }
+
+        private void App_UnhandledException(object sender, Windows.UI.Xaml.UnhandledExceptionEventArgs e)
+        {
+            //TODO: log here
+            throw new NotImplementedException();
         }
 
         /// <summary>
@@ -44,30 +57,25 @@ namespace ReiTunes
         {
             if (!args.PrelaunchActivated)
             {
-                await ActivationService.ActivateAsync(args);
+                await Startup.ActivateAsync(args);
             }
         }
 
         protected override async void OnActivated(IActivatedEventArgs args)
         {
-            await ActivationService.ActivateAsync(args);
-        }
-
-        private ActivationService CreateActivationService()
-        {
-            return new ActivationService(this, typeof(Player));
+            await Startup.ActivateAsync(args);
         }
 
         private async void App_EnteredBackground(object sender, EnteredBackgroundEventArgs e)
         {
             var deferral = e.GetDeferral();
-            await Singleton<SuspendAndResumeService>.Instance.SaveStateAsync();
+            await ServiceLocator.Current.GetService<SuspendAndResumeService>().SaveStateAsync();
             deferral.Complete();
         }
 
         private void App_Resuming(object sender, object e)
         {
-            Singleton<SuspendAndResumeService>.Instance.ResumeApp();
+            ServiceLocator.Current.GetService<SuspendAndResumeService>().ResumeApp();
         }
     }
 }

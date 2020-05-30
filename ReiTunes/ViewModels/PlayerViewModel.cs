@@ -1,4 +1,5 @@
 ﻿using Microsoft.Toolkit.Uwp.Helpers;
+using ReiPod.Configuration;
 using ReiPod.Helpers;
 using ReiTunes;
 using ReiTunes.Core.Helpers;
@@ -92,7 +93,7 @@ namespace ReiPod
 
         private async Task<StorageFile> DownloadLibraryFile()
         {
-            var httpService = Singleton<HttpDataService>.Instance;
+            var httpService = ServiceLocator.Current.GetService<HttpDataService>();
             var libraryFileUri = new Uri(_cloudBaseUri, _libraryFileName);
             var libraryContents = await httpService.GetStringAsync(libraryFileUri);
 

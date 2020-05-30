@@ -2,7 +2,8 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
-
+using Microsoft.Extensions.DependencyInjection;
+using ReiPod.Configuration;
 using ReiTunes.Activation;
 using ReiTunes.Core.Helpers;
 using ReiTunes.Services;
@@ -17,51 +18,38 @@ namespace ReiTunes.Services
 {
     // For more information on understanding and extending activation flow see
     // https://github.com/Microsoft/WindowsTemplateStudio/blob/master/docs/UWP/activation.md
-    internal class ActivationService
+    static internal class Startup
     {
-        private readonly App _app;
-        private readonly Type _defaultNavItem;
-        private Lazy<UIElement> _shell;
+        static private readonly ServiceCollection _serviceCollection = new ServiceCollection();
+        static private readonly Type _startupViewType = typeof(Player);
 
-        private readonly Size MainWindowSize = new Size(500, 400);
-
-        private object _lastActivationArgs;
-
-        public ActivationService(App app, Type defaultNavItem, Lazy<UIElement> shell = null)
-        {
-            _app = app;
-            _shell = shell;
-            _defaultNavItem = defaultNavItem;
-        }
-
-        public async Task ActivateAsync(object activationArgs)
+        static public async Task ActivateAsync(object activationArgs)
         {
             if (IsInteractive(activationArgs))
             {
                 // Initialize services that you need before app activation
                 // take into account that the splash screen is shown while this code runs.
-                await InitializeAsync();
+                ServiceLocator.Configure(_serviceCollection);
 
                 // Do not repeat app initialization when the Window already has content,
                 // just ensure that the window is active
                 if (Window.Current.Content == null)
                 {
-                    // Create a Shell or Frame to act as the navigation context
-                    Window.Current.Content = _shell?.Value ?? new Frame();
+                    // Create a Frame to act as the navigation context
+                    Window.Current.Content = new Frame();
                 }
             }
 
             // Depending on activationArgs one of ActivationHandlers or DefaultActivationHandler
             // will navigate to the first page
             await HandleActivationAsync(activationArgs);
-            _lastActivationArgs = activationArgs;
 
             if (IsInteractive(activationArgs))
             {
                 var activation = activationArgs as IActivatedEventArgs;
                 if (activation.PreviousExecutionState == ApplicationExecutionState.Terminated)
                 {
-                    await Singleton<SuspendAndResumeService>.Instance.RestoreSuspendAndResumeData();
+                    await ServiceLocator.Current.GetService<SuspendAndResumeService>().RestoreSuspendAndResumeData();
                 }
 
                 // Ensure the current window is active
@@ -72,23 +60,7 @@ namespace ReiTunes.Services
             }
         }
 
-        private async Task InitializeAsync()
-        {
-            ApplicationView.GetForCurrentView().SetPreferredMinSize(MainWindowSize);
-            // Close the application when the primary window closes
-            ApplicationView.GetForCurrentView().Consolidated += MainWindowClosed;
-
-            ApplicationView.PreferredLaunchViewSize = MainWindowSize;
-            ApplicationView.PreferredLaunchWindowingMode = ApplicationViewWindowingMode.PreferredLaunchViewSize;
-            await WindowManagerService.Current.InitializeAsync();
-        }
-
-        private void MainWindowClosed(ApplicationView sender, ApplicationViewConsolidatedEventArgs args)
-        {
-            _app.Exit();
-        }
-
-        private async Task HandleActivationAsync(object activationArgs)
+        static private async Task HandleActivationAsync(object activationArgs)
         {
             var activationHandler = GetActivationHandlers()
                                                 .FirstOrDefault(h => h.CanHandle(activationArgs));
@@ -100,7 +72,7 @@ namespace ReiTunes.Services
 
             if (IsInteractive(activationArgs))
             {
-                var defaultHandler = new DefaultActivationHandler(_defaultNavItem);
+                var defaultHandler = new DefaultActivationHandler(_startupViewType);
                 if (defaultHandler.CanHandle(activationArgs))
                 {
                     await defaultHandler.HandleAsync(activationArgs);
@@ -108,19 +80,19 @@ namespace ReiTunes.Services
             }
         }
 
-        private async Task StartupAsync()
+        static private async Task StartupAsync()
         {
             await WhatsNewDisplayService.ShowIfAppropriateAsync();
             await FirstRunDisplayService.ShowIfAppropriateAsync();
         }
 
-        private IEnumerable<ActivationHandler> GetActivationHandlers()
+        static private IEnumerable<ActivationHandler> GetActivationHandlers()
         {
-            yield return Singleton<SuspendAndResumeService>.Instance;
-            yield return Singleton<CommandLineActivationHandler>.Instance;
+            yield return ServiceLocator.Current.GetService<SuspendAndResumeService>();
+            yield return ServiceLocator.Current.GetService<CommandLineActivationHandler>();
         }
 
-        private bool IsInteractive(object args)
+        static private bool IsInteractive(object args)
         {
             return args is IActivatedEventArgs;
         }
