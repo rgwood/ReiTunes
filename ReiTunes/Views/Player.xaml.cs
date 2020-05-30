@@ -56,6 +56,17 @@ namespace ReiTunes
                 args.Handled = true;
             };
             KeyboardAccelerators.Add(searchAccelerator);
+            var refreshAccelerator = new KeyboardAccelerator()
+            {
+                Modifiers = Windows.System.VirtualKeyModifiers.Control,
+                Key = Windows.System.VirtualKey.R
+            };
+            refreshAccelerator.Invoked += (sender, args) =>
+            {
+                Debug.WriteLine("Refresh invoked");
+                args.Handled = true;
+            };
+            KeyboardAccelerators.Add(refreshAccelerator);
         }
 
         protected async override void OnNavigatedTo(NavigationEventArgs e)
