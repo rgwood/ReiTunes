@@ -7,8 +7,8 @@
     <ProjectGuid>{60C4497D-1BD4-40B6-96B1-1CF9CB7A9D99}</ProjectGuid>
     <OutputType>AppContainerExe</OutputType>
     <AppDesignerFolder>Properties</AppDesignerFolder>
-    <RootNamespace>ReiPod</RootNamespace>
-    <AssemblyName>ReiPod</AssemblyName>
+    <RootNamespace>ReiTunes</RootNamespace>
+    <AssemblyName>ReiTunes</AssemblyName>
     <DefaultLanguage>en-US</DefaultLanguage>
     <TargetPlatformIdentifier>UAP</TargetPlatformIdentifier>
     <TargetPlatformVersion Condition=" '$(TargetPlatformVersion)' == '' ">10.0.18362.0</TargetPlatformVersion>
