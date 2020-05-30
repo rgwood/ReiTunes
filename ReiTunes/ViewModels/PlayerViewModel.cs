@@ -1,6 +1,9 @@
-﻿using ReiPod.Helpers;
+﻿using Microsoft.Toolkit.Uwp.Helpers;
+using ReiPod.Helpers;
 using ReiTunes;
+using ReiTunes.Core.Helpers;
 using ReiTunes.Helpers;
+using ReiTunes.Services;
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
@@ -21,10 +24,12 @@ namespace ReiPod
 {
     public class PlayerViewModel : Observable
     {
+        private Uri _cloudBaseUri = new Uri("https://reitunes.blob.core.windows.net/reitunes/");
+        private const string _libraryFileName = "ReiTunesLibrary.txt";
         private IMediaPlaybackSource _source;
         private string _sourceFileName;
         private string _downloadStatus = "Download Progress Placeholder";
-
+        
         public IMediaPlaybackSource Source
         {
             get { return _source; }
@@ -66,20 +71,36 @@ namespace ReiPod
 
             if (libraryFile == null)
             {
-                //todo: download it
-                throw new NotImplementedException("Library downloading not ready yet");
+                libraryFile = await DownloadLibraryFile();
             }
 
-            var libraryString = await FileIO.ReadTextAsync((IStorageFile)libraryFile);
+            await LoadLibraryFile(libraryFile);
+        }
 
+        public async Task DownloadAndLoadLibraryFile()
+        {
+            var libraryFile = await DownloadLibraryFile();
+            await LoadLibraryFile(libraryFile);
+        }
+
+        private async Task<StorageFile> DownloadLibraryFile()
+        {
+            var httpService = Singleton<HttpDataService>.Instance;
+            var libraryFileUri = new Uri(_cloudBaseUri, _libraryFileName);
+            var libraryContents = await httpService.GetStringAsync(libraryFileUri);
+
+            var musicLib = await FileHelper.ReiTunesLibrary();
+            return await musicLib.WriteTextToFileAsync(libraryContents, 
+                _libraryFileName, CreationCollisionOption.ReplaceExisting);
+        }
+        private async Task LoadLibraryFile(IStorageItem libraryFile)
+        {
+            var libraryString = await FileIO.ReadTextAsync((StorageFile)libraryFile);
             FileTreeItems = FileTreeBuilder.ParseBlobList(libraryString);
         }
 
         public async void ChangeSource(string filePath)
         {
-            var cloudLibraryBaseUri = new Uri("https://reitunes.blob.core.windows.net/reitunes/");
-
-
             var musicLib = await FileHelper.ReiTunesLibrary();
 
             //todo: get to the right folder
@@ -105,15 +126,13 @@ namespace ReiPod
                 {
                     folder = (StorageFolder) subFolder;
                 }
-
             }
-
 
             var storageItem = await folder.TryGetItemAsync(fileName);
 
             if (storageItem == null) // file not found, download it
             {
-                var downloadUri = new Uri(cloudLibraryBaseUri, filePath);
+                var downloadUri = new Uri(_cloudBaseUri, filePath);
 
                 var downloadFile = await folder.CreateFileAsync(fileName);
                 BackgroundDownloader downloader = new BackgroundDownloader();

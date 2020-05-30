@@ -61,10 +61,10 @@ namespace ReiTunes
                 Modifiers = Windows.System.VirtualKeyModifiers.Control,
                 Key = Windows.System.VirtualKey.R
             };
-            refreshAccelerator.Invoked += (sender, args) =>
+            refreshAccelerator.Invoked += async (sender, args) =>
             {
-                Debug.WriteLine("Refresh invoked");
                 args.Handled = true;
+                await ViewModel.DownloadAndLoadLibraryFile();
             };
             KeyboardAccelerators.Add(refreshAccelerator);
         }
