@@ -20,6 +20,7 @@ using Windows.Media.Playback;
 using Windows.Networking.BackgroundTransfer;
 using Windows.Storage;
 using Windows.UI.Core;
+using Serilog;
 
 namespace ReiTunes
 {
@@ -27,6 +28,9 @@ namespace ReiTunes
     {
         private Uri _cloudBaseUri = new Uri("https://reitunes.blob.core.windows.net/reitunes/");
         private const string _libraryFileName = "ReiTunesLibrary.txt";
+
+        private readonly ILogger _logger;
+
         private IMediaPlaybackSource _source;
         private string _sourceFileName;
         private string _downloadStatus = "";
@@ -64,8 +68,9 @@ namespace ReiTunes
             set { Set(ref _downloadInProgress, value); }
         }
 
-        public PlayerViewModel()
+        public PlayerViewModel(ILogger logger)
         {
+            _logger = logger;
         }
 
         public async Task Initialize()
@@ -74,11 +79,12 @@ namespace ReiTunes
             //Source = MediaSource.CreateFromStorageFile(file);
             //SourceFileName = "AvalanchesJamie.mp3";
 
-            var library = await FileHelper.ReiTunesLibrary();
+            var library = await FileHelper.CreateLibraryFolderIfDoesntExist();
             var libraryFile = await library.TryGetItemAsync("ReiTunesLibrary.txt");
 
             if (libraryFile == null)
             {
+                _logger.Information("Library file not found, downloading...");
                 libraryFile = await DownloadLibraryFile();
             }
 
@@ -95,12 +101,14 @@ namespace ReiTunes
         {
             var httpService = ServiceLocator.Current.GetService<HttpDataService>();
             var libraryFileUri = new Uri(_cloudBaseUri, _libraryFileName);
+            _logger.Information("Downloading library file from {libraryUri}", libraryFileUri);
             var libraryContents = await httpService.GetStringAsync(libraryFileUri);
-
-            var musicLib = await FileHelper.ReiTunesLibrary();
+            _logger.Information("Finished downloading library file");
+            var musicLib = await FileHelper.CreateLibraryFolderIfDoesntExist();
             return await musicLib.WriteTextToFileAsync(libraryContents, 
                 _libraryFileName, CreationCollisionOption.ReplaceExisting);
         }
+
         private async Task LoadLibraryFile(IStorageItem libraryFile)
         {
             var libraryString = await FileIO.ReadTextAsync((StorageFile)libraryFile);
@@ -109,7 +117,7 @@ namespace ReiTunes
 
         public async void ChangeSource(string filePath)
         {
-            var musicLib = await FileHelper.ReiTunesLibrary();
+            var musicLib = await FileHelper.CreateLibraryFolderIfDoesntExist();
 
             //todo: get to the right folder
             var split = filePath.Split('/');
@@ -144,15 +152,7 @@ namespace ReiTunes
                 if (DownloadInProgress)
                     return;
 
-                var downloadUri = new Uri(_cloudBaseUri, filePath);
-
-                var downloadFile = await folder.CreateFileAsync(fileName);
-                DownloadInProgress = true;
-                BackgroundDownloader downloader = new BackgroundDownloader();
-                DownloadOperation download = downloader.CreateDownload(downloadUri, downloadFile);
-                Progress<DownloadOperation> progressCallback = new Progress<DownloadOperation>(HandleDownloadProgress);
-                await download.StartAsync().AsTask(progressCallback);
-                DownloadInProgress = false;
+                StorageFile downloadFile = await DownloadMusicFile(filePath, fileName, folder);
                 storageItem = downloadFile;
             }
 
@@ -166,6 +166,20 @@ namespace ReiTunes
                 Source = MediaSource.CreateFromStorageFile((StorageFile)storageItem);
                 SourceFileName = filePath;
             }
+        }
+
+        private async Task<StorageFile> DownloadMusicFile(string relativeFilePath, string fileName, StorageFolder folderToSaveTo)
+        {
+            _logger.Information("Downloading music file {filePath}", relativeFilePath);
+            var downloadUri = new Uri(_cloudBaseUri, relativeFilePath);
+            var downloadFile = await folderToSaveTo.CreateFileAsync(fileName);
+            DownloadInProgress = true;
+            BackgroundDownloader downloader = new BackgroundDownloader();
+            DownloadOperation download = downloader.CreateDownload(downloadUri, downloadFile);
+            Progress<DownloadOperation> progressCallback = new Progress<DownloadOperation>(HandleDownloadProgress);
+            await download.StartAsync().AsTask(progressCallback);
+            DownloadInProgress = false;
+            return downloadFile;
         }
 
         private void HandleDownloadProgress(DownloadOperation download)
