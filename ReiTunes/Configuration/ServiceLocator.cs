@@ -4,6 +4,11 @@ using Windows.UI.ViewManagement;
 using Microsoft.Extensions.DependencyInjection;
 using ReiTunes.Services;
 using ReiTunes.Activation;
+using Serilog;
+using ReiTunes.Helpers;
+using System.IO;
+using Windows.System;
+using System.Threading.Tasks;
 
 namespace ReiTunes.Configuration
 {
@@ -13,20 +18,32 @@ namespace ReiTunes.Configuration
 
         static private ServiceProvider _rootServiceProvider = null;
 
-        static public void Configure(IServiceCollection serviceCollection)
+        static public async Task Configure(IServiceCollection serviceCollection)
         {
             //TODO: add interfaces for some of these
             serviceCollection.AddSingleton<SuspendAndResumeService>();
             serviceCollection.AddSingleton<CommandLineActivationHandler>();
             serviceCollection.AddSingleton<HttpDataService>();
+
+            serviceCollection.AddSingleton<ILogger>((_) => BuildLogger());
+
             // Only ever have one player in the application
             serviceCollection.AddSingleton<PlayerViewModel>();
 
-            //serviceCollection.AddScoped<ICommonServices, CommonServices>();
-
+            //serviceCollection.AddScoped<ICommonServices, CommonServices>(); 
             //serviceCollection.AddTransient<LoginViewModel>();
 
             _rootServiceProvider = serviceCollection.BuildServiceProvider();
+        }
+
+        static private ILogger BuildLogger()
+        {
+            var cache = Windows.Storage.ApplicationData.Current.LocalCacheFolder;
+            var logFile = Path.Combine(cache.Path, "ReiTunes.txt");
+
+            return new LoggerConfiguration()
+                      .WriteTo.File(logFile, rollingInterval: RollingInterval.Day)
+                      .CreateLogger();
         }
 
         static public ServiceLocator Current
