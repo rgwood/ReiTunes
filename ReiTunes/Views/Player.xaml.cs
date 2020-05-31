@@ -7,6 +7,7 @@ using System.Runtime.InteropServices.WindowsRuntime;
 using Windows.Foundation;
 using Windows.Foundation.Collections;
 using Windows.Media.Core;
+using Windows.System;
 using Windows.Storage;
 using Windows.UI.Xaml;
 using Windows.UI.Xaml.Controls;
@@ -45,28 +46,41 @@ namespace ReiTunes
 
         private void SetUpKeyboardAccelerators()
         {
-            var searchAccelerator = new KeyboardAccelerator()
+            KeyboardAccelerator CreateAccelerator(VirtualKeyModifiers modifier, VirtualKey key,
+                TypedEventHandler<KeyboardAccelerator, KeyboardAcceleratorInvokedEventArgs> eventHandler)
             {
-                Modifiers = Windows.System.VirtualKeyModifiers.Control,
-                Key = Windows.System.VirtualKey.F
-            };
-            searchAccelerator.Invoked += (sender, args) =>
-            {
-                SearchBox.Focus(FocusState.Keyboard);
-                args.Handled = true;
-            };
-            KeyboardAccelerators.Add(searchAccelerator);
-            var refreshAccelerator = new KeyboardAccelerator()
-            {
-                Modifiers = Windows.System.VirtualKeyModifiers.Control,
-                Key = Windows.System.VirtualKey.R
-            };
-            refreshAccelerator.Invoked += async (sender, args) =>
-            {
-                args.Handled = true;
-                await ViewModel.DownloadAndLoadLibraryFile();
-            };
-            KeyboardAccelerators.Add(refreshAccelerator);
+                var ret = new KeyboardAccelerator()
+                {
+                    Modifiers = modifier,
+                    Key = key
+                };
+                ret.Invoked += eventHandler;
+                return ret;
+            }
+
+            //search accelerator
+            KeyboardAccelerators.Add(CreateAccelerator(VirtualKeyModifiers.Control, VirtualKey.F,
+                (sender, args) =>
+                {
+                    args.Handled = true;
+                    SearchBox.Focus(FocusState.Keyboard);
+                }));
+
+            //refresh accelerator
+            KeyboardAccelerators.Add(CreateAccelerator(VirtualKeyModifiers.Control, VirtualKey.R,
+                async (sender, args) =>
+                {
+                    args.Handled = true;
+                    await ViewModel.DownloadAndLoadLibraryFile();
+                }));
+
+            //open cache
+            KeyboardAccelerators.Add(CreateAccelerator(VirtualKeyModifiers.Control, VirtualKey.E,
+                async (sender, args) =>
+                {
+                    args.Handled = true;
+                    await Launcher.LaunchFolderAsync(Windows.Storage.ApplicationData.Current.LocalCacheFolder);
+                }));
         }
 
         protected async override void OnNavigatedTo(NavigationEventArgs e)
@@ -86,7 +100,7 @@ namespace ReiTunes
             if (args.Reason == AutoSuggestionBoxTextChangeReason.UserInput)
             {
                 var typedText = sender.Text;
-                
+
                 //todo: handle folders
                 var files = ViewModel.FileTreeItems.Where(i => i.Type == FileTreeItemType.File);
 
@@ -104,7 +118,7 @@ namespace ReiTunes
 
         private void SearchBox_QuerySubmitted(AutoSuggestBox sender, AutoSuggestBoxQuerySubmittedEventArgs args)
         {
-            var selection = (FileTreeItem) args.ChosenSuggestion;
+            var selection = (FileTreeItem)args.ChosenSuggestion;
             ViewModel.ChangeSource(selection.FullPath);
         }
     }
