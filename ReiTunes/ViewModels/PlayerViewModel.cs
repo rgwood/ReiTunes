@@ -31,6 +31,7 @@ namespace ReiTunes
 
         private readonly ILogger _logger;
 
+        private StorageFolder _libraryFolder;
         private IMediaPlaybackSource _source;
         private string _sourceFileName;
         private string _downloadStatus = "";
@@ -75,12 +76,8 @@ namespace ReiTunes
 
         public async Task Initialize()
         {
-            //var file = await StorageFile.GetFileFromPathAsync(@"C:\Users\reill\Music\AvalanchesJamie.mp3");
-            //Source = MediaSource.CreateFromStorageFile(file);
-            //SourceFileName = "AvalanchesJamie.mp3";
-
-            var library = await FileHelper.CreateLibraryFolderIfDoesntExist();
-            var libraryFile = await library.TryGetItemAsync("ReiTunesLibrary.txt");
+            _libraryFolder = await FileHelper.CreateLibraryFolderIfDoesntExist();
+            var libraryFile = await _libraryFolder.TryGetItemAsync("ReiTunesLibrary.txt");
 
             if (libraryFile == null)
             {
@@ -104,8 +101,7 @@ namespace ReiTunes
             _logger.Information("Downloading library file from {libraryUri}", libraryFileUri);
             var libraryContents = await httpService.GetStringAsync(libraryFileUri);
             _logger.Information("Finished downloading library file");
-            var musicLib = await FileHelper.CreateLibraryFolderIfDoesntExist();
-            return await musicLib.WriteTextToFileAsync(libraryContents, 
+            return await _libraryFolder.WriteTextToFileAsync(libraryContents, 
                 _libraryFileName, CreationCollisionOption.ReplaceExisting);
         }
 
@@ -117,14 +113,12 @@ namespace ReiTunes
 
         public async void ChangeSource(string filePath)
         {
-            var musicLib = await FileHelper.CreateLibraryFolderIfDoesntExist();
-
-            //todo: get to the right folder
+            // given a path like foo/bar/baz.txt, we need to get a StorageFolder for `bar` so we can save to it
             var split = filePath.Split('/');
             var directories = new Queue<string>(split.Take(split.Length - 1));
             var fileName = split.Last();
 
-            var folder = musicLib;
+            var folder = _libraryFolder;
 
             while(directories.Any())
             {
@@ -149,6 +143,7 @@ namespace ReiTunes
             if (storageItem == null) // file not found, download it
             {
                 // Bad things happen if we try to download a 2nd file while one is already in progress
+                // TODO: make this a proper lock
                 if (DownloadInProgress)
                     return;
 
