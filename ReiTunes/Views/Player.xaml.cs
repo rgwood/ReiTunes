@@ -44,6 +44,67 @@ namespace ReiTunes
             SetUpKeyboardAccelerators();
         }
 
+
+
+        private void ToggleMediaPlaybackState()
+        {
+            var mediaPlayer = musicPlayer.MediaPlayer;
+            var currState = mediaPlayer.PlaybackSession.PlaybackState;
+            if (currState == MediaPlaybackState.Playing)
+            {
+                mediaPlayer.Pause();
+            }
+            else if (currState == MediaPlaybackState.Paused || currState == MediaPlaybackState.None)
+            {
+                mediaPlayer.Play();
+            }
+        }
+
+        protected async override void OnNavigatedTo(NavigationEventArgs e)
+        {
+            base.OnNavigatedTo(e);
+            await ViewModel.Initialize();
+        }
+
+        private void OpenSelectedFileTreeItem(object sender = null, RoutedEventArgs e = null)
+        {
+            var selected = (FileTreeItem)FileTreeView.SelectedItem;
+            ViewModel.ChangeSource(selected?.FullPath);
+        }
+
+        private void SearchBox_TextChanged(AutoSuggestBox sender, AutoSuggestBoxTextChangedEventArgs args)
+        {
+            if (args.Reason == AutoSuggestionBoxTextChangeReason.UserInput)
+            {
+                var typedText = sender.Text;
+
+                //todo: handle folders
+                var files = ViewModel.FileTreeItems.Where(i => i.Type == FileTreeItemType.File);
+
+                var fuzzyMatchResults =
+                    from file in files
+                    let fuzzyResult = FuzzyMatcher.FuzzyMatch(file.FullPath, typedText)
+                    where fuzzyResult.isMatch
+                    orderby fuzzyResult.score descending
+                    select file;
+
+                //Set the ItemsSource to be your filtered dataset
+                sender.ItemsSource = fuzzyMatchResults.ToList();
+            }
+        }
+
+        private void SearchBox_QuerySubmitted(AutoSuggestBox sender, AutoSuggestBoxQuerySubmittedEventArgs args)
+        {
+            var selection = (FileTreeItem)args.ChosenSuggestion;
+            ViewModel.ChangeSource(selection?.FullPath);
+        }
+
+        // This is where I set up keyboard accelerators and do some ridiculous hacks 
+        // to get keyboard control+focus working the way I want it.
+        // Space should ALWAYS toggle playback, unless the search box has focus.
+        // Escape should clear+exit the search box.
+        // Enter should start playing a file when in the file view
+        #region KeyboardStuff
         private void SetUpKeyboardAccelerators()
         {
             KeyboardAccelerator CreateAccelerator(VirtualKeyModifiers modifier, VirtualKey key,
@@ -83,43 +144,57 @@ namespace ReiTunes
                 }));
         }
 
-        protected async override void OnNavigatedTo(NavigationEventArgs e)
+        private void Page_Loaded(object sender, RoutedEventArgs e)
         {
-            base.OnNavigatedTo(e);
-            await ViewModel.Initialize();
+            Window.Current.CoreWindow.KeyDown += CoreWindow_KeyDown;
+            SearchBox.KeyDown += SearchBox_KeyDown;
+            SearchBox.PreviewKeyDown += SearchBox_PreviewKeyDown;
+            FileTreeView.PreviewKeyDown += FileTreeView_PreviewKeyDown;
         }
 
-        private void TreeViewItem_DoubleTapped(object sender, DoubleTappedRoutedEventArgs e)
+        private void FileTreeView_PreviewKeyDown(object sender, KeyRoutedEventArgs args)
         {
-            var selected = (FileTreeItem)FileTreeView.SelectedItem;
-            ViewModel.ChangeSource(selected.FullPath);
+            if (args.Key == VirtualKey.Enter)
+                OpenSelectedFileTreeItem();
         }
 
-        private void SearchBox_TextChanged(AutoSuggestBox sender, AutoSuggestBoxTextChangedEventArgs args)
+        private void SearchBox_PreviewKeyDown(object sender, KeyRoutedEventArgs args)
         {
-            if (args.Reason == AutoSuggestionBoxTextChangeReason.UserInput)
+            if (args.Key == VirtualKey.Escape)
             {
-                var typedText = sender.Text;
-
-                //todo: handle folders
-                var files = ViewModel.FileTreeItems.Where(i => i.Type == FileTreeItemType.File);
-
-                var fuzzyMatchResults =
-                    from file in files
-                    let fuzzyResult = FuzzyMatcher.FuzzyMatch(file.FullPath, typedText)
-                    where fuzzyResult.isMatch
-                    orderby fuzzyResult.score descending
-                    select file;
-
-                //Set the ItemsSource to be your filtered dataset
-                sender.ItemsSource = fuzzyMatchResults.ToList();
+                SearchBox.Text = "";
+                // hack: this just happens to move to the scrubbing control
+                // TODO: find a way of changing focus to the scrubbing control that does
+                // not rely on it being the next tab stop
+                FocusManager.TryMoveFocus(FocusNavigationDirection.Next);
             }
         }
 
-        private void SearchBox_QuerySubmitted(AutoSuggestBox sender, AutoSuggestBoxQuerySubmittedEventArgs args)
+        private void SearchBox_KeyDown(object sender, KeyRoutedEventArgs args)
         {
-            var selection = (FileTreeItem)args.ChosenSuggestion;
-            ViewModel.ChangeSource(selection.FullPath);
+            if (args.Key == VirtualKey.Space)
+            {
+                args.Handled = true;
+            }
         }
+
+        private void CoreWindow_KeyDown(Windows.UI.Core.CoreWindow sender, Windows.UI.Core.KeyEventArgs args)
+        {
+            if (args.VirtualKey == VirtualKey.Space)
+            {
+                var focusedCtrl = FocusManager.GetFocusedElement();
+                if (!(focusedCtrl is TextBox))
+                {
+                    ToggleMediaPlaybackState();
+                }
+            }
+        }
+
+        private void Page_Unloaded(object sender, RoutedEventArgs e)
+        {
+            Window.Current.CoreWindow.KeyDown -= CoreWindow_KeyDown;
+        }
+        #endregion
+
     }
 }

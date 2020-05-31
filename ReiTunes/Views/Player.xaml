@@ -7,11 +7,13 @@
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     xmlns:winui="using:Microsoft.UI.Xaml.Controls"
     Background="{ThemeResource ApplicationPageBackgroundThemeBrush}"
+    Loaded="Page_Loaded"
+    Unloaded="Page_Unloaded"
     mc:Ignorable="d">
 
-    <!--<Page.Resources>
-        <StaticResource x:Key="MediaTransportControlsPanelBackground" ResourceKey="ApplicationPageBackgroundThemeBrush" />
-    </Page.Resources>-->
+    <Page.Resources>
+        <ResourceDictionary Source="../Styles/MediaTransportControls.xaml" />
+    </Page.Resources>
     <Grid>
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
@@ -51,7 +53,8 @@
                     IsFastRewindButtonVisible="True"
                     IsFastRewindEnabled="True"
                     IsFullWindowButtonVisible="False"
-                    IsZoomButtonVisible="False" />
+                    IsZoomButtonVisible="False"
+                    Style="{StaticResource CustomMediaTransportControlsStyle}" />
             </MediaPlayerElement.TransportControls>
         </MediaPlayerElement>
         <TextBlock
@@ -65,7 +68,7 @@
             ItemsSource="{x:Bind ViewModel.FileTreeItems, Mode=OneWay}">
             <winui:TreeView.ItemTemplate>
                 <DataTemplate x:DataType="local:FileTreeItem">
-                    <winui:TreeViewItem DoubleTapped="TreeViewItem_DoubleTapped" ItemsSource="{x:Bind Children}">
+                    <winui:TreeViewItem DoubleTapped="OpenSelectedFileTreeItem" ItemsSource="{x:Bind Children}">
                         <TextBlock Text="{x:Bind Name}" />
                     </winui:TreeViewItem>
                 </DataTemplate>
