@@ -1,18 +1,12 @@
 ﻿using Microsoft.Toolkit.Uwp.Helpers;
 using ReiTunes.Configuration;
 using ReiTunes.Helpers;
-using ReiTunes;
-using ReiTunes.Core.Helpers;
-using ReiTunes.Helpers;
 using ReiTunes.Services;
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
-using System.ComponentModel;
 using System.IO;
 using System.Linq;
-using System.Runtime.CompilerServices;
-using System.Text;
 using System.Threading.Tasks;
 using Windows.ApplicationModel.Core;
 using Windows.Media.Core;
@@ -113,6 +107,9 @@ namespace ReiTunes
 
         public async void ChangeSource(string filePath)
         {
+            if (filePath == null)
+                return;
+
             // given a path like foo/bar/baz.txt, we need to get a StorageFolder for `bar` so we can save to it
             var split = filePath.Split('/');
             var directories = new Queue<string>(split.Take(split.Length - 1));
