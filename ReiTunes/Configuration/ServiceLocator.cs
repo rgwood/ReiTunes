@@ -9,6 +9,7 @@ using ReiTunes.Helpers;
 using System.IO;
 using Windows.System;
 using System.Threading.Tasks;
+using ReiTunes.Logging;
 
 namespace ReiTunes.Configuration
 {
@@ -25,7 +26,7 @@ namespace ReiTunes.Configuration
             serviceCollection.AddSingleton<CommandLineActivationHandler>();
             serviceCollection.AddSingleton<HttpDataService>();
 
-            serviceCollection.AddSingleton<ILogger>((_) => BuildLogger());
+            serviceCollection.AddSingleton<ILogger>((_) => LoggingFactory.BuildLogger());
 
             // Only ever have one player in the application
             serviceCollection.AddSingleton<PlayerViewModel>();
@@ -36,15 +37,7 @@ namespace ReiTunes.Configuration
             _rootServiceProvider = serviceCollection.BuildServiceProvider();
         }
 
-        static private ILogger BuildLogger()
-        {
-            var cache = Windows.Storage.ApplicationData.Current.LocalCacheFolder;
-            var logFile = Path.Combine(cache.Path, "ReiTunes.txt");
 
-            return new LoggerConfiguration()
-                      .WriteTo.File(logFile, rollingInterval: RollingInterval.Day)
-                      .CreateLogger();
-        }
 
         static public ServiceLocator Current
         {
