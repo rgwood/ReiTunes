@@ -29,7 +29,7 @@ namespace ReiTunes.Services
             {
                 // Initialize services that you need before app activation
                 // take into account that the splash screen is shown while this code runs.
-                ServiceLocator.Configure(_serviceCollection);
+                await ServiceLocator.Configure(_serviceCollection);
 
                 // Do not repeat app initialization when the Window already has content,
                 // just ensure that the window is active
