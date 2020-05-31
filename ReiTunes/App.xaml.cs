@@ -7,6 +7,7 @@ using ReiTunes.Core.Helpers;
 using Windows.UI.ViewManagement;
 using Windows.Foundation;
 using ReiTunes.Configuration;
+using Serilog;
 
 namespace ReiTunes
 {
@@ -43,8 +44,8 @@ namespace ReiTunes
 
         private void App_UnhandledException(object sender, Windows.UI.Xaml.UnhandledExceptionEventArgs e)
         {
-            //TODO: log here
-            throw new NotImplementedException();
+            var logger = ServiceLocator.Current.GetService<ILogger>();
+            logger.Fatal("Unhandled exception '{Message}': {Exception}", e.Message, e.Exception);
         }
 
         /// <summary>
