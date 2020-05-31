@@ -27,9 +27,7 @@ namespace ReiTunes.Services
         {
             if (IsInteractive(activationArgs))
             {
-                // Initialize services that you need before app activation
-                // take into account that the splash screen is shown while this code runs.
-                await ServiceLocator.Configure(_serviceCollection);
+                ServiceLocator.Configure(_serviceCollection);
 
                 // Do not repeat app initialization when the Window already has content,
                 // just ensure that the window is active

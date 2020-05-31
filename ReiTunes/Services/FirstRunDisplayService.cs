@@ -15,7 +15,10 @@ namespace ReiTunes.Services
         internal static async Task ShowIfAppropriateAsync()
         {
             await CoreApplication.MainView.CoreWindow.Dispatcher.RunAsync(
+                // re-enable when we actually start using this feature
+#pragma warning disable CS1998 // Async method lacks 'await' operators and will run synchronously
                 CoreDispatcherPriority.Normal, async () =>
+#pragma warning restore CS1998 // Async method lacks 'await' operators and will run synchronously
                 {
                     if (SystemInformation.IsFirstRun && !shown)
                     {

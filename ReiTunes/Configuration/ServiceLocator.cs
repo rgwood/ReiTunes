@@ -19,7 +19,7 @@ namespace ReiTunes.Configuration
 
         static private ServiceProvider _rootServiceProvider = null;
 
-        static public async Task Configure(IServiceCollection serviceCollection)
+        static public void Configure(IServiceCollection serviceCollection)
         {
             //TODO: add interfaces for some of these
             serviceCollection.AddSingleton<SuspendAndResumeService>();
