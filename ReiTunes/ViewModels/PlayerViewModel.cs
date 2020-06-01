@@ -202,5 +202,40 @@ namespace ReiTunes
                 });
         }
 
+        //Todo: cache this if it gets slow
+        public IEnumerable<FileTreeItem> FlattenedFileList()
+        {
+            var ret = new List<FileTreeItem>();
+            foreach (var item in FileTreeItems)
+            {
+                ret.AddRange(FlattenFileTreeItem(item));
+            }
+
+            return ret;
+        }
+
+        //if it's a folder, return its contents. If it's a file, just return it
+        private IEnumerable<FileTreeItem> FlattenFileTreeItem(FileTreeItem item)
+        {
+            var ret = new List<FileTreeItem>();
+
+            switch (item.Type)
+            {
+                case FileTreeItemType.Folder:
+                    foreach (var child in item.Children)
+                    {
+                        ret.AddRange(FlattenFileTreeItem(child));
+                    }
+                    break;
+                case FileTreeItemType.File:
+                    ret.Add(item);
+                    break;
+                default:
+                    throw new NotSupportedException();
+            }
+
+            return ret;
+        }
+
     }
 }

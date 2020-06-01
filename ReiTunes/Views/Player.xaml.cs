@@ -79,7 +79,7 @@ namespace ReiTunes
                 var typedText = sender.Text;
 
                 //todo: handle folders
-                var files = ViewModel.FileTreeItems.Where(i => i.Type == FileTreeItemType.File);
+                var files = ViewModel.FlattenedFileList().Where(i => i.Type == FileTreeItemType.File);
 
                 var fuzzyMatchResults =
                     from file in files
