@@ -47,7 +47,6 @@ namespace ReiTunes.AzureFunctions
             }
             return storageConnectionString;
         }
-            
 
         static async Task<string> GenerateLibrary(string connectionString, ILogger log)
         {
