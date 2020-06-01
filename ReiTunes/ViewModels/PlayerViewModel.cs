@@ -2,6 +2,7 @@
 using ReiTunes.Configuration;
 using ReiTunes.Helpers;
 using ReiTunes.Services;
+using Serilog;
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
@@ -14,7 +15,6 @@ using Windows.Media.Playback;
 using Windows.Networking.BackgroundTransfer;
 using Windows.Storage;
 using Windows.UI.Core;
-using Serilog;
 
 namespace ReiTunes
 {
@@ -31,7 +31,7 @@ namespace ReiTunes
         private string _sourceFileName;
         private string _downloadStatus = "";
         private bool _downloadInProgress = false;
-        
+
         public IMediaPlaybackSource Source
         {
             get { return _source; }
@@ -95,7 +95,7 @@ namespace ReiTunes
             _logger.Information("Downloading library file from {libraryUri}", _libraryFileUri);
             var libraryContents = await httpService.GetStringAsync(_libraryFileUri);
             _logger.Information("Finished downloading library file");
-            return await _libraryFolder.WriteTextToFileAsync(libraryContents, 
+            return await _libraryFolder.WriteTextToFileAsync(libraryContents,
                 _libraryFileName, CreationCollisionOption.ReplaceExisting);
         }
 
@@ -117,21 +117,21 @@ namespace ReiTunes
 
             var folder = _libraryFolder;
 
-            while(directories.Any())
+            while (directories.Any())
             {
                 var curr = directories.Dequeue();
                 var subFolder = await folder.TryGetItemAsync(curr);
-                if(subFolder == null)
+                if (subFolder == null)
                 {
                     folder = await folder.CreateFolderAsync(curr);
                 }
-                else if(!subFolder.IsOfType(StorageItemTypes.Folder))
+                else if (!subFolder.IsOfType(StorageItemTypes.Folder))
                 {
                     throw new IOException($"Unexpected file found with name '{curr}'");
                 }
                 else // we found a folder that already exists
                 {
-                    folder = (StorageFolder) subFolder;
+                    folder = (StorageFolder)subFolder;
                 }
             }
 
@@ -182,7 +182,7 @@ namespace ReiTunes
             BackgroundDownloadProgress progress = download.Progress;
 
             string message = "";
-            if(progress.BytesReceived == progress.TotalBytesToReceive)
+            if (progress.BytesReceived == progress.TotalBytesToReceive)
             {
                 message = "Download finished";
             }
@@ -227,15 +227,16 @@ namespace ReiTunes
                         ret.AddRange(FlattenFileTreeItem(child));
                     }
                     break;
+
                 case FileTreeItemType.File:
                     ret.Add(item);
                     break;
+
                 default:
                     throw new NotSupportedException();
             }
 
             return ret;
         }
-
     }
 }

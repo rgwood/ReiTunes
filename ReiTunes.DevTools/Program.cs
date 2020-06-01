@@ -1,16 +1,16 @@
-﻿using System;
+﻿using Azure.Storage.Blobs;
+using Azure.Storage.Blobs.Models;
+using ReiTunes.Core;
+using System;
 using System.IO;
 using System.Text;
 using System.Threading.Tasks;
-using Azure.Storage.Blobs;
-using Azure.Storage.Blobs.Models;
-using ReiTunes.Core;
 
 namespace ReiTunes.DevTools
 {
-    class Program
+    internal class Program
     {
-        static async Task Main(string[] args)
+        private static async Task Main(string[] args)
         {
             // setx AZURE_STORAGE_CONNECTION_STRING "<yourconnectionstring>"
             var connectionString = Environment.GetEnvironmentVariable("AZURE_STORAGE_CONNECTION_STRING");
@@ -21,7 +21,7 @@ namespace ReiTunes.DevTools
             Console.WriteLine("finished writing");
         }
 
-        static async Task<string> GenerateLibrary(string connectionString)
+        private static async Task<string> GenerateLibrary(string connectionString)
         {
             var ret = new StringBuilder();
             BlobServiceClient blobServiceClient = new BlobServiceClient(connectionString);
@@ -35,7 +35,7 @@ namespace ReiTunes.DevTools
             return ret.ToString();
         }
 
-        static async Task WriteLibrary(string connectionString, string libraryContents)
+        private static async Task WriteLibrary(string connectionString, string libraryContents)
         {
             BlobServiceClient blobServiceClient = new BlobServiceClient(connectionString);
             BlobContainerClient containerClient = blobServiceClient.GetBlobContainerClient(Constants.LibraryContainerName);
@@ -47,7 +47,6 @@ namespace ReiTunes.DevTools
             }
         }
 
-
         public static Stream GenerateStreamFromString(string s)
         {
             var stream = new MemoryStream();
@@ -57,6 +56,5 @@ namespace ReiTunes.DevTools
             stream.Position = 0;
             return stream;
         }
-
     }
 }

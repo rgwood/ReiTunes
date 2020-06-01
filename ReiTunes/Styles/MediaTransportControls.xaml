@@ -4,10 +4,10 @@
     Without that change, it's really easy for buttons to get keyboard focus and then be
     activated by the spacebar - which is a huge PITA in a music player, we want space to
     be consistently bound to play/pause.
-    
+
     TODO: it is possible to override the IsTabStop behaviour on a few buttons without cloning the
     entire template?
-    
+
     C:\Program Files (x86)\Windows Kits\10\DesignTime\CommonConfiguration\Neutral\UAP\10.0.19041.0\Generic\generic.xaml
 -->
 <ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">

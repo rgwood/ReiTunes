@@ -1,31 +1,30 @@
 // Default URL for triggering event grid function in the local environment.
 // http://localhost:7071/runtime/webhooks/EventGrid?functionName={functionname}
-using System;
-using Microsoft.Azure.WebJobs;
-using Microsoft.Azure.WebJobs.Host;
+using Azure.Storage.Blobs;
+using Azure.Storage.Blobs.Models;
 using Microsoft.Azure.EventGrid.Models;
+using Microsoft.Azure.WebJobs;
 using Microsoft.Azure.WebJobs.Extensions.EventGrid;
 using Microsoft.Extensions.Logging;
 using ReiTunes.Core;
-using System.Threading.Tasks;
-using System.Text;
-using Azure.Storage.Blobs;
-using Azure.Storage.Blobs.Models;
+using System;
 using System.IO;
+using System.Text;
+using System.Threading.Tasks;
 
 namespace ReiTunes.AzureFunctions
 {
     public static class RegenerateLibraryFile
     {
         [FunctionName("RegenerateLibraryFile")]
-        public static async Task Run([EventGridTrigger]EventGridEvent eventGridEvent, ILogger log)
+        public static async Task Run([EventGridTrigger] EventGridEvent eventGridEvent, ILogger log)
         {
             log.LogInformation(eventGridEvent.Data.ToString());
 
             //Doesn't really matter what the event is, if anything in music changes we regenerate the library
             //example subject: "/blobServices/default/containers/test-container/blobs/new-file.txt",
             var container = eventGridEvent.Subject.Split("/")[4];
-            if(container.Equals(Constants.MusicContainerName, StringComparison.OrdinalIgnoreCase))
+            if (container.Equals(Constants.MusicContainerName, StringComparison.OrdinalIgnoreCase))
             {
                 log.LogInformation($"Change detected in container {container}");
                 var storageConnectionString = GetStorageConnectionString();
@@ -38,7 +37,7 @@ namespace ReiTunes.AzureFunctions
             }
         }
 
-        static string GetStorageConnectionString()
+        private static string GetStorageConnectionString()
         {
             var storageConnectionString = Environment.GetEnvironmentVariable("ReiTunesBlobStorageConnectionString");
             if (storageConnectionString == null)
@@ -48,7 +47,7 @@ namespace ReiTunes.AzureFunctions
             return storageConnectionString;
         }
 
-        static async Task<string> GenerateLibrary(string connectionString, ILogger log)
+        private static async Task<string> GenerateLibrary(string connectionString, ILogger log)
         {
             var ret = new StringBuilder();
             BlobServiceClient blobServiceClient = new BlobServiceClient(connectionString);
@@ -63,7 +62,7 @@ namespace ReiTunes.AzureFunctions
             return ret.ToString();
         }
 
-        static async Task WriteLibrary(string connectionString, string libraryContents, ILogger log)
+        private static async Task WriteLibrary(string connectionString, string libraryContents, ILogger log)
         {
             BlobServiceClient blobServiceClient = new BlobServiceClient(connectionString);
             BlobContainerClient containerClient = blobServiceClient.GetBlobContainerClient(Constants.LibraryContainerName);
@@ -76,7 +75,6 @@ namespace ReiTunes.AzureFunctions
 
             log.LogInformation($"Successfully wrote library to {Constants.LibraryFileName}/{Constants.LibraryFileName}");
         }
-
 
         public static Stream GenerateStreamFromString(string s)
         {

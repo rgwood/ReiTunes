@@ -1,8 +1,6 @@
-﻿using System;
+﻿using Microsoft.Toolkit.Uwp.Helpers;
+using System;
 using System.Threading.Tasks;
-
-using Microsoft.Toolkit.Uwp.Helpers;
-
 using Windows.ApplicationModel.Core;
 using Windows.UI.Core;
 

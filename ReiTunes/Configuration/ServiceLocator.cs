@@ -1,15 +1,11 @@
-﻿using System;
+﻿using Microsoft.Extensions.DependencyInjection;
+using ReiTunes.Activation;
+using ReiTunes.Logging;
+using ReiTunes.Services;
+using Serilog;
+using System;
 using System.Collections.Concurrent;
 using Windows.UI.ViewManagement;
-using Microsoft.Extensions.DependencyInjection;
-using ReiTunes.Services;
-using ReiTunes.Activation;
-using Serilog;
-using ReiTunes.Helpers;
-using System.IO;
-using Windows.System;
-using System.Threading.Tasks;
-using ReiTunes.Logging;
 
 namespace ReiTunes.Configuration
 {
@@ -31,13 +27,11 @@ namespace ReiTunes.Configuration
             // Only ever have one player in the application
             serviceCollection.AddSingleton<PlayerViewModel>();
 
-            //serviceCollection.AddScoped<ICommonServices, CommonServices>(); 
+            //serviceCollection.AddScoped<ICommonServices, CommonServices>();
             //serviceCollection.AddTransient<LoginViewModel>();
 
             _rootServiceProvider = serviceCollection.BuildServiceProvider();
         }
-
-
 
         static public ServiceLocator Current
         {
@@ -79,6 +73,7 @@ namespace ReiTunes.Configuration
         }
 
         #region Dispose
+
         public void Dispose()
         {
             Dispose(true);
@@ -95,6 +90,7 @@ namespace ReiTunes.Configuration
                 }
             }
         }
-        #endregion
+
+        #endregion Dispose
     }
 }

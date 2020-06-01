@@ -1,8 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Text;
-
-namespace ReiTunes.Core
+﻿namespace ReiTunes.Core
 {
     public static class Constants
     {

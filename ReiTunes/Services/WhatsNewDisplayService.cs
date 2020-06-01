@@ -1,6 +1,6 @@
-﻿using System;
+﻿using Microsoft.Toolkit.Uwp.Helpers;
+using System;
 using System.Threading.Tasks;
-using Microsoft.Toolkit.Uwp.Helpers;
 using Windows.ApplicationModel.Core;
 using Windows.UI.Core;
 
@@ -15,9 +15,9 @@ namespace ReiTunes.Services
         {
             await CoreApplication.MainView.CoreWindow.Dispatcher.RunAsync(
                 // re-enable when we actually start using this feature
-                #pragma warning disable CS1998 // Async method lacks 'await' operators and will run synchronously
+#pragma warning disable CS1998 // Async method lacks 'await' operators and will run synchronously
                 CoreDispatcherPriority.Normal, async () =>
-                #pragma warning restore CS1998 // Async method lacks 'await' operators and will run synchronously
+#pragma warning restore CS1998 // Async method lacks 'await' operators and will run synchronously
                 {
                     if (SystemInformation.IsAppUpdated && !shown)
                     {

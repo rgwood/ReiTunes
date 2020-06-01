@@ -1,13 +1,12 @@
-﻿using ReiTunes.Services;
+﻿using ReiTunes.Configuration;
+using ReiTunes.Services;
+using Serilog;
 using System;
 using Windows.ApplicationModel;
 using Windows.ApplicationModel.Activation;
-using Windows.UI.Xaml;
-using ReiTunes.Core.Helpers;
-using Windows.UI.ViewManagement;
 using Windows.Foundation;
-using ReiTunes.Configuration;
-using Serilog;
+using Windows.UI.ViewManagement;
+using Windows.UI.Xaml;
 
 namespace ReiTunes
 {

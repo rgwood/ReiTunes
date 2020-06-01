@@ -1,5 +1,4 @@
-﻿
-using System.Collections.ObjectModel;
+﻿using System.Collections.ObjectModel;
 using System.ComponentModel;
 
 namespace ReiTunes
@@ -7,12 +6,13 @@ namespace ReiTunes
     public class FileTreeItem : INotifyPropertyChanged
     {
         public event PropertyChangedEventHandler PropertyChanged;
+
         public string Name { get; set; }
         public string FullPath { get; set; }
         public FileTreeItemType Type { get; set; }
         private ObservableCollection<FileTreeItem> _children;
 
-        public FileTreeItem(string fileName, string fullPath,  FileTreeItemType type = FileTreeItemType.File)
+        public FileTreeItem(string fileName, string fullPath, FileTreeItemType type = FileTreeItemType.File)
         {
             Name = fileName;
             FullPath = fullPath;
@@ -36,6 +36,7 @@ namespace ReiTunes
         }
 
         private bool m_isExpanded;
+
         public bool IsExpanded
         {
             get { return m_isExpanded; }
@@ -50,6 +51,7 @@ namespace ReiTunes
         }
 
         private bool m_isSelected;
+
         public bool IsSelected
         {
             get { return m_isSelected; }
@@ -62,7 +64,6 @@ namespace ReiTunes
                     NotifyPropertyChanged("IsSelected");
                 }
             }
-
         }
 
         private void NotifyPropertyChanged(string propertyName)
