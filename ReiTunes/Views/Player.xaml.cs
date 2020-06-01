@@ -1,30 +1,14 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Diagnostics;
-using System.IO;
+﻿using ReiTunes.Configuration;
+using ReiTunes.Core.Helpers;
+using System;
 using System.Linq;
-using System.Runtime.InteropServices.WindowsRuntime;
 using Windows.Foundation;
-using Windows.Foundation.Collections;
-using Windows.Media.Core;
+using Windows.Media.Playback;
 using Windows.System;
-using Windows.Storage;
 using Windows.UI.Xaml;
 using Windows.UI.Xaml.Controls;
-using Windows.UI.Xaml.Controls.Primitives;
-using Windows.UI.Xaml.Data;
 using Windows.UI.Xaml.Input;
-using Windows.UI.Xaml.Media;
 using Windows.UI.Xaml.Navigation;
-using Windows.Media.Playback;
-using Windows.UI.WindowManagement;
-using Windows.UI.Xaml.Hosting;
-using System.Threading.Tasks;
-using System.Collections.ObjectModel;
-using Windows.UI.ViewManagement;
-using ReiTunes;
-using ReiTunes.Core.Helpers;
-using ReiTunes.Configuration;
 
 // The Blank Page item template is documented at https://go.microsoft.com/fwlink/?LinkId=402352&clcid=0x409
 
@@ -43,8 +27,6 @@ namespace ReiTunes
             ViewModel = ServiceLocator.Current.GetService<PlayerViewModel>();
             SetUpKeyboardAccelerators();
         }
-
-
 
         private void ToggleMediaPlaybackState()
         {
@@ -98,12 +80,14 @@ namespace ReiTunes
             ViewModel.ChangeSource(selection?.FullPath);
         }
 
-        // This is where I set up keyboard accelerators and do some ridiculous hacks 
+        // This is where I set up keyboard accelerators and do some ridiculous hacks
         // to get keyboard control+focus working the way I want it.
         // Space should ALWAYS toggle playback, unless the search box has focus.
         // Escape should clear+exit the search box.
         // Enter should start playing a file when in the file view
+
         #region KeyboardStuff
+
         private void SetUpKeyboardAccelerators()
         {
             KeyboardAccelerator CreateAccelerator(VirtualKeyModifiers modifier, VirtualKey key,
@@ -193,7 +177,7 @@ namespace ReiTunes
         {
             Window.Current.CoreWindow.KeyDown -= CoreWindow_KeyDown;
         }
-        #endregion
 
+        #endregion KeyboardStuff
     }
 }
