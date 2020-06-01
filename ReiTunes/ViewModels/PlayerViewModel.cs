@@ -20,8 +20,9 @@ namespace ReiTunes
 {
     public class PlayerViewModel : Observable
     {
-        private Uri _cloudBaseUri = new Uri("https://reitunes.blob.core.windows.net/reitunes/");
+        private Uri _cloudBaseUri = new Uri("https://reitunes.blob.core.windows.net/music/");
         private const string _libraryFileName = "ReiTunesLibrary.txt";
+        private Uri _libraryFileUri = new Uri("https://reitunes.blob.core.windows.net/library/" + _libraryFileName);
 
         private readonly ILogger _logger;
 
@@ -91,9 +92,8 @@ namespace ReiTunes
         private async Task<StorageFile> DownloadLibraryFile()
         {
             var httpService = ServiceLocator.Current.GetService<HttpDataService>();
-            var libraryFileUri = new Uri(_cloudBaseUri, _libraryFileName);
-            _logger.Information("Downloading library file from {libraryUri}", libraryFileUri);
-            var libraryContents = await httpService.GetStringAsync(libraryFileUri);
+            _logger.Information("Downloading library file from {libraryUri}", _libraryFileUri);
+            var libraryContents = await httpService.GetStringAsync(_libraryFileUri);
             _logger.Information("Finished downloading library file");
             return await _libraryFolder.WriteTextToFileAsync(libraryContents, 
                 _libraryFileName, CreationCollisionOption.ReplaceExisting);
