@@ -2,6 +2,7 @@
 using ReiTunes.Core.Helpers;
 using System;
 using System.Linq;
+using System.Threading.Tasks;
 using Windows.Foundation;
 using Windows.Media.Playback;
 using Windows.System;
@@ -93,11 +94,7 @@ namespace ReiTunes
             KeyboardAccelerator CreateAccelerator(VirtualKeyModifiers modifier, VirtualKey key,
                 TypedEventHandler<KeyboardAccelerator, KeyboardAcceleratorInvokedEventArgs> eventHandler)
             {
-                var ret = new KeyboardAccelerator()
-                {
-                    Modifiers = modifier,
-                    Key = key
-                };
+                var ret = new KeyboardAccelerator() { Modifiers = modifier, Key = key };
                 ret.Invoked += eventHandler;
                 return ret;
             }
@@ -161,7 +158,7 @@ namespace ReiTunes
             }
         }
 
-        private void CoreWindow_KeyDown(Windows.UI.Core.CoreWindow sender, Windows.UI.Core.KeyEventArgs args)
+        private async void CoreWindow_KeyDown(Windows.UI.Core.CoreWindow sender, Windows.UI.Core.KeyEventArgs args)
         {
             if (args.VirtualKey == VirtualKey.Space)
             {
@@ -170,6 +167,11 @@ namespace ReiTunes
                 {
                     ToggleMediaPlaybackState();
                 }
+            }
+            //Not sure why but I can't get this to work in an accelerator, so it goes here
+            else if (args.VirtualKey == VirtualKey.F5)
+            {
+                await ViewModel.DownloadAndLoadLibraryFile();
             }
         }
 
