@@ -63,7 +63,7 @@
             Text="{x:Bind ViewModel.DownloadStatus, Mode=OneWay}"
             Visibility="{x:Bind ViewModel.DownloadInProgress, Mode=OneWay}" />
         <winui:TreeView
-            Name="FileTreeView"
+            x:Name="FileTreeView"
             Grid.Row="4"
             ItemsSource="{x:Bind ViewModel.FileTreeItems, Mode=OneWay}">
             <winui:TreeView.ItemTemplate>
