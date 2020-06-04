@@ -83,6 +83,7 @@ namespace ReiTunes
             await LoadLibraryFile(libraryFile);
         }
 
+        //TODO: this should visually indicate that the file is being downloaded
         public async Task DownloadAndLoadLibraryFile()
         {
             var libraryFile = await DownloadLibraryFile();
