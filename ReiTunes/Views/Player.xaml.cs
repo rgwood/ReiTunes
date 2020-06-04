@@ -1,6 +1,7 @@
 ﻿using ReiTunes.Configuration;
 using ReiTunes.Core.Helpers;
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using Windows.Foundation;
@@ -69,6 +70,15 @@ namespace ReiTunes
                     where fuzzyResult.isMatch
                     orderby fuzzyResult.score descending
                     select file;
+
+                //short-circuit if the result hasn't changed, to avoid slow rerenders.
+                //TODO: do a more accurate check than just comparing the item count
+                if (sender.ItemsSource != null)
+                {
+                    var existingItems = (List<FileTreeItem>)sender.ItemsSource;
+                    if (existingItems.Count == fuzzyMatchResults.Count())
+                        return;
+                }
 
                 //Set the ItemsSource to be your filtered dataset
                 sender.ItemsSource = fuzzyMatchResults.ToList();
