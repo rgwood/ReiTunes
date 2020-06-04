@@ -12,7 +12,12 @@
     mc:Ignorable="d">
 
     <Page.Resources>
-        <ResourceDictionary Source="../Styles/MediaTransportControls.xaml" />
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="../Styles/MediaTransportControls.xaml" />
+                <ResourceDictionary Source="ms-appx:///Microsoft.UI.Xaml/DensityStyles/Compact.xaml" />
+            </ResourceDictionary.MergedDictionaries>
+        </ResourceDictionary>
     </Page.Resources>
     <Grid>
         <Grid.RowDefinitions>
@@ -25,7 +30,7 @@
         <AutoSuggestBox
             x:Name="SearchBox"
             Grid.Row="0"
-            Margin="10"
+            Margin="10,0,10,20"
             HorizontalAlignment="Stretch"
             DisplayMemberPath="FullPath"
             QueryIcon="Find"
@@ -34,10 +39,9 @@
             TextMemberPath="FullPath" />
         <TextBlock
             Grid.Row="1"
-            Margin="7"
+            Margin="0,0,0,0"
             HorizontalAlignment="Center"
             Text="{x:Bind ViewModel.SourceFileName, Mode=OneWay}" />
-
         <MediaPlayerElement
             x:Name="musicPlayer"
             Grid.Row="2"
