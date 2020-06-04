@@ -20,7 +20,6 @@
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
-            <RowDefinition Height="*" />
         </Grid.RowDefinitions>
         <AutoSuggestBox
             x:Name="SearchBox"
@@ -62,17 +61,16 @@
             Margin="10"
             Text="{x:Bind ViewModel.DownloadStatus, Mode=OneWay}"
             Visibility="{x:Bind ViewModel.DownloadInProgress, Mode=OneWay}" />
-        <winui:TreeView
-            x:Name="FileTreeView"
-            Grid.Row="4"
-            ItemsSource="{x:Bind ViewModel.FileTreeItems, Mode=OneWay}">
-            <winui:TreeView.ItemTemplate>
-                <DataTemplate x:DataType="local:FileTreeItem">
-                    <winui:TreeViewItem DoubleTapped="OpenSelectedFileTreeItem" ItemsSource="{x:Bind Children}">
-                        <TextBlock Text="{x:Bind Name}" />
-                    </winui:TreeViewItem>
-                </DataTemplate>
-            </winui:TreeView.ItemTemplate>
-        </winui:TreeView>
+        <Grid x:Name="FileTreeContainer" Visibility="Collapsed">
+            <winui:TreeView x:Name="FileTreeView" ItemsSource="{x:Bind ViewModel.FileTreeItems, Mode=OneWay}">
+                <winui:TreeView.ItemTemplate>
+                    <DataTemplate x:DataType="local:FileTreeItem">
+                        <winui:TreeViewItem DoubleTapped="OpenSelectedFileTreeItem" ItemsSource="{x:Bind Children}">
+                            <TextBlock Text="{x:Bind Name}" />
+                        </winui:TreeViewItem>
+                    </DataTemplate>
+                </winui:TreeView.ItemTemplate>
+            </winui:TreeView>
+        </Grid>
     </Grid>
 </Page>

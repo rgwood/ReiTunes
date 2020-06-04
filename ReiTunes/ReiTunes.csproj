@@ -157,6 +157,9 @@
     <Compile Include="Services\WindowManagerService.cs" />
     <Compile Include="ViewModels\PlayerViewModel.cs" />
     <Compile Include="FileReader.cs" />
+    <Compile Include="Views\FileTreeWindow.xaml.cs">
+      <DependentUpon>FileTreeWindow.xaml</DependentUpon>
+    </Compile>
     <Compile Include="Views\Player.xaml.cs">
       <DependentUpon>Player.xaml</DependentUpon>
     </Compile>
@@ -212,6 +215,10 @@
     <Page Include="Styles\_Thickness.xaml">
       <Generator>MSBuild:Compile</Generator>
       <SubType>Designer</SubType>
+    </Page>
+    <Page Include="Views\FileTreeWindow.xaml">
+      <SubType>Designer</SubType>
+      <Generator>MSBuild:Compile</Generator>
     </Page>
     <Page Include="Views\Player.xaml">
       <Generator>MSBuild:Compile</Generator>

@@ -6,6 +6,8 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using Windows.ApplicationModel.Activation;
+using Windows.Foundation;
+using Windows.UI.ViewManagement;
 using Windows.UI.Xaml;
 using Windows.UI.Xaml.Controls;
 
@@ -17,12 +19,18 @@ namespace ReiTunes.Services
     {
         static private readonly ServiceCollection _serviceCollection = new ServiceCollection();
         static private readonly Type _startupViewType = typeof(Player);
+        static private readonly Size _mainWindowSize = new Size(500, 175);
 
         static public async Task ActivateAsync(object activationArgs)
         {
             if (IsInteractive(activationArgs))
             {
                 ServiceLocator.Configure(_serviceCollection);
+
+                ApplicationView.GetForCurrentView().SetPreferredMinSize(_mainWindowSize);
+
+                ApplicationView.PreferredLaunchViewSize = _mainWindowSize;
+                ApplicationView.PreferredLaunchWindowingMode = ApplicationViewWindowingMode.PreferredLaunchViewSize;
 
                 // Do not repeat app initialization when the Window already has content,
                 // just ensure that the window is active

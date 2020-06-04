@@ -1,13 +1,16 @@
 ﻿using ReiTunes.Configuration;
 using ReiTunes.Core.Helpers;
+using ReiTunes.Views;
 using System;
 using System.Linq;
 using System.Threading.Tasks;
 using Windows.Foundation;
 using Windows.Media.Playback;
 using Windows.System;
+using Windows.UI.WindowManagement;
 using Windows.UI.Xaml;
 using Windows.UI.Xaml.Controls;
+using Windows.UI.Xaml.Hosting;
 using Windows.UI.Xaml.Input;
 using Windows.UI.Xaml.Navigation;
 
@@ -20,6 +23,8 @@ namespace ReiTunes
     /// </summary>
     public sealed partial class Player : Page
     {
+        private AppWindow _fileTreeWindow;
+
         public PlayerViewModel ViewModel { get; }
 
         public Player()
@@ -122,6 +127,53 @@ namespace ReiTunes
                     args.Handled = true;
                     await Launcher.LaunchFolderAsync(Windows.Storage.ApplicationData.Current.LocalCacheFolder);
                 }));
+
+            //toggle file pane
+            KeyboardAccelerators.Add(CreateAccelerator(VirtualKeyModifiers.Control, VirtualKey.C,
+                async (sender, args) =>
+                {
+                    args.Handled = true;
+                    await OpenFileTreeView();
+                }));
+        }
+
+        private async Task OpenFileTreeView()
+        {
+            if (_fileTreeWindow != null)
+            {
+                await _fileTreeWindow.TryShowAsync();
+                return;
+            }
+
+            //FileTreeContainer.Children.Remove(FileTreeView);
+
+            Frame appWindowContentFrame = new Frame();
+            appWindowContentFrame.Navigate(typeof(FileTreeWindow));
+
+            //Grid appWindowRootGrid = new Grid();
+            //appWindowRootGrid.Children.Add(FileTreeView);
+
+            // Create a new window
+            _fileTreeWindow = await AppWindow.TryCreateAsync();
+
+            // Attach the XAML content to our window
+            ElementCompositionPreview.SetAppWindowContent(_fileTreeWindow, appWindowContentFrame);
+
+            _fileTreeWindow.Closed += delegate
+            {
+                //appWindowRootGrid.Children.Remove(FileTreeView);
+                //appWindowRootGrid = null;
+                appWindowContentFrame.Content = null;
+                _fileTreeWindow = null;
+
+                //FileTreeContainer.Children.Add(FileTreeView);
+                //FileTreeContainer.Visibility = Visibility.Visible;
+            };
+
+            Point offset = new Point(x: 0, y: 220);
+            _fileTreeWindow.RequestMoveRelativeToCurrentViewContent(offset);
+
+            await _fileTreeWindow.TryShowAsync();
         }
 
         private void Page_Loaded(object sender, RoutedEventArgs e)
