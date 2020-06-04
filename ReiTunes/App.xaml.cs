@@ -15,7 +15,7 @@ namespace ReiTunes
     /// </summary>
     sealed partial class App : Application
     {
-        private readonly Size MainWindowSize = new Size(500, 400);
+        private readonly Size MainWindowSize = new Size(400, 450);
 
         /// <summary>
         /// Initializes the singleton application object.  This is the first line of authored code
@@ -25,7 +25,6 @@ namespace ReiTunes
         {
             InitializeComponent();
 
-            //ApplicationView.GetForCurrentView().SetPreferredMinSize(MainWindowSize);
             // Close the application when the primary window closes
             //ApplicationView.GetForCurrentView().Consolidated += App_Consolidated;
             ApplicationView.PreferredLaunchViewSize = MainWindowSize;

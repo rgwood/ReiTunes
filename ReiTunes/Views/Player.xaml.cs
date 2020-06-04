@@ -7,6 +7,7 @@ using System.Threading.Tasks;
 using Windows.Foundation;
 using Windows.Media.Playback;
 using Windows.System;
+using Windows.UI.ViewManagement;
 using Windows.UI.Xaml;
 using Windows.UI.Xaml.Controls;
 using Windows.UI.Xaml.Input;
@@ -26,6 +27,8 @@ namespace ReiTunes
         public Player()
         {
             this.InitializeComponent();
+
+            ApplicationView.GetForCurrentView().SetPreferredMinSize(new Size(200, 200));
             ViewModel = ServiceLocator.Current.GetService<PlayerViewModel>();
             SetUpKeyboardAccelerators();
         }
