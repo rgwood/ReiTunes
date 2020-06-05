@@ -22,53 +22,68 @@
     <Grid>
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
-            <RowDefinition Height="Auto" />
-            <RowDefinition Height="Auto" />
-            <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
-        <AutoSuggestBox
-            x:Name="SearchBox"
-            Grid.Row="0"
-            Margin="10,0,10,20"
-            HorizontalAlignment="Stretch"
-            DisplayMemberPath="FullPath"
-            QueryIcon="Find"
-            QuerySubmitted="SearchBox_QuerySubmitted"
-            TextChanged="SearchBox_TextChanged"
-            TextMemberPath="FullPath" />
-        <TextBlock
-            Grid.Row="1"
-            Margin="0,0,0,0"
-            HorizontalAlignment="Center"
-            Text="{x:Bind ViewModel.SourceFileName, Mode=OneWay}" />
-        <MediaPlayerElement
-            x:Name="musicPlayer"
-            Grid.Row="2"
-            AreTransportControlsEnabled="True"
-            AutoPlay="True"
-            Source="{x:Bind ViewModel.Source, Mode=OneWay}">
-            <MediaPlayerElement.TransportControls>
-                <MediaTransportControls
-                    IsCompact="False"
-                    IsCompactOverlayEnabled="False"
-                    IsFastForwardButtonVisible="True"
-                    IsFastForwardEnabled="True"
-                    IsFastRewindButtonVisible="True"
-                    IsFastRewindEnabled="True"
-                    IsFullWindowButtonVisible="False"
-                    IsZoomButtonVisible="False"
-                    Style="{StaticResource CustomMediaTransportControlsStyle}" />
-            </MediaPlayerElement.TransportControls>
-        </MediaPlayerElement>
-        <TextBlock
-            Grid.Row="3"
-            Margin="10"
-            Text="{x:Bind ViewModel.DownloadStatus, Mode=OneWay}"
-            Visibility="{x:Bind ViewModel.DownloadInProgress, Mode=OneWay}" />
+        <StackPanel Orientation="Vertical">
+            <AutoSuggestBox
+                x:Name="SearchBox"
+                Grid.Row="0"
+                Margin="10,0,10,20"
+                HorizontalAlignment="Stretch"
+                DisplayMemberPath="FullPath"
+                QueryIcon="Find"
+                QuerySubmitted="SearchBox_QuerySubmitted"
+                TextChanged="SearchBox_TextChanged"
+                TextMemberPath="FullPath" />
+            <TextBlock
+                Grid.Row="1"
+                Margin="0,0,0,0"
+                HorizontalAlignment="Center"
+                Style="{StaticResource BaseTextBlockStyle}"
+                Text="{x:Bind ViewModel.SourceFileName, Mode=OneWay}" />
+            <MediaPlayerElement
+                x:Name="musicPlayer"
+                Grid.Row="2"
+                AreTransportControlsEnabled="True"
+                AutoPlay="True"
+                Source="{x:Bind ViewModel.Source, Mode=OneWay}">
+                <MediaPlayerElement.TransportControls>
+                    <MediaTransportControls
+                        IsCompact="False"
+                        IsCompactOverlayEnabled="False"
+                        IsFastForwardButtonVisible="True"
+                        IsFastForwardEnabled="True"
+                        IsFastRewindButtonVisible="True"
+                        IsFastRewindEnabled="True"
+                        IsFullWindowButtonVisible="False"
+                        IsZoomButtonVisible="False"
+                        Style="{StaticResource CustomMediaTransportControlsStyle}" />
+                </MediaPlayerElement.TransportControls>
+            </MediaPlayerElement>
+            <TextBlock
+                Grid.Row="3"
+                Margin="10"
+                Text="{x:Bind ViewModel.DownloadStatus, Mode=OneWay}"
+                Visibility="{x:Bind ViewModel.DownloadInProgress, Mode=OneWay}" />
+            <Grid Grid.Row="4" Margin="0,0,0,13">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="18*" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+                <Rectangle
+                    Grid.Column="1"
+                    Width="Auto"
+                    Height="1"
+                    Fill="{ThemeResource SystemChromeDisabledHighColor}" />
+                <Rectangle Width="10" />
+            </Grid>
+        </StackPanel>
+
+
         <winui:TreeView
             x:Name="FileTreeView"
-            Grid.Row="4"
+            Grid.Row="5"
             ItemsSource="{x:Bind ViewModel.FileTreeItems, Mode=OneWay}">
             <winui:TreeView.ItemTemplate>
                 <DataTemplate x:DataType="local:FileTreeItem">
