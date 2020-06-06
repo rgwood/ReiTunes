@@ -28,7 +28,7 @@ namespace ReiTunes
         {
             this.InitializeComponent();
 
-            ApplicationView.GetForCurrentView().SetPreferredMinSize(new Size(200, 200));
+            ApplicationView.GetForCurrentView().SetPreferredMinSize(new Size(200, 155));
             ViewModel = ServiceLocator.Current.GetService<PlayerViewModel>();
             SetUpKeyboardAccelerators();
         }
