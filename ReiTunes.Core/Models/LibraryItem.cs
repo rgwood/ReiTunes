@@ -28,6 +28,11 @@ namespace ReiTunes.Core {
             set { Set(ref _id, value); }
         }
 
+        public string Artist { get; set; }
+        public string Album { get; set; }
+        public int? TrackNumber { get; set; }
+        public DateTime DateAddedUtc { get; set; }
+
         //for deserialization
         public LibraryItem() {
         }
@@ -36,6 +41,7 @@ namespace ReiTunes.Core {
             _id = Guid.NewGuid();
             _name = GetFileNameFromPath(relativePath);
             _fullPath = relativePath;
+            DateAddedUtc = DateTime.UtcNow;
         }
 
         private string GetFileNameFromPath(string path) => path.Split('/').Last();
