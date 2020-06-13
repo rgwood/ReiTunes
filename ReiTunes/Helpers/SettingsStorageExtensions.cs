@@ -1,4 +1,4 @@
-﻿using ReiTunes.Core.Helpers;
+﻿using ReiTunes.Core;
 using System;
 using System.IO;
 using System.Threading.Tasks;

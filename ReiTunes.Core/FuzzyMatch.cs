@@ -1,7 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 
-namespace ReiTunes.Core.Helpers
+namespace ReiTunes.Core
 {
     // Based on CDillinger's Gist from https://gist.github.com/CDillinger/2aa02128f840bdca90340ce08ee71bc2
     // LICENSE

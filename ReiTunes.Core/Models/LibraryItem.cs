@@ -1,38 +1,20 @@
 ﻿using System.Collections.ObjectModel;
 using System.ComponentModel;
+using ReiTunes.Core;
 
-namespace ReiTunes
+namespace ReiTunes.Core
 {
-    public class FileTreeItem : INotifyPropertyChanged
+    public class LibraryItem : Observable
     {
         public event PropertyChangedEventHandler PropertyChanged;
 
         public string Name { get; set; }
         public string FullPath { get; set; }
-        public FileTreeItemType Type { get; set; }
-        private ObservableCollection<FileTreeItem> _children;
 
-        public FileTreeItem(string fileName, string fullPath, FileTreeItemType type = FileTreeItemType.File)
+        public LibraryItem(string fileName, string fullPath)
         {
             Name = fileName;
             FullPath = fullPath;
-            Type = type;
-        }
-
-        public ObservableCollection<FileTreeItem> Children
-        {
-            get
-            {
-                if (_children == null)
-                {
-                    _children = new ObservableCollection<FileTreeItem>();
-                }
-                return _children;
-            }
-            set
-            {
-                _children = value;
-            }
         }
 
         private bool m_isExpanded;
