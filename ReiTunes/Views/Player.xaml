@@ -74,10 +74,22 @@
                     Fill="{ThemeResource SystemChromeDisabledHighColor}" />
                 <Rectangle Width="10" />
             </Grid>
-            <TextBox
-                x:Name="FilterBox"
-                Margin="10"
-                TextChanged="FilterBox_TextChanged" />
+            <Grid Padding="10">
+                <TextBox
+                    x:Name="FilterBox"
+                    FontFamily="Segoe MDL2 Assets"
+                    PlaceholderText="&#xE11A; Search"
+                    TextChanged="FilterBox_TextChanged" />
+                <!--  Can't figure out how to make the icon not clash with the X delete button  -->
+                <!--<TextBlock
+                    x:Name="findIcon"
+                    Margin="0,0,5,0"
+                    HorizontalAlignment="Right"
+                    VerticalAlignment="Center"
+                    FontFamily="Segoe MDL2 Assets"
+                    Opacity="0.4"
+                    Text="&#xE11A;" />-->
+            </Grid>
         </StackPanel>
 
         <controls:DataGrid
