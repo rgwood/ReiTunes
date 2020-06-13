@@ -7,6 +7,7 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ReiTunes", "ReiTunes\ReiTun
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution Items", "{80CD61C9-B617-418E-9171-F113E2F41350}"
 	ProjectSection(SolutionItems) = preProject
+		.editorconfig = .editorconfig
 		.gitignore = .gitignore
 		README.md = README.md
 	EndProjectSection
@@ -19,7 +20,7 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "ReiTunes.Core.Tests.xUnit",
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ReiTunes.Tests.xUnit", "ReiTunes.Tests.xUnit\ReiTunes.Tests.xUnit.csproj", "{4FDE16E5-8E06-4157-BD94-C558D325036A}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ReiTunes.AzureFunctions", "ReiTunes.AzureFunctions\ReiTunes.AzureFunctions.csproj", "{FCA82F50-5B83-446F-818E-7C841BCDD4C3}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "ReiTunes.AzureFunctions", "ReiTunes.AzureFunctions\ReiTunes.AzureFunctions.csproj", "{FCA82F50-5B83-446F-818E-7C841BCDD4C3}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
