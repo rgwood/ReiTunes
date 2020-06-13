@@ -1,4 +1,4 @@
-using ReiTunes.Helpers;
+using ReiTunes.Core;
 using Xunit;
 
 namespace ReiTunes.Test
@@ -13,8 +13,8 @@ ddoklmfglkm.mp3";
         [Fact]
         public void CanParseBlobList()
         {
-            var explorerItems = FileTreeBuilder.ParseBlobList(rawBlobList);
-            Assert.Equal(3, explorerItems.Count);
+            var explorerItems = LibraryFileParser.ParseBlobList(rawBlobList);
+            Assert.Equal(4, explorerItems.Count);
         }
     }
 }

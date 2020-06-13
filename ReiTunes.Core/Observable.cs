@@ -1,7 +1,7 @@
 ﻿using System.ComponentModel;
 using System.Runtime.CompilerServices;
 
-namespace ReiTunes.Helpers
+namespace ReiTunes.Core
 {
     public class Observable : INotifyPropertyChanged
     {

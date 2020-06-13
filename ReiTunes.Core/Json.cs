@@ -1,7 +1,7 @@
 ﻿using Newtonsoft.Json;
 using System.Threading.Tasks;
 
-namespace ReiTunes.Core.Helpers
+namespace ReiTunes.Core
 {
     public static class Json
     {

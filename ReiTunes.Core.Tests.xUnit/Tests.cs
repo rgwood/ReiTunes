@@ -1,4 +1,4 @@
-﻿using ReiTunes.Core.Helpers;
+﻿using ReiTunes.Core;
 using System.Collections.Generic;
 using Xunit;
 

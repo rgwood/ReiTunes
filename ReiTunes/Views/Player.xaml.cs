@@ -1,7 +1,8 @@
 ﻿using ReiTunes.Configuration;
-using ReiTunes.Core.Helpers;
+using ReiTunes.Core;
 using System;
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
 using System.Linq;
 using System.Threading.Tasks;
 using Windows.Foundation;
@@ -55,7 +56,7 @@ namespace ReiTunes
 
         private void OpenSelectedFileTreeItem(object sender = null, RoutedEventArgs e = null)
         {
-            var selected = (FileTreeItem)FileTreeView.SelectedItem;
+            var selected = (LibraryItem)libraryItemDataGrid.SelectedItem;
             ViewModel.ChangeSource(selected?.FullPath);
         }
 
@@ -65,7 +66,7 @@ namespace ReiTunes
             {
                 var typedText = sender.Text;
 
-                var files = ViewModel.FlattenedFileList().Where(i => i.Type == FileTreeItemType.File);
+                var files = ViewModel.FileTreeItems;
 
                 var fuzzyMatchResults =
                     from file in files
@@ -78,7 +79,7 @@ namespace ReiTunes
                 //TODO: do a more accurate check than just comparing the item count
                 if (sender.ItemsSource != null)
                 {
-                    var existingItems = (List<FileTreeItem>)sender.ItemsSource;
+                    var existingItems = (List<LibraryItem>)sender.ItemsSource;
                     if (existingItems.Count == fuzzyMatchResults.Count())
                         return;
                 }
@@ -90,7 +91,7 @@ namespace ReiTunes
 
         private void SearchBox_QuerySubmitted(AutoSuggestBox sender, AutoSuggestBoxQuerySubmittedEventArgs args)
         {
-            var selection = (FileTreeItem)args.ChosenSuggestion;
+            var selection = (LibraryItem)args.ChosenSuggestion;
             ViewModel.ChangeSource(selection?.FullPath);
         }
 
@@ -112,20 +113,20 @@ namespace ReiTunes
                 return ret;
             }
 
-            //search accelerator
-            KeyboardAccelerators.Add(CreateAccelerator(VirtualKeyModifiers.Control, VirtualKey.F,
-                (sender, args) =>
-                {
-                    args.Handled = true;
-                    SearchBox.Focus(FocusState.Keyboard);
-                }));
-
             //refresh accelerator
             KeyboardAccelerators.Add(CreateAccelerator(VirtualKeyModifiers.Control, VirtualKey.R,
                 async (sender, args) =>
                 {
                     args.Handled = true;
                     await ViewModel.DownloadAndLoadLibraryFile();
+                }));
+
+            //search accelerator
+            KeyboardAccelerators.Add(CreateAccelerator(VirtualKeyModifiers.Control, VirtualKey.F,
+                (sender, args) =>
+                {
+                    args.Handled = true;
+                    SearchBox.Focus(FocusState.Keyboard);
                 }));
 
             //open cache
@@ -142,7 +143,7 @@ namespace ReiTunes
             Window.Current.CoreWindow.KeyDown += CoreWindow_KeyDown;
             SearchBox.KeyDown += SearchBox_KeyDown;
             SearchBox.PreviewKeyDown += SearchBox_PreviewKeyDown;
-            FileTreeView.PreviewKeyDown += FileTreeView_PreviewKeyDown;
+            libraryItemDataGrid.PreviewKeyDown += FileTreeView_PreviewKeyDown;
         }
 
         private void FileTreeView_PreviewKeyDown(object sender, KeyRoutedEventArgs args)
@@ -194,5 +195,26 @@ namespace ReiTunes
         }
 
         #endregion KeyboardStuff
+
+        private void FilterBox_TextChanged(object sender, TextChangedEventArgs e)
+        {
+            var searchstring = FilterBox.Text.ToLower();
+            if (searchstring == "")
+            {
+                libraryItemDataGrid.ItemsSource = ViewModel.FileTreeItems;
+            }
+            else
+            {
+                var filtered = new ObservableCollection<LibraryItem>();
+
+                foreach (var item in ViewModel.FileTreeItems)
+                {
+                    if (item.FullPath.Contains(searchstring, StringComparison.OrdinalIgnoreCase))
+                        filtered.Add(item);
+                }
+
+                libraryItemDataGrid.ItemsSource = filtered;
+            }
+        }
     }
 }
