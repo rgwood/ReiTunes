@@ -3,32 +3,28 @@ using System.Collections.ObjectModel;
 using System.IO;
 using System.Linq;
 
-namespace ReiTunes.Core
-{
-    public class LibraryFileParser
-    {
+namespace ReiTunes.Core {
+
+    public class LibraryFileParser {
+
         /// <summary>
         ///
         /// </summary>
         /// <param name="blobList">A string where each line is a file path, separated with /</param>
         /// <returns></returns>
-        public static ObservableCollection<LibraryItem> ParseBlobList(string blobList)
-        {
+        public static ObservableCollection<LibraryItem> ParseBlobList(string blobList) {
             var ret = new ObservableCollection<LibraryItem>();
 
             StringReader reader = new StringReader(blobList);
             string line;
-            while ((line = reader.ReadLine()) != null)
-            {
-                var fileName = line.Split('/').Last();
-                ret.Add(new LibraryItem(fileName, line));
+            while ((line = reader.ReadLine()) != null) {
+                ret.Add(new LibraryItem(line));
             }
 
             return ret;
         }
 
-        public static ObservableCollection<LibraryItem> GetSampleData()
-        {
+        public static ObservableCollection<LibraryItem> GetSampleData() {
             string rawBlobList = @"Avalanches/01 DJ Set - Brains Party @ St Jerome.mp3
 Avalanches/02 BeatsInSpace-04.01.14 Part2 with.mp3
 Avalanches/BBC R1 Essentials Mix 2016 - The Avalanches.mp3
