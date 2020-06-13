@@ -2,55 +2,26 @@
 using System.ComponentModel;
 using ReiTunes.Core;
 
-namespace ReiTunes.Core
-{
-    public class LibraryItem : Observable
-    {
-        public event PropertyChangedEventHandler PropertyChanged;
+namespace ReiTunes.Core {
 
-        public string Name { get; set; }
-        public string FullPath { get; set; }
+    public class LibraryItem : Observable {
+        private string _name;
 
-        public LibraryItem(string fileName, string fullPath)
-        {
-            Name = fileName;
-            FullPath = fullPath;
+        public string Name {
+            get { return _name; }
+            set { Set(ref _name, value); }
         }
 
-        private bool m_isExpanded;
+        private string _fullPath;
 
-        public bool IsExpanded
-        {
-            get { return m_isExpanded; }
-            set
-            {
-                if (m_isExpanded != value)
-                {
-                    m_isExpanded = value;
-                    NotifyPropertyChanged("IsExpanded");
-                }
-            }
+        public string FullPath {
+            get { return _fullPath; }
+            set { Set(ref _fullPath, value); }
         }
 
-        private bool m_isSelected;
-
-        public bool IsSelected
-        {
-            get { return m_isSelected; }
-
-            set
-            {
-                if (m_isSelected != value)
-                {
-                    m_isSelected = value;
-                    NotifyPropertyChanged("IsSelected");
-                }
-            }
-        }
-
-        private void NotifyPropertyChanged(string propertyName)
-        {
-            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
+        public LibraryItem(string fileName, string fullPath) {
+            _name = fileName;
+            _fullPath = fullPath;
         }
     }
 }
