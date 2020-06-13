@@ -131,18 +131,21 @@ namespace ReiTunes {
         }
 
         private void FileTreeView_PreviewKeyDown(object sender, KeyRoutedEventArgs args) {
-            if (args.Key == VirtualKey.Enter)
+            if (args.Key == VirtualKey.Enter) {
                 OpenSelectedFileTreeItem();
+                args.Handled = true;
+            }
         }
 
         private void FilterBox_PreviewKeyDown(object sender, KeyRoutedEventArgs args) {
             if (args.Key == VirtualKey.Escape) {
-                if(FilterBox.Text == "") {
+                if (FilterBox.Text == "") {
                     // hack: this just happens to move to the scrubbing control
                     // TODO: find a way of changing focus to the scrubbing control that does
                     // not rely on it being the next tab stop?
                     FocusManager.TryMoveFocus(FocusNavigationDirection.Previous);
-                } else {
+                }
+                else {
                     FilterBox.Text = "";
                 }
             }
@@ -174,19 +177,28 @@ namespace ReiTunes {
         #endregion KeyboardStuff
 
         private void FilterBox_TextChanged(object sender, TextChangedEventArgs e) {
-            var searchstring = FilterBox.Text.ToLower();
+            var searchstring = FilterBox.Text;
             if (searchstring == "") {
-                libraryItemDataGrid.ItemsSource = ViewModel.FileTreeItems;
+                libraryItemDataGrid.ItemsSource = ViewModel.LibraryItems;
             }
             else {
-                var filtered = new ObservableCollection<LibraryItem>();
+                var fuzzyMatchResults =
+                    from file in ViewModel.LibraryItems
+                    let fuzzyResult = FuzzyMatcher.FuzzyMatch(file.FullPath, searchstring)
+                    where fuzzyResult.isMatch
+                    orderby fuzzyResult.score descending
+                    select file;
 
-                foreach (var item in ViewModel.FileTreeItems) {
-                    if (item.FullPath.Contains(searchstring, StringComparison.OrdinalIgnoreCase))
-                        filtered.Add(item);
-                }
+                //short-circuit if the result hasn't changed, to avoid slow rerenders.
+                //TODO: do a more accurate check than just comparing the item count
+                //if (libraryItemDataGrid.ItemsSource != null) {
+                //    var existingItems = (List<LibraryItem>)libraryItemDataGrid.ItemsSource;
+                //    if (existingItems.Count == fuzzyMatchResults.Count())
+                //        return;
+                //}
 
-                libraryItemDataGrid.ItemsSource = filtered;
+                //TODO: I think this breaks any preexisting binding. Confirm+fix that
+                libraryItemDataGrid.ItemsSource = fuzzyMatchResults.ToList();
             }
         }
     }
