@@ -125,6 +125,22 @@
                     Header="Name"
                     Tag="Name" />
                 <controls:DataGridTextColumn
+                    Binding="{Binding Artist}"
+                    Header="Artist"
+                    Tag="Artist" />
+                <controls:DataGridTextColumn
+                    Binding="{Binding Album}"
+                    Header="Album/Show"
+                    Tag="Album" />
+                <controls:DataGridTextColumn
+                    Binding="{Binding TrackNumber}"
+                    Header="#"
+                    Tag="TrackNumber" />
+                <controls:DataGridTextColumn
+                    Binding="{Binding DateAddedUtc}"
+                    Header="Date Added"
+                    Tag="DateAddedUtc" />
+                <controls:DataGridTextColumn
                     Binding="{Binding FullPath}"
                     Header="Path"
                     Tag="Path" />
