@@ -77,8 +77,7 @@
             <Grid Padding="10">
                 <TextBox
                     x:Name="FilterBox"
-                    FontFamily="Segoe MDL2 Assets"
-                    PlaceholderText="&#xE11A; Search"
+                    PlaceholderText="Search"
                     TextChanged="FilterBox_TextChanged" />
                 <!--  Can't figure out how to make the icon not clash with the X delete button  -->
                 <!--<TextBlock
