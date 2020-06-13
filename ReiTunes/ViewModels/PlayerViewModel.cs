@@ -31,6 +31,7 @@ namespace ReiTunes {
         private string _sourceFileName;
         private string _downloadStatus = "";
         private bool _downloadInProgress = false;
+        private double _downloadPercentFinished = 0;
 
         public IMediaPlaybackSource Source {
             get { return _source; }
@@ -57,6 +58,11 @@ namespace ReiTunes {
         public bool DownloadInProgress {
             get { return _downloadInProgress; }
             set { Set(ref _downloadInProgress, value); }
+        }
+
+        public double DownloadPercentFinished {
+            get { return _downloadPercentFinished; }
+            set { Set(ref _downloadPercentFinished, value); }
         }
 
         public PlayerViewModel(ILogger logger) {
@@ -163,6 +169,8 @@ namespace ReiTunes {
             // throughout this method's lifetime.
             BackgroundDownloadProgress progress = download.Progress;
 
+            double percentageFinished = 100d * progress.BytesReceived / progress.TotalBytesToReceive;
+
             string message = "";
             if (progress.BytesReceived == progress.TotalBytesToReceive) {
                 message = "Download finished";
@@ -170,7 +178,7 @@ namespace ReiTunes {
             else {
                 var mbReceived = progress.BytesReceived / 1024d / 1024d;
                 var totalMb = progress.TotalBytesToReceive / 1024d / 1024d;
-                message = $"Downloading: {mbReceived:N1} mb / {totalMb:N1} mb";
+                message = $"Downloading: {mbReceived:N1}/{totalMb:N1} MB";
             }
 
             // The ignore variable is to silence an async warning. Seems bad but
@@ -178,6 +186,7 @@ namespace ReiTunes {
             var ignore = CoreApplication.MainView.CoreWindow.Dispatcher.RunAsync(
                 CoreDispatcherPriority.Normal, () => {
                     DownloadStatus = message;
+                    DownloadPercentFinished = percentageFinished;
                 });
         }
 

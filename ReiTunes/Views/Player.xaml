@@ -56,16 +56,23 @@
                         Style="{StaticResource CustomMediaTransportControlsStyle}" />
                 </MediaPlayerElement.TransportControls>
             </MediaPlayerElement>
-            <TextBlock
-                Grid.Row="3"
+
+            <StackPanel
                 Margin="10"
-                Text="{x:Bind ViewModel.DownloadStatus, Mode=OneWay}"
-                Visibility="{x:Bind ViewModel.DownloadInProgress, Mode=OneWay}" />
-            <Grid Grid.Row="4" Margin="0,0,0,0">
+                Orientation="Vertical"
+                Visibility="{x:Bind ViewModel.DownloadInProgress, Mode=OneWay}">
+                <TextBlock Grid.Row="3" Text="{x:Bind ViewModel.DownloadStatus, Mode=OneWay}" />
+                <winui:ProgressBar
+                    Margin="0,5,0,5"
+                    HorizontalAlignment="Stretch"
+                    Value="{x:Bind ViewModel.DownloadPercentFinished, Mode=OneWay}" />
+            </StackPanel>
+
+            <Grid x:Name="separator" Margin="0,0,0,0">
                 <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="0" />
                     <ColumnDefinition Width="18*" />
-                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="0" />
                 </Grid.ColumnDefinitions>
                 <Rectangle
                     Grid.Column="1"
@@ -74,7 +81,7 @@
                     Fill="{ThemeResource SystemChromeDisabledHighColor}" />
                 <Rectangle Width="10" />
             </Grid>
-            <Grid Padding="10">
+            <Grid Padding="5">
                 <TextBox
                     x:Name="FilterBox"
                     PlaceholderText="Search"
