@@ -18,6 +18,11 @@
                 <ResourceDictionary Source="../Styles/MediaTransportControls.xaml" />
                 <ResourceDictionary Source="ms-appx:///Microsoft.UI.Xaml/DensityStyles/Compact.xaml" />
             </ResourceDictionary.MergedDictionaries>
+            <!--  https://github.com/windows-toolkit/WindowsCommunityToolkit/blob/7740ba715ace3ee249564fccf24b61d4f3512fea/Microsoft.Toolkit.Uwp.UI.Controls.DataGrid/DataGrid/DataGrid.xaml#L62  -->
+            <SolidColorBrush
+                x:Key="SystemControlGridLinesBaseMediumLowBrush"
+                Opacity="0.4"
+                Color="{StaticResource SystemBaseMediumLowColor}" />
         </ResourceDictionary>
     </Page.Resources>
     <Grid>
@@ -85,6 +90,8 @@
             AreRowDetailsFrozen="False"
             AreRowGroupHeadersFrozen="True"
             AutoGenerateColumns="False"
+            BorderBrush="{StaticResource SystemControlGridLinesBaseMediumLowBrush}"
+            BorderThickness="0,1,0,0"
             CanUserReorderColumns="True"
             CanUserResizeColumns="True"
             CanUserSortColumns="False"
