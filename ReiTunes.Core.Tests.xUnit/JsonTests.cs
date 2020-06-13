@@ -3,13 +3,12 @@ using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using Xunit;
 
-namespace ReiTunes.Test
-{
-    public class JsonTests
-    {
+namespace ReiTunes.Test {
+
+    public class JsonTests {
+
         [Fact]
-        public async void CanSerializeAndDeserializeSampleData()
-        {
+        public async void CanSerializeAndDeserializeSampleData() {
             ObservableCollection<LibraryItem> sampleData = LibraryFileParser.GetSampleData();
 
             var serialized = await Json.StringifyAsync(sampleData);
