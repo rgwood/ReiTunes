@@ -47,7 +47,7 @@ namespace ReiTunes
 
         private ObservableCollection<LibraryItem> _fileTreeItems;
 
-        public ObservableCollection<LibraryItem> FileTreeItems
+        public ObservableCollection<LibraryItem> LibraryItems
         {
             get { return _fileTreeItems; }
             set { Set(ref _fileTreeItems, value); }
@@ -104,7 +104,7 @@ namespace ReiTunes
         private async Task LoadLibraryFile(IStorageItem libraryFile)
         {
             var libraryString = await FileIO.ReadTextAsync((StorageFile)libraryFile);
-            FileTreeItems = LibraryFileParser.ParseBlobList(libraryString);
+            LibraryItems = LibraryFileParser.ParseBlobList(libraryString);
         }
 
         public async void ChangeSource(string filePath)
@@ -207,7 +207,7 @@ namespace ReiTunes
         //Todo: cache this if it gets slow
         public IEnumerable<LibraryItem> FlattenedFileList()
         {
-            return FileTreeItems;
+            return LibraryItems;
         }
     }
 }

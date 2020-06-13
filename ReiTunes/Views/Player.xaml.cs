@@ -57,7 +57,7 @@ namespace ReiTunes {
             if (args.Reason == AutoSuggestionBoxTextChangeReason.UserInput) {
                 var typedText = sender.Text;
 
-                var files = ViewModel.FileTreeItems;
+                var files = ViewModel.LibraryItems;
 
                 var fuzzyMatchResults =
                     from file in files
