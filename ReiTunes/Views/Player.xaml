@@ -95,7 +95,7 @@
             HeadersVisibility="Column"
             HorizontalScrollBarVisibility="Visible"
             IsReadOnly="True"
-            ItemsSource="{x:Bind ViewModel.FileTreeItems, Mode=OneWay}"
+            ItemsSource="{x:Bind ViewModel.LibraryItems, Mode=OneWay}"
             MaxColumnWidth="400"
             RowDetailsVisibilityMode="Collapsed"
             RowGroupHeaderPropertyNameAlternative="Range"
