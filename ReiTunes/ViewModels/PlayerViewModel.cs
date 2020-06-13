@@ -17,10 +17,9 @@ using Windows.Networking.BackgroundTransfer;
 using Windows.Storage;
 using Windows.UI.Core;
 
-namespace ReiTunes
-{
-    public class PlayerViewModel : Observable
-    {
+namespace ReiTunes {
+
+    public class PlayerViewModel : Observable {
         private Uri _cloudBaseUri = new Uri("https://reitunes.blob.core.windows.net/music/");
         private const string _libraryFileName = "ReiTunesLibrary.txt";
         private Uri _libraryFileUri = new Uri("https://reitunes.blob.core.windows.net/library/" + _libraryFileName);
@@ -33,50 +32,42 @@ namespace ReiTunes
         private string _downloadStatus = "";
         private bool _downloadInProgress = false;
 
-        public IMediaPlaybackSource Source
-        {
+        public IMediaPlaybackSource Source {
             get { return _source; }
             set { Set(ref _source, value); }
         }
 
-        public string SourceFileName
-        {
+        public string SourceFileName {
             get { return _sourceFileName; }
             set { Set(ref _sourceFileName, value); }
         }
 
         private ObservableCollection<LibraryItem> _fileTreeItems;
 
-        public ObservableCollection<LibraryItem> LibraryItems
-        {
+        public ObservableCollection<LibraryItem> LibraryItems {
             get { return _fileTreeItems; }
             set { Set(ref _fileTreeItems, value); }
         }
 
-        public string DownloadStatus
-        {
+        public string DownloadStatus {
             get { return _downloadStatus; }
             set { Set(ref _downloadStatus, value); }
         }
 
-        public bool DownloadInProgress
-        {
+        public bool DownloadInProgress {
             get { return _downloadInProgress; }
             set { Set(ref _downloadInProgress, value); }
         }
 
-        public PlayerViewModel(ILogger logger)
-        {
+        public PlayerViewModel(ILogger logger) {
             _logger = logger;
         }
 
-        public async Task Initialize()
-        {
+        public async Task Initialize() {
             _libraryFolder = await FileHelper.CreateLibraryFolderIfDoesntExist();
             var libraryFile = await _libraryFolder.TryGetItemAsync("ReiTunesLibrary.txt");
 
-            if (libraryFile == null)
-            {
+            if (libraryFile == null) {
                 _logger.Information("Library file not found, downloading...");
                 libraryFile = await DownloadLibraryFile();
             }
@@ -85,14 +76,12 @@ namespace ReiTunes
         }
 
         //TODO: this should visually indicate that the file is being downloaded
-        public async Task DownloadAndLoadLibraryFile()
-        {
+        public async Task DownloadAndLoadLibraryFile() {
             var libraryFile = await DownloadLibraryFile();
             await LoadLibraryFile(libraryFile);
         }
 
-        private async Task<StorageFile> DownloadLibraryFile()
-        {
+        private async Task<StorageFile> DownloadLibraryFile() {
             var httpService = ServiceLocator.Current.GetService<HttpDataService>();
             _logger.Information("Downloading library file from {libraryUri}", _libraryFileUri);
             var libraryContents = await httpService.GetStringAsync(_libraryFileUri);
@@ -101,14 +90,12 @@ namespace ReiTunes
                 _libraryFileName, CreationCollisionOption.ReplaceExisting);
         }
 
-        private async Task LoadLibraryFile(IStorageItem libraryFile)
-        {
+        private async Task LoadLibraryFile(IStorageItem libraryFile) {
             var libraryString = await FileIO.ReadTextAsync((StorageFile)libraryFile);
             LibraryItems = LibraryFileParser.ParseBlobList(libraryString);
         }
 
-        public async void ChangeSource(string filePath)
-        {
+        public async void ChangeSource(string filePath) {
             if (filePath == null)
                 return;
 
@@ -119,16 +106,13 @@ namespace ReiTunes
 
             var folder = _libraryFolder;
 
-            while (directories.Any())
-            {
+            while (directories.Any()) {
                 var curr = directories.Dequeue();
                 var subFolder = await folder.TryGetItemAsync(curr);
-                if (subFolder == null)
-                {
+                if (subFolder == null) {
                     folder = await folder.CreateFolderAsync(curr);
                 }
-                else if (!subFolder.IsOfType(StorageItemTypes.Folder))
-                {
+                else if (!subFolder.IsOfType(StorageItemTypes.Folder)) {
                     throw new IOException($"Unexpected file found with name '{curr}'");
                 }
                 else // we found a folder that already exists
@@ -150,20 +134,17 @@ namespace ReiTunes
                 storageItem = downloadFile;
             }
 
-            if (storageItem.IsOfType(StorageItemTypes.Folder))
-            {
+            if (storageItem.IsOfType(StorageItemTypes.Folder)) {
                 return;
             }
 
-            if (storageItem.IsOfType(StorageItemTypes.File))
-            {
+            if (storageItem.IsOfType(StorageItemTypes.File)) {
                 Source = MediaSource.CreateFromStorageFile((StorageFile)storageItem);
                 SourceFileName = filePath;
             }
         }
 
-        private async Task<StorageFile> DownloadMusicFile(string relativeFilePath, string fileName, StorageFolder folderToSaveTo)
-        {
+        private async Task<StorageFile> DownloadMusicFile(string relativeFilePath, string fileName, StorageFolder folderToSaveTo) {
             _logger.Information("Downloading music file {filePath}", relativeFilePath);
             var downloadUri = new Uri(_cloudBaseUri, relativeFilePath);
             var downloadFile = await folderToSaveTo.CreateFileAsync(fileName);
@@ -176,20 +157,17 @@ namespace ReiTunes
             return downloadFile;
         }
 
-        private void HandleDownloadProgress(DownloadOperation download)
-        {
+        private void HandleDownloadProgress(DownloadOperation download) {
             // DownloadOperation.Progress is updated in real-time while the operation is ongoing. Therefore,
             // we must make a local copy so that we can have a consistent view of that ever-changing state
             // throughout this method's lifetime.
             BackgroundDownloadProgress progress = download.Progress;
 
             string message = "";
-            if (progress.BytesReceived == progress.TotalBytesToReceive)
-            {
+            if (progress.BytesReceived == progress.TotalBytesToReceive) {
                 message = "Download finished";
             }
-            else
-            {
+            else {
                 var mbReceived = progress.BytesReceived / 1024d / 1024d;
                 var totalMb = progress.TotalBytesToReceive / 1024d / 1024d;
                 message = $"Downloading: {mbReceived:N1} mb / {totalMb:N1} mb";
@@ -198,15 +176,13 @@ namespace ReiTunes
             // The ignore variable is to silence an async warning. Seems bad but
             // they did it in the BackgroundTransfer example 🤔
             var ignore = CoreApplication.MainView.CoreWindow.Dispatcher.RunAsync(
-                CoreDispatcherPriority.Normal, () =>
-                {
+                CoreDispatcherPriority.Normal, () => {
                     DownloadStatus = message;
                 });
         }
 
         //Todo: cache this if it gets slow
-        public IEnumerable<LibraryItem> FlattenedFileList()
-        {
+        public IEnumerable<LibraryItem> FlattenedFileList() {
             return LibraryItems;
         }
     }
