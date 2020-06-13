@@ -92,7 +92,7 @@
         </StackPanel>
 
         <controls:DataGrid
-            x:Name="libraryItemDataGrid"
+            x:Name="libraryDataGrid"
             Grid.Row="5"
             Margin="0"
             HorizontalAlignment="Stretch"
@@ -107,7 +107,7 @@
             CanUserResizeColumns="True"
             CanUserSortColumns="False"
             ColumnHeaderHeight="32"
-            DoubleTapped="OpenSelectedFileTreeItem"
+            DoubleTapped="OpenSelectedLibraryItem"
             FrozenColumnCount="0"
             GridLinesVisibility="All"
             HeadersVisibility="Column"

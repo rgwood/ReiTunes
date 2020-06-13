@@ -48,40 +48,9 @@ namespace ReiTunes {
             await ViewModel.Initialize();
         }
 
-        private void OpenSelectedFileTreeItem(object sender = null, RoutedEventArgs e = null) {
-            var selected = (LibraryItem)libraryItemDataGrid.SelectedItem;
+        private void OpenSelectedLibraryItem(object sender = null, RoutedEventArgs e = null) {
+            var selected = (LibraryItem)libraryDataGrid.SelectedItem;
             ViewModel.ChangeSource(selected?.FullPath);
-        }
-
-        private void SearchBox_TextChanged(AutoSuggestBox sender, AutoSuggestBoxTextChangedEventArgs args) {
-            if (args.Reason == AutoSuggestionBoxTextChangeReason.UserInput) {
-                var typedText = sender.Text;
-
-                var files = ViewModel.LibraryItems;
-
-                var fuzzyMatchResults =
-                    from file in files
-                    let fuzzyResult = FuzzyMatcher.FuzzyMatch(file.FullPath, typedText)
-                    where fuzzyResult.isMatch
-                    orderby fuzzyResult.score descending
-                    select file;
-
-                //short-circuit if the result hasn't changed, to avoid slow rerenders.
-                //TODO: do a more accurate check than just comparing the item count
-                if (sender.ItemsSource != null) {
-                    var existingItems = (List<LibraryItem>)sender.ItemsSource;
-                    if (existingItems.Count == fuzzyMatchResults.Count())
-                        return;
-                }
-
-                //Set the ItemsSource to be your filtered dataset
-                sender.ItemsSource = fuzzyMatchResults.ToList();
-            }
-        }
-
-        private void SearchBox_QuerySubmitted(AutoSuggestBox sender, AutoSuggestBoxQuerySubmittedEventArgs args) {
-            var selection = (LibraryItem)args.ChosenSuggestion;
-            ViewModel.ChangeSource(selection?.FullPath);
         }
 
         // This is where I set up keyboard accelerators and do some ridiculous hacks
@@ -127,27 +96,46 @@ namespace ReiTunes {
             Window.Current.CoreWindow.KeyDown += CoreWindow_KeyDown;
             FilterBox.KeyDown += HandleSpaceBar;
             FilterBox.PreviewKeyDown += FilterBox_PreviewKeyDown;
-            libraryItemDataGrid.PreviewKeyDown += FileTreeView_PreviewKeyDown;
+            libraryDataGrid.PreviewKeyDown += LibraryDataGrid_PreviewKeyDown;
         }
 
-        private void FileTreeView_PreviewKeyDown(object sender, KeyRoutedEventArgs args) {
+        private void LibraryDataGrid_PreviewKeyDown(object sender, KeyRoutedEventArgs args) {
             if (args.Key == VirtualKey.Enter) {
-                OpenSelectedFileTreeItem();
+                OpenSelectedLibraryItem();
                 args.Handled = true;
             }
         }
 
         private void FilterBox_PreviewKeyDown(object sender, KeyRoutedEventArgs args) {
-            if (args.Key == VirtualKey.Escape) {
-                if (FilterBox.Text == "") {
-                    // hack: this just happens to move to the scrubbing control
-                    // TODO: find a way of changing focus to the scrubbing control that does
-                    // not rely on it being the next tab stop?
-                    FocusManager.TryMoveFocus(FocusNavigationDirection.Previous);
-                }
-                else {
-                    FilterBox.Text = "";
-                }
+            switch (args.Key) {
+                case VirtualKey.Escape:
+                    if (FilterBox.Text == "") {
+                        // hack: this just happens to move to the scrubbing control
+                        // TODO: find a way of changing focus to the scrubbing control that does
+                        // not rely on it being the next tab stop?
+                        FocusManager.TryMoveFocus(FocusNavigationDirection.Previous);
+                    }
+                    else {
+                        FilterBox.Text = "";
+                    }
+                    break;
+
+                case VirtualKey.Enter:
+                    OpenSelectedLibraryItem();
+                    args.Handled = true;
+                    break;
+
+                case VirtualKey.Up:
+                    libraryDataGrid.SelectedIndex--;
+                    args.Handled = true;
+                    break;
+
+                case VirtualKey.Down:
+                    libraryDataGrid.SelectedIndex++;
+                    args.Handled = true;
+                    break;
+
+                default: break;
             }
         }
 
@@ -179,26 +167,30 @@ namespace ReiTunes {
         private void FilterBox_TextChanged(object sender, TextChangedEventArgs e) {
             var searchstring = FilterBox.Text;
             if (searchstring == "") {
-                libraryItemDataGrid.ItemsSource = ViewModel.LibraryItems;
+                libraryDataGrid.ItemsSource = ViewModel.LibraryItems;
             }
             else {
                 var fuzzyMatchResults =
-                    from file in ViewModel.LibraryItems
-                    let fuzzyResult = FuzzyMatcher.FuzzyMatch(file.FullPath, searchstring)
-                    where fuzzyResult.isMatch
-                    orderby fuzzyResult.score descending
-                    select file;
+                    (from file in ViewModel.LibraryItems
+                     let fuzzyResult = FuzzyMatcher.FuzzyMatch(file.FullPath, searchstring)
+                     where fuzzyResult.isMatch
+                     orderby fuzzyResult.score descending
+                     select file).ToList();
 
                 //short-circuit if the result hasn't changed, to avoid slow rerenders.
                 //TODO: do a more accurate check than just comparing the item count
-                //if (libraryItemDataGrid.ItemsSource != null) {
-                //    var existingItems = (List<LibraryItem>)libraryItemDataGrid.ItemsSource;
+                //if (libraryDataGrid.ItemsSource != null) {
+                //    var existingItems = (List<LibraryItem>)libraryDataGrid.ItemsSource;
                 //    if (existingItems.Count == fuzzyMatchResults.Count())
                 //        return;
                 //}
 
                 //TODO: I think this breaks any preexisting binding. Confirm+fix that
-                libraryItemDataGrid.ItemsSource = fuzzyMatchResults.ToList();
+                libraryDataGrid.ItemsSource = fuzzyMatchResults;
+
+                if (fuzzyMatchResults.Any()) {
+                    libraryDataGrid.SelectedItem = fuzzyMatchResults.First();
+                }
             }
         }
     }
