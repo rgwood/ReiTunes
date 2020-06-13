@@ -16,17 +16,15 @@ using Windows.UI.Xaml.Navigation;
 
 // The Blank Page item template is documented at https://go.microsoft.com/fwlink/?LinkId=402352&clcid=0x409
 
-namespace ReiTunes
-{
+namespace ReiTunes {
+
     /// <summary>
     /// The main UI of ReiTunes, a simple music player
     /// </summary>
-    public sealed partial class Player : Page
-    {
+    public sealed partial class Player : Page {
         public PlayerViewModel ViewModel { get; }
 
-        public Player()
-        {
+        public Player() {
             this.InitializeComponent();
 
             ApplicationView.GetForCurrentView().SetPreferredMinSize(new Size(200, 155));
@@ -34,36 +32,29 @@ namespace ReiTunes
             SetUpKeyboardAccelerators();
         }
 
-        private void ToggleMediaPlaybackState()
-        {
+        private void ToggleMediaPlaybackState() {
             var mediaPlayer = musicPlayer.MediaPlayer;
             var currState = mediaPlayer.PlaybackSession.PlaybackState;
-            if (currState == MediaPlaybackState.Playing)
-            {
+            if (currState == MediaPlaybackState.Playing) {
                 mediaPlayer.Pause();
             }
-            else if (currState == MediaPlaybackState.Paused || currState == MediaPlaybackState.None)
-            {
+            else if (currState == MediaPlaybackState.Paused || currState == MediaPlaybackState.None) {
                 mediaPlayer.Play();
             }
         }
 
-        protected async override void OnNavigatedTo(NavigationEventArgs e)
-        {
+        protected async override void OnNavigatedTo(NavigationEventArgs e) {
             base.OnNavigatedTo(e);
             await ViewModel.Initialize();
         }
 
-        private void OpenSelectedFileTreeItem(object sender = null, RoutedEventArgs e = null)
-        {
+        private void OpenSelectedFileTreeItem(object sender = null, RoutedEventArgs e = null) {
             var selected = (LibraryItem)libraryItemDataGrid.SelectedItem;
             ViewModel.ChangeSource(selected?.FullPath);
         }
 
-        private void SearchBox_TextChanged(AutoSuggestBox sender, AutoSuggestBoxTextChangedEventArgs args)
-        {
-            if (args.Reason == AutoSuggestionBoxTextChangeReason.UserInput)
-            {
+        private void SearchBox_TextChanged(AutoSuggestBox sender, AutoSuggestBoxTextChangedEventArgs args) {
+            if (args.Reason == AutoSuggestionBoxTextChangeReason.UserInput) {
                 var typedText = sender.Text;
 
                 var files = ViewModel.FileTreeItems;
@@ -77,8 +68,7 @@ namespace ReiTunes
 
                 //short-circuit if the result hasn't changed, to avoid slow rerenders.
                 //TODO: do a more accurate check than just comparing the item count
-                if (sender.ItemsSource != null)
-                {
+                if (sender.ItemsSource != null) {
                     var existingItems = (List<LibraryItem>)sender.ItemsSource;
                     if (existingItems.Count == fuzzyMatchResults.Count())
                         return;
@@ -89,8 +79,7 @@ namespace ReiTunes
             }
         }
 
-        private void SearchBox_QuerySubmitted(AutoSuggestBox sender, AutoSuggestBoxQuerySubmittedEventArgs args)
-        {
+        private void SearchBox_QuerySubmitted(AutoSuggestBox sender, AutoSuggestBoxQuerySubmittedEventArgs args) {
             var selection = (LibraryItem)args.ChosenSuggestion;
             ViewModel.ChangeSource(selection?.FullPath);
         }
@@ -103,11 +92,9 @@ namespace ReiTunes
 
         #region KeyboardStuff
 
-        private void SetUpKeyboardAccelerators()
-        {
+        private void SetUpKeyboardAccelerators() {
             KeyboardAccelerator CreateAccelerator(VirtualKeyModifiers modifier, VirtualKey key,
-                TypedEventHandler<KeyboardAccelerator, KeyboardAcceleratorInvokedEventArgs> eventHandler)
-            {
+                TypedEventHandler<KeyboardAccelerator, KeyboardAcceleratorInvokedEventArgs> eventHandler) {
                 var ret = new KeyboardAccelerator() { Modifiers = modifier, Key = key };
                 ret.Invoked += eventHandler;
                 return ret;
@@ -115,100 +102,86 @@ namespace ReiTunes
 
             //refresh accelerator
             KeyboardAccelerators.Add(CreateAccelerator(VirtualKeyModifiers.Control, VirtualKey.R,
-                async (sender, args) =>
-                {
+                async (sender, args) => {
                     args.Handled = true;
                     await ViewModel.DownloadAndLoadLibraryFile();
                 }));
 
             //search accelerator
             KeyboardAccelerators.Add(CreateAccelerator(VirtualKeyModifiers.Control, VirtualKey.F,
-                (sender, args) =>
-                {
+                (sender, args) => {
                     args.Handled = true;
-                    SearchBox.Focus(FocusState.Keyboard);
+                    FilterBox.Focus(FocusState.Keyboard);
+                    FilterBox.SelectAll();
                 }));
 
             //open cache
             KeyboardAccelerators.Add(CreateAccelerator(VirtualKeyModifiers.Control, VirtualKey.E,
-                async (sender, args) =>
-                {
+                async (sender, args) => {
                     args.Handled = true;
                     await Launcher.LaunchFolderAsync(Windows.Storage.ApplicationData.Current.LocalCacheFolder);
                 }));
         }
 
-        private void Page_Loaded(object sender, RoutedEventArgs e)
-        {
+        private void Page_Loaded(object sender, RoutedEventArgs e) {
             Window.Current.CoreWindow.KeyDown += CoreWindow_KeyDown;
-            SearchBox.KeyDown += SearchBox_KeyDown;
-            SearchBox.PreviewKeyDown += SearchBox_PreviewKeyDown;
+            FilterBox.KeyDown += HandleSpaceBar;
+            FilterBox.PreviewKeyDown += FilterBox_PreviewKeyDown;
             libraryItemDataGrid.PreviewKeyDown += FileTreeView_PreviewKeyDown;
         }
 
-        private void FileTreeView_PreviewKeyDown(object sender, KeyRoutedEventArgs args)
-        {
+        private void FileTreeView_PreviewKeyDown(object sender, KeyRoutedEventArgs args) {
             if (args.Key == VirtualKey.Enter)
                 OpenSelectedFileTreeItem();
         }
 
-        private void SearchBox_PreviewKeyDown(object sender, KeyRoutedEventArgs args)
-        {
-            if (args.Key == VirtualKey.Escape)
-            {
-                SearchBox.Text = "";
-                // hack: this just happens to move to the scrubbing control
-                // TODO: find a way of changing focus to the scrubbing control that does
-                // not rely on it being the next tab stop
-                FocusManager.TryMoveFocus(FocusNavigationDirection.Next);
+        private void FilterBox_PreviewKeyDown(object sender, KeyRoutedEventArgs args) {
+            if (args.Key == VirtualKey.Escape) {
+                if(FilterBox.Text == "") {
+                    // hack: this just happens to move to the scrubbing control
+                    // TODO: find a way of changing focus to the scrubbing control that does
+                    // not rely on it being the next tab stop?
+                    FocusManager.TryMoveFocus(FocusNavigationDirection.Previous);
+                } else {
+                    FilterBox.Text = "";
+                }
             }
         }
 
-        private void SearchBox_KeyDown(object sender, KeyRoutedEventArgs args)
-        {
-            if (args.Key == VirtualKey.Space)
-            {
+        private void HandleSpaceBar(object sender, KeyRoutedEventArgs args) {
+            if (args.Key == VirtualKey.Space) {
                 args.Handled = true;
             }
         }
 
-        private async void CoreWindow_KeyDown(Windows.UI.Core.CoreWindow sender, Windows.UI.Core.KeyEventArgs args)
-        {
-            if (args.VirtualKey == VirtualKey.Space)
-            {
+        private async void CoreWindow_KeyDown(Windows.UI.Core.CoreWindow sender, Windows.UI.Core.KeyEventArgs args) {
+            if (args.VirtualKey == VirtualKey.Space) {
                 var focusedCtrl = FocusManager.GetFocusedElement();
-                if (!(focusedCtrl is TextBox))
-                {
+                if (!(focusedCtrl is TextBox)) {
                     ToggleMediaPlaybackState();
                 }
             }
             //Not sure why but I can't get this to work in an accelerator, so it goes here
-            else if (args.VirtualKey == VirtualKey.F5)
-            {
+            else if (args.VirtualKey == VirtualKey.F5) {
                 await ViewModel.DownloadAndLoadLibraryFile();
             }
         }
 
-        private void Page_Unloaded(object sender, RoutedEventArgs e)
-        {
+        private void Page_Unloaded(object sender, RoutedEventArgs e) {
             Window.Current.CoreWindow.KeyDown -= CoreWindow_KeyDown;
         }
 
         #endregion KeyboardStuff
 
-        private void FilterBox_TextChanged(object sender, TextChangedEventArgs e)
-        {
+        private void FilterBox_TextChanged(object sender, TextChangedEventArgs e) {
             var searchstring = FilterBox.Text.ToLower();
-            if (searchstring == "")
-            {
+            if (searchstring == "") {
                 libraryItemDataGrid.ItemsSource = ViewModel.FileTreeItems;
             }
-            else
-            {
+            else {
                 var filtered = new ObservableCollection<LibraryItem>();
 
-                foreach (var item in ViewModel.FileTreeItems)
-                {
+                foreach (var item in ViewModel.FileTreeItems) {
                     if (item.FullPath.Contains(searchstring, StringComparison.OrdinalIgnoreCase))
                         filtered.Add(item);
                 }
