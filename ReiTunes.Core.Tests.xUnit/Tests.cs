@@ -1,6 +1,8 @@
 ﻿using ReiTunes.Core;
 using System.Collections.Generic;
+using ReiTunes.Records;
 using Xunit;
+using System;
 
 namespace ReiTunes.Core.Tests.XUnit {
 
@@ -28,7 +30,8 @@ namespace ReiTunes.Core.Tests.XUnit {
         }
 
         [Fact]
-        public void SwitchExpressionWorks() {
+        public void Scratchpad() {
+            var ev = new LibraryItemCreatedEvent(Guid.NewGuid(), "foo.mp3");
         }
     }
 }

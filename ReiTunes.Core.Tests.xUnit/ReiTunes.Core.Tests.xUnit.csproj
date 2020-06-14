@@ -16,6 +16,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\ReiTunes.Core\ReiTunes.Core.csproj" />
+    <ProjectReference Include="..\ReiTunes.Records\ReiTunes.Records.fsproj" />
   </ItemGroup>
   
 </Project>
