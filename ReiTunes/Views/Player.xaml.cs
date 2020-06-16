@@ -50,7 +50,7 @@ namespace ReiTunes {
 
         private void OpenSelectedLibraryItem(object sender = null, RoutedEventArgs e = null) {
             var selected = (LibraryItem)libraryDataGrid.SelectedItem;
-            ViewModel.ChangeSource(selected?.FullPath);
+            ViewModel.ChangeSource(selected?.FilePath);
         }
 
         // This is where I set up keyboard accelerators and do some ridiculous hacks
@@ -172,7 +172,7 @@ namespace ReiTunes {
             else {
                 var fuzzyMatchResults =
                     (from file in ViewModel.LibraryItems
-                     let fuzzyResult = FuzzyMatcher.FuzzyMatch(file.FullPath, searchstring)
+                     let fuzzyResult = FuzzyMatcher.FuzzyMatch(file.FilePath, searchstring)
                      where fuzzyResult.isMatch
                      orderby fuzzyResult.score descending
                      select file).ToList();

@@ -6,44 +6,39 @@ using ReiTunes.Core;
 
 namespace ReiTunes.Core {
 
-    public class LibraryItem : Observable {
-        private string _name;
+    public class LibraryItem : Aggregate {
+        public string Name { get; set; }
 
-        public string Name {
-            get { return _name; }
-            set { Set(ref _name, value); }
-        }
-
-        private string _fullPath;
-
-        public string FullPath {
-            get { return _fullPath; }
-            set { Set(ref _fullPath, value); }
-        }
-
-        private Guid _id;
-
-        public Guid Id {
-            get { return _id; }
-            set { Set(ref _id, value); }
-        }
+        public string FilePath { get; set; }
 
         public string Artist { get; set; }
         public string Album { get; set; }
         public int? TrackNumber { get; set; }
-        public DateTime DateAddedUtc { get; set; }
+        public DateTime CreatedTimeUtc { get; set; }
 
-        //for deserialization
         public LibraryItem() {
         }
 
         public LibraryItem(string relativePath) {
-            _id = Guid.NewGuid();
-            _name = GetFileNameFromPath(relativePath);
-            _fullPath = relativePath;
-            DateAddedUtc = DateTime.UtcNow;
+            Id = Guid.NewGuid();
+            Name = GetFileNameFromPath(relativePath);
+            FilePath = relativePath;
+            CreatedTimeUtc = DateTime.UtcNow;
+
+            ApplyUncommitted(new LibraryItemCreatedEvent(Id, Name, FilePath, CreatedTimeUtc));
         }
 
         private string GetFileNameFromPath(string path) => path.Split('/').Last();
+
+        protected override void RegisterAppliers() {
+            this.RegisterApplier<LibraryItemCreatedEvent>(this.Apply);
+        }
+
+        private void Apply(LibraryItemCreatedEvent @event) {
+            Id = @event.ItemId;
+            Name = @event.Name;
+            FilePath = @event.FilePath;
+            CreatedTimeUtc = @event.CreatedTimeUtc;
+        }
     }
 }

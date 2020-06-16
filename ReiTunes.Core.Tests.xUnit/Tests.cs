@@ -1,6 +1,5 @@
 ﻿using ReiTunes.Core;
 using System.Collections.Generic;
-using ReiTunes.Records;
 using Xunit;
 using System;
 
@@ -30,8 +29,36 @@ namespace ReiTunes.Core.Tests.XUnit {
         }
 
         [Fact]
-        public void Scratchpad() {
-            var ev = new LibraryItemCreatedEvent(Guid.NewGuid(), "foo.mp3");
+        public void CanCreateLibraryItemFromEvent() {
+            var guid = Guid.NewGuid();
+            var name = "bar.mp3";
+            var path = "foo/bar.mp3";
+            var createdDate = new DateTime(2020, 12, 25);
+
+            var createdEvent = new LibraryItemCreatedEvent(guid, name, path, createdDate);
+
+            var item = new LibraryItem();
+            item.LoadFromHistory(new List<IEvent>() { createdEvent });
+
+            Assert.Equal(guid, item.Id);
+            Assert.Equal(name, item.Name);
+            Assert.Equal(path, item.FilePath);
+            Assert.Equal(createdDate, item.CreatedTimeUtc);
+        }
+
+        [Fact]
+        public void Scratch() {
+            IInterface rec = new Record(Guid.NewGuid(), 3);
+
+            Console.WriteLine("foo");
+            var guid = Guid.NewGuid();
+            var name = "bar.mp3";
+            var path = "foo/bar.mp3";
+            var createdDate = new DateTime(2020, 12, 25);
+
+            var createdEvent = new LibraryItemCreatedEvent(guid, name, path, createdDate);
+
+            var serializedEvent = Json.Stringify(createdEvent);
         }
     }
 }
