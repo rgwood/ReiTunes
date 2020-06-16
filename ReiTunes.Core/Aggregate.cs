@@ -28,7 +28,7 @@ namespace ReiTunes.Core {
             _uncommittedChanges.Add(evt);
         }
 
-        private void Apply(IEvent evt) {
+        public void Apply(IEvent evt) {
             var evtType = evt.GetType();
             if (!_eventAppliers.ContainsKey(evtType)) {
                 throw new NotImplementedException($"Apply() not implemented for {evtType}");
@@ -36,7 +36,7 @@ namespace ReiTunes.Core {
             _eventAppliers[evtType](evt);
         }
 
-        public void LoadFromHistory(IEnumerable<IEvent> history) {
+        public void ApplyEvents(IEnumerable<IEvent> history) {
             foreach (var evt in history) {
                 Apply(evt);
             }

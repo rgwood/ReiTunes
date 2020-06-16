@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using Xunit;
 using System;
+using System.Linq;
 
 namespace ReiTunes.Core.Tests.XUnit {
 
@@ -38,7 +39,7 @@ namespace ReiTunes.Core.Tests.XUnit {
             var createdEvent = new LibraryItemCreatedEvent(guid, name, path, createdDate);
 
             var item = new LibraryItem();
-            item.LoadFromHistory(new List<IEvent>() { createdEvent });
+            item.ApplyEvents(new List<IEvent>() { createdEvent });
 
             Assert.Equal(guid, item.Id);
             Assert.Equal(name, item.Name);
@@ -47,9 +48,39 @@ namespace ReiTunes.Core.Tests.XUnit {
         }
 
         [Fact]
-        public void Scratch() {
-            IInterface rec = new Record(Guid.NewGuid(), 3);
+        public void TestSimpleTextAggregate() {
+            var guid = Guid.NewGuid();
+            var createdDate = new DateTime(2020, 12, 25);
 
+            var createdEvent = new SimpleTextAggregateCreatedEvent(guid, createdDate, "foo");
+
+            var agg = new SimpleTextAggregate();
+            agg.ApplyEvents(new List<IEvent>() { createdEvent });
+
+            Assert.Equal(guid, agg.Id);
+            Assert.Equal("foo", agg.Text);
+
+            agg.Apply(new SimpleTextAggregateUpdatedEvent(Guid.NewGuid(), DateTime.UtcNow, "bar"));
+
+            Assert.Equal("bar", agg.Text);
+        }
+
+        [Fact]
+        public void EditingSimpleAggregateCreatesEvents() {
+            var guid = Guid.NewGuid();
+            var createdDate = new DateTime(2020, 12, 25);
+
+            var agg = new SimpleTextAggregate("foo");
+            Assert.Single(agg.GetUncommitedChanges());
+            Assert.Equal("foo", agg.Text);
+
+            agg.Text = "bar";
+            Assert.Equal(2, agg.GetUncommitedChanges().Count());
+            Assert.Equal("bar", agg.Text);
+        }
+
+        [Fact]
+        public void Scratch() {
             Console.WriteLine("foo");
             var guid = Guid.NewGuid();
             var name = "bar.mp3";
