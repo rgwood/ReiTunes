@@ -2,26 +2,40 @@
 
 open System
 
-[<Interface>]
-type IEvent = interface end
-
-type LibraryItemCreatedEvent = {
-  ItemId: Guid;
-  Name: string;
-  FilePath: string;
-  CreatedTimeUtc: DateTime;
-} with interface IEvent
-
-type LibraryItemPlayedEvent = {
-  ItemId: Guid;
-} with interface IEvent
-
 //How to do an interface with a value
 [<Interface>]
-type IInterface =
+type IEvent =
   abstract Id: Guid
+  abstract CreatedTimeUtc: DateTime;
 
-type Record =
-  { Id: Guid
-    Value1: int }
-  interface IInterface with member x.Id = x.Id
+type LibraryItemCreatedEvent =
+  { Id: Guid;
+    Name: string;
+    FilePath: string;
+    CreatedTimeUtc: DateTime; }
+  interface IEvent with
+    member x.CreatedTimeUtc = x.CreatedTimeUtc;
+    member x.Id = x.Id;
+
+type LibraryItemPlayedEvent =
+  { Id: Guid;
+    CreatedTimeUtc: DateTime; }
+  interface IEvent with
+    member x.CreatedTimeUtc = x.CreatedTimeUtc;
+    member x.Id = x.Id;
+
+type SimpleTextAggregateCreatedEvent =
+  { Id: Guid;
+    CreatedTimeUtc: DateTime;
+    Text: string }
+  interface IEvent with
+    member x.CreatedTimeUtc = x.CreatedTimeUtc;
+    member x.Id = x.Id;
+
+type SimpleTextAggregateUpdatedEvent =
+  { Id: Guid;
+    CreatedTimeUtc: DateTime;
+    Text: string }
+  interface IEvent with
+    member x.CreatedTimeUtc = x.CreatedTimeUtc;
+    member x.Id = x.Id;

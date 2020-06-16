@@ -35,7 +35,7 @@ namespace ReiTunes.Core {
         }
 
         private void Apply(LibraryItemCreatedEvent @event) {
-            Id = @event.ItemId;
+            Id = @event.Id;
             Name = @event.Name;
             FilePath = @event.FilePath;
             CreatedTimeUtc = @event.CreatedTimeUtc;
