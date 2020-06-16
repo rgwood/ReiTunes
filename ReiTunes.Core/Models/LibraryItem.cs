@@ -20,12 +20,12 @@ namespace ReiTunes.Core {
         }
 
         public LibraryItem(string relativePath) {
-            Id = Guid.NewGuid();
-            Name = GetFileNameFromPath(relativePath);
-            FilePath = relativePath;
-            CreatedTimeUtc = DateTime.UtcNow;
+            //Id = Guid.NewGuid();
+            //Name = GetFileNameFromPath(relativePath);
+            //FilePath = relativePath;
+            //CreatedTimeUtc = DateTime.UtcNow;
 
-            ApplyUncommitted(new LibraryItemCreatedEvent(Id, Name, FilePath, CreatedTimeUtc));
+            ApplyUncommitted(new LibraryItemCreatedEvent(Guid.NewGuid(), Guid.NewGuid(), Name, FilePath, CreatedTimeUtc));
         }
 
         private string GetFileNameFromPath(string path) => path.Split('/').Last();
@@ -35,7 +35,7 @@ namespace ReiTunes.Core {
         }
 
         private void Apply(LibraryItemCreatedEvent @event) {
-            Id = @event.Id;
+            Id = @event.AggregateId;
             Name = @event.Name;
             FilePath = @event.FilePath;
             CreatedTimeUtc = @event.CreatedTimeUtc;

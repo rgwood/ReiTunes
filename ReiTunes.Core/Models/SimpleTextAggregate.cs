@@ -12,7 +12,7 @@ namespace ReiTunes.Core {
         public string Text {
             get => _text;
             set {
-                ApplyUncommitted(new SimpleTextAggregateUpdatedEvent(Guid.NewGuid(), DateTime.UtcNow, value));
+                ApplyUncommitted(new SimpleTextAggregateUpdatedEvent(Guid.NewGuid(), Id, DateTime.UtcNow, value));
             }
         }
 
@@ -20,7 +20,7 @@ namespace ReiTunes.Core {
         }
 
         public SimpleTextAggregate(string text) {
-            ApplyUncommitted(new SimpleTextAggregateCreatedEvent(Guid.NewGuid(), DateTime.UtcNow, text));
+            ApplyUncommitted(new SimpleTextAggregateCreatedEvent(Guid.NewGuid(), Guid.NewGuid(), DateTime.UtcNow, text));
         }
 
         protected override void RegisterAppliers() {
@@ -29,7 +29,7 @@ namespace ReiTunes.Core {
         }
 
         private void Apply(SimpleTextAggregateCreatedEvent @event) {
-            Id = @event.Id;
+            Id = @event.AggregateId;
             _text = @event.Text;
         }
 
