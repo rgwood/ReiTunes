@@ -36,7 +36,7 @@ namespace ReiTunes.Core.Tests.XUnit {
             var path = "foo/bar.mp3";
             var createdDate = new DateTime(2020, 12, 25);
 
-            var createdEvent = new LibraryItemCreatedEvent(guid, name, path, createdDate);
+            var createdEvent = new LibraryItemCreatedEvent(Guid.NewGuid(), guid, name, path, createdDate);
 
             var item = new LibraryItem();
             item.ApplyEvents(new List<IEvent>() { createdEvent });
@@ -52,7 +52,7 @@ namespace ReiTunes.Core.Tests.XUnit {
             var guid = Guid.NewGuid();
             var createdDate = new DateTime(2020, 12, 25);
 
-            var createdEvent = new SimpleTextAggregateCreatedEvent(guid, createdDate, "foo");
+            var createdEvent = new SimpleTextAggregateCreatedEvent(Guid.NewGuid(), guid, createdDate, "foo");
 
             var agg = new SimpleTextAggregate();
             agg.ApplyEvents(new List<IEvent>() { createdEvent });
@@ -60,7 +60,7 @@ namespace ReiTunes.Core.Tests.XUnit {
             Assert.Equal(guid, agg.Id);
             Assert.Equal("foo", agg.Text);
 
-            agg.Apply(new SimpleTextAggregateUpdatedEvent(Guid.NewGuid(), DateTime.UtcNow, "bar"));
+            agg.Apply(new SimpleTextAggregateUpdatedEvent(Guid.NewGuid(), guid, DateTime.UtcNow, "bar"));
 
             Assert.Equal("bar", agg.Text);
         }
@@ -80,16 +80,36 @@ namespace ReiTunes.Core.Tests.XUnit {
         }
 
         [Fact]
+        public void CanPersistAndRehydrateSimpleAggregate() {
+            var createdDate = new DateTime(2020, 12, 25);
+
+            var agg = new SimpleTextAggregate("foo");
+            agg.Text = "bar";
+
+            var repo = new InMemoryEventRepository();
+
+            foreach (var @event in agg.GetUncommitedChanges()) {
+                repo.Save(@event);
+            }
+
+            Assert.Equal(2, repo.GetEvents(agg.Id).Count());
+
+            agg.Commit();
+
+            var agg2 = new SimpleTextAggregate();
+            agg2.ApplyEvents(repo.GetEvents(agg.Id));
+
+            Assert.Equal(agg.Id, agg2.Id);
+            Assert.Equal(agg.Text, agg2.Text);
+        }
+
+        [Fact]
         public void Scratch() {
             Console.WriteLine("foo");
             var guid = Guid.NewGuid();
             var name = "bar.mp3";
             var path = "foo/bar.mp3";
             var createdDate = new DateTime(2020, 12, 25);
-
-            var createdEvent = new LibraryItemCreatedEvent(guid, name, path, createdDate);
-
-            var serializedEvent = Json.Stringify(createdEvent);
         }
     }
 }
