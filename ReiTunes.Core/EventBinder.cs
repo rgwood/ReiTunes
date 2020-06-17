@@ -11,6 +11,7 @@ namespace ReiTunes.Core {
     /// ex: "$type": "ReiTunes.Core.SimpleTextAggregateCreatedEvent, ReiTunes.Records"
     /// This is bad for my needs, I want the flexibility to change up my event implementation later on.
     /// Hence, this serializationbinder which is purely based on unqualified names.
+    /// Got the idea from http://appetere.com/post/serializing-interfaces-with-jsonnet
     /// </summary>
     public class EventBinder : ISerializationBinder {
 
