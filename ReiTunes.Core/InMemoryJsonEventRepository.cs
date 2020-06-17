@@ -7,7 +7,9 @@ using System.Text;
 namespace ReiTunes.Core {
 
     public class InMemoryJsonEventRepository : IEventRepository {
-        private List<string> _events = new List<string>();
+
+        // Keyed off of aggregate ID
+        private Dictionary<Guid, List<string>> _events = new Dictionary<Guid, List<string>>();
 
         private JsonSerializerSettings serializerSettings = new JsonSerializerSettings {
             TypeNameHandling = TypeNameHandling.All,
@@ -15,13 +17,19 @@ namespace ReiTunes.Core {
         };
 
         public IEnumerable<IEvent> GetEvents(Guid aggregateId) {
-            var deserialized = _events.Select(e => JsonConvert.DeserializeObject(e, serializerSettings));
+            var serializedEvents = _events[aggregateId];
+            var deserialized = serializedEvents.Select(e => JsonConvert.DeserializeObject(e, serializerSettings));
             return deserialized.Cast<IEvent>().Where(e => e.AggregateId == aggregateId);
         }
 
         public void Save(IEvent @event) {
             var serialized = JsonConvert.SerializeObject(@event, serializerSettings);
-            _events.Add(serialized);
+            if (_events.ContainsKey(@event.AggregateId)) {
+                _events[@event.AggregateId].Add(serialized);
+            }
+            else {
+                _events.Add(@event.AggregateId, new List<string> { serialized });
+            }
         }
     }
 }
