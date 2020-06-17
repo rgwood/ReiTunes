@@ -67,9 +67,6 @@ namespace ReiTunes.Core.Tests.XUnit {
 
         [Fact]
         public void EditingSimpleAggregateCreatesEvents() {
-            var guid = Guid.NewGuid();
-            var createdDate = new DateTime(2020, 12, 25);
-
             var agg = new SimpleTextAggregate("foo");
             Assert.Single(agg.GetUncommitedChanges());
             Assert.Equal("foo", agg.Text);
@@ -81,12 +78,32 @@ namespace ReiTunes.Core.Tests.XUnit {
 
         [Fact]
         public void CanPersistAndRehydrateSimpleAggregate() {
-            var createdDate = new DateTime(2020, 12, 25);
-
             var agg = new SimpleTextAggregate("foo");
             agg.Text = "bar";
 
             var repo = new InMemoryEventRepository();
+
+            foreach (var @event in agg.GetUncommitedChanges()) {
+                repo.Save(@event);
+            }
+
+            Assert.Equal(2, repo.GetEvents(agg.Id).Count());
+
+            agg.Commit();
+
+            var agg2 = new SimpleTextAggregate();
+            agg2.ApplyEvents(repo.GetEvents(agg.Id));
+
+            Assert.Equal(agg.Id, agg2.Id);
+            Assert.Equal(agg.Text, agg2.Text);
+        }
+
+        [Fact]
+        public void CanPersistAndRehydrateSimpleAggregateToFromJson() {
+            var agg = new SimpleTextAggregate("foo");
+            agg.Text = "bar";
+
+            var repo = new InMemoryJsonEventRepository();
 
             foreach (var @event in agg.GetUncommitedChanges()) {
                 repo.Save(@event);
