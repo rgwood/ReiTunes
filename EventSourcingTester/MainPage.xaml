@@ -1,0 +1,64 @@
+﻿<Page
+    x:Class="EventSourcingTester.MainPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:controls="using:Microsoft.Toolkit.Uwp.UI.Controls"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:local="using:EventSourcingTester"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    Background="{ThemeResource ApplicationPageBackgroundThemeBrush}"
+    mc:Ignorable="d">
+
+    <StackPanel HorizontalAlignment="Center" Orientation="Vertical">
+        <StackPanel HorizontalAlignment="Center" Orientation="Vertical">
+            <TextBlock>Server</TextBlock>
+            <controls:DataGrid CellEditEnded="DataGridServer_CellEditEnded" ItemsSource="{x:Bind server.Models, Mode=TwoWay}">
+                <!--<controls:DataGrid.Columns>
+                    <controls:DataGridTextColumn
+                        Binding="{Binding Text}"
+                        Header="Text"
+                        Tag="Text" />
+                </controls:DataGrid.Columns>-->
+            </controls:DataGrid>
+            <Button Click="Server_ViewEventsClick">View Events</Button>
+        </StackPanel>
+
+        <StackPanel HorizontalAlignment="Center" Orientation="Horizontal">
+            <StackPanel
+                Margin="10"
+                HorizontalAlignment="Center"
+                Orientation="Vertical">
+                <TextBlock>Client 1</TextBlock>
+                <controls:DataGrid CellEditEnded="DataGrid1_CellEditEnded" ItemsSource="{x:Bind app1.Models, Mode=TwoWay}">
+                    <!--<controls:DataGrid.Columns>
+                        <controls:DataGridTextColumn
+                            Binding="{Binding Text}"
+                            Header="Text"
+                            Tag="Text" />
+                    </controls:DataGrid.Columns>-->
+                </controls:DataGrid>
+
+                <Button Click="App1_AddClick">Add</Button>
+                <Button Click="App1_PullClick">Pull</Button>
+                <Button Click="App1_PushClick">Push</Button>
+                <Button Click="App1_ViewEventsClick">View Events</Button>
+            </StackPanel>
+            <StackPanel Margin="10" Orientation="Vertical">
+                <TextBlock>Client 2</TextBlock>
+                <controls:DataGrid CellEditEnded="DataGrid2_CellEditEnded" ItemsSource="{x:Bind app2.Models, Mode=TwoWay}">
+                    <!--<controls:DataGrid.Columns>
+                        <controls:DataGridTextColumn
+                            Binding="{Binding Text}"
+                            Header="Text"
+                            Tag="Text" />
+                    </controls:DataGrid.Columns>-->
+                </controls:DataGrid>
+                <Button Click="App2_AddClick">Add</Button>
+                <Button Click="App2_PullClick">Pull</Button>
+                <Button Click="App2_PushClick">Push</Button>
+                <Button Click="App2_ViewEventsClick">View Events</Button>
+            </StackPanel>
+        </StackPanel>
+        <TextBlock x:Name="EventsTextBlock">hello</TextBlock>
+    </StackPanel>
+</Page>
