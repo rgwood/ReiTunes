@@ -5,10 +5,14 @@ using System.Threading.Tasks;
 
 namespace ReiTunes.Core {
 
-    internal interface IEventRepository {
+    public interface IEventRepository {
 
-        public IEnumerable<IEvent> GetEvents(Guid id);
+        public IEnumerable<IEvent> GetEvents(Guid aggregateId);
+
+        public IEnumerable<IEvent> GetAllEvents();
 
         public void Save(IEvent @event);
+
+        public bool ContainsEvent(Guid eventId);
     }
 }

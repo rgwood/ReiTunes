@@ -68,11 +68,11 @@ namespace ReiTunes.Core.Tests.XUnit {
         [Fact]
         public void EditingSimpleAggregateCreatesEvents() {
             var agg = new SimpleTextAggregate("foo");
-            Assert.Single(agg.GetUncommitedChanges());
+            Assert.Single(agg.GetUncommittedEvents());
             Assert.Equal("foo", agg.Text);
 
             agg.Text = "bar";
-            Assert.Equal(2, agg.GetUncommitedChanges().Count());
+            Assert.Equal(2, agg.GetUncommittedEvents().Count());
             Assert.Equal("bar", agg.Text);
         }
 
@@ -83,7 +83,7 @@ namespace ReiTunes.Core.Tests.XUnit {
 
             var repo = new InMemoryEventRepository();
 
-            foreach (var @event in agg.GetUncommitedChanges()) {
+            foreach (var @event in agg.GetUncommittedEvents()) {
                 repo.Save(@event);
             }
 
@@ -105,7 +105,7 @@ namespace ReiTunes.Core.Tests.XUnit {
 
             var repo = new InMemoryJsonEventRepository();
 
-            foreach (var @event in agg.GetUncommitedChanges()) {
+            foreach (var @event in agg.GetUncommittedEvents()) {
                 repo.Save(@event);
             }
 
@@ -127,6 +127,74 @@ namespace ReiTunes.Core.Tests.XUnit {
             var name = "bar.mp3";
             var path = "foo/bar.mp3";
             var createdDate = new DateTime(2020, 12, 25);
+        }
+
+        [Fact]
+        public void ContainsEventWorks_JsonRepo() {
+            var agg = new SimpleTextAggregate("foo");
+            agg.Text = "bar";
+
+            IEventRepository repo = new InMemoryJsonEventRepository();
+
+            foreach (var @event in agg.GetUncommittedEvents()) {
+                Assert.False(repo.ContainsEvent(@event.Id));
+                repo.Save(@event);
+                Assert.True(repo.ContainsEvent(@event.Id));
+            }
+        }
+
+        [Fact]
+        public void ContainsEventWorks_InMemoryRepo() {
+            var agg = new SimpleTextAggregate("foo");
+            agg.Text = "bar";
+
+            IEventRepository repo = new InMemoryEventRepository();
+
+            foreach (var @event in agg.GetUncommittedEvents()) {
+                Assert.False(repo.ContainsEvent(@event.Id));
+                repo.Save(@event);
+                Assert.True(repo.ContainsEvent(@event.Id));
+            }
+        }
+
+        [Fact]
+        public void WillNotSaveSameEventTwice_JsonRepo() {
+            var agg = new SimpleTextAggregate("foo");
+            agg.Text = "bar";
+
+            IEventRepository repo = new InMemoryJsonEventRepository();
+
+            foreach (var @event in agg.GetUncommittedEvents()) {
+                repo.Save(@event);
+            }
+
+            Assert.Equal(2, repo.GetAllEvents().Count());
+
+            foreach (var @event in agg.GetUncommittedEvents()) {
+                repo.Save(@event);
+            }
+
+            Assert.Equal(2, repo.GetAllEvents().Count());
+        }
+
+        [Fact]
+        public void WillNotSaveSameEventTwice_InMemoryRepo() {
+            var agg = new SimpleTextAggregate("foo");
+            agg.Text = "bar";
+
+            IEventRepository repo = new InMemoryEventRepository();
+
+            foreach (var @event in agg.GetUncommittedEvents()) {
+                repo.Save(@event);
+            }
+
+            Assert.Equal(2, repo.GetAllEvents().Count());
+
+            foreach (var @event in agg.GetUncommittedEvents()) {
+                repo.Save(@event);
+            }
+
+            Assert.Equal(2, repo.GetAllEvents().Count());
         }
     }
 }
