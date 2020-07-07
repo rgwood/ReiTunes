@@ -13,6 +13,7 @@ namespace ReiTunes.Core {
             get => _text;
             set {
                 ApplyUncommitted(new SimpleTextAggregateUpdatedEvent(Guid.NewGuid(), Id, DateTime.UtcNow, value));
+                NotifyPropertyChanged();
             }
         }
 
@@ -23,6 +24,14 @@ namespace ReiTunes.Core {
             ApplyUncommitted(new SimpleTextAggregateCreatedEvent(Guid.NewGuid(), Guid.NewGuid(), DateTime.UtcNow, text));
         }
 
+        public SimpleTextAggregate(Guid aggregateId, string text) {
+            ApplyUncommitted(new SimpleTextAggregateCreatedEvent(Guid.NewGuid(), aggregateId, DateTime.UtcNow, text));
+        }
+
+        public void Initialize(Guid aggregateId, string text) {
+            ApplyUncommitted(new SimpleTextAggregateCreatedEvent(Guid.NewGuid(), aggregateId: aggregateId, DateTime.UtcNow, text));
+        }
+
         protected override void RegisterAppliers() {
             this.RegisterApplier<SimpleTextAggregateCreatedEvent>(this.Apply);
             this.RegisterApplier<SimpleTextAggregateUpdatedEvent>(this.Apply);
@@ -31,10 +40,16 @@ namespace ReiTunes.Core {
         private void Apply(SimpleTextAggregateCreatedEvent @event) {
             Id = @event.AggregateId;
             _text = @event.Text;
+            NotifyPropertyChanged(nameof(Text));
         }
 
         private void Apply(SimpleTextAggregateUpdatedEvent @event) {
             _text = @event.Text;
+            NotifyPropertyChanged(nameof(Text));
+        }
+
+        public override string ToString() {
+            return Text;
         }
     }
 }

@@ -1,11 +1,15 @@
 ﻿using System.Collections.Generic;
 using System;
+using System.ComponentModel;
+using System.Runtime.CompilerServices;
 
 namespace ReiTunes.Core {
 
-    public abstract class Aggregate {
+    public abstract class Aggregate : INotifyPropertyChanged {
         private readonly List<IEvent> _uncommittedChanges;
         protected Dictionary<Type, Action<IEvent>> _eventAppliers;
+
+        public event PropertyChangedEventHandler PropertyChanged;
 
         protected Aggregate() {
             _uncommittedChanges = new List<IEvent>();
@@ -42,12 +46,14 @@ namespace ReiTunes.Core {
             }
         }
 
-        public IEnumerable<IEvent> GetUncommitedChanges() {
+        public IEnumerable<IEvent> GetUncommittedEvents() {
             return _uncommittedChanges.AsReadOnly();
         }
 
         public void Commit() {
             _uncommittedChanges.Clear();
         }
+
+        protected void NotifyPropertyChanged([CallerMemberName] string propertyName = null) => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
     }
 }
