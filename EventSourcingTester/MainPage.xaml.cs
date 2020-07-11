@@ -32,9 +32,9 @@ namespace EventSourcingTester {
         public MainPage() {
             this.InitializeComponent();
             sharedGuid = Guid.NewGuid();
-            app1 = new SimpleApplication();
-            app2 = new SimpleApplication();
-            server = new SimpleApplication();
+            app1 = new SimpleApplication("client1");
+            app2 = new SimpleApplication("client2");
+            server = new SimpleApplication("server");
         }
 
         private void App1_AddClick(object sender, RoutedEventArgs e) {
