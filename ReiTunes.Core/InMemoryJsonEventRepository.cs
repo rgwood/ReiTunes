@@ -41,6 +41,10 @@ namespace ReiTunes.Core {
             if (ContainsEvent(@event.Id))
                 return;
 
+            if (string.IsNullOrEmpty(@event.MachineName)) {
+                throw new Exception($"Machine name not specified on event {@event.Id}");
+            }
+
             var serialized = JsonConvert.SerializeObject(@event, serializerSettings);
             if (_events.ContainsKey(@event.AggregateId)) {
                 _events[@event.AggregateId].Add(serialized);

@@ -29,6 +29,7 @@ namespace ReiTunes.Core {
             foreach (var model in Models) {
                 foreach (var @event in model.GetUncommittedEvents()) {
                     //TODO: append machine name here
+                    @event.MachineName = MachineName;
                     Repo.Save(@event);
                 }
 
