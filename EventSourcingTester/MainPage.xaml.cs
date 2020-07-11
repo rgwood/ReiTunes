@@ -23,22 +23,22 @@ namespace EventSourcingTester {
     /// An empty page that can be used on its own or navigated to within a Frame.
     /// </summary>
     public sealed partial class MainPage : Page {
-        public SimpleApplication app1;
-        public SimpleApplication app2;
-        public SimpleApplication server;
+        public ReiTunesApplication app1;
+        public ReiTunesApplication app2;
+        public ReiTunesApplication server;
 
         private Guid sharedGuid;
 
         public MainPage() {
             this.InitializeComponent();
             sharedGuid = Guid.NewGuid();
-            app1 = new SimpleApplication("client1");
-            app2 = new SimpleApplication("client2");
-            server = new SimpleApplication("server");
+            app1 = new ReiTunesApplication("client1");
+            app2 = new ReiTunesApplication("client2");
+            server = new ReiTunesApplication("server");
         }
 
         private void App1_AddClick(object sender, RoutedEventArgs e) {
-            var agg = new SimpleTextAggregate("foo");
+            var agg = new LibraryItem("foo.mp3");
             app1.Models.Add(agg);
             app1.Commit();
         }
@@ -65,7 +65,7 @@ namespace EventSourcingTester {
         }
 
         private void App2_AddClick(object sender, RoutedEventArgs e) {
-            var agg = new SimpleTextAggregate("bar");
+            var agg = new LibraryItem("bar.mp3");
             app2.Models.Add(agg);
             app2.Commit();
         }

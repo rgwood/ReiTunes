@@ -17,7 +17,11 @@ namespace ReiTunes.Core {
 
         private IList<Type> _knownTypes = new List<Type> {
             typeof(SimpleTextAggregateCreatedEvent),
-            typeof(SimpleTextAggregateUpdatedEvent)
+            typeof(SimpleTextAggregateUpdatedEvent),
+            typeof(LibraryItemCreatedEvent),
+            typeof(LibraryItemPlayedEvent),
+            typeof(LibraryItemNameChangedEvent),
+            typeof(LibraryItemFilePathChangedEvent)
         };
 
         public Type BindToType(string assemblyName, string typeName) {
