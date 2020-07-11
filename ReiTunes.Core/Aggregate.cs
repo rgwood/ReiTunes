@@ -11,6 +11,8 @@ namespace ReiTunes.Core {
 
         public event PropertyChangedEventHandler PropertyChanged;
 
+        public DateTime CreatedTimeUtc { get; private set; }
+
         protected Aggregate() {
             _uncommittedChanges = new List<IEvent>();
             _eventAppliers = new Dictionary<Type, Action<IEvent>>();
@@ -23,7 +25,7 @@ namespace ReiTunes.Core {
             _eventAppliers.Add(typeof(TEvent), (x) => applier((TEvent)x));
         }
 
-        public Guid Id { get; set; }
+        public Guid AggregateId { get; set; }
 
         public string AggregateName { get { return GetType().Name; } }
 
@@ -38,6 +40,10 @@ namespace ReiTunes.Core {
                 throw new NotImplementedException($"Apply() not implemented for {evtType}");
             }
             _eventAppliers[evtType](evt);
+
+            if (CreatedTimeUtc == null || CreatedTimeUtc < evt.CreatedTimeUtc) {
+                CreatedTimeUtc = evt.CreatedTimeUtc;
+            }
         }
 
         public void ApplyEvents(IEnumerable<IEvent> history) {

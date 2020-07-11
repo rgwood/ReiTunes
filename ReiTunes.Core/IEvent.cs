@@ -47,20 +47,52 @@ namespace ReiTunes.Core {
         }
     }
 
-    public class LibraryItemCreatedEvent : IEvent {
+    public abstract class LibraryItemEvent : IEvent {
         public Guid Id { get; private set; }
         public Guid AggregateId { get; private set; }
         public DateTime CreatedTimeUtc { get; private set; }
-        public string Name { get; private set; }
-        public string FilePath { get; private set; }
         public string MachineName { get; set; }
 
-        public LibraryItemCreatedEvent(Guid id, Guid aggregateId, DateTime createdTimeUtc, string name, string filePath) {
+        public LibraryItemEvent(Guid id, Guid aggregateId, DateTime createdTimeUtc) {
             Id = id;
             AggregateId = aggregateId;
             CreatedTimeUtc = createdTimeUtc;
+        }
+    }
+
+    public class LibraryItemNameChangedEvent : LibraryItemEvent {
+        public string NewName { get; private set; }
+
+        public LibraryItemNameChangedEvent(Guid id, Guid aggregateId, DateTime createdTimeUtc, string newName)
+            : base(id, aggregateId, createdTimeUtc) {
+            NewName = newName;
+        }
+    }
+
+    public class LibraryItemFilePathChangedEvent : LibraryItemEvent {
+        public string NewFilePath { get; private set; }
+
+        public LibraryItemFilePathChangedEvent(Guid id, Guid aggregateId, DateTime createdTimeUtc, string newFilePath)
+            : base(id, aggregateId, createdTimeUtc) {
+            NewFilePath = newFilePath;
+        }
+    }
+
+    public class LibraryItemCreatedEvent : LibraryItemEvent {
+        public string Name { get; private set; }
+        public string FilePath { get; private set; }
+
+        public LibraryItemCreatedEvent(Guid id, Guid aggregateId, DateTime createdTimeUtc, string name, string filePath)
+            : base(id, aggregateId, createdTimeUtc) {
             Name = name;
             FilePath = filePath;
+        }
+    }
+
+    public class LibraryItemPlayedEvent : LibraryItemEvent {
+
+        public LibraryItemPlayedEvent(Guid id, Guid aggregateId, DateTime createdTimeUtc)
+            : base(id, aggregateId, createdTimeUtc) {
         }
     }
 }

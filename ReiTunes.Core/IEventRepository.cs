@@ -13,6 +13,8 @@ namespace ReiTunes.Core {
 
         public void Save(IEvent @event);
 
+        public void Save(IEnumerable<IEvent> events);
+
         public bool ContainsEvent(Guid eventId);
     }
 }

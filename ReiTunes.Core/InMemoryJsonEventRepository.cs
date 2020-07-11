@@ -37,6 +37,12 @@ namespace ReiTunes.Core {
             return deserialized.Cast<IEvent>();
         }
 
+        public void Save(IEnumerable<IEvent> events) {
+            foreach (var @event in events) {
+                Save(@event);
+            }
+        }
+
         public void Save(IEvent @event) {
             if (ContainsEvent(@event.Id))
                 return;

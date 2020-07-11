@@ -12,7 +12,7 @@ namespace ReiTunes.Core {
         public string Text {
             get => _text;
             set {
-                ApplyUncommitted(new SimpleTextAggregateUpdatedEvent(Guid.NewGuid(), Id, DateTime.UtcNow, value));
+                ApplyUncommitted(new SimpleTextAggregateUpdatedEvent(Guid.NewGuid(), AggregateId, DateTime.UtcNow, value));
                 NotifyPropertyChanged();
             }
         }
@@ -38,7 +38,7 @@ namespace ReiTunes.Core {
         }
 
         private void Apply(SimpleTextAggregateCreatedEvent @event) {
-            Id = @event.AggregateId;
+            AggregateId = @event.AggregateId;
             _text = @event.Text;
             NotifyPropertyChanged(nameof(Text));
         }

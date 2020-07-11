@@ -42,10 +42,70 @@ namespace ReiTunes.Core.Tests.XUnit {
             var item = new LibraryItem();
             item.ApplyEvents(new List<IEvent>() { createdEvent });
 
-            Assert.Equal(guid, item.Id);
+            Assert.Equal(guid, item.AggregateId);
             Assert.Equal(name, item.Name);
             Assert.Equal(path, item.FilePath);
             Assert.Equal(createdDate, item.CreatedTimeUtc);
+        }
+
+        [Fact]
+        public void LibraryItemIncrementPlayCountWorks() {
+            var item = new LibraryItem("foo/bar.mp3");
+
+            Assert.Equal(0, item.PlayCount);
+
+            item.IncrementPlayCount();
+
+            ItemCanBeRebuiltFromUncommittedEvents(item);
+
+            Assert.Equal(1, item.PlayCount);
+        }
+
+        [Fact]
+        public void CanSerializeDeserializeAllLibraryItemEvents() {
+            var item = new LibraryItem("foo/bar.mp3");
+
+            Assert.Equal(0, item.PlayCount);
+
+            item.IncrementPlayCount();
+
+            ItemCanBeRebuiltFromUncommittedEvents(item);
+
+            Assert.Equal(1, item.PlayCount);
+        }
+
+        [Fact]
+        public void LibraryItemNameChangeWorks() {
+            var item = new LibraryItem("foo/bar.mp3");
+            item.Name = item.Name + "x";
+            Assert.Equal("bar.mp3x", item.Name);
+            Assert.Equal(2, item.GetUncommittedEvents().Count());
+            ItemCanBeRebuiltFromUncommittedEvents(item);
+        }
+
+        [Fact]
+        public void LibraryItemFilePathChangeWorks() {
+            var item = new LibraryItem("foo/bar.mp3");
+            item.FilePath = item.FilePath + "x";
+            Assert.Equal(2, item.GetUncommittedEvents().Count());
+            ItemCanBeRebuiltFromUncommittedEvents(item);
+        }
+
+        private void ItemCanBeRebuiltFromUncommittedEvents(LibraryItem item) {
+            var itemFromEvents = new LibraryItem();
+
+            var events = item.GetUncommittedEvents();
+
+            var repo = new InMemoryJsonEventRepository();
+
+            foreach (var @event in events) {
+                //TODO: there's gotta be a better place to save the machine name... maybe we should just put it in aggregates
+                @event.MachineName = "foo";
+                repo.Save(@event);
+            }
+
+            itemFromEvents.ApplyEvents(repo.GetEvents(item.AggregateId));
+            Assert.True(item == itemFromEvents);
         }
 
         [Fact]
@@ -58,7 +118,7 @@ namespace ReiTunes.Core.Tests.XUnit {
             var agg = new SimpleTextAggregate();
             agg.ApplyEvents(new List<IEvent>() { createdEvent });
 
-            Assert.Equal(guid, agg.Id);
+            Assert.Equal(guid, agg.AggregateId);
             Assert.Equal("foo", agg.Text);
 
             agg.Apply(new SimpleTextAggregateUpdatedEvent(Guid.NewGuid(), guid, DateTime.UtcNow, "bar"));
@@ -89,14 +149,14 @@ namespace ReiTunes.Core.Tests.XUnit {
                 repo.Save(@event);
             }
 
-            Assert.Equal(2, repo.GetEvents(agg.Id).Count());
+            Assert.Equal(2, repo.GetEvents(agg.AggregateId).Count());
 
             agg.Commit();
 
             var agg2 = new SimpleTextAggregate();
-            agg2.ApplyEvents(repo.GetEvents(agg.Id));
+            agg2.ApplyEvents(repo.GetEvents(agg.AggregateId));
 
-            Assert.Equal(agg.Id, agg2.Id);
+            Assert.Equal(agg.AggregateId, agg2.AggregateId);
             Assert.Equal(agg.Text, agg2.Text);
         }
 
@@ -112,14 +172,14 @@ namespace ReiTunes.Core.Tests.XUnit {
                 repo.Save(@event);
             }
 
-            Assert.Equal(2, repo.GetEvents(agg.Id).Count());
+            Assert.Equal(2, repo.GetEvents(agg.AggregateId).Count());
 
             agg.Commit();
 
             var agg2 = new SimpleTextAggregate();
-            agg2.ApplyEvents(repo.GetEvents(agg.Id));
+            agg2.ApplyEvents(repo.GetEvents(agg.AggregateId));
 
-            Assert.Equal(agg.Id, agg2.Id);
+            Assert.Equal(agg.AggregateId, agg2.AggregateId);
             Assert.Equal(agg.Text, agg2.Text);
         }
 
