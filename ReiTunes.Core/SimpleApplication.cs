@@ -14,10 +14,13 @@ namespace ReiTunes.Core {
 
         //public SimpleTextAggregate Model { get; set; } = new SimpleTextAggregate();
 
+        public string MachineName { get; set; }
+
         public ObservableCollection<SimpleTextAggregate> Models { get; set; } = new ObservableCollection<SimpleTextAggregate>();
         public InMemoryJsonEventRepository Repo { get; set; } = new InMemoryJsonEventRepository();
 
-        public SimpleApplication() {
+        public SimpleApplication(string machineName) {
+            MachineName = machineName;
             //Model = new SimpleTextAggregate(aggregateId, startingValue);
             //Commit();
         }
@@ -25,6 +28,7 @@ namespace ReiTunes.Core {
         public void Commit() {
             foreach (var model in Models) {
                 foreach (var @event in model.GetUncommittedEvents()) {
+                    //TODO: append machine name here
                     Repo.Save(@event);
                 }
 
