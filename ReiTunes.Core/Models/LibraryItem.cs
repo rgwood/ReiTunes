@@ -25,7 +25,7 @@ namespace ReiTunes.Core {
             //FilePath = relativePath;
             //CreatedTimeUtc = DateTime.UtcNow;
 
-            ApplyUncommitted(new LibraryItemCreatedEvent(Guid.NewGuid(), Guid.NewGuid(), Name, FilePath, CreatedTimeUtc));
+            ApplyUncommitted(new LibraryItemCreatedEvent(Guid.NewGuid(), Guid.NewGuid(), CreatedTimeUtc, Name, FilePath));
         }
 
         private string GetFileNameFromPath(string path) => path.Split('/').Last();

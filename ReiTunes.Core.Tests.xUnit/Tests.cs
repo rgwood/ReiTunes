@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using Xunit;
 using System;
 using System.Linq;
+using NuGet.Frameworks;
 
 namespace ReiTunes.Core.Tests.XUnit {
 
@@ -36,7 +37,7 @@ namespace ReiTunes.Core.Tests.XUnit {
             var path = "foo/bar.mp3";
             var createdDate = new DateTime(2020, 12, 25);
 
-            var createdEvent = new LibraryItemCreatedEvent(Guid.NewGuid(), guid, name, path, createdDate);
+            var createdEvent = new LibraryItemCreatedEvent(Guid.NewGuid(), guid, createdDate, name, path);
 
             var item = new LibraryItem();
             item.ApplyEvents(new List<IEvent>() { createdEvent });
@@ -84,6 +85,7 @@ namespace ReiTunes.Core.Tests.XUnit {
             var repo = new InMemoryEventRepository();
 
             foreach (var @event in agg.GetUncommittedEvents()) {
+                @event.MachineName = "foo";
                 repo.Save(@event);
             }
 
@@ -106,6 +108,7 @@ namespace ReiTunes.Core.Tests.XUnit {
             var repo = new InMemoryJsonEventRepository();
 
             foreach (var @event in agg.GetUncommittedEvents()) {
+                @event.MachineName = "foo";
                 repo.Save(@event);
             }
 
@@ -138,6 +141,7 @@ namespace ReiTunes.Core.Tests.XUnit {
 
             foreach (var @event in agg.GetUncommittedEvents()) {
                 Assert.False(repo.ContainsEvent(@event.Id));
+                @event.MachineName = "foo";
                 repo.Save(@event);
                 Assert.True(repo.ContainsEvent(@event.Id));
             }
@@ -152,6 +156,7 @@ namespace ReiTunes.Core.Tests.XUnit {
 
             foreach (var @event in agg.GetUncommittedEvents()) {
                 Assert.False(repo.ContainsEvent(@event.Id));
+                @event.MachineName = "foo";
                 repo.Save(@event);
                 Assert.True(repo.ContainsEvent(@event.Id));
             }
@@ -165,12 +170,14 @@ namespace ReiTunes.Core.Tests.XUnit {
             IEventRepository repo = new InMemoryJsonEventRepository();
 
             foreach (var @event in agg.GetUncommittedEvents()) {
+                @event.MachineName = "foo";
                 repo.Save(@event);
             }
 
             Assert.Equal(2, repo.GetAllEvents().Count());
 
             foreach (var @event in agg.GetUncommittedEvents()) {
+                @event.MachineName = "foo";
                 repo.Save(@event);
             }
 
@@ -185,6 +192,7 @@ namespace ReiTunes.Core.Tests.XUnit {
             IEventRepository repo = new InMemoryEventRepository();
 
             foreach (var @event in agg.GetUncommittedEvents()) {
+                @event.MachineName = "foo";
                 repo.Save(@event);
             }
 
@@ -195,6 +203,34 @@ namespace ReiTunes.Core.Tests.XUnit {
             }
 
             Assert.Equal(2, repo.GetAllEvents().Count());
+        }
+
+        [Fact]
+        public void SavingEventWithoutMachineNameThrows() {
+            var agg = new SimpleTextAggregate("foo");
+            agg.Text = "bar";
+
+            IEventRepository repo = new InMemoryEventRepository();
+
+            Assert.ThrowsAny<Exception>(() => {
+                foreach (var @event in agg.GetUncommittedEvents()) {
+                    repo.Save(@event);
+                }
+            });
+        }
+
+        [Fact]
+        public void SavingEventWithoutMachineNameThrowsJsonRepo() {
+            var agg = new SimpleTextAggregate("foo");
+            agg.Text = "bar";
+
+            IEventRepository repo = new InMemoryJsonEventRepository();
+
+            Assert.ThrowsAny<Exception>(() => {
+                foreach (var @event in agg.GetUncommittedEvents()) {
+                    repo.Save(@event);
+                }
+            });
         }
     }
 }
