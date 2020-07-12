@@ -60,6 +60,17 @@ namespace ReiTunes.Core {
         }
     }
 
+    public class LibraryItemCreatedEvent : LibraryItemEvent {
+        public string Name { get; private set; }
+        public string FilePath { get; private set; }
+
+        public LibraryItemCreatedEvent(Guid id, Guid aggregateId, DateTime createdTimeUtc, string name, string filePath)
+            : base(id, aggregateId, createdTimeUtc) {
+            Name = name;
+            FilePath = filePath;
+        }
+    }
+
     public class LibraryItemNameChangedEvent : LibraryItemEvent {
         public string NewName { get; private set; }
 
@@ -78,14 +89,21 @@ namespace ReiTunes.Core {
         }
     }
 
-    public class LibraryItemCreatedEvent : LibraryItemEvent {
-        public string Name { get; private set; }
-        public string FilePath { get; private set; }
+    public class LibraryItemArtistChangedEvent : LibraryItemEvent {
+        public string NewArtist { get; private set; }
 
-        public LibraryItemCreatedEvent(Guid id, Guid aggregateId, DateTime createdTimeUtc, string name, string filePath)
+        public LibraryItemArtistChangedEvent(Guid id, Guid aggregateId, DateTime createdTimeUtc, string newArtist)
             : base(id, aggregateId, createdTimeUtc) {
-            Name = name;
-            FilePath = filePath;
+            NewArtist = newArtist;
+        }
+    }
+
+    public class LibraryItemAlbumChangedEvent : LibraryItemEvent {
+        public string NewAlbum { get; private set; }
+
+        public LibraryItemAlbumChangedEvent(Guid id, Guid aggregateId, DateTime createdTimeUtc, string newAlbum)
+            : base(id, aggregateId, createdTimeUtc) {
+            NewAlbum = newAlbum;
         }
     }
 
