@@ -105,7 +105,57 @@ namespace ReiTunes.Core.Tests.XUnit {
             }
 
             itemFromEvents.ApplyEvents(repo.GetEvents(item.AggregateId));
-            Assert.True(item == itemFromEvents);
+            Assert.Equal(item, itemFromEvents);
+        }
+
+        [Fact]
+        public void BasicApplicationSyncingWorks() {
+            var app1 = new ReiTunesApplication("machine1");
+            var app2 = new ReiTunesApplication("machine2");
+
+            app1.Models.Add(new LibraryItem("foo.mp3"));
+            app1.Models.Single().IncrementPlayCount();
+            app1.Commit();
+
+            app2.Models.Add(new LibraryItem("bar.mp3"));
+            app2.Commit();
+
+            app2.ReceiveEvents(app1.GetAllEvents());
+            app1.ReceiveEvents(app2.GetAllEvents());
+
+            ApplicationsHaveSameLibraryItems(app1, app2);
+        }
+
+        [Fact]
+        public void ApplicationCanSyncAllPropertyChanges() {
+            var app1 = new ReiTunesApplication("machine1");
+            var app2 = new ReiTunesApplication("machine2");
+
+            var item = new LibraryItem("foo.mp3");
+            item.IncrementPlayCount();
+            item.IncrementPlayCount();
+            item.Name = "GIMIX set";
+            item.FilePath = "bar.mp3";
+            item.Artist = "The Avalanches";
+            item.Album = "Mixes";
+
+            app1.Models.Add(item);
+            app1.Commit();
+
+            app2.ReceiveEvents(app1.GetAllEvents());
+
+            ApplicationsHaveSameLibraryItems(app1, app2);
+        }
+
+        private void ApplicationsHaveSameLibraryItems(ReiTunesApplication app1, ReiTunesApplication app2) {
+            Assert.Equal(app1.Models.Count, app2.Models.Count);
+
+            var orderedModels1 = app1.Models.OrderBy(m => m.AggregateId).ToArray();
+            var orderedModels2 = app2.Models.OrderBy(m => m.AggregateId).ToArray();
+
+            for (int i = 0; i < orderedModels1.Count(); i++) {
+                Assert.Equal(orderedModels1[i], orderedModels2[i]);
+            }
         }
 
         [Fact]
@@ -181,15 +231,6 @@ namespace ReiTunes.Core.Tests.XUnit {
 
             Assert.Equal(agg.AggregateId, agg2.AggregateId);
             Assert.Equal(agg.Text, agg2.Text);
-        }
-
-        [Fact]
-        public void Scratch() {
-            Console.WriteLine("foo");
-            var guid = Guid.NewGuid();
-            var name = "bar.mp3";
-            var path = "foo/bar.mp3";
-            var createdDate = new DateTime(2020, 12, 25);
         }
 
         [Fact]
