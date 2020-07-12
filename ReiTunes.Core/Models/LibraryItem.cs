@@ -27,8 +27,25 @@ namespace ReiTunes.Core {
             }
         }
 
-        public string Artist { get; set; }
-        public string Album { get; set; }
+        private string _artist;
+
+        public string Artist {
+            get => _artist;
+            set {
+                ApplyUncommitted(new LibraryItemArtistChangedEvent(Guid.NewGuid(), AggregateId, DateTime.UtcNow, value));
+                NotifyPropertyChanged();
+            }
+        }
+
+        private string _album;
+
+        public string Album {
+            get => _album;
+            set {
+                ApplyUncommitted(new LibraryItemAlbumChangedEvent(Guid.NewGuid(), AggregateId, DateTime.UtcNow, value));
+                NotifyPropertyChanged();
+            }
+        }
 
         private int _playCount = 0;
 
@@ -63,6 +80,8 @@ namespace ReiTunes.Core {
             this.RegisterApplier<LibraryItemPlayedEvent>(this.Apply);
             this.RegisterApplier<LibraryItemNameChangedEvent>(this.Apply);
             this.RegisterApplier<LibraryItemFilePathChangedEvent>(this.Apply);
+            this.RegisterApplier<LibraryItemAlbumChangedEvent>(this.Apply);
+            this.RegisterApplier<LibraryItemArtistChangedEvent>(this.Apply);
         }
 
         private void Apply(LibraryItemCreatedEvent @event) {
@@ -84,6 +103,16 @@ namespace ReiTunes.Core {
         private void Apply(LibraryItemFilePathChangedEvent @event) {
             _filePath = @event.NewFilePath;
             NotifyPropertyChanged(nameof(FilePath));
+        }
+
+        private void Apply(LibraryItemAlbumChangedEvent @event) {
+            _album = @event.NewAlbum;
+            NotifyPropertyChanged(nameof(Album));
+        }
+
+        private void Apply(LibraryItemArtistChangedEvent @event) {
+            _artist = @event.NewArtist;
+            NotifyPropertyChanged(nameof(Artist));
         }
 
         public override bool Equals(object obj) {
