@@ -4,6 +4,7 @@ using Xunit;
 using System;
 using System.Linq;
 using NuGet.Frameworks;
+using System.Diagnostics;
 
 namespace ReiTunes.Core.Tests.XUnit {
 
@@ -157,6 +158,32 @@ namespace ReiTunes.Core.Tests.XUnit {
                 Assert.Equal(orderedModels1[i], orderedModels2[i]);
             }
         }
+
+        //results: hella fast, 2.5s for a million events. Suggests that disk and network will be the bottlenecks
+        //[Fact]
+        //public void Benchmark() {
+        //    var item = new LibraryItem("foo.mp3");
+
+        //    var sw = Stopwatch.StartNew();
+
+        //    for (int i = 0; i < 1000000; i++) {
+        //        item.IncrementPlayCount();
+        //        item.Name = "foo" + i;
+        //        item.Album = "album " + i;
+        //    }
+        //    sw.Stop();
+
+        //    Console.WriteLine($"Make changes: {sw.ElapsedMilliseconds}ms");
+
+        //    var allEvents = item.GetUncommittedEvents();
+
+        //    sw = Stopwatch.StartNew();
+
+        //    var newItem = new LibraryItem();
+        //    newItem.ApplyEvents(allEvents);
+        //    sw.Stop();
+        //    Console.WriteLine($"Apply changes: {sw.ElapsedMilliseconds}ms");
+        //}
 
         [Fact]
         public void TestSimpleTextAggregate() {
