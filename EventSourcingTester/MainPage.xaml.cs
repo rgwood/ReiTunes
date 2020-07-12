@@ -43,6 +43,11 @@ namespace EventSourcingTester {
             app1.Commit();
         }
 
+        private void App1_IncrementClick(object sender, RoutedEventArgs e) {
+            app1.Models.First().IncrementPlayCount();
+            app1.Commit();
+        }
+
         private async void App1_PullClick(object sender, RoutedEventArgs e) {
             app1.ReceiveEvents(server.GetAllEvents());
         }
@@ -67,6 +72,11 @@ namespace EventSourcingTester {
         private void App2_AddClick(object sender, RoutedEventArgs e) {
             var agg = new LibraryItem("bar.mp3");
             app2.Models.Add(agg);
+            app2.Commit();
+        }
+
+        private void App2_IncrementClick(object sender, RoutedEventArgs e) {
+            app2.Models.First().IncrementPlayCount();
             app2.Commit();
         }
 
