@@ -1,6 +1,8 @@
-﻿using ReiTunes.Core;
+﻿using Microsoft.Toolkit.Uwp.UI.Controls;
+using ReiTunes.Core;
 using System;
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
 using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices.WindowsRuntime;
@@ -67,6 +69,92 @@ namespace EventSourcingTester {
 
         private void DataGrid1_CellEditEnded(object sender, Microsoft.Toolkit.Uwp.UI.Controls.DataGridCellEditEndedEventArgs e) {
             app1.Commit();
+        }
+
+        private void app1_Sorting(object sender, DataGridColumnEventArgs e) {
+            //Use the Tag property to pass the bound column name for the sorting implementation
+            if (e.Column.Tag.ToString() == nameof(LibraryItem.Name)) {
+                if (e.Column.SortDirection == null || e.Column.SortDirection == DataGridSortDirection.Descending) {
+                    DataGrid1.ItemsSource = new ObservableCollection<LibraryItem>(from item in app1.Models
+                                                                                  orderby item.Name ascending
+                                                                                  select item);
+                    e.Column.SortDirection = DataGridSortDirection.Ascending;
+                }
+                else {
+                    DataGrid1.ItemsSource = new ObservableCollection<LibraryItem>(from item in app1.Models
+                                                                                  orderby item.Name descending
+                                                                                  select item);
+                    e.Column.SortDirection = DataGridSortDirection.Descending;
+                }
+            }
+
+            if (e.Column.Tag.ToString() == nameof(LibraryItem.PlayCount)) {
+                if (e.Column.SortDirection == null || e.Column.SortDirection == DataGridSortDirection.Descending) {
+                    DataGrid1.ItemsSource = new ObservableCollection<LibraryItem>(from item in app1.Models
+                                                                                  orderby item.PlayCount ascending
+                                                                                  select item);
+                    e.Column.SortDirection = DataGridSortDirection.Ascending;
+                }
+                else {
+                    DataGrid1.ItemsSource = new ObservableCollection<LibraryItem>(from item in app1.Models
+                                                                                  orderby item.PlayCount descending
+                                                                                  select item);
+                    e.Column.SortDirection = DataGridSortDirection.Descending;
+                }
+            }
+
+            if (e.Column.Tag.ToString() == nameof(LibraryItem.Artist)) {
+                if (e.Column.SortDirection == null || e.Column.SortDirection == DataGridSortDirection.Descending) {
+                    DataGrid1.ItemsSource = new ObservableCollection<LibraryItem>(from item in app1.Models
+                                                                                  orderby item.Artist ascending
+                                                                                  select item);
+                    e.Column.SortDirection = DataGridSortDirection.Ascending;
+                }
+                else {
+                    DataGrid1.ItemsSource = new ObservableCollection<LibraryItem>(from item in app1.Models
+                                                                                  orderby item.Artist descending
+                                                                                  select item);
+                    e.Column.SortDirection = DataGridSortDirection.Descending;
+                }
+            }
+
+            if (e.Column.Tag.ToString() == nameof(LibraryItem.Album)) {
+                if (e.Column.SortDirection == null || e.Column.SortDirection == DataGridSortDirection.Descending) {
+                    DataGrid1.ItemsSource = new ObservableCollection<LibraryItem>(from item in app1.Models
+                                                                                  orderby item.Album ascending
+                                                                                  select item);
+                    e.Column.SortDirection = DataGridSortDirection.Ascending;
+                }
+                else {
+                    DataGrid1.ItemsSource = new ObservableCollection<LibraryItem>(from item in app1.Models
+                                                                                  orderby item.Album descending
+                                                                                  select item);
+                    e.Column.SortDirection = DataGridSortDirection.Descending;
+                }
+            }
+
+            if (e.Column.Tag.ToString() == nameof(LibraryItem.CreatedTimeUtc)) {
+                if (e.Column.SortDirection == null || e.Column.SortDirection == DataGridSortDirection.Descending) {
+                    DataGrid1.ItemsSource = new ObservableCollection<LibraryItem>(from item in app1.Models
+                                                                                  orderby item.CreatedTimeUtc ascending
+                                                                                  select item);
+                    e.Column.SortDirection = DataGridSortDirection.Ascending;
+                }
+                else {
+                    DataGrid1.ItemsSource = new ObservableCollection<LibraryItem>(from item in app1.Models
+                                                                                  orderby item.CreatedTimeUtc descending
+                                                                                  select item);
+                    e.Column.SortDirection = DataGridSortDirection.Descending;
+                }
+            }
+            // add code to handle sorting by other columns as required
+
+            // Remove sorting indicators from other columns
+            foreach (var dgColumn in DataGrid1.Columns) {
+                if (dgColumn.Tag.ToString() != e.Column.Tag.ToString()) {
+                    dgColumn.SortDirection = null;
+                }
+            }
         }
 
         private void App2_AddClick(object sender, RoutedEventArgs e) {
