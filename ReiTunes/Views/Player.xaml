@@ -128,8 +128,6 @@
             </Grid>
         </StackPanel>
 
-
-
         <controls:DataGrid
             x:Name="libraryDataGrid"
             Grid.Row="5"
@@ -153,7 +151,7 @@
             GridLinesVisibility="All"
             HeadersVisibility="Column"
             HorizontalScrollBarVisibility="Visible"
-            ItemsSource="{x:Bind ViewModel.LibraryItems, Mode=TwoWay}"
+            ItemsSource="{x:Bind ViewModel.VisibleItems, Mode=OneWay}"
             MaxColumnWidth="400"
             RowDetailsVisibilityMode="Collapsed"
             RowEditEnded="libraryDataGrid_RowEditEnded"
@@ -178,7 +176,7 @@
                     Header="Play Count"
                     Tag="PlayCount" />
                 <controls:DataGridTextColumn
-                    Binding="{Binding DateAddedUtc}"
+                    Binding="{Binding CreatedTimeUtc}"
                     Header="Date Added"
                     Tag="DateAddedUtc" />
                 <controls:DataGridTextColumn
