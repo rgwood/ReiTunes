@@ -8,21 +8,19 @@ using Windows.Foundation;
 using Windows.UI.ViewManagement;
 using Windows.UI.Xaml;
 
-namespace ReiTunes
-{
+namespace ReiTunes {
+
     /// <summary>
     /// Provides application-specific behavior to supplement the default Application class.
     /// </summary>
-    sealed partial class App : Application
-    {
-        private readonly Size MainWindowSize = new Size(400, 450);
+    sealed partial class App : Application {
+        private readonly Size MainWindowSize = new Size(800, 650);
 
         /// <summary>
         /// Initializes the singleton application object.  This is the first line of authored code
         /// executed, and as such is the logical equivalent of main() or WinMain().
         /// </summary>
-        public App()
-        {
+        public App() {
             InitializeComponent();
 
             // Close the application when the primary window closes
@@ -35,13 +33,11 @@ namespace ReiTunes
             UnhandledException += App_UnhandledException;
         }
 
-        private void App_Consolidated(ApplicationView sender, ApplicationViewConsolidatedEventArgs args)
-        {
+        private void App_Consolidated(ApplicationView sender, ApplicationViewConsolidatedEventArgs args) {
             throw new NotImplementedException();
         }
 
-        private void App_UnhandledException(object sender, Windows.UI.Xaml.UnhandledExceptionEventArgs e)
-        {
+        private void App_UnhandledException(object sender, Windows.UI.Xaml.UnhandledExceptionEventArgs e) {
             var logger = ServiceLocator.Current.GetService<ILogger>();
             logger.Fatal("Unhandled exception '{Message}': {Exception}", e.Message, e.Exception);
         }
@@ -51,28 +47,23 @@ namespace ReiTunes
         /// will be used such as when the application is launched to open a specific file.
         /// </summary>
         /// <param name="args">Details about the launch request and process.</param>
-        protected override async void OnLaunched(LaunchActivatedEventArgs args)
-        {
-            if (!args.PrelaunchActivated)
-            {
+        protected override async void OnLaunched(LaunchActivatedEventArgs args) {
+            if (!args.PrelaunchActivated) {
                 await Startup.ActivateAsync(args);
             }
         }
 
-        protected override async void OnActivated(IActivatedEventArgs args)
-        {
+        protected override async void OnActivated(IActivatedEventArgs args) {
             await Startup.ActivateAsync(args);
         }
 
-        private async void App_EnteredBackground(object sender, EnteredBackgroundEventArgs e)
-        {
+        private async void App_EnteredBackground(object sender, EnteredBackgroundEventArgs e) {
             var deferral = e.GetDeferral();
             await ServiceLocator.Current.GetService<SuspendAndResumeService>().SaveStateAsync();
             deferral.Complete();
         }
 
-        private void App_Resuming(object sender, object e)
-        {
+        private void App_Resuming(object sender, object e) {
             ServiceLocator.Current.GetService<SuspendAndResumeService>().ResumeApp();
         }
     }
