@@ -2,31 +2,20 @@
 using System.Threading.Tasks;
 
 namespace ReiTunes.Core {
-
     public static class Json {
+        public static T Deserialize<T>(string value) =>
+            JsonConvert.DeserializeObject<T>(value);
 
-        public static T ToObject<T>(string value) {
-            return JsonConvert.DeserializeObject<T>(value);
-        }
-
-        public static string Stringify(object value) {
+        public static string Serialize(object value) {
             // Pretty-print for convenience. Revisit this if it ever becomes
             // a perf issue, but for now YAGNI
             return JsonConvert.SerializeObject(value, Formatting.Indented);
         }
 
-        public static async Task<T> ToObjectAsync<T>(string value) {
-            return await Task.Run<T>(() => {
-                return JsonConvert.DeserializeObject<T>(value);
-            });
-        }
+        public static async Task<T> DeserializeAsync<T>(string value) =>
+            await Task.Run(() => JsonConvert.DeserializeObject<T>(value));
 
-        public static async Task<string> StringifyAsync(object value) {
-            return await Task.Run<string>(() => {
-                // Pretty-print for convenience. Revisit this if it ever becomes
-                // a perf issue, but for now YAGNI
-                return JsonConvert.SerializeObject(value, Formatting.Indented);
-            });
-        }
+        public static async Task<string> SerializeAsync(object value) =>
+            await Task.Run(() => Serialize(value));
     }
 }

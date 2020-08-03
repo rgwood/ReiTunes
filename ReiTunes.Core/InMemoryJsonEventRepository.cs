@@ -11,15 +11,6 @@ namespace ReiTunes.Core {
         // Keyed off of aggregate ID
         private Dictionary<Guid, List<string>> _events = new Dictionary<Guid, List<string>>();
 
-        private static JsonSerializerSettings serializerSettings = new JsonSerializerSettings {
-            TypeNameHandling = TypeNameHandling.All,
-            SerializationBinder = new EventBinder()
-        };
-
-        public static string Serialize(IEvent @event) {
-            return JsonConvert.SerializeObject(@event, serializerSettings);
-        }
-
         public bool ContainsEvent(Guid eventId) {
             return GetAllEvents().Any(e => e.Id == eventId);
         }
@@ -27,13 +18,12 @@ namespace ReiTunes.Core {
         //TODO: this is stupid and slow, find a better way
         public IEnumerable<IEvent> GetAllEvents() {
             var serializedEvents = _events.Values.SelectMany(e => e);
-            var deserialized = serializedEvents.Select(e => JsonConvert.DeserializeObject(e, serializerSettings));
-            return deserialized.Cast<IEvent>();
+            return serializedEvents.Select(e => EventSerialization.Deserialize(e));
         }
 
         public IEnumerable<IEvent> GetEvents(Guid aggregateId) {
             var serializedEvents = _events[aggregateId];
-            var deserialized = serializedEvents.Select(e => JsonConvert.DeserializeObject(e, serializerSettings));
+            var deserialized = serializedEvents.Select(e => EventSerialization.Deserialize(e));
             return deserialized.Cast<IEvent>();
         }
 
@@ -51,7 +41,7 @@ namespace ReiTunes.Core {
                 throw new Exception($"Machine name not specified on event {@event.Id}");
             }
 
-            var serialized = JsonConvert.SerializeObject(@event, serializerSettings);
+            var serialized = EventSerialization.Serialize(@event);
             if (_events.ContainsKey(@event.AggregateId)) {
                 _events[@event.AggregateId].Add(serialized);
             }

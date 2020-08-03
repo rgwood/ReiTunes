@@ -21,7 +21,7 @@ namespace ReiTunes.Helpers
         public static async Task SaveAsync<T>(this StorageFolder folder, string name, T content)
         {
             var file = await folder.CreateFileAsync(GetFileName(name), CreationCollisionOption.ReplaceExisting);
-            var fileContent = await Json.StringifyAsync(content);
+            var fileContent = await EventSerialization.SerializeAsync(content);
 
             await FileIO.WriteTextAsync(file, fileContent);
         }
@@ -36,12 +36,12 @@ namespace ReiTunes.Helpers
             var file = await folder.GetFileAsync($"{name}.json");
             var fileContent = await FileIO.ReadTextAsync(file);
 
-            return await Json.ToObjectAsync<T>(fileContent);
+            return await EventSerialization.DeserializeAsync<T>(fileContent);
         }
 
         public static async Task SaveAsync<T>(this ApplicationDataContainer settings, string key, T value)
         {
-            settings.SaveString(key, await Json.StringifyAsync(value));
+            settings.SaveString(key, await EventSerialization.SerializeAsync(value));
         }
 
         public static void SaveString(this ApplicationDataContainer settings, string key, string value)
@@ -55,7 +55,7 @@ namespace ReiTunes.Helpers
 
             if (settings.Values.TryGetValue(key, out obj))
             {
-                return await Json.ToObjectAsync<T>((string)obj);
+                return await EventSerialization.DeserializeAsync<T>((string)obj);
             }
 
             return default(T);
