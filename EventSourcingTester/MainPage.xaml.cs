@@ -63,7 +63,7 @@ namespace EventSourcingTester {
         }
 
         private void App1_ViewEventsClick(object sender, RoutedEventArgs e) {
-            var events = app1.GetAllEvents().Select(ev => InMemoryJsonEventRepository.Serialize(ev));
+            var events = app1.GetAllEvents().Select(ev => EventSerialization.Serialize(ev));
             EventsTextBlock.Text = string.Join(Environment.NewLine, events);
         }
 
@@ -177,7 +177,7 @@ namespace EventSourcingTester {
         }
 
         private void App2_ViewEventsClick(object sender, RoutedEventArgs e) {
-            var events = app2.GetAllEvents().Select(ev => InMemoryJsonEventRepository.Serialize(ev));
+            var events = app2.GetAllEvents().Select(ev => EventSerialization.Serialize(ev));
             EventsTextBlock.Text = string.Join(Environment.NewLine, events);
         }
 
@@ -190,7 +190,7 @@ namespace EventSourcingTester {
         }
 
         private void Server_ViewEventsClick(object sender, RoutedEventArgs e) {
-            var events = server.GetAllEvents().Select(ev => InMemoryJsonEventRepository.Serialize(ev));
+            var events = server.GetAllEvents().Select(ev => EventSerialization.Serialize(ev));
             EventsTextBlock.Text = string.Join(Environment.NewLine, events);
         }
     }
