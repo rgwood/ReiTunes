@@ -71,6 +71,8 @@ namespace EventSourcingTester {
             app1.Commit();
         }
 
+        // this is horrendous. I guess they want to avoid performance issues so they leave sorting
+        // implementation to devs
         private void app1_Sorting(object sender, DataGridColumnEventArgs e) {
             //Use the Tag property to pass the bound column name for the sorting implementation
             if (e.Column.Tag.ToString() == nameof(LibraryItem.Name)) {
