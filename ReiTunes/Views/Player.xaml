@@ -108,21 +108,23 @@
             AreRowDetailsFrozen="False"
             AreRowGroupHeadersFrozen="True"
             AutoGenerateColumns="False"
+            BeginningEdit="libraryDataGrid_BeginningEdit"
             BorderBrush="{StaticResource SystemControlGridLinesBaseMediumLowBrush}"
             BorderThickness="0,1,0,0"
             CanUserReorderColumns="True"
             CanUserResizeColumns="True"
             CanUserSortColumns="False"
+            CellEditEnded="libraryDataGrid_CellEditEnded"
             ColumnHeaderHeight="32"
             DoubleTapped="OpenSelectedLibraryItem"
             FrozenColumnCount="0"
             GridLinesVisibility="All"
             HeadersVisibility="Column"
             HorizontalScrollBarVisibility="Visible"
-            IsReadOnly="True"
-            ItemsSource="{x:Bind ViewModel.LibraryItems, Mode=OneWay}"
+            ItemsSource="{x:Bind ViewModel.LibraryItems, Mode=TwoWay}"
             MaxColumnWidth="400"
             RowDetailsVisibilityMode="Collapsed"
+            RowEditEnded="libraryDataGrid_RowEditEnded"
             RowGroupHeaderPropertyNameAlternative="Range"
             SelectionMode="Extended"
             VerticalScrollBarVisibility="Visible">
@@ -140,15 +142,15 @@
                     Header="Album/Show"
                     Tag="Album" />
                 <controls:DataGridTextColumn
-                    Binding="{Binding TrackNumber}"
-                    Header="#"
-                    Tag="TrackNumber" />
+                    Binding="{Binding PlayCount}"
+                    Header="Play Count"
+                    Tag="PlayCount" />
                 <controls:DataGridTextColumn
                     Binding="{Binding DateAddedUtc}"
                     Header="Date Added"
                     Tag="DateAddedUtc" />
                 <controls:DataGridTextColumn
-                    Binding="{Binding FullPath}"
+                    Binding="{Binding FilePath}"
                     Header="Path"
                     Tag="Path" />
             </controls:DataGrid.Columns>
