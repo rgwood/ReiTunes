@@ -48,10 +48,7 @@ namespace ReiTunes.Core {
         }
 
         private int _playCount = 0;
-
-        public int PlayCount {
-            get => _playCount;
-        }
+        public int PlayCount => _playCount;
 
         //public string Text {
         //    get => _text;
