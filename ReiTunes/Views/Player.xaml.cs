@@ -24,6 +24,8 @@ namespace ReiTunes {
     public sealed partial class Player : Page {
         public PlayerViewModel ViewModel { get; }
 
+        private bool _dataGridIsEditing;
+
         public Player() {
             this.InitializeComponent();
 
@@ -51,6 +53,7 @@ namespace ReiTunes {
         private void OpenSelectedLibraryItem(object sender = null, RoutedEventArgs e = null) {
             var selected = (LibraryItem)libraryDataGrid.SelectedItem;
             ViewModel.ChangeSource(selected?.FilePath);
+            selected.IncrementPlayCount();
         }
 
         // This is where I set up keyboard accelerators and do some ridiculous hacks
@@ -100,7 +103,7 @@ namespace ReiTunes {
         }
 
         private void LibraryDataGrid_PreviewKeyDown(object sender, KeyRoutedEventArgs args) {
-            if (args.Key == VirtualKey.Enter) {
+            if (args.Key == VirtualKey.Enter && !_dataGridIsEditing) {
                 OpenSelectedLibraryItem();
                 args.Handled = true;
             }
@@ -192,6 +195,18 @@ namespace ReiTunes {
                     libraryDataGrid.SelectedItem = fuzzyMatchResults.First();
                 }
             }
+        }
+
+        private void libraryDataGrid_BeginningEdit(object sender, Microsoft.Toolkit.Uwp.UI.Controls.DataGridBeginningEditEventArgs e) {
+            _dataGridIsEditing = true;
+        }
+
+        private void libraryDataGrid_CellEditEnded(object sender, Microsoft.Toolkit.Uwp.UI.Controls.DataGridCellEditEndedEventArgs e) {
+            _dataGridIsEditing = false;
+        }
+
+        private void libraryDataGrid_RowEditEnded(object sender, Microsoft.Toolkit.Uwp.UI.Controls.DataGridRowEditEndedEventArgs e) {
+            _dataGridIsEditing = false;
         }
     }
 }
