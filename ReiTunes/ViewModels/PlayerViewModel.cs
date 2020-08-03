@@ -7,6 +7,7 @@ using Serilog;
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
@@ -43,11 +44,21 @@ namespace ReiTunes {
             set { Set(ref _sourceFileName, value); }
         }
 
-        private ObservableCollection<LibraryItem> _fileTreeItems;
+        private ObservableCollection<LibraryItem> _libraryItems;
 
         public ObservableCollection<LibraryItem> LibraryItems {
-            get { return _fileTreeItems; }
-            set { Set(ref _fileTreeItems, value); }
+            get { return _libraryItems; }
+            set {
+                Set(ref _libraryItems, value);
+                VisibleItems = new ObservableCollection<LibraryItem>(value);
+            }
+        }
+
+        private ObservableCollection<LibraryItem> _visibleItems;
+
+        public ObservableCollection<LibraryItem> VisibleItems {
+            get { return _visibleItems; }
+            set { Set(ref _visibleItems, value); }
         }
 
         public string DownloadStatus {
@@ -79,6 +90,28 @@ namespace ReiTunes {
             }
 
             await LoadLibraryFile(libraryFile);
+        }
+
+        public void FilterItems(string filterString) {
+            var sw = Stopwatch.StartNew();
+
+            if (filterString == "") {
+                VisibleItems = new ObservableCollection<LibraryItem>(LibraryItems);
+            }
+            else {
+                var fuzzyMatchResults =
+                    (from file in LibraryItems
+                     let fuzzyResult = FuzzyMatcher.FuzzyMatch(file.FilePath, filterString)
+                     where fuzzyResult.isMatch
+                     orderby fuzzyResult.score descending
+                     select file);
+
+                //TODO: short-circuit if the result hasn't changed, to avoid slow rerenders.
+
+                VisibleItems = new ObservableCollection<LibraryItem>(fuzzyMatchResults);
+            }
+            sw.Stop();
+            Debug.WriteLine($"Total filter time: {sw.ElapsedMilliseconds}ms");
         }
 
         //TODO: this should visually indicate that the file is being downloaded

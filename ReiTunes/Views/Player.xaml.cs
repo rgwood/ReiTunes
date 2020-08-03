@@ -3,6 +3,7 @@ using ReiTunes.Core;
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.Diagnostics;
 using System.Linq;
 using System.Threading.Tasks;
 using Windows.Foundation;
@@ -169,32 +170,7 @@ namespace ReiTunes {
 
         private void FilterBox_TextChanged(object sender, TextChangedEventArgs e) {
             var searchstring = FilterBox.Text;
-            if (searchstring == "") {
-                libraryDataGrid.ItemsSource = ViewModel.LibraryItems;
-            }
-            else {
-                var fuzzyMatchResults =
-                    (from file in ViewModel.LibraryItems
-                     let fuzzyResult = FuzzyMatcher.FuzzyMatch(file.FilePath, searchstring)
-                     where fuzzyResult.isMatch
-                     orderby fuzzyResult.score descending
-                     select file).ToList();
-
-                //short-circuit if the result hasn't changed, to avoid slow rerenders.
-                //TODO: do a more accurate check than just comparing the item count
-                //if (libraryDataGrid.ItemsSource != null) {
-                //    var existingItems = (List<LibraryItem>)libraryDataGrid.ItemsSource;
-                //    if (existingItems.Count == fuzzyMatchResults.Count())
-                //        return;
-                //}
-
-                //TODO: I think this breaks any preexisting binding. Confirm+fix that
-                libraryDataGrid.ItemsSource = fuzzyMatchResults;
-
-                if (fuzzyMatchResults.Any()) {
-                    libraryDataGrid.SelectedItem = fuzzyMatchResults.First();
-                }
-            }
+            ViewModel.FilterItems(searchstring);
         }
 
         private void libraryDataGrid_BeginningEdit(object sender, Microsoft.Toolkit.Uwp.UI.Controls.DataGridBeginningEditEventArgs e) {
