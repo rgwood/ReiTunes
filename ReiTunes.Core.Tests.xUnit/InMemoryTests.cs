@@ -5,10 +5,18 @@ using System;
 using System.Linq;
 using NuGet.Frameworks;
 using System.Diagnostics;
+using System.Collections;
 
 namespace ReiTunes.Core.Tests.XUnit {
 
-    public class Tests {
+    public class InMemoryTests {
+
+        public static IEnumerable<object[]> AllReposToTest =>
+            new List<object[]>
+            {
+                new object[] { new InMemoryEventRepository() },
+                new object[] { new InMemoryJsonEventRepository() },
+            };
 
         // Just test that lists serialize and deserialize without failing. Had some issues with that earlier
         [Fact]
@@ -214,12 +222,11 @@ namespace ReiTunes.Core.Tests.XUnit {
             Assert.Equal("bar", agg.Text);
         }
 
-        [Fact]
-        public void CanPersistAndRehydrateSimpleAggregate() {
+        [Theory]
+        [MemberData(nameof(AllReposToTest))]
+        public void CanPersistAndRehydrateSimpleAggregate(IEventRepository repo) {
             var agg = new SimpleTextAggregate("foo");
             agg.Text = "bar";
-
-            var repo = new InMemoryEventRepository();
 
             foreach (var @event in agg.GetUncommittedEvents()) {
                 @event.MachineName = "foo";
@@ -237,35 +244,11 @@ namespace ReiTunes.Core.Tests.XUnit {
             Assert.Equal(agg.Text, agg2.Text);
         }
 
-        [Fact]
-        public void CanPersistAndRehydrateSimpleAggregateToFromJson() {
+        [Theory]
+        [MemberData(nameof(AllReposToTest))]
+        public void ContainsEventWorks(IEventRepository repo) {
             var agg = new SimpleTextAggregate("foo");
             agg.Text = "bar";
-
-            var repo = new InMemoryJsonEventRepository();
-
-            foreach (var @event in agg.GetUncommittedEvents()) {
-                @event.MachineName = "foo";
-                repo.Save(@event);
-            }
-
-            Assert.Equal(2, repo.GetEvents(agg.AggregateId).Count());
-
-            agg.Commit();
-
-            var agg2 = new SimpleTextAggregate();
-            agg2.ApplyEvents(repo.GetEvents(agg.AggregateId));
-
-            Assert.Equal(agg.AggregateId, agg2.AggregateId);
-            Assert.Equal(agg.Text, agg2.Text);
-        }
-
-        [Fact]
-        public void ContainsEventWorks_JsonRepo() {
-            var agg = new SimpleTextAggregate("foo");
-            agg.Text = "bar";
-
-            IEventRepository repo = new InMemoryJsonEventRepository();
 
             foreach (var @event in agg.GetUncommittedEvents()) {
                 Assert.False(repo.ContainsEvent(@event.Id));
@@ -275,27 +258,11 @@ namespace ReiTunes.Core.Tests.XUnit {
             }
         }
 
-        [Fact]
-        public void ContainsEventWorks_InMemoryRepo() {
+        [Theory]
+        [MemberData(nameof(AllReposToTest))]
+        public void WillNotSaveSameEventTwice(IEventRepository repo) {
             var agg = new SimpleTextAggregate("foo");
             agg.Text = "bar";
-
-            IEventRepository repo = new InMemoryEventRepository();
-
-            foreach (var @event in agg.GetUncommittedEvents()) {
-                Assert.False(repo.ContainsEvent(@event.Id));
-                @event.MachineName = "foo";
-                repo.Save(@event);
-                Assert.True(repo.ContainsEvent(@event.Id));
-            }
-        }
-
-        [Fact]
-        public void WillNotSaveSameEventTwice_JsonRepo() {
-            var agg = new SimpleTextAggregate("foo");
-            agg.Text = "bar";
-
-            IEventRepository repo = new InMemoryJsonEventRepository();
 
             foreach (var @event in agg.GetUncommittedEvents()) {
                 @event.MachineName = "foo";
@@ -312,47 +279,11 @@ namespace ReiTunes.Core.Tests.XUnit {
             Assert.Equal(2, repo.GetAllEvents().Count());
         }
 
-        [Fact]
-        public void WillNotSaveSameEventTwice_InMemoryRepo() {
+        [Theory]
+        [MemberData(nameof(AllReposToTest))]
+        public void SavingEventWithoutMachineNameThrows(IEventRepository repo) {
             var agg = new SimpleTextAggregate("foo");
             agg.Text = "bar";
-
-            IEventRepository repo = new InMemoryEventRepository();
-
-            foreach (var @event in agg.GetUncommittedEvents()) {
-                @event.MachineName = "foo";
-                repo.Save(@event);
-            }
-
-            Assert.Equal(2, repo.GetAllEvents().Count());
-
-            foreach (var @event in agg.GetUncommittedEvents()) {
-                repo.Save(@event);
-            }
-
-            Assert.Equal(2, repo.GetAllEvents().Count());
-        }
-
-        [Fact]
-        public void SavingEventWithoutMachineNameThrows() {
-            var agg = new SimpleTextAggregate("foo");
-            agg.Text = "bar";
-
-            IEventRepository repo = new InMemoryEventRepository();
-
-            Assert.ThrowsAny<Exception>(() => {
-                foreach (var @event in agg.GetUncommittedEvents()) {
-                    repo.Save(@event);
-                }
-            });
-        }
-
-        [Fact]
-        public void SavingEventWithoutMachineNameThrowsJsonRepo() {
-            var agg = new SimpleTextAggregate("foo");
-            agg.Text = "bar";
-
-            IEventRepository repo = new InMemoryJsonEventRepository();
 
             Assert.ThrowsAny<Exception>(() => {
                 foreach (var @event in agg.GetUncommittedEvents()) {
