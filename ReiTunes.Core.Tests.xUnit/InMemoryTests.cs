@@ -6,6 +6,7 @@ using System.Linq;
 using NuGet.Frameworks;
 using System.Diagnostics;
 using System.Collections;
+using System.Data.SQLite;
 
 namespace ReiTunes.Core.Tests.XUnit {
 
@@ -16,6 +17,7 @@ namespace ReiTunes.Core.Tests.XUnit {
             {
                 new object[] { new InMemoryEventRepository() },
                 new object[] { new InMemoryJsonEventRepository() },
+                //new object[] { new SQLiteEventRepository(new SQLiteConnection("DataSource=:memory:")) },
             };
 
         // Just test that lists serialize and deserialize without failing. Had some issues with that earlier
