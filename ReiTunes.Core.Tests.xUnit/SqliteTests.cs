@@ -16,18 +16,12 @@ namespace ReiTunes.Core.Tests.xUnit {
         private SQLiteConnection _conn;
 
         public SqliteTests() {
-            _conn = CreateInMemoryDb();
+            _conn = SQLiteHelpers.CreateInMemoryDb();
             CreateEventsTableIfNotExists(_conn);
         }
 
         public void Dispose() {
             _conn.Dispose();
-        }
-
-        private SQLiteConnection CreateInMemoryDb() {
-            var connection = new SQLiteConnection("DataSource=:memory:");
-            connection.Open();
-            return connection;
         }
 
         private void CreateEventsTableIfNotExists(SQLiteConnection connection) {
@@ -46,15 +40,13 @@ events(
 
         [Fact]
         public void CanCreateEmptyTableAndInsert() {
-            var conn = CreateInMemoryDb();
+            _conn.Execute(@"CREATE TABLE IF NOT EXISTS priceData(id INTEGER PRIMARY KEY, secId TEXT)");
 
-            conn.Execute(@"CREATE TABLE IF NOT EXISTS priceData(id INTEGER PRIMARY KEY, secId TEXT)");
+            Assert.Equal(0, _conn.GetRowCount("priceData"));
 
-            Assert.Equal(0, conn.GetRowCount("priceData"));
+            _conn.Execute(@"INSERT INTO priceData(id, secId) VALUES(1,'MSFT');");
 
-            conn.Execute(@"INSERT INTO priceData(id, secId) VALUES(1,'MSFT');");
-
-            Assert.Equal(1, conn.GetRowCount("priceData"));
+            Assert.Equal(1, _conn.GetRowCount("priceData"));
         }
 
         [Fact]
@@ -69,44 +61,39 @@ VALUES(1,'MSFT','foo','bar','baz');");
 
         [Fact]
         public void CanSaveEvent() {
-            var connection = CreateInMemoryDb();
-            CreateEventsTableIfNotExists(connection);
+            CreateEventsTableIfNotExists(_conn);
 
             var agg = new SimpleTextAggregate("foo");
             var @event = agg.GetUncommittedEvents().Single();
             @event.MachineName = MachineName;
 
-            SaveEvent(@event, connection);
+            SaveEvent(@event, _conn);
         }
 
         [Fact]
         public void SQLiteEnforcesNoSavingDuplicates() {
-            var connection = CreateInMemoryDb();
-            CreateEventsTableIfNotExists(connection);
+            CreateEventsTableIfNotExists(_conn);
 
             var agg = new SimpleTextAggregate("foo");
             var @event = agg.GetUncommittedEvents().Single();
             @event.MachineName = MachineName;
 
-            SaveEvent(@event, connection);
+            SaveEvent(@event, _conn);
 
-            Assert.ThrowsAny<Exception>(() => SaveEvent(@event, connection));
+            Assert.ThrowsAny<Exception>(() => SaveEvent(@event, _conn));
         }
 
         [Fact]
         public void CanSaveAndReadEvent() {
-            var connection = CreateInMemoryDb();
-            CreateEventsTableIfNotExists(connection);
+            CreateEventsTableIfNotExists(_conn);
 
             var agg = new SimpleTextAggregate("foo");
             var @event = agg.GetUncommittedEvents().Single();
             @event.MachineName = MachineName;
 
-            SaveEvent(@event, connection);
+            SaveEvent(@event, _conn);
 
-            var time = connection.QuerySingle<string>("select CreatedTimeUtc from events limit 1");
-
-            var serialized = connection.QuerySingle<string>("select Serialized from events limit 1");
+            var serialized = _conn.QuerySingle<string>("select Serialized from events limit 1");
 
             var deserialized = (SimpleTextAggregateCreatedEvent)EventSerialization.Deserialize(serialized);
 
