@@ -15,9 +15,12 @@ using ReiTunes.Core;
 
 namespace ReiTunes.Server {
 
-    public class Startup {
+    /// <summary>
+    /// Like startup but it only uses an in-memory SQLite instance. For tests.
+    /// </summary>
+    public class InMemoryStartup {
 
-        public Startup(IConfiguration configuration) {
+        public InMemoryStartup(IConfiguration configuration) {
             Configuration = configuration;
         }
 
@@ -26,7 +29,6 @@ namespace ReiTunes.Server {
         // This method gets called by the runtime. Use this method to add services to the container.
         public void ConfigureServices(IServiceCollection services) {
             services.AddControllers();
-            // TODO: change this to write to a file
             services.AddSingleton<ISerializedEventRepository, SQLiteEventRepository>(
                 _ => new SQLiteEventRepository(SQLiteHelpers.CreateInMemoryDb()));
         }

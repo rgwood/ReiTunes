@@ -305,5 +305,20 @@ namespace ReiTunes.Core.Tests.XUnit {
             var libraryItemEvent = new LibraryItemCreatedEvent(Guid.NewGuid(), guid, createdDate, "foo", "bar");
             Assert.Equal("LibraryItem", libraryItemEvent.AggregateType);
         }
+
+        [Fact]
+        public void GetSerializedEventsWorks() {
+            var repo = new SQLiteEventRepository(new SQLiteConnection("DataSource=:memory:"));
+
+            var agg = new SimpleTextAggregate("foo");
+            agg.Text = "bar";
+
+            foreach (var @event in agg.GetUncommittedEvents()) {
+                @event.MachineName = "foo";
+                repo.Save(@event);
+            }
+
+            Assert.Equal(2, repo.GetAllSerializedEvents().Count());
+        }
     }
 }

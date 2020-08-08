@@ -4,6 +4,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
+using ReiTunes.Core;
 
 namespace ReiTunes.Server.Controllers {
 
@@ -11,20 +12,23 @@ namespace ReiTunes.Server.Controllers {
     [Route("events")]
     public class EventController : ControllerBase {
         private readonly ILogger<EventController> _logger;
+        private readonly ISerializedEventRepository _eventRepo;
 
-        public EventController(ILogger<EventController> logger) {
+        public EventController(ILogger<EventController> logger, ISerializedEventRepository eventRepo) {
             _logger = logger;
+            _eventRepo = eventRepo;
         }
 
         [HttpGet]
         public IEnumerable<string> Get() {
-            return new List<string>() { "foo", "bar" };
+            return _eventRepo.GetAllSerializedEvents();
         }
 
         [HttpPut]
-        [Route("exclaim")]
-        public string Exclaim(string input) {
-            return input + "!";
+        [Route("save")]
+        public async Task Save(string serializedEvent) {
+            var deserialized = await EventSerialization.DeserializeAsync(serializedEvent);
+            _eventRepo.Save(deserialized);
         }
     }
 }
