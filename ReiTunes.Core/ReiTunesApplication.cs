@@ -15,7 +15,7 @@ namespace ReiTunes.Core {
         public string MachineName { get; set; }
 
         public ObservableCollection<LibraryItem> Models { get; set; } = new ObservableCollection<LibraryItem>();
-        private InMemoryJsonEventRepository Repo { get; set; } = new InMemoryJsonEventRepository();
+        private IEventRepository Repo { get; set; } = new SQLiteEventRepository(SQLiteHelpers.CreateInMemoryDb());
 
         public ReiTunesApplication(string machineName) {
             MachineName = machineName;
