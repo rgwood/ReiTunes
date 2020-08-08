@@ -13,37 +13,39 @@ using Xunit;
 
 namespace ReiTunes.Server.Tests {
 
-    public class IntegrationTests : IClassFixture<WebApplicationFactory<InMemoryStartup>> {
+    public class IntegrationTests {
         private readonly WebApplicationFactory<InMemoryStartup> _factory;
 
-        public IntegrationTests(WebApplicationFactory<InMemoryStartup> factory) {
-            _factory = factory;
+        private readonly ServerCaller _serverCaller;
+
+        public IntegrationTests() {
+            _factory = new WebApplicationFactory<InMemoryStartup>();
+            _serverCaller = new ServerCaller(_factory.CreateClient());
         }
 
         [Fact]
         public async Task CanSaveAndRetrieveSingleEvent() {
-            var client = _factory.CreateClient();
-            List<string> serialized = await GetAllSerializedEventsAsync(client);
+            List<string> serialized = await _serverCaller.GetAllSerializedEventsAsync();
 
             Assert.Empty(serialized);
 
             var agg = new SimpleTextAggregate("foo");
             var @event = agg.GetUncommittedEvents().Single();
             @event.MachineName = "Cornelius";
-            await SaveEventAsync(client, @event);
+            await _serverCaller.SaveEventAsync(@event);
 
-            serialized = await GetAllSerializedEventsAsync(client);
+            serialized = await _serverCaller.GetAllSerializedEventsAsync();
 
             var deserializedEvent = await EventSerialization.DeserializeAsync(serialized.Single());
             AssertEventsAreEqual(@event, deserializedEvent);
         }
 
-        private static async Task SaveEventAsync(HttpClient client, IEvent @event) {
-            var putUri = QueryHelpers.AddQueryString("/events/save", "serializedEvent", EventSerialization.Serialize(@event));
-
-            var putResponse = await client.PutAsync(putUri, null);
-
-            putResponse.EnsureSuccessStatusCode();
+        /// <summary>
+        /// A large test designed to exercise saving+retrieving events from multiple clients
+        /// </summary>
+        /// <returns></returns>
+        [Fact]
+        public async Task MainIntegrationTest() {
         }
 
         // TODO: should add better equality comparers to the event classes themselves
@@ -53,16 +55,6 @@ namespace ReiTunes.Server.Tests {
             Assert.Equal(event1.CreatedTimeUtc, event2.CreatedTimeUtc);
             Assert.Equal(event1.MachineName, event2.MachineName);
             Assert.Equal(event1.GetType(), event2.GetType());
-        }
-
-        private static async Task<List<string>> GetAllSerializedEventsAsync(HttpClient client) {
-            var response = await client.GetAsync("/events");
-            response.EnsureSuccessStatusCode();
-
-            var contents = await response.Content.ReadAsStringAsync();
-
-            var deserialized = await Json.DeserializeAsync<List<string>>(contents);
-            return deserialized;
         }
 
         [Fact]
