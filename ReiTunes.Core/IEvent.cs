@@ -1,4 +1,5 @@
-﻿using System;
+﻿using Newtonsoft.Json;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -15,6 +16,10 @@ namespace ReiTunes.Core {
 
         // MachineName needs to be set after the event is created, because aggregates don't necessarily know the machine name
         public string MachineName { get; set; }
+
+        // Not sure if this is needed
+        [JsonIgnore]
+        public string AggregateType { get; }
     }
 
     public class SimpleTextAggregateCreatedEvent : IEvent {
@@ -23,6 +28,8 @@ namespace ReiTunes.Core {
         public DateTime CreatedTimeUtc { get; private set; }
         public string Text { get; private set; }
         public string MachineName { get; set; }
+
+        public string AggregateType => nameof(SimpleTextAggregate);
 
         public SimpleTextAggregateCreatedEvent(Guid id, Guid aggregateId, DateTime createdTimeUtc, string text) {
             Id = id;
@@ -39,6 +46,8 @@ namespace ReiTunes.Core {
         public string Text { get; private set; }
         public string MachineName { get; set; }
 
+        public string AggregateType => nameof(SimpleTextAggregate);
+
         public SimpleTextAggregateUpdatedEvent(Guid id, Guid aggregateId, DateTime createdTimeUtc, string text) {
             Id = id;
             AggregateId = aggregateId;
@@ -52,6 +61,8 @@ namespace ReiTunes.Core {
         public Guid AggregateId { get; private set; }
         public DateTime CreatedTimeUtc { get; private set; }
         public string MachineName { get; set; }
+
+        public string AggregateType => nameof(LibraryItem);
 
         public LibraryItemEvent(Guid id, Guid aggregateId, DateTime createdTimeUtc) {
             Id = id;

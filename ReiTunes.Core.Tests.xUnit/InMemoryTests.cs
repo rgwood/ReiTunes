@@ -293,5 +293,17 @@ namespace ReiTunes.Core.Tests.XUnit {
                 }
             });
         }
+
+        [Fact]
+        public void EventsHaveCorrectAggregateType() {
+            var guid = Guid.NewGuid();
+            var createdDate = new DateTime(2020, 12, 25);
+            var simpleEvent = new SimpleTextAggregateCreatedEvent(Guid.NewGuid(), guid, createdDate, "foo");
+
+            Assert.Equal("SimpleTextAggregate", simpleEvent.AggregateType);
+
+            var libraryItemEvent = new LibraryItemCreatedEvent(Guid.NewGuid(), guid, createdDate, "foo", "bar");
+            Assert.Equal("LibraryItem", libraryItemEvent.AggregateType);
+        }
     }
 }

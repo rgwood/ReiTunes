@@ -48,11 +48,12 @@ namespace ReiTunes.Core {
 
             var serialized = EventSerialization.Serialize(@event);
 
-            _conn.Execute(@"INSERT INTO events(Id, AggregateId, CreatedTimeUtc, MachineName, Serialized)
-                            VALUES(@Id, @AggregateId, @CreatedTimeUtc, @MachineName, @Serialized);",
+            _conn.Execute(@"INSERT INTO events(Id, AggregateId, AggregateType, CreatedTimeUtc, MachineName, Serialized)
+                            VALUES(@Id, @AggregateId, @AggregateType, @CreatedTimeUtc, @MachineName, @Serialized);",
                             new {
                                 Id = @event.Id.ToString(),
                                 AggregateId = @event.AggregateId.ToString(),
+                                @event.AggregateType,
                                 @event.CreatedTimeUtc,
                                 @event.MachineName,
                                 Serialized = serialized
@@ -70,6 +71,7 @@ namespace ReiTunes.Core {
                         events(
                             Id TEXT PRIMARY KEY NOT NULL,
                             AggregateId TEXT NOT NULL,
+                            AggregateType TEXT NOT NULL,
                             CreatedTimeUtc TEXT NOT NULL,
                             MachineName TEXT NOT NULL,
                             Serialized TEXT NOT NULL
