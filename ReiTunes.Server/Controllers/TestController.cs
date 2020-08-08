@@ -26,6 +26,12 @@ namespace ReiTunes.Server.Controllers {
         public string Get() => "foo";
 
         [HttpGet]
+        [Route("enumerable")]
+        public IEnumerable<string> Enumerable() {
+            return new List<string> { GoodString, BadString };
+        }
+
+        [HttpGet]
         [Route("exclaim")]
         public string Exclaim(string input) {
             return input + "!";
