@@ -17,4 +17,9 @@ namespace ReiTunes.Core {
 
         public bool ContainsEvent(Guid eventId);
     }
+
+    public interface ISerializedEventRepository : IEventRepository {
+
+        public IEnumerable<string> GetAllSerializedEvents();
+    }
 }

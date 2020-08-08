@@ -7,7 +7,7 @@ using System.Text;
 
 namespace ReiTunes.Core {
 
-    public class SQLiteEventRepository : IEventRepository {
+    public class SQLiteEventRepository : ISerializedEventRepository {
         private readonly SQLiteConnection _conn;
 
         public SQLiteEventRepository(SQLiteConnection conn) {
@@ -31,6 +31,10 @@ namespace ReiTunes.Core {
             var deserializedEvents = serializedEvents.Select(s => EventSerialization.Deserialize(s));
 
             return deserializedEvents.OrderBy(e => e.CreatedTimeUtc);
+        }
+
+        public IEnumerable<string> GetAllSerializedEvents() {
+            return _conn.Query<string>("select Serialized from events");
         }
 
         public IEnumerable<IEvent> GetEvents(Guid aggregateId) {
