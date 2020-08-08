@@ -1,6 +1,8 @@
-﻿using System;
+﻿using Dapper;
+using System;
 using System.Collections.Generic;
 using System.Data.SQLite;
+using System.Linq;
 using System.Text;
 
 namespace ReiTunes.Core {
@@ -9,27 +11,70 @@ namespace ReiTunes.Core {
         private readonly SQLiteConnection _conn;
 
         public SQLiteEventRepository(SQLiteConnection conn) {
-            this._conn = conn;
+            _conn = conn;
+
+            if (_conn.State != System.Data.ConnectionState.Open) {
+                _conn.Open();
+            }
+
+            CreateEventsTableIfNotExists(_conn);
         }
 
         public bool ContainsEvent(Guid eventId) {
-            throw new NotImplementedException();
+            var count = _conn.QuerySingle<long>($"SELECT COUNT() FROM events WHERE Id ='{eventId}';");
+            return count == 1;
         }
 
         public IEnumerable<IEvent> GetAllEvents() {
-            throw new NotImplementedException();
+            var serializedEvents = _conn.Query<string>("select Serialized from events");
+
+            var deserializedEvents = serializedEvents.Select(s => EventSerialization.Deserialize(s));
+
+            return deserializedEvents.OrderBy(e => e.CreatedTimeUtc);
         }
 
         public IEnumerable<IEvent> GetEvents(Guid aggregateId) {
-            throw new NotImplementedException();
+            var serializedEvents =
+                _conn.Query<string>($"select Serialized from events WHERE AggregateId = '{aggregateId}'");
+
+            var deserializedEvents = serializedEvents.Select(s => EventSerialization.Deserialize(s));
+
+            return deserializedEvents.OrderBy(e => e.CreatedTimeUtc);
         }
 
         public void Save(IEvent @event) {
-            throw new NotImplementedException();
+            if (ContainsEvent(@event.Id))
+                return;
+
+            var serialized = EventSerialization.Serialize(@event);
+
+            _conn.Execute(@"INSERT INTO events(Id, AggregateId, CreatedTimeUtc, MachineName, Serialized)
+                            VALUES(@Id, @AggregateId, @CreatedTimeUtc, @MachineName, @Serialized);",
+                            new {
+                                Id = @event.Id.ToString(),
+                                AggregateId = @event.AggregateId.ToString(),
+                                @event.CreatedTimeUtc,
+                                @event.MachineName,
+                                Serialized = serialized
+                            });
         }
 
         public void Save(IEnumerable<IEvent> events) {
-            throw new NotImplementedException();
+            foreach (IEvent @event in events) {
+                Save(@event);
+            }
+        }
+
+        private void CreateEventsTableIfNotExists(SQLiteConnection connection) {
+            var sql = @"CREATE TABLE IF NOT EXISTS
+                        events(
+                            Id TEXT PRIMARY KEY NOT NULL,
+                            AggregateId TEXT NOT NULL,
+                            CreatedTimeUtc TEXT NOT NULL,
+                            MachineName TEXT NOT NULL,
+                            Serialized TEXT NOT NULL
+                        )";
+            connection.Execute(sql);
         }
     }
 }
