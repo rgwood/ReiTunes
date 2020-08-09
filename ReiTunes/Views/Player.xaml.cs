@@ -168,9 +168,9 @@ namespace ReiTunes {
 
         #endregion KeyboardStuff
 
-        private void FilterBox_TextChanged(object sender, TextChangedEventArgs e) {
+        private async void FilterBox_TextChanged(object sender, TextChangedEventArgs e) {
             var searchstring = FilterBox.Text;
-            ViewModel.FilterItems(searchstring);
+            await ViewModel.FilterItems(searchstring);
         }
 
         private void libraryDataGrid_BeginningEdit(object sender, Microsoft.Toolkit.Uwp.UI.Controls.DataGridBeginningEditEventArgs e) {
