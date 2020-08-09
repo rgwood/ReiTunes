@@ -9,6 +9,20 @@ namespace ReiTunes.Core {
             return conn.QuerySingle<long>($"SELECT COUNT() FROM {tableName}");
         }
 
+        public static void CreateEventsTableIfNotExists(this SQLiteConnection conn) {
+            var sql = @"
+CREATE TABLE IF NOT EXISTS
+events(
+    Id TEXT PRIMARY KEY NOT NULL,
+    AggregateId TEXT NOT NULL,
+    CreatedTimeUtc TEXT NOT NULL,
+    MachineName TEXT NOT NULL,
+    Serialized TEXT NOT NULL
+)";
+
+            conn.Execute(sql);
+        }
+
         public static SQLiteConnection CreateInMemoryDb() {
             var connection = new SQLiteConnection("DataSource=:memory:");
             connection.Open();

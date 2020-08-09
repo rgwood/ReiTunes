@@ -6,15 +6,17 @@ using System.Runtime.CompilerServices;
 namespace ReiTunes.Core {
 
     public abstract class Aggregate : INotifyPropertyChanged {
-        private readonly List<IEvent> _uncommittedChanges;
+        private readonly List<IEvent> _uncommittedEvents;
         protected Dictionary<Type, Action<IEvent>> _eventAppliers;
 
         public event PropertyChangedEventHandler PropertyChanged;
 
+        public event EventHandler<IEvent> EventCreated;
+
         public DateTime CreatedTimeUtc { get; private set; }
 
         protected Aggregate() {
-            _uncommittedChanges = new List<IEvent>();
+            _uncommittedEvents = new List<IEvent>();
             _eventAppliers = new Dictionary<Type, Action<IEvent>>();
             RegisterAppliers();
         }
@@ -31,7 +33,8 @@ namespace ReiTunes.Core {
 
         protected void ApplyUncommitted(IEvent evt) {
             Apply(evt);
-            _uncommittedChanges.Add(evt);
+            _uncommittedEvents.Add(evt);
+            EventCreated?.Invoke(this, evt);
         }
 
         public void Apply(IEvent evt) {
@@ -53,11 +56,11 @@ namespace ReiTunes.Core {
         }
 
         public IEnumerable<IEvent> GetUncommittedEvents() {
-            return _uncommittedChanges.AsReadOnly();
+            return _uncommittedEvents.AsReadOnly();
         }
 
         public void Commit() {
-            _uncommittedChanges.Clear();
+            _uncommittedEvents.Clear();
         }
 
         protected void NotifyPropertyChanged([CallerMemberName] string propertyName = null) => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
