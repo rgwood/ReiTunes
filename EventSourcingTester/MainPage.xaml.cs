@@ -25,7 +25,10 @@ namespace EventSourcingTester {
     /// An empty page that can be used on its own or navigated to within a Frame.
     /// </summary>
     public sealed partial class MainPage : Page {
+
+        // TODO update this to use Library
         public ReiTunesApplication app1;
+
         public ReiTunesApplication app2;
         public ReiTunesApplication server;
 
@@ -40,9 +43,9 @@ namespace EventSourcingTester {
         }
 
         private void App1_AddClick(object sender, RoutedEventArgs e) {
-            var agg = new LibraryItem("foo.mp3");
-            app1.Models.Add(agg);
-            app1.Commit();
+            //var agg = new LibraryItem("foo.mp3");
+            //app1.Models.Add(agg);
+            //app1.Commit();
         }
 
         private void App1_IncrementClick(object sender, RoutedEventArgs e) {
@@ -160,9 +163,10 @@ namespace EventSourcingTester {
         }
 
         private void App2_AddClick(object sender, RoutedEventArgs e) {
-            var agg = new LibraryItem("bar.mp3");
-            app2.Models.Add(agg);
-            app2.Commit();
+            //TODO fix
+            //var agg = new LibraryItem("bar.mp3");
+            //app2.Models.Add(agg);
+            //app2.Commit();
         }
 
         private void App2_IncrementClick(object sender, RoutedEventArgs e) {

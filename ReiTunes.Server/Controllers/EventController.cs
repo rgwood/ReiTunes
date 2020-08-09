@@ -13,15 +13,23 @@ namespace ReiTunes.Server.Controllers {
     public class EventController : ControllerBase {
         private readonly ILogger<EventController> _logger;
         private readonly ISerializedEventRepository _eventRepo;
+        private readonly LibraryItemEventFactory _eventFactory;
 
-        public EventController(ILogger<EventController> logger, ISerializedEventRepository eventRepo) {
+        public EventController(ILogger<EventController> logger, ISerializedEventRepository eventRepo, LibraryItemEventFactory eventFactory) {
             _logger = logger;
             _eventRepo = eventRepo;
+            _eventFactory = eventFactory;
         }
 
         [HttpGet]
         public IEnumerable<string> Get() {
             return _eventRepo.GetAllSerializedEvents();
+        }
+
+        [HttpPut]
+        [Route("create")]
+        public void CreateItem(string filePath) {
+            _eventRepo.Save(_eventFactory.GetCreatedEvent(Guid.NewGuid(), filePath, filePath));
         }
 
         [HttpPut]
