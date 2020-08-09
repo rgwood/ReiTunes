@@ -1,6 +1,7 @@
 ﻿using Microsoft.AspNetCore.WebUtilities;
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Net.Http;
 using System.Text;
 using System.Threading.Tasks;
@@ -23,6 +24,12 @@ namespace ReiTunes.Core {
 
             var deserialized = await Json.DeserializeAsync<List<string>>(contents);
             return deserialized;
+        }
+
+        public async Task<IEnumerable<IEvent>> GetAllEventsAsync() {
+            var serialized = await GetAllSerializedEventsAsync();
+            //todo: should this be an async enumerable somehow?
+            return serialized.Select(e => EventSerialization.Deserialize(e));
         }
 
         public async Task SaveEventAsync(IEvent @event) {
