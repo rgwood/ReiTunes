@@ -1,5 +1,7 @@
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.AspNetCore.TestHost;
 using Microsoft.AspNetCore.WebUtilities;
+using Microsoft.Extensions.DependencyInjection;
 using Newtonsoft.Json;
 using ReiTunes.Core;
 using ReiTunes.Server.Controllers;
@@ -14,14 +16,20 @@ using Xunit;
 namespace ReiTunes.Server.Tests {
 
     public class IntegrationTests {
-        private readonly WebApplicationFactory<InMemoryStartup> _factory;
+        private readonly WebApplicationFactory<Startup> _factory;
 
         private readonly ServerCaller _serverCaller;
 
         private readonly LibraryItemEventFactory _serverEventFactory;
 
         public IntegrationTests() {
-            _factory = new WebApplicationFactory<InMemoryStartup>();
+            _factory = new WebApplicationFactory<Startup>().WithWebHostBuilder(builder => {
+                builder.ConfigureTestServices(services => {
+                    services.AddSingleton<ISerializedEventRepository, SQLiteEventRepository>(
+                        _ => new SQLiteEventRepository(SQLiteHelpers.CreateInMemoryDb()));
+                });
+            });
+
             _serverCaller = new ServerCaller(_factory.CreateClient());
             _serverEventFactory = new LibraryItemEventFactory("Server");
         }
