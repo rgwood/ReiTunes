@@ -59,12 +59,9 @@ namespace ReiTunes.Server.Tests {
             var l1 = new Library("machine1", SQLiteHelpers.CreateInMemoryDb(), _serverCaller);
             var l2 = new Library("machine2", SQLiteHelpers.CreateInMemoryDb(), _serverCaller);
 
-            var guid = Guid.NewGuid();
-            var name = "bar.mp3";
-            var path = "foo/bar.mp3";
+            await _serverCaller.CreateNewLibraryItemAsync("foo/bar.mp3");
 
-            var createdEvent = _serverEventFactory.GetCreatedEvent(guid, name, path);
-            l1.ReceiveEvent(createdEvent);
+            await l1.PullFromServer();
 
             var item = l1.Items.Single();
             item.IncrementPlayCount();

@@ -9,9 +9,12 @@ using ReiTunes.Core;
 namespace ReiTunes.Server.Controllers {
 
     [ApiController]
-    [Route("events")]
+    [Route("reitunes")]
     public class EventController : ControllerBase {
+
+        //todo: log calls
         private readonly ILogger<EventController> _logger;
+
         private readonly ISerializedEventRepository _eventRepo;
         private readonly LibraryItemEventFactory _eventFactory;
 
@@ -22,18 +25,19 @@ namespace ReiTunes.Server.Controllers {
         }
 
         [HttpGet]
+        [Route("allevents")]
         public IEnumerable<string> Get() {
             return _eventRepo.GetAllSerializedEvents();
         }
 
         [HttpPut]
-        [Route("create")]
+        [Route("createitem")]
         public void CreateItem(string filePath) {
             _eventRepo.Save(_eventFactory.GetCreatedEvent(Guid.NewGuid(), filePath, filePath));
         }
 
         [HttpPut]
-        [Route("save")]
+        [Route("saveevent")]
         public async Task Save(string serializedEvent) {
             var deserialized = await EventSerialization.DeserializeAsync(serializedEvent);
             _eventRepo.Save(deserialized);
