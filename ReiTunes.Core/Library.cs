@@ -17,7 +17,7 @@ namespace ReiTunes.Core {
 
         public string MachineName { get; private set; }
 
-        public List<LibraryItem> Models { get; set; } = new List<LibraryItem>();
+        public List<LibraryItem> Items { get; set; } = new List<LibraryItem>();
         private readonly ISerializedEventRepository _repo;
         private readonly ServerCaller _caller;
         private readonly LibraryItemEventFactory _eventFactory;
@@ -44,15 +44,15 @@ namespace ReiTunes.Core {
             foreach (var @event in events) {
                 _repo.Save(@event);
             }
-            RebuildModels();
+            RebuildItems();
         }
 
         public void ReceiveEvent(IEvent @event) {
             ReceiveEvents(new List<IEvent> { @event });
         }
 
-        public void RebuildModels() {
-            Models.Clear();
+        private void RebuildItems() {
+            Items.Clear();
 
             var events = GetAllEvents();
 
@@ -71,7 +71,7 @@ namespace ReiTunes.Core {
                 foreach (var @event in aggregateEvents) {
                     aggregate.Apply(@event);
                 }
-                Models.Add(aggregate);
+                Items.Add(aggregate);
             }
 
             LibraryItemsRebuilt?.Invoke(this, EventArgs.Empty);
