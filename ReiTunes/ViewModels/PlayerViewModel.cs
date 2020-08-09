@@ -33,6 +33,8 @@ namespace ReiTunes {
         private string _downloadStatus = "";
         private bool _downloadInProgress = false;
         private double _downloadPercentFinished = 0;
+        private ObservableCollection<LibraryItem> _libraryItems;
+        private ObservableCollection<LibraryItem> _visibleItems;
 
         public IMediaPlaybackSource Source {
             get { return _source; }
@@ -44,8 +46,6 @@ namespace ReiTunes {
             set { Set(ref _sourceFileName, value); }
         }
 
-        private ObservableCollection<LibraryItem> _libraryItems;
-
         public ObservableCollection<LibraryItem> LibraryItems {
             get { return _libraryItems; }
             set {
@@ -53,8 +53,6 @@ namespace ReiTunes {
                 VisibleItems = new ObservableCollection<LibraryItem>(value);
             }
         }
-
-        private ObservableCollection<LibraryItem> _visibleItems;
 
         public ObservableCollection<LibraryItem> VisibleItems {
             get { return _visibleItems; }
@@ -208,11 +206,6 @@ namespace ReiTunes {
                     DownloadStatus = message;
                     DownloadPercentFinished = percentageFinished;
                 });
-        }
-
-        //Todo: cache this if it gets slow
-        public IEnumerable<LibraryItem> FlattenedFileList() {
-            return LibraryItems;
         }
     }
 }
