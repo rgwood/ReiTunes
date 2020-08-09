@@ -18,9 +18,12 @@ namespace ReiTunes.Server.Tests {
 
         private readonly ServerCaller _serverCaller;
 
+        private readonly LibraryItemEventFactory _serverEventFactory;
+
         public IntegrationTests() {
             _factory = new WebApplicationFactory<InMemoryStartup>();
             _serverCaller = new ServerCaller(_factory.CreateClient());
+            _serverEventFactory = new LibraryItemEventFactory("Server");
         }
 
         [Fact]
@@ -45,6 +48,46 @@ namespace ReiTunes.Server.Tests {
         /// <returns></returns>
         [Fact]
         public async Task MainIntegrationTest() {
+            var l1 = new Library("machine1", SQLiteHelpers.CreateInMemoryDb(), _serverCaller);
+            var l2 = new Library("machine2", SQLiteHelpers.CreateInMemoryDb(), _serverCaller);
+
+            var guid = Guid.NewGuid();
+            var name = "bar.mp3";
+            var path = "foo/bar.mp3";
+
+            var createdEvent = _serverEventFactory.GetCreatedEvent(guid, name, path);
+            l1.ReceiveEvent(createdEvent);
+
+            var item = l1.Items.Single();
+            item.IncrementPlayCount();
+            item.IncrementPlayCount();
+            item.Name = "GIMIX set";
+            item.FilePath = "bar.mp3";
+            item.Artist = "The Avalanches";
+            item.Album = "Mixes";
+
+            await l1.PushToServer();
+            await l2.PullFromServer();
+
+            LibrariesHaveSameItems(l1, l2);
+
+            l2.Items.Single().IncrementPlayCount();
+
+            await l2.PushToServer();
+            await l1.PullFromServer();
+
+            LibrariesHaveSameItems(l1, l2);
+        }
+
+        private void LibrariesHaveSameItems(Library l1, Library l2) {
+            Assert.Equal(l1.Items.Count, l2.Items.Count);
+
+            var orderedModels1 = l1.Items.OrderBy(m => m.AggregateId).ToArray();
+            var orderedModels2 = l2.Items.OrderBy(m => m.AggregateId).ToArray();
+
+            for (int i = 0; i < orderedModels1.Count(); i++) {
+                Assert.Equal(orderedModels1[i], orderedModels2[i]);
+            }
         }
 
         // TODO: should add better equality comparers to the event classes themselves
