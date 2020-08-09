@@ -29,17 +29,6 @@ namespace ReiTunes.Core {
             _eventFactory = new LibraryItemEventFactory(MachineName);
         }
 
-        public void Commit() {
-            //foreach (var model in Models) {
-            //    foreach (var @event in model.GetUncommittedEvents()) {
-            //        @event.MachineName = MachineName;
-            //        _repo.Save(@event);
-            //    }
-
-            //    model.Commit();
-            //}
-        }
-
         public void ReceiveEvents(IEnumerable<IEvent> events) {
             foreach (var @event in events) {
                 _repo.Save(@event);
@@ -67,7 +56,7 @@ namespace ReiTunes.Core {
                     throw new Exception($"Bad event data: first event for item {first.AggregateId} is of type {first.GetType()} not {nameof(LibraryItemCreatedEvent)}");
                 }
 
-                aggregate.EventCreated += Agg_EventCreated;
+                aggregate.EventCreated += SaveEventToRepo;
                 foreach (var @event in aggregateEvents) {
                     aggregate.Apply(@event);
                 }
@@ -77,7 +66,7 @@ namespace ReiTunes.Core {
             LibraryItemsRebuilt?.Invoke(this, EventArgs.Empty);
         }
 
-        private void Agg_EventCreated(object sender, IEvent e) {
+        private void SaveEventToRepo(object sender, IEvent e) {
             _repo.Save(e);
             var agg = (Aggregate)sender;
             agg.Commit();
