@@ -129,10 +129,8 @@ namespace ReiTunes.Core.Tests.XUnit {
 
             app1.Items.Add(new LibraryItem(_eventFactory, "foo.mp3"));
             app1.Items.Single().IncrementPlayCount();
-            app1.Commit();
 
             app2.Items.Add(new LibraryItem(_eventFactory, "bar.mp3"));
-            app2.Commit();
 
             app2.ReceiveEvents(app1.GetAllEvents());
             app1.ReceiveEvents(app2.GetAllEvents());
