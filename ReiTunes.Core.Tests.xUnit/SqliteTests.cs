@@ -17,25 +17,11 @@ namespace ReiTunes.Core.Tests.xUnit {
 
         public SqliteTests() {
             _conn = SQLiteHelpers.CreateInMemoryDb();
-            CreateEventsTableIfNotExists(_conn);
+            _conn.CreateEventsTableIfNotExists();
         }
 
         public void Dispose() {
             _conn.Dispose();
-        }
-
-        private void CreateEventsTableIfNotExists(SQLiteConnection connection) {
-            var sql = @"
-CREATE TABLE IF NOT EXISTS
-events(
-    Id TEXT PRIMARY KEY NOT NULL,
-    AggregateId TEXT NOT NULL,
-    CreatedTimeUtc TEXT NOT NULL,
-    MachineName TEXT NOT NULL,
-    Serialized TEXT NOT NULL
-)";
-
-            connection.Execute(sql);
         }
 
         [Fact]
@@ -61,8 +47,6 @@ VALUES(1,'MSFT','foo','bar','baz');");
 
         [Fact]
         public void CanSaveEvent() {
-            CreateEventsTableIfNotExists(_conn);
-
             var agg = new SimpleTextAggregate("foo");
             var @event = agg.GetUncommittedEvents().Single();
             @event.MachineName = MachineName;
@@ -71,12 +55,34 @@ VALUES(1,'MSFT','foo','bar','baz');");
         }
 
         [Fact]
-        public void SQLiteEnforcesNoSavingDuplicates() {
-            CreateEventsTableIfNotExists(_conn);
-
+        public void CanHookUpEventAutoSave() {
             var agg = new SimpleTextAggregate("foo");
             var @event = agg.GetUncommittedEvents().Single();
             @event.MachineName = MachineName;
+
+            SaveEvent(@event, _conn);
+
+            agg.Commit();
+
+            agg.EventCreated += Agg_EventCreated;
+
+            agg.Text = "bar";
+
+            Assert.Empty(agg.GetUncommittedEvents());
+
+            Assert.Equal(2, _conn.GetRowCount("events"));
+        }
+
+        private void Agg_EventCreated(object sender, IEvent e) {
+            SaveEvent(e, _conn);
+            var agg = (Aggregate)sender;
+            agg.Commit();
+        }
+
+        [Fact]
+        public void SQLiteEnforcesNoSavingDuplicates() {
+            var agg = new SimpleTextAggregate("foo");
+            var @event = agg.GetUncommittedEvents().Single();
 
             SaveEvent(@event, _conn);
 
@@ -85,11 +91,8 @@ VALUES(1,'MSFT','foo','bar','baz');");
 
         [Fact]
         public void CanSaveAndReadEvent() {
-            CreateEventsTableIfNotExists(_conn);
-
             var agg = new SimpleTextAggregate("foo");
             var @event = agg.GetUncommittedEvents().Single();
-            @event.MachineName = MachineName;
 
             SaveEvent(@event, _conn);
 
@@ -104,6 +107,7 @@ VALUES(1,'MSFT','foo','bar','baz');");
         }
 
         private void SaveEvent(IEvent @event, SQLiteConnection connection) {
+            @event.MachineName = MachineName;
             var serialized = EventSerialization.Serialize(@event);
 
             connection.Execute(@"

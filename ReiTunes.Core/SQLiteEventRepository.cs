@@ -17,7 +17,7 @@ namespace ReiTunes.Core {
                 _conn.Open();
             }
 
-            CreateEventsTableIfNotExists(_conn);
+            _conn.CreateEventsTableIfNotExists();
         }
 
         public bool ContainsEvent(Guid eventId) {
@@ -68,19 +68,6 @@ namespace ReiTunes.Core {
             foreach (IEvent @event in events) {
                 Save(@event);
             }
-        }
-
-        private void CreateEventsTableIfNotExists(SQLiteConnection connection) {
-            var sql = @"CREATE TABLE IF NOT EXISTS
-                        events(
-                            Id TEXT PRIMARY KEY NOT NULL,
-                            AggregateId TEXT NOT NULL,
-                            AggregateType TEXT NOT NULL,
-                            CreatedTimeUtc TEXT NOT NULL,
-                            MachineName TEXT NOT NULL,
-                            Serialized TEXT NOT NULL
-                        )";
-            connection.Execute(sql);
         }
     }
 }
