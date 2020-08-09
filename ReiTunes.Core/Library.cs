@@ -6,10 +6,11 @@ using System.Data.SQLite;
 using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Text;
+using System.Threading.Tasks;
 
 namespace ReiTunes.Core {
 
-    public class Library : INotifyPropertyChanged {
+    public class Library {
 
         public event PropertyChangedEventHandler PropertyChanged;
 
@@ -38,6 +39,23 @@ namespace ReiTunes.Core {
 
         public void ReceiveEvent(IEvent @event) {
             ReceiveEvents(new List<IEvent> { @event });
+        }
+
+        public IEnumerable<IEvent> GetAllEvents() {
+            return _repo.GetAllEvents();
+        }
+
+        public async Task PullFromServer() {
+            var events = await _caller.GetAllEventsAsync();
+            ReceiveEvents(events);
+        }
+
+        public async Task PushToServer() {
+            var allEvents = GetAllEvents();
+
+            foreach (var e in allEvents) {
+                await _caller.SaveEventAsync(e);
+            }
         }
 
         private void RebuildItems() {
@@ -71,11 +89,5 @@ namespace ReiTunes.Core {
             var agg = (Aggregate)sender;
             agg.Commit();
         }
-
-        public IEnumerable<IEvent> GetAllEvents() {
-            return _repo.GetAllEvents();
-        }
-
-        protected void NotifyPropertyChanged([CallerMemberName] string propertyName = null) => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
     }
 }
