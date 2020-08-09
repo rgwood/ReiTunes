@@ -17,6 +17,8 @@ namespace ReiTunes.Core {
         public ObservableCollection<LibraryItem> Models { get; set; } = new ObservableCollection<LibraryItem>();
         private IEventRepository Repo { get; set; } = new SQLiteEventRepository(SQLiteHelpers.CreateInMemoryDb());
 
+        private readonly LibraryItemEventFactory _eventFactory;
+
         public ReiTunesApplication(string machineName) {
             MachineName = machineName;
         }
@@ -24,7 +26,6 @@ namespace ReiTunes.Core {
         public void Commit() {
             foreach (var model in Models) {
                 foreach (var @event in model.GetUncommittedEvents()) {
-                    @event.MachineName = MachineName;
                     Repo.Save(@event);
                 }
 
@@ -47,7 +48,7 @@ namespace ReiTunes.Core {
             var groupedEvents = events.GroupBy(e => e.AggregateId).Select(g => g.OrderBy(e => e.CreatedTimeUtc));
 
             foreach (var aggregateEvents in groupedEvents) {
-                var aggregate = new LibraryItem();
+                var aggregate = new LibraryItem(_eventFactory);
                 foreach (var @event in aggregateEvents) {
                     aggregate.Apply(@event);
                 }

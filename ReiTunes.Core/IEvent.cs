@@ -14,8 +14,12 @@ namespace ReiTunes.Core {
         // wonder if I should be using a fancier time type from Noda Time...
         public DateTime CreatedTimeUtc { get; }
 
-        // MachineName needs to be set after the event is created, because aggregates don't necessarily know the machine name
-        public string MachineName { get; set; }
+        /// <summary>
+        /// For ordering items created close to each other. Items created later will have a higher LocalId
+        /// </summary>
+        public long LocalId { get; }
+
+        public string MachineName { get; }
 
         // Not sure if this is needed
         [JsonIgnore]
@@ -26,8 +30,9 @@ namespace ReiTunes.Core {
         public Guid Id { get; private set; }
         public Guid AggregateId { get; private set; }
         public DateTime CreatedTimeUtc { get; private set; }
+        public long LocalId { get; private set; }
         public string Text { get; private set; }
-        public string MachineName { get; set; }
+        public string MachineName { get; set; } = "placeholder";
 
         public string AggregateType => nameof(SimpleTextAggregate);
 
@@ -43,8 +48,9 @@ namespace ReiTunes.Core {
         public Guid Id { get; private set; }
         public Guid AggregateId { get; private set; }
         public DateTime CreatedTimeUtc { get; private set; }
+        public long LocalId { get; private set; }
         public string Text { get; private set; }
-        public string MachineName { get; set; }
+        public string MachineName { get; set; } = "placeholder";
 
         public string AggregateType => nameof(SimpleTextAggregate);
 
@@ -60,14 +66,17 @@ namespace ReiTunes.Core {
         public Guid Id { get; private set; }
         public Guid AggregateId { get; private set; }
         public DateTime CreatedTimeUtc { get; private set; }
-        public string MachineName { get; set; }
+        public long LocalId { get; private set; }
+        public string MachineName { get; private set; }
 
         public string AggregateType => nameof(LibraryItem);
 
-        public LibraryItemEvent(Guid id, Guid aggregateId, DateTime createdTimeUtc) {
+        public LibraryItemEvent(Guid id, Guid aggregateId, DateTime createdTimeUtc, long localId, string machineName) {
             Id = id;
             AggregateId = aggregateId;
             CreatedTimeUtc = createdTimeUtc;
+            LocalId = localId;
+            MachineName = machineName;
         }
     }
 
@@ -75,8 +84,8 @@ namespace ReiTunes.Core {
         public string Name { get; private set; }
         public string FilePath { get; private set; }
 
-        public LibraryItemCreatedEvent(Guid id, Guid aggregateId, DateTime createdTimeUtc, string name, string filePath)
-            : base(id, aggregateId, createdTimeUtc) {
+        public LibraryItemCreatedEvent(Guid id, Guid aggregateId, DateTime createdTimeUtc, long localId, string machineName, string name, string filePath)
+            : base(id, aggregateId, createdTimeUtc, localId, machineName) {
             Name = name;
             FilePath = filePath;
         }
@@ -85,8 +94,8 @@ namespace ReiTunes.Core {
     public class LibraryItemNameChangedEvent : LibraryItemEvent {
         public string NewName { get; private set; }
 
-        public LibraryItemNameChangedEvent(Guid id, Guid aggregateId, DateTime createdTimeUtc, string newName)
-            : base(id, aggregateId, createdTimeUtc) {
+        public LibraryItemNameChangedEvent(Guid id, Guid aggregateId, DateTime createdTimeUtc, long localId, string machineName, string newName)
+            : base(id, aggregateId, createdTimeUtc, localId, machineName) {
             NewName = newName;
         }
     }
@@ -94,8 +103,8 @@ namespace ReiTunes.Core {
     public class LibraryItemFilePathChangedEvent : LibraryItemEvent {
         public string NewFilePath { get; private set; }
 
-        public LibraryItemFilePathChangedEvent(Guid id, Guid aggregateId, DateTime createdTimeUtc, string newFilePath)
-            : base(id, aggregateId, createdTimeUtc) {
+        public LibraryItemFilePathChangedEvent(Guid id, Guid aggregateId, DateTime createdTimeUtc, long localId, string machineName, string newFilePath)
+            : base(id, aggregateId, createdTimeUtc, localId, machineName) {
             NewFilePath = newFilePath;
         }
     }
@@ -103,8 +112,8 @@ namespace ReiTunes.Core {
     public class LibraryItemArtistChangedEvent : LibraryItemEvent {
         public string NewArtist { get; private set; }
 
-        public LibraryItemArtistChangedEvent(Guid id, Guid aggregateId, DateTime createdTimeUtc, string newArtist)
-            : base(id, aggregateId, createdTimeUtc) {
+        public LibraryItemArtistChangedEvent(Guid id, Guid aggregateId, DateTime createdTimeUtc, long localId, string machineName, string newArtist)
+            : base(id, aggregateId, createdTimeUtc, localId, machineName) {
             NewArtist = newArtist;
         }
     }
@@ -112,16 +121,16 @@ namespace ReiTunes.Core {
     public class LibraryItemAlbumChangedEvent : LibraryItemEvent {
         public string NewAlbum { get; private set; }
 
-        public LibraryItemAlbumChangedEvent(Guid id, Guid aggregateId, DateTime createdTimeUtc, string newAlbum)
-            : base(id, aggregateId, createdTimeUtc) {
+        public LibraryItemAlbumChangedEvent(Guid id, Guid aggregateId, DateTime createdTimeUtc, long localId, string machineName, string newAlbum)
+            : base(id, aggregateId, createdTimeUtc, localId, machineName) {
             NewAlbum = newAlbum;
         }
     }
 
     public class LibraryItemPlayedEvent : LibraryItemEvent {
 
-        public LibraryItemPlayedEvent(Guid id, Guid aggregateId, DateTime createdTimeUtc)
-            : base(id, aggregateId, createdTimeUtc) {
+        public LibraryItemPlayedEvent(Guid id, Guid aggregateId, DateTime createdTimeUtc, long localId, string machineName)
+            : base(id, aggregateId, createdTimeUtc, localId, machineName) {
         }
     }
 }

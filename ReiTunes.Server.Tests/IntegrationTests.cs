@@ -31,7 +31,6 @@ namespace ReiTunes.Server.Tests {
 
             var agg = new SimpleTextAggregate("foo");
             var @event = agg.GetUncommittedEvents().Single();
-            @event.MachineName = "Cornelius";
             await _serverCaller.SaveEventAsync(@event);
 
             serialized = await _serverCaller.GetAllSerializedEventsAsync();

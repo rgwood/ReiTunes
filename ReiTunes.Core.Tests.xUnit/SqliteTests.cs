@@ -39,7 +39,6 @@ namespace ReiTunes.Core.Tests.xUnit {
         public void CanSaveEvent() {
             var agg = new SimpleTextAggregate("foo");
             var @event = agg.GetUncommittedEvents().Single();
-            @event.MachineName = MachineName;
 
             SaveEvent(@event, _conn);
             Assert.Equal(1, _conn.GetRowCount("events"));
@@ -49,7 +48,6 @@ namespace ReiTunes.Core.Tests.xUnit {
         public void CanHookUpEventAutoSave() {
             var agg = new SimpleTextAggregate("foo");
             var @event = agg.GetUncommittedEvents().Single();
-            @event.MachineName = MachineName;
 
             SaveEvent(@event, _conn);
 
@@ -98,7 +96,6 @@ namespace ReiTunes.Core.Tests.xUnit {
         }
 
         private void SaveEvent(IEvent @event, SQLiteConnection connection) {
-            @event.MachineName = MachineName;
             var serialized = EventSerialization.Serialize(@event);
 
             connection.Execute(@"
