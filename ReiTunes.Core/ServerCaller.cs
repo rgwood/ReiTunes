@@ -17,7 +17,7 @@ namespace ReiTunes.Core {
         }
 
         public async Task<List<string>> GetAllSerializedEventsAsync() {
-            var response = await _client.GetAsync("/events");
+            var response = await _client.GetAsync("/reitunes/allevents");
             response.EnsureSuccessStatusCode();
 
             var contents = await response.Content.ReadAsStringAsync();
@@ -33,10 +33,16 @@ namespace ReiTunes.Core {
         }
 
         public async Task SaveEventAsync(IEvent @event) {
-            var putUri = QueryHelpers.AddQueryString("/events/save", "serializedEvent", EventSerialization.Serialize(@event));
+            var putUri = QueryHelpers.AddQueryString("/reitunes/saveevent", "serializedEvent", EventSerialization.Serialize(@event));
 
             var putResponse = await _client.PutAsync(putUri, null);
 
+            putResponse.EnsureSuccessStatusCode();
+        }
+
+        public async Task CreateNewLibraryItemAsync(string filePath) {
+            var uri = QueryHelpers.AddQueryString("/reitunes/createitem", "filePath", filePath);
+            var putResponse = await _client.PutAsync(uri, null);
             putResponse.EnsureSuccessStatusCode();
         }
     }
