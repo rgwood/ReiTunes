@@ -127,11 +127,11 @@ namespace ReiTunes.Core.Tests.XUnit {
             var app1 = new Library("machine1", SQLiteHelpers.CreateInMemoryDb(), caller: null);
             var app2 = new Library("machine2", SQLiteHelpers.CreateInMemoryDb(), caller: null);
 
-            app1.Models.Add(new LibraryItem(_eventFactory, "foo.mp3"));
-            app1.Models.Single().IncrementPlayCount();
+            app1.Items.Add(new LibraryItem(_eventFactory, "foo.mp3"));
+            app1.Items.Single().IncrementPlayCount();
             app1.Commit();
 
-            app2.Models.Add(new LibraryItem(_eventFactory, "bar.mp3"));
+            app2.Items.Add(new LibraryItem(_eventFactory, "bar.mp3"));
             app2.Commit();
 
             app2.ReceiveEvents(app1.GetAllEvents());
@@ -152,7 +152,7 @@ namespace ReiTunes.Core.Tests.XUnit {
             var createdEvent = _eventFactory.GetCreatedEvent(guid, name, path);
             l1.ReceiveEvent(createdEvent);
 
-            var item = l1.Models.Single();
+            var item = l1.Items.Single();
             item.IncrementPlayCount();
             item.IncrementPlayCount();
             item.Name = "GIMIX set";
@@ -163,13 +163,19 @@ namespace ReiTunes.Core.Tests.XUnit {
             l2.ReceiveEvents(l1.GetAllEvents());
 
             LibrariesHaveSameItems(l1, l2);
+
+            l2.Items.Single().IncrementPlayCount();
+
+            l1.ReceiveEvents(l2.GetAllEvents());
+
+            LibrariesHaveSameItems(l1, l2);
         }
 
         private void LibrariesHaveSameItems(Library l1, Library l2) {
-            Assert.Equal(l1.Models.Count, l2.Models.Count);
+            Assert.Equal(l1.Items.Count, l2.Items.Count);
 
-            var orderedModels1 = l1.Models.OrderBy(m => m.AggregateId).ToArray();
-            var orderedModels2 = l2.Models.OrderBy(m => m.AggregateId).ToArray();
+            var orderedModels1 = l1.Items.OrderBy(m => m.AggregateId).ToArray();
+            var orderedModels2 = l2.Items.OrderBy(m => m.AggregateId).ToArray();
 
             for (int i = 0; i < orderedModels1.Count(); i++) {
                 Assert.Equal(orderedModels1[i], orderedModels2[i]);
