@@ -92,24 +92,11 @@ namespace ReiTunes {
             await LoadLibraryFile(libraryFile);
         }
 
-        public void FilterItems(string filterString) {
+        public async Task FilterItems(string filterString) {
             var sw = Stopwatch.StartNew();
 
-            if (filterString == "") {
-                VisibleItems = new ObservableCollection<LibraryItem>(LibraryItems);
-            }
-            else {
-                var fuzzyMatchResults =
-                    (from file in LibraryItems
-                     let fuzzyResult = FuzzyMatcher.FuzzyMatch(file.FilePath, filterString)
-                     where fuzzyResult.isMatch
-                     orderby fuzzyResult.score descending
-                     select file);
+            VisibleItems = await Task.Run(() => FuzzyMatcher.FuzzyMatch(filterString, LibraryItems));
 
-                //TODO: short-circuit if the result hasn't changed, to avoid slow rerenders.
-
-                VisibleItems = new ObservableCollection<LibraryItem>(fuzzyMatchResults);
-            }
             sw.Stop();
             Debug.WriteLine($"Total filter time: {sw.ElapsedMilliseconds}ms");
         }

@@ -1,8 +1,9 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
+using System.Linq;
 
-namespace ReiTunes.Core
-{
+namespace ReiTunes.Core {
     // Based on CDillinger's Gist from https://gist.github.com/CDillinger/2aa02128f840bdca90340ce08ee71bc2
     // LICENSE
     //
@@ -10,16 +11,33 @@ namespace ReiTunes.Core
     //   license: you are granted a perpetual, irrevocable license to copy, modify,
     //   publish, and distribute this file as you see fit.
 
-    public static class FuzzyMatcher
-    {
+    public static class FuzzyMatcher {
+
+        public static ObservableCollection<LibraryItem> FuzzyMatch(string filterString, IEnumerable<LibraryItem> items) {
+            if (string.IsNullOrWhiteSpace(filterString)) {
+                return new ObservableCollection<LibraryItem>(items);
+            }
+            else {
+                var fuzzyMatchResults =
+                    (from file in items
+                     let fuzzyResult = FuzzyMatcher.FuzzyMatch(file.FilePath, filterString)
+                     where fuzzyResult.isMatch
+                     orderby fuzzyResult.score descending
+                     select file);
+
+                //TODO: short-circuit if the result hasn't changed, to avoid slow rerenders.
+
+                return new ObservableCollection<LibraryItem>(fuzzyMatchResults);
+            }
+        }
+
         /// <summary>
         /// Does a fuzzy search for a pattern within a string, and gives the search a score on how well it matched.
         /// </summary>
         /// <param name="stringToSearch">The string to search for the pattern in.</param>
         /// <param name="pattern">The pattern to search for in the string.</param>
         /// <returns>true if each character in pattern is found sequentially within stringToSearch; otherwise, false.</returns>
-        public static (bool isMatch, int score) FuzzyMatch(string stringToSearch, string pattern)
-        {
+        public static (bool isMatch, int score) FuzzyMatch(string stringToSearch, string pattern) {
             // Score consts
             const int adjacencyBonus = 5;               // bonus for adjacent matches
             const int separatorBonus = 10;              // bonus if match occurs after a separator
@@ -48,8 +66,7 @@ namespace ReiTunes.Core
             var matchedIndices = new List<int>();
 
             // Loop over strings
-            while (strIdx != strLength)
-            {
+            while (strIdx != strLength) {
                 var patternChar = patternIdx != patternLength ? pattern[patternIdx] as char? : null;
                 var strChar = stringToSearch[strIdx];
 
@@ -62,8 +79,7 @@ namespace ReiTunes.Core
 
                 var advanced = nextMatch && bestLetter != null;
                 var patternRepeat = bestLetter != null && patternChar != null && bestLower == patternLower;
-                if (advanced || patternRepeat)
-                {
+                if (advanced || patternRepeat) {
                     score += bestLetterScore;
                     matchedIndices.Add((int)bestLetterIdx);
                     bestLetter = null;
@@ -72,14 +88,12 @@ namespace ReiTunes.Core
                     bestLetterScore = 0;
                 }
 
-                if (nextMatch || rematch)
-                {
+                if (nextMatch || rematch) {
                     var newScore = 0;
 
                     // Apply penalty for each letter before the first pattern match
                     // Note: Math.Max because penalties are negative values. So max is smallest penalty.
-                    if (patternIdx == 0)
-                    {
+                    if (patternIdx == 0) {
                         var penalty = Math.Max(strIdx * leadingLetterPenalty, maxLeadingLetterPenalty);
                         score += penalty;
                     }
@@ -101,8 +115,7 @@ namespace ReiTunes.Core
                         ++patternIdx;
 
                     // Update best letter in stringToSearch which may be for a "next" letter or a "rematch"
-                    if (newScore >= bestLetterScore)
-                    {
+                    if (newScore >= bestLetterScore) {
                         // Apply penalty for now skipped letter
                         if (bestLetter != null)
                             score += unmatchedLetterPenalty;
@@ -115,8 +128,7 @@ namespace ReiTunes.Core
 
                     prevMatched = true;
                 }
-                else
-                {
+                else {
                     score += unmatchedLetterPenalty;
                     prevMatched = false;
                 }
@@ -129,8 +141,7 @@ namespace ReiTunes.Core
             }
 
             // Apply score for last match
-            if (bestLetter != null)
-            {
+            if (bestLetter != null) {
                 score += bestLetterScore;
                 matchedIndices.Add((int)bestLetterIdx);
             }
