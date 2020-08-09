@@ -20,11 +20,13 @@ namespace ReiTunes.Core {
         public List<LibraryItem> Models { get; set; } = new List<LibraryItem>();
         private readonly ISerializedEventRepository _repo;
         private readonly ServerCaller _caller;
+        private readonly LibraryItemEventFactory _eventFactory;
 
         public Library(string machineName, SQLiteConnection connection, ServerCaller caller) {
             MachineName = machineName;
             _caller = caller;
             _repo = new SQLiteEventRepository(connection);
+            _eventFactory = new LibraryItemEventFactory(MachineName);
         }
 
         public void Commit() {
@@ -54,10 +56,10 @@ namespace ReiTunes.Core {
 
             var events = GetAllEvents();
 
-            var groupedEvents = events.GroupBy(e => e.AggregateId).Select(g => g.OrderBy(e => e.CreatedTimeUtc));
+            var groupedEvents = events.GroupBy(e => e.AggregateId).Select(g => g.OrderBy(e => e.CreatedTimeUtc).ThenBy(e => e.LocalId));
 
             foreach (var aggregateEvents in groupedEvents) {
-                var aggregate = new LibraryItem();
+                var aggregate = new LibraryItem(_eventFactory);
 
                 var first = aggregateEvents.First();
 
@@ -76,9 +78,6 @@ namespace ReiTunes.Core {
         }
 
         private void Agg_EventCreated(object sender, IEvent e) {
-            if (e.MachineName == null)
-                e.MachineName = MachineName;
-
             _repo.Save(e);
             var agg = (Aggregate)sender;
             agg.Commit();

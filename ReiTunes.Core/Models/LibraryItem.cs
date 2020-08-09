@@ -12,7 +12,7 @@ namespace ReiTunes.Core {
         public string Name {
             get => _name;
             set {
-                ApplyUncommitted(new LibraryItemNameChangedEvent(Guid.NewGuid(), AggregateId, DateTime.UtcNow, value));
+                ApplyUncommitted(_eventFactory.GetNameChangedEvent(AggregateId, value));
                 NotifyPropertyChanged();
             }
         }
@@ -22,7 +22,7 @@ namespace ReiTunes.Core {
         public string FilePath {
             get => _filePath;
             set {
-                ApplyUncommitted(new LibraryItemFilePathChangedEvent(Guid.NewGuid(), AggregateId, DateTime.UtcNow, value));
+                ApplyUncommitted(_eventFactory.GetFilePathChangedEvent(AggregateId, value));
                 NotifyPropertyChanged();
             }
         }
@@ -32,7 +32,7 @@ namespace ReiTunes.Core {
         public string Artist {
             get => _artist;
             set {
-                ApplyUncommitted(new LibraryItemArtistChangedEvent(Guid.NewGuid(), AggregateId, DateTime.UtcNow, value));
+                ApplyUncommitted(_eventFactory.GetArtistChangedEvent(AggregateId, value));
                 NotifyPropertyChanged();
             }
         }
@@ -42,12 +42,14 @@ namespace ReiTunes.Core {
         public string Album {
             get => _album;
             set {
-                ApplyUncommitted(new LibraryItemAlbumChangedEvent(Guid.NewGuid(), AggregateId, DateTime.UtcNow, value));
+                ApplyUncommitted(_eventFactory.GetAlbumChangedEvent(AggregateId, value));
                 NotifyPropertyChanged();
             }
         }
 
         private int _playCount = 0;
+        private readonly LibraryItemEventFactory _eventFactory;
+
         public int PlayCount => _playCount;
 
         //public string Text {
@@ -58,16 +60,17 @@ namespace ReiTunes.Core {
         //    }
         //}
 
-        public LibraryItem() {
+        public LibraryItem(LibraryItemEventFactory eventFactory) {
+            _eventFactory = eventFactory;
         }
 
-        public LibraryItem(string relativePath) {
+        public LibraryItem(LibraryItemEventFactory eventFactory, string relativePath) : this(eventFactory) {
             var fileName = GetFileNameFromPath(relativePath);
-            ApplyUncommitted(new LibraryItemCreatedEvent(Guid.NewGuid(), Guid.NewGuid(), DateTime.UtcNow, fileName, relativePath));
+            ApplyUncommitted(_eventFactory.GetCreatedEvent(Guid.NewGuid(), fileName, relativePath));
         }
 
         public void IncrementPlayCount() {
-            ApplyUncommitted(new LibraryItemPlayedEvent(Guid.NewGuid(), AggregateId, DateTime.UtcNow));
+            ApplyUncommitted(_eventFactory.GetPlayedEvent(AggregateId));
         }
 
         private string GetFileNameFromPath(string path) => path.Split('/').Last();
