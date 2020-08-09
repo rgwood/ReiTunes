@@ -36,22 +36,13 @@ namespace ReiTunes.Core.Tests.xUnit {
         }
 
         [Fact]
-        public void CanCreateEventTableAndInsert() {
-            Assert.Equal(0, _conn.GetRowCount(EventTableName));
-
-            _conn.Execute(@"
-INSERT INTO events(Id, AggregateId, CreatedTimeUtc, MachineName, Serialized)
-VALUES(1,'MSFT','foo','bar','baz');");
-            Assert.Equal(1, _conn.GetRowCount("events"));
-        }
-
-        [Fact]
         public void CanSaveEvent() {
             var agg = new SimpleTextAggregate("foo");
             var @event = agg.GetUncommittedEvents().Single();
             @event.MachineName = MachineName;
 
             SaveEvent(@event, _conn);
+            Assert.Equal(1, _conn.GetRowCount("events"));
         }
 
         [Fact]
@@ -111,8 +102,8 @@ VALUES(1,'MSFT','foo','bar','baz');");
             var serialized = EventSerialization.Serialize(@event);
 
             connection.Execute(@"
-INSERT INTO events(Id, AggregateId, CreatedTimeUtc, MachineName, Serialized)
-VALUES(@Id, @AggregateId, @CreatedTimeUtc, @MachineName, @Serialized);",
+INSERT INTO events(Id, AggregateId, AggregateType, CreatedTimeUtc, MachineName, Serialized)
+VALUES(@Id, @AggregateId, 'simple',  @CreatedTimeUtc, @MachineName, @Serialized);",
 new {
     @event.Id,
     @event.AggregateId,
