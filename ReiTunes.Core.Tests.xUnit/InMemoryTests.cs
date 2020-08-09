@@ -120,9 +120,9 @@ namespace ReiTunes.Core.Tests.XUnit {
         }
 
         [Fact]
-        public void BasicApplicationSyncingWorks() {
-            var app1 = new ReiTunesApplication("machine1");
-            var app2 = new ReiTunesApplication("machine2");
+        public void BasicLibrarySyncingWorks() {
+            var app1 = new Library("machine1", SQLiteHelpers.CreateInMemoryDb(), caller: null);
+            var app2 = new Library("machine2", SQLiteHelpers.CreateInMemoryDb(), caller: null);
 
             app1.Models.Add(new LibraryItem("foo.mp3"));
             app1.Models.Single().IncrementPlayCount();
@@ -134,15 +134,24 @@ namespace ReiTunes.Core.Tests.XUnit {
             app2.ReceiveEvents(app1.GetAllEvents());
             app1.ReceiveEvents(app2.GetAllEvents());
 
-            ApplicationsHaveSameLibraryItems(app1, app2);
+            LibrariesHaveSameItems(app1, app2);
         }
 
         [Fact]
-        public void ApplicationCanSyncAllPropertyChanges() {
-            var app1 = new ReiTunesApplication("machine1");
-            var app2 = new ReiTunesApplication("machine2");
+        public void LibraryCanSyncAllPropertyChanges() {
+            var l1 = new Library("machine1", SQLiteHelpers.CreateInMemoryDb(), caller: null);
+            var l2 = new Library("machine2", SQLiteHelpers.CreateInMemoryDb(), caller: null);
 
-            var item = new LibraryItem("foo.mp3");
+            var guid = Guid.NewGuid();
+            var name = "bar.mp3";
+            var path = "foo/bar.mp3";
+            var createdDate = new DateTime(2020, 12, 25);
+
+            var createdEvent = new LibraryItemCreatedEvent(Guid.NewGuid(), guid, createdDate, name, path);
+            createdEvent.MachineName = "server";
+            l1.ReceiveEvent(createdEvent);
+
+            var item = l1.Models.Single();
             item.IncrementPlayCount();
             item.IncrementPlayCount();
             item.Name = "GIMIX set";
@@ -150,19 +159,16 @@ namespace ReiTunes.Core.Tests.XUnit {
             item.Artist = "The Avalanches";
             item.Album = "Mixes";
 
-            app1.Models.Add(item);
-            app1.Commit();
+            l2.ReceiveEvents(l1.GetAllEvents());
 
-            app2.ReceiveEvents(app1.GetAllEvents());
-
-            ApplicationsHaveSameLibraryItems(app1, app2);
+            LibrariesHaveSameItems(l1, l2);
         }
 
-        private void ApplicationsHaveSameLibraryItems(ReiTunesApplication app1, ReiTunesApplication app2) {
-            Assert.Equal(app1.Models.Count, app2.Models.Count);
+        private void LibrariesHaveSameItems(Library l1, Library l2) {
+            Assert.Equal(l1.Models.Count, l2.Models.Count);
 
-            var orderedModels1 = app1.Models.OrderBy(m => m.AggregateId).ToArray();
-            var orderedModels2 = app2.Models.OrderBy(m => m.AggregateId).ToArray();
+            var orderedModels1 = l1.Models.OrderBy(m => m.AggregateId).ToArray();
+            var orderedModels2 = l2.Models.OrderBy(m => m.AggregateId).ToArray();
 
             for (int i = 0; i < orderedModels1.Count(); i++) {
                 Assert.Equal(orderedModels1[i], orderedModels2[i]);
