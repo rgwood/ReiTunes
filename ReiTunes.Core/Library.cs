@@ -53,9 +53,7 @@ namespace ReiTunes.Core {
         public async Task PushToServer() {
             var allEvents = GetAllEvents();
 
-            foreach (var e in allEvents) {
-                await _caller.PushEventAsync(e);
-            }
+            await _caller.PushEventsAsync(allEvents);
         }
 
         private void RebuildItems() {
