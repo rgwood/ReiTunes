@@ -32,9 +32,14 @@ namespace ReiTunes.Core {
         }
 
         public async Task PushEventAsync(IEvent @event) {
-            var putUri = QueryHelpers.AddQueryString("/reitunes/saveevent", "serializedEvent", EventSerialization.Serialize(@event));
+            await PushEventsAsync(new List<IEvent> { @event });
+        }
 
-            var putResponse = await _client.PutAsync(putUri, null);
+        public async Task PushEventsAsync(IEnumerable<IEvent> events) {
+            var serialized = await EventSerialization.SerializeAsync(events.ToList());
+            var content = new StringContent(serialized, Encoding.UTF8, "application/json");
+
+            var putResponse = await _client.PutAsync("/reitunes/saveevents", content);
 
             putResponse.EnsureSuccessStatusCode();
         }

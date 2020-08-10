@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Mvc;
@@ -37,9 +38,14 @@ namespace ReiTunes.Server.Controllers {
         }
 
         [HttpPut]
-        [Route("saveevent")]
-        public async Task Save(string serializedEvent) {
-            var deserialized = await EventSerialization.DeserializeAsync(serializedEvent);
+        [Route("saveevents")]
+        // TODO: wire up the ASP.NET Core custom deserialization instead of handling it myself?
+        public async Task Save() {
+            using var reader = new StreamReader(Request.Body);
+            var serializedEvents = await reader.ReadToEndAsync();
+
+            var deserialized = await EventSerialization.DeserializeListAsync(serializedEvents);
+
             _eventRepo.Save(deserialized);
         }
     }
