@@ -46,7 +46,7 @@ namespace ReiTunes.Core {
         }
 
         public async Task PullFromServer() {
-            var events = await _caller.GetAllEventsAsync();
+            var events = await _caller.PullAllEventsAsync();
             ReceiveEvents(events);
         }
 
@@ -54,7 +54,7 @@ namespace ReiTunes.Core {
             var allEvents = GetAllEvents();
 
             foreach (var e in allEvents) {
-                await _caller.SaveEventAsync(e);
+                await _caller.PushEventAsync(e);
             }
         }
 

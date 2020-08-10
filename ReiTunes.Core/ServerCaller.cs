@@ -16,7 +16,7 @@ namespace ReiTunes.Core {
             _client = client;
         }
 
-        public async Task<List<string>> GetAllSerializedEventsAsync() {
+        public async Task<List<string>> PullAllSerializedEventsAsync() {
             var response = await _client.GetAsync("/reitunes/allevents");
             response.EnsureSuccessStatusCode();
 
@@ -26,13 +26,13 @@ namespace ReiTunes.Core {
             return deserialized;
         }
 
-        public async Task<IEnumerable<IEvent>> GetAllEventsAsync() {
-            var serialized = await GetAllSerializedEventsAsync();
+        public async Task<IEnumerable<IEvent>> PullAllEventsAsync() {
+            var serialized = await PullAllSerializedEventsAsync();
             //todo: should this be an async enumerable somehow?
             return serialized.Select(e => EventSerialization.Deserialize(e));
         }
 
-        public async Task SaveEventAsync(IEvent @event) {
+        public async Task PushEventAsync(IEvent @event) {
             var putUri = QueryHelpers.AddQueryString("/reitunes/saveevent", "serializedEvent", EventSerialization.Serialize(@event));
 
             var putResponse = await _client.PutAsync(putUri, null);

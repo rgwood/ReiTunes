@@ -36,15 +36,15 @@ namespace ReiTunes.Server.Tests {
 
         [Fact]
         public async Task CanSaveAndRetrieveSingleEvent() {
-            List<string> serialized = await _serverCaller.GetAllSerializedEventsAsync();
+            List<string> serialized = await _serverCaller.PullAllSerializedEventsAsync();
 
             Assert.Empty(serialized);
 
             var agg = new SimpleTextAggregate("foo");
             var @event = agg.GetUncommittedEvents().Single();
-            await _serverCaller.SaveEventAsync(@event);
+            await _serverCaller.PushEventAsync(@event);
 
-            serialized = await _serverCaller.GetAllSerializedEventsAsync();
+            serialized = await _serverCaller.PullAllSerializedEventsAsync();
 
             var deserializedEvent = await EventSerialization.DeserializeAsync(serialized.Single());
             AssertEventsAreEqual(@event, deserializedEvent);
