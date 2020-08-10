@@ -10,8 +10,10 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Net.Http;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 using Xunit;
+using Xunit.Sdk;
 
 namespace ReiTunes.Server.Tests {
 
@@ -51,19 +53,20 @@ namespace ReiTunes.Server.Tests {
         }
 
         /// <summary>
-        /// A large test designed to exercise saving+retrieving events from multiple clients
+        /// A full-system integration test that exercises saving+retrieving common events
+        /// with 1 server and multiple clients
         /// </summary>
-        /// <returns></returns>
         [Fact]
-        public async Task MainIntegrationTest() {
-            var l1 = new Library("machine1", SQLiteHelpers.CreateInMemoryDb(), _serverCaller);
-            var l2 = new Library("machine2", SQLiteHelpers.CreateInMemoryDb(), _serverCaller);
+        public async Task Integration_BasicItemSync() {
+            var client1 = new Library("machine1", SQLiteHelpers.CreateInMemoryDb(), _serverCaller);
+            var client2 = new Library("machine2", SQLiteHelpers.CreateInMemoryDb(), _serverCaller);
 
+            // create item on server, pull to 1
             await _serverCaller.CreateNewLibraryItemAsync("foo/bar.mp3");
+            await client1.PullFromServer();
 
-            await l1.PullFromServer();
-
-            var item = l1.Items.Single();
+            // modify item to generate a bunch of events
+            var item = client1.Items.Single();
             item.IncrementPlayCount();
             item.IncrementPlayCount();
             item.Name = "GIMIX set";
@@ -71,20 +74,21 @@ namespace ReiTunes.Server.Tests {
             item.Artist = "The Avalanches";
             item.Album = "Mixes";
 
-            await l1.PushToServer();
-            await l2.PullFromServer();
+            // sync from 1 to 2
+            await client1.PushToServer();
+            await client2.PullFromServer();
 
-            LibrariesHaveSameItems(l1, l2);
+            AssertLibrariesHaveSameItems(client1, client2);
 
-            l2.Items.Single().IncrementPlayCount();
+            client2.Items.Single().IncrementPlayCount();
 
-            await l2.PushToServer();
-            await l1.PullFromServer();
+            await client2.PushToServer();
+            await client1.PullFromServer();
 
-            LibrariesHaveSameItems(l1, l2);
+            AssertLibrariesHaveSameItems(client1, client2);
         }
 
-        private void LibrariesHaveSameItems(Library l1, Library l2) {
+        private void AssertLibrariesHaveSameItems(Library l1, Library l2) {
             Assert.Equal(l1.Items.Count, l2.Items.Count);
 
             var orderedModels1 = l1.Items.OrderBy(m => m.AggregateId).ToArray();
