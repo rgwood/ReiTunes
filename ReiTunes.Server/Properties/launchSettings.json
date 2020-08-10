@@ -12,7 +12,7 @@
     "IIS Express": {
       "commandName": "IISExpress",
       "launchBrowser": true,
-      "launchUrl": "events",
+      "launchUrl": "reitunes/allevents",
       "environmentVariables": {
         "ASPNETCORE_ENVIRONMENT": "Development"
       }

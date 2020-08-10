@@ -20,16 +20,15 @@ namespace ReiTunes.Core {
             var response = await _client.GetAsync("/reitunes/allevents");
             response.EnsureSuccessStatusCode();
 
-            var contents = await response.Content.ReadAsStringAsync();
+            string contents = await response.Content.ReadAsStringAsync();
 
             var deserialized = await Json.DeserializeAsync<List<string>>(contents);
             return deserialized;
         }
 
         public async Task<IEnumerable<IEvent>> PullAllEventsAsync() {
-            var serialized = await PullAllSerializedEventsAsync();
-            //todo: should this be an async enumerable somehow?
-            return serialized.Select(e => EventSerialization.Deserialize(e));
+            var allSerializedEvents = await PullAllSerializedEventsAsync();
+            return await Task.Run(() => allSerializedEvents.Select(e => EventSerialization.Deserialize(e)));
         }
 
         public async Task PushEventAsync(IEvent @event) {

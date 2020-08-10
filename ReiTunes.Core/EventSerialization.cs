@@ -1,4 +1,5 @@
 ﻿using Newtonsoft.Json;
+using System.Collections.Generic;
 using System.Threading.Tasks;
 
 namespace ReiTunes.Core {
@@ -21,6 +22,16 @@ namespace ReiTunes.Core {
 
         public static IEvent Deserialize(string value) {
             return JsonConvert.DeserializeObject<IEvent>(value, SerializerSettings);
+        }
+
+        public static List<IEvent> DeserializeList(string value) {
+            return JsonConvert.DeserializeObject<List<IEvent>>(value, SerializerSettings);
+        }
+
+        public static async Task<List<IEvent>> DeserializeListAsync(string value) {
+            return await Task.Run(() => {
+                return DeserializeList(value);
+            });
         }
 
         public static async Task<IEvent> DeserializeAsync(string value) {

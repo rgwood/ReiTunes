@@ -26,7 +26,8 @@ namespace ReiTunes.Server {
         // This method gets called by the runtime. Use this method to add services to the container.
         public void ConfigureServices(IServiceCollection services) {
             services.AddControllers();
-            // TODO: add SQLite DB that writes to a file
+            services.AddSingleton<ISerializedEventRepository, SQLiteEventRepository>(
+                _ => new SQLiteEventRepository(SQLiteHelpers.CreateFileDb(@"C:\Users\reill\source\repos\ReiTunes\test.db")));
 
             services.AddTransient<LibraryItemEventFactory>((_) => new LibraryItemEventFactory("Spudnik"));
         }
