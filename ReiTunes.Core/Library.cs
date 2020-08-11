@@ -23,11 +23,14 @@ namespace ReiTunes.Core {
         private readonly ServerCaller _caller;
         private readonly LibraryItemEventFactory _eventFactory;
 
-        public Library(string machineName, SQLiteConnection connection, ServerCaller caller) {
+        public Library(string machineName, SQLiteConnection connection, ServerCaller caller)
+            : this(machineName, connection, caller, new Clock()) { }
+
+        public Library(string machineName, SQLiteConnection connection, ServerCaller caller, IClock clock) {
             MachineName = machineName;
             _caller = caller;
             _repo = new SQLiteEventRepository(connection);
-            _eventFactory = new LibraryItemEventFactory(MachineName);
+            _eventFactory = new LibraryItemEventFactory(MachineName, clock);
         }
 
         public void ReceiveEvents(IEnumerable<IEvent> events) {

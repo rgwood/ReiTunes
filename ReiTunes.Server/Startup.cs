@@ -29,7 +29,8 @@ namespace ReiTunes.Server {
             services.AddSingleton<ISerializedEventRepository, SQLiteEventRepository>(
                 _ => new SQLiteEventRepository(SQLiteHelpers.CreateFileDb(@"C:\Users\reill\source\repos\ReiTunes\test.db")));
 
-            services.AddTransient<LibraryItemEventFactory>((_) => new LibraryItemEventFactory("Spudnik"));
+            services.AddTransient<IClock, Clock>();
+            services.AddTransient<LibraryItemEventFactory>();
         }
 
         // This method gets called by the runtime. Use this method to configure the HTTP request pipeline.

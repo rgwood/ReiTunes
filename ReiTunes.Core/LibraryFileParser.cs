@@ -18,7 +18,7 @@ namespace ReiTunes.Core {
             StringReader reader = new StringReader(blobList);
             string line;
             while ((line = reader.ReadLine()) != null) {
-                ret.Add(new LibraryItem(new LibraryItemEventFactory("placeholder"), line));
+                ret.Add(new LibraryItem(new LibraryItemEventFactory(), line));
             }
 
             return ret;

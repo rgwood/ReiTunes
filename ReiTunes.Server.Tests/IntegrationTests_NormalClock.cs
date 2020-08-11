@@ -17,14 +17,12 @@ using Xunit.Sdk;
 
 namespace ReiTunes.Server.Tests {
 
-    public class IntegrationTests {
+    public class IntegrationTests_NormalClock {
         private readonly WebApplicationFactory<Startup> _factory;
 
         private readonly ServerCaller _serverCaller;
 
-        private readonly LibraryItemEventFactory _serverEventFactory;
-
-        public IntegrationTests() {
+        public IntegrationTests_NormalClock() {
             _factory = new WebApplicationFactory<Startup>().WithWebHostBuilder(builder => {
                 builder.ConfigureTestServices(services => {
                     services.AddSingleton<ISerializedEventRepository, SQLiteEventRepository>(
@@ -33,7 +31,6 @@ namespace ReiTunes.Server.Tests {
             });
 
             _serverCaller = new ServerCaller(_factory.CreateClient());
-            _serverEventFactory = new LibraryItemEventFactory("Server");
         }
 
         [Fact]
