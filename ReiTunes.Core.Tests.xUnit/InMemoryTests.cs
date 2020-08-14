@@ -14,7 +14,7 @@ namespace ReiTunes.Core.Tests.XUnit {
         private readonly LibraryItemEventFactory _eventFactory;
 
         public InMemoryTests() {
-            _eventFactory = new LibraryItemEventFactory("InMemoryTests");
+            _eventFactory = new LibraryItemEventFactory();
         }
 
         public static IEnumerable<object[]> AllReposToTest =>
@@ -94,7 +94,6 @@ namespace ReiTunes.Core.Tests.XUnit {
         public void LibraryItemNameChangeWorks() {
             var item = new LibraryItem(_eventFactory, "foo/bar.mp3");
             item.Name = item.Name + "x";
-            Assert.Equal("bar.mp3x", item.Name);
             Assert.Equal(2, item.GetUncommittedEvents().Count());
             ItemCanBeRebuiltFromUncommittedEvents(item);
         }
