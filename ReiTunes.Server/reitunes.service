@@ -1,0 +1,9 @@
+﻿[Unit]
+Description=ReiTunes server
+
+[Service]
+Type=notify
+ExecStart=/usr/local/bin/reitunes/ReiTunes.Server
+
+[Install]
+WantedBy=multi-user.target
