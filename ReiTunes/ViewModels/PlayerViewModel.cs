@@ -26,7 +26,7 @@ namespace ReiTunes {
         private Uri _libraryFileUri = new Uri("https://reitunes.blob.core.windows.net/library/" + _libraryFileName);
 
         private readonly ILogger _logger;
-
+        private readonly Library _library;
         private StorageFolder _libraryFolder;
         private IMediaPlaybackSource _source;
         private string _sourceFileName;
@@ -74,20 +74,36 @@ namespace ReiTunes {
             set { Set(ref _downloadPercentFinished, value); }
         }
 
-        public PlayerViewModel(ILogger logger) {
+        public PlayerViewModel(ILogger logger, Library library) {
             _logger = logger;
+            _library = library;
+            _library.LibraryItemsRebuilt += LoadItemsFromLibrary;
+            LoadItemsFromLibrary();
+        }
+
+        private void LoadItemsFromLibrary(object sender = null, EventArgs e = null) {
+            LibraryItems = new ObservableCollection<LibraryItem>(_library.Items);
         }
 
         public async Task Initialize() {
             _libraryFolder = await FileHelper.CreateLibraryFolderIfDoesntExist();
-            var libraryFile = await _libraryFolder.TryGetItemAsync("ReiTunesLibrary.txt");
 
-            if (libraryFile == null) {
-                _logger.Information("Library file not found, downloading...");
-                libraryFile = await DownloadLibraryFile();
-            }
+            //var libraryFile = await _libraryFolder.TryGetItemAsync("ReiTunesLibrary.txt");
 
-            await LoadLibraryFile(libraryFile);
+            //if (libraryFile == null) {
+            //    _logger.Information("Library file not found, downloading...");
+            //    libraryFile = await DownloadLibraryFile();
+            //}
+
+            //await LoadLibraryFile(libraryFile);
+        }
+
+        public async Task Pull() {
+            await _library.PullFromServer();
+        }
+
+        public async Task Push() {
+            await _library.PushToServer();
         }
 
         public async Task FilterItems(string filterString) {
@@ -100,19 +116,19 @@ namespace ReiTunes {
         }
 
         //TODO: this should visually indicate that the file is being downloaded
-        public async Task DownloadAndLoadLibraryFile() {
-            var libraryFile = await DownloadLibraryFile();
-            await LoadLibraryFile(libraryFile);
-        }
+        //public async Task DownloadAndLoadLibraryFile() {
+        //    var libraryFile = await DownloadLibraryFile();
+        //    await LoadLibraryFile(libraryFile);
+        //}
 
-        private async Task<StorageFile> DownloadLibraryFile() {
-            var httpService = ServiceLocator.Current.GetService<HttpDataService>();
-            _logger.Information("Downloading library file from {libraryUri}", _libraryFileUri);
-            var libraryContents = await httpService.GetStringAsync(_libraryFileUri);
-            _logger.Information("Finished downloading library file");
-            return await _libraryFolder.WriteTextToFileAsync(libraryContents,
-                _libraryFileName, CreationCollisionOption.ReplaceExisting);
-        }
+        //private async Task<StorageFile> DownloadLibraryFile() {
+        //    var httpService = ServiceLocator.Current.GetService<HttpDataService>();
+        //    _logger.Information("Downloading library file from {libraryUri}", _libraryFileUri);
+        //    var libraryContents = await httpService.GetStringAsync(_libraryFileUri);
+        //    _logger.Information("Finished downloading library file");
+        //    return await _libraryFolder.WriteTextToFileAsync(libraryContents,
+        //        _libraryFileName, CreationCollisionOption.ReplaceExisting);
+        //}
 
         private async Task LoadLibraryFile(IStorageItem libraryFile) {
             var libraryString = await FileIO.ReadTextAsync((StorageFile)libraryFile);
