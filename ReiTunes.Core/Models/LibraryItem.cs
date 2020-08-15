@@ -12,8 +12,10 @@ namespace ReiTunes.Core {
         public string Name {
             get => _name;
             set {
-                ApplyUncommitted(_eventFactory.GetNameChangedEvent(AggregateId, value));
-                NotifyPropertyChanged();
+                if (_name != value) {
+                    ApplyUncommitted(_eventFactory.GetNameChangedEvent(AggregateId, value));
+                    NotifyPropertyChanged();
+                }
             }
         }
 
@@ -22,8 +24,10 @@ namespace ReiTunes.Core {
         public string FilePath {
             get => _filePath;
             set {
-                ApplyUncommitted(_eventFactory.GetFilePathChangedEvent(AggregateId, value));
-                NotifyPropertyChanged();
+                if (_filePath != value) {
+                    ApplyUncommitted(_eventFactory.GetFilePathChangedEvent(AggregateId, value));
+                    NotifyPropertyChanged();
+                }
             }
         }
 
@@ -32,8 +36,10 @@ namespace ReiTunes.Core {
         public string Artist {
             get => _artist;
             set {
-                ApplyUncommitted(_eventFactory.GetArtistChangedEvent(AggregateId, value));
-                NotifyPropertyChanged();
+                if (_artist != value) {
+                    ApplyUncommitted(_eventFactory.GetArtistChangedEvent(AggregateId, value));
+                    NotifyPropertyChanged();
+                }
             }
         }
 
@@ -42,8 +48,10 @@ namespace ReiTunes.Core {
         public string Album {
             get => _album;
             set {
-                ApplyUncommitted(_eventFactory.GetAlbumChangedEvent(AggregateId, value));
-                NotifyPropertyChanged();
+                if (_album != value) {
+                    ApplyUncommitted(_eventFactory.GetAlbumChangedEvent(AggregateId, value));
+                    NotifyPropertyChanged();
+                }
             }
         }
 

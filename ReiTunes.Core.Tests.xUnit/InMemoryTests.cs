@@ -106,6 +106,18 @@ namespace ReiTunes.Core.Tests.XUnit {
             ItemCanBeRebuiltFromUncommittedEvents(item);
         }
 
+        // Tabbing through the datagrid generates meaningless set calls that just set value = oldValue. Make sure these don't generate events
+        [Fact]
+        public void NoEventsGeneratedIfDataHasNotChanged() {
+            var item = new LibraryItem(_eventFactory, "foo/bar.mp3");
+            item.Commit();
+            item.Album = item.Album;
+            item.Artist = item.Artist;
+            item.FilePath = item.FilePath;
+            item.Name = item.Name;
+            Assert.Empty(item.GetUncommittedEvents());
+        }
+
         private void ItemCanBeRebuiltFromUncommittedEvents(LibraryItem item) {
             var itemFromEvents = new LibraryItem(_eventFactory);
 
