@@ -27,9 +27,10 @@ namespace ReiTunes.Server {
         public void ConfigureServices(IServiceCollection services) {
             services.AddControllers();
             services.AddSingleton<ISerializedEventRepository, SQLiteEventRepository>(
-                _ => new SQLiteEventRepository(SQLiteHelpers.CreateFileDb(@"C:\Users\reill\source\repos\ReiTunes\test.db")));
+                _ => new SQLiteEventRepository(SQLiteHelpers.CreateFileDb(GetLibraryDbPath())));
 
             services.AddTransient<IClock, Clock>();
+
             services.AddTransient<LibraryItemEventFactory>();
         }
 
@@ -48,6 +49,17 @@ namespace ReiTunes.Server {
             app.UseEndpoints(endpoints => {
                 endpoints.MapControllers();
             });
+        }
+
+        private string GetLibraryDbPath() => GetLibraryDbPath(Environment.OSVersion.Platform);
+
+        private string GetLibraryDbPath(PlatformID platform) {
+            return platform switch
+            {
+                PlatformID.Win32NT => @"C:\ReiTunes\library.db",
+                PlatformID.Unix => @"/var/reitunes/library.db",
+                _ => throw new Exception($"Unexpected platform  '{platform}'")
+            };
         }
     }
 }
