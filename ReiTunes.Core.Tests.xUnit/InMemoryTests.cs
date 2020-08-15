@@ -7,6 +7,7 @@ using NuGet.Frameworks;
 using System.Diagnostics;
 using System.Collections;
 using System.Data.SQLite;
+using Serilog.Core;
 
 namespace ReiTunes.Core.Tests.XUnit {
 
@@ -135,8 +136,8 @@ namespace ReiTunes.Core.Tests.XUnit {
 
         [Fact]
         public void BasicLibrarySyncingWorks() {
-            var app1 = new Library("machine1", SQLiteHelpers.CreateInMemoryDb(), caller: null);
-            var app2 = new Library("machine2", SQLiteHelpers.CreateInMemoryDb(), caller: null);
+            var app1 = new Library("machine1", SQLiteHelpers.CreateInMemoryDb(), caller: null, logger: Logger.None);
+            var app2 = new Library("machine2", SQLiteHelpers.CreateInMemoryDb(), caller: null, logger: Logger.None);
 
             app1.Items.Add(new LibraryItem(_eventFactory, "foo.mp3"));
             app1.Items.Single().IncrementPlayCount();
@@ -151,8 +152,8 @@ namespace ReiTunes.Core.Tests.XUnit {
 
         [Fact]
         public void LibraryCanSyncAllPropertyChanges() {
-            var l1 = new Library("machine1", SQLiteHelpers.CreateInMemoryDb(), caller: null);
-            var l2 = new Library("machine2", SQLiteHelpers.CreateInMemoryDb(), caller: null);
+            var l1 = new Library("machine1", SQLiteHelpers.CreateInMemoryDb(), caller: null, logger: Logger.None);
+            var l2 = new Library("machine2", SQLiteHelpers.CreateInMemoryDb(), caller: null, logger: Logger.None);
 
             var guid = Guid.NewGuid();
             var name = "bar.mp3";

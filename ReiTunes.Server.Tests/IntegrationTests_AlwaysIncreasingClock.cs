@@ -5,6 +5,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Newtonsoft.Json;
 using ReiTunes.Core;
 using ReiTunes.Server.Controllers;
+using Serilog.Core;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -36,8 +37,8 @@ namespace ReiTunes.Server.Tests {
 
         [Fact]
         public async Task Integration_BasicItemSync() {
-            var client1 = new Library("machine1", SQLiteHelpers.CreateInMemoryDb(), _serverCaller, new AlwaysIncreasingClock());
-            var client2 = new Library("machine2", SQLiteHelpers.CreateInMemoryDb(), _serverCaller, new AlwaysIncreasingClock());
+            var client1 = new Library("machine1", SQLiteHelpers.CreateInMemoryDb(), _serverCaller, Logger.None, new AlwaysIncreasingClock());
+            var client2 = new Library("machine2", SQLiteHelpers.CreateInMemoryDb(), _serverCaller, Logger.None, new AlwaysIncreasingClock());
 
             // create item on server, pull to 1
             await _serverCaller.CreateNewLibraryItemAsync("foo/bar.mp3");

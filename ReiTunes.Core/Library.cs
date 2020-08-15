@@ -1,8 +1,10 @@
-﻿using System;
+﻿using Serilog;
+using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Data.SQLite;
+using System.Diagnostics;
 using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Text;
@@ -21,14 +23,16 @@ namespace ReiTunes.Core {
         public List<LibraryItem> Items { get; set; } = new List<LibraryItem>();
         private readonly ISerializedEventRepository _repo;
         private readonly ServerCaller _caller;
+        private readonly ILogger _logger;
         private readonly LibraryItemEventFactory _eventFactory;
 
-        public Library(string machineName, SQLiteConnection connection, ServerCaller caller)
-            : this(machineName, connection, caller, new Clock()) { }
+        public Library(string machineName, SQLiteConnection connection, ServerCaller caller, ILogger logger)
+            : this(machineName, connection, caller, logger, new Clock()) { }
 
-        public Library(string machineName, SQLiteConnection connection, ServerCaller caller, IClock clock) {
+        public Library(string machineName, SQLiteConnection connection, ServerCaller caller, ILogger logger, IClock clock) {
             MachineName = machineName;
             _caller = caller;
+            _logger = logger;
             _repo = new SQLiteEventRepository(connection);
             _eventFactory = new LibraryItemEventFactory(MachineName, clock);
             RebuildItems();
@@ -46,7 +50,11 @@ namespace ReiTunes.Core {
         }
 
         public IEnumerable<IEvent> GetAllEvents() {
-            return _repo.GetAllEvents();
+            var sw = Stopwatch.StartNew();
+            var ret = _repo.GetAllEvents();
+            sw.Stop();
+            _logger.Information("GetAllEvents took {ElapsedMs}", sw.ElapsedMilliseconds);
+            return ret;
         }
 
         public async Task PullFromServer() {
@@ -61,6 +69,7 @@ namespace ReiTunes.Core {
         }
 
         private void RebuildItems() {
+            var sw = Stopwatch.StartNew();
             Items.Clear();
 
             var events = GetAllEvents();
@@ -82,6 +91,9 @@ namespace ReiTunes.Core {
                 }
                 Items.Add(aggregate);
             }
+
+            sw.Stop();
+            _logger.Information("Rebuilding all items took {ElapsedMs}", sw.ElapsedMilliseconds);
 
             LibraryItemsRebuilt?.Invoke(this, EventArgs.Empty);
         }
