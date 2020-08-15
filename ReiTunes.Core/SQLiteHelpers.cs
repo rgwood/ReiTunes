@@ -1,5 +1,6 @@
 ﻿using Dapper;
 using System.Data.SQLite;
+using System.IO;
 
 namespace ReiTunes.Core {
 
@@ -25,7 +26,10 @@ events(
         }
 
         public static SQLiteConnection CreateFileDb(string filePath) {
-            SQLiteConnection.CreateFile(filePath);
+            if (!File.Exists(filePath)) {
+                SQLiteConnection.CreateFile(filePath);
+            }
+
             var connection = new SQLiteConnection($"DataSource={filePath}");
             connection.Open();
             return connection;
