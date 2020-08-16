@@ -2,6 +2,7 @@
 using Serilog;
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Net.Http;
 using System.Text;
@@ -20,7 +21,9 @@ namespace ReiTunes.Core {
         }
 
         public async Task<List<string>> PullAllSerializedEventsAsync() {
+            var sw = Stopwatch.StartNew();
             var response = await _client.GetAsync("/reitunes/allevents");
+            _logger.Information("Pulling all serialized events took {ElapsedMs} ms", sw.ElapsedMilliseconds);
             response.EnsureSuccessStatusCode();
 
             string contents = await response.Content.ReadAsStringAsync();
