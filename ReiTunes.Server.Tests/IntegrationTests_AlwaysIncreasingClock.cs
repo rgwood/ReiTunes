@@ -5,6 +5,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Newtonsoft.Json;
 using ReiTunes.Core;
 using ReiTunes.Server.Controllers;
+using Serilog;
 using Serilog.Core;
 using System;
 using System.Collections.Generic;
@@ -21,6 +22,7 @@ namespace ReiTunes.Server.Tests {
     public class IntegrationTests_AlwaysIncreasingClock {
         private readonly WebApplicationFactory<Startup> _factory;
 
+        private readonly ServiceProvider _serviceProvider;
         private readonly ServerCaller _serverCaller;
 
         public IntegrationTests_AlwaysIncreasingClock() {
@@ -32,7 +34,15 @@ namespace ReiTunes.Server.Tests {
                 });
             });
 
-            _serverCaller = new ServerCaller(_factory.CreateClient());
+            var services = new ServiceCollection();
+
+            services.AddSingleton<HttpClient>((_) => _factory.CreateClient());
+            services.AddSingleton<ILogger>((_) => Logger.None);
+            services.AddSingleton<ServerCaller>();
+
+            _serviceProvider = services.BuildServiceProvider();
+
+            _serverCaller = _serviceProvider.GetService<ServerCaller>();
         }
 
         [Fact]
