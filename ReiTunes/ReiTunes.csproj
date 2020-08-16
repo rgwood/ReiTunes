@@ -142,6 +142,7 @@
     <Compile Include="Helpers\SettingsStorageExtensions.cs" />
     <Compile Include="Logging\LoggingFactory.cs" />
     <Compile Include="Configuration\Startup.cs" />
+    <Compile Include="Secrets.cs" />
     <Compile Include="Services\FirstRunDisplayService.cs" />
     <Compile Include="Services\NavigationService.cs" />
     <Compile Include="Services\SuspendAndResumeArgs.cs" />
