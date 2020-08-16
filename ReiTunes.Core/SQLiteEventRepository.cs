@@ -1,11 +1,12 @@
-﻿using Dapper;
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Data.SQLite;
 using System.Linq;
 using System.Text;
 
 namespace ReiTunes.Core {
+    // I wanted to use Dapper in this but it doesn't work in .NET Native, fucking hell...
+    // https://stackoverflow.com/questions/54184301/platformnotsupportedexception-throws-when-using-dapper-with-wp
 
     public class SQLiteEventRepository : ISerializedEventRepository {
         private readonly SQLiteConnection _conn;
@@ -21,25 +22,42 @@ namespace ReiTunes.Core {
         }
 
         public bool ContainsEvent(Guid eventId) {
-            var count = _conn.QuerySingle<long>($"SELECT COUNT() FROM events WHERE Id ='{eventId}';");
+            string sql = $"SELECT COUNT() FROM events WHERE Id ='{eventId}';";
+            var cmd = new SQLiteCommand(sql, _conn);
+            using var reader = cmd.ExecuteReader();
+
+            reader.Read();
+
+            var count = reader.GetInt32(0);
+
+            //var count = _conn.Query<long>($"SELECT COUNT() FROM events WHERE Id ='{eventId}';").Single();
             return count == 1;
         }
 
         public IEnumerable<IEvent> GetAllEvents() {
-            var serializedEvents = _conn.Query<string>("select Serialized from events");
-
-            var deserializedEvents = serializedEvents.Select(s => EventSerialization.Deserialize(s));
-
-            return deserializedEvents.OrderBy(e => e.CreatedTimeUtc);
+            return GetAllSerializedEvents().Select(s => EventSerialization.Deserialize(s));
         }
 
         public IEnumerable<string> GetAllSerializedEvents() {
-            return _conn.Query<string>("select Serialized from events");
+            return GetSerializedEvents("select Serialized from events;");
+        }
+
+        private List<string> GetSerializedEvents(string sql) {
+            var cmd = new SQLiteCommand(sql, _conn);
+            using var reader = cmd.ExecuteReader();
+
+            var result = new List<string>();
+
+            while (reader.Read()) {
+                result.Add(reader.GetString(0));
+            }
+
+            return result;
         }
 
         public IEnumerable<IEvent> GetEvents(Guid aggregateId) {
             var serializedEvents =
-                _conn.Query<string>($"select Serialized from events WHERE AggregateId = '{aggregateId}'");
+                GetSerializedEvents($"select Serialized from events WHERE AggregateId = '{aggregateId}'");
 
             var deserializedEvents = serializedEvents.Select(s => EventSerialization.Deserialize(s));
 
@@ -50,18 +68,7 @@ namespace ReiTunes.Core {
             if (ContainsEvent(@event.Id))
                 return;
 
-            var serialized = EventSerialization.Serialize(@event);
-
-            _conn.Execute(@"INSERT INTO events(Id, AggregateId, AggregateType, CreatedTimeUtc, MachineName, Serialized)
-                            VALUES(@Id, @AggregateId, @AggregateType, @CreatedTimeUtc, @MachineName, @Serialized);",
-                            new {
-                                Id = @event.Id.ToString(),
-                                AggregateId = @event.AggregateId.ToString(),
-                                @event.AggregateType,
-                                @event.CreatedTimeUtc,
-                                @event.MachineName,
-                                Serialized = serialized
-                            });
+            _conn.InsertEvent(@event);
         }
 
         public void Save(IEnumerable<IEvent> events) {

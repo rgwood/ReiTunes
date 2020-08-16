@@ -5,7 +5,6 @@ using System.Diagnostics.Contracts;
 using System.Linq;
 using System.Text;
 using Xunit;
-using Dapper;
 
 namespace ReiTunes.Core.Tests.xUnit {
 
@@ -25,23 +24,12 @@ namespace ReiTunes.Core.Tests.xUnit {
         }
 
         [Fact]
-        public void CanCreateEmptyTableAndInsert() {
-            _conn.Execute(@"CREATE TABLE IF NOT EXISTS priceData(id INTEGER PRIMARY KEY, secId TEXT)");
-
-            Assert.Equal(0, _conn.GetRowCount("priceData"));
-
-            _conn.Execute(@"INSERT INTO priceData(id, secId) VALUES(1,'MSFT');");
-
-            Assert.Equal(1, _conn.GetRowCount("priceData"));
-        }
-
-        [Fact]
         public void CanSaveEvent() {
             var agg = new SimpleTextAggregate("foo");
             var @event = agg.GetUncommittedEvents().Single();
 
             SaveEvent(@event, _conn);
-            Assert.Equal(1, _conn.GetRowCount("events"));
+            Assert.Equal(1, GetRowCount("events"));
         }
 
         [Fact]
@@ -59,7 +47,7 @@ namespace ReiTunes.Core.Tests.xUnit {
 
             Assert.Empty(agg.GetUncommittedEvents());
 
-            Assert.Equal(2, _conn.GetRowCount("events"));
+            Assert.Equal(2, GetRowCount("events"));
         }
 
         private void Agg_EventCreated(object sender, IEvent e) {
@@ -78,36 +66,21 @@ namespace ReiTunes.Core.Tests.xUnit {
             Assert.ThrowsAny<Exception>(() => SaveEvent(@event, _conn));
         }
 
-        [Fact]
-        public void CanSaveAndReadEvent() {
-            var agg = new SimpleTextAggregate("foo");
-            var @event = agg.GetUncommittedEvents().Single();
-
-            SaveEvent(@event, _conn);
-
-            var serialized = _conn.QuerySingle<string>("select Serialized from events limit 1");
-
-            var deserialized = (SimpleTextAggregateCreatedEvent)EventSerialization.Deserialize(serialized);
-
-            Assert.Equal(agg.AggregateId, deserialized.AggregateId);
-            Assert.Equal(agg.CreatedTimeUtc, deserialized.CreatedTimeUtc);
-            Assert.Equal(DateTimeKind.Utc, deserialized.CreatedTimeUtc.Kind);
-            Assert.Equal(agg.Text, deserialized.Text);
+        private void SaveEvent(IEvent @event, SQLiteConnection connection) {
+            connection.InsertEvent(@event);
         }
 
-        private void SaveEvent(IEvent @event, SQLiteConnection connection) {
-            var serialized = EventSerialization.Serialize(@event);
+        private long GetRowCount(string tableName) {
+            // can't parameterize table names :(
+            using var cmd = new SQLiteCommand($"SELECT COUNT() FROM {tableName}", _conn);
 
-            connection.Execute(@"
-INSERT INTO events(Id, AggregateId, AggregateType, CreatedTimeUtc, MachineName, Serialized)
-VALUES(@Id, @AggregateId, 'simple',  @CreatedTimeUtc, @MachineName, @Serialized);",
-new {
-    @event.Id,
-    @event.AggregateId,
-    @event.CreatedTimeUtc,
-    @event.MachineName,
-    Serialized = serialized
-});
+            cmd.Parameters.AddWithValue("@tableName", tableName);
+
+            using var reader = cmd.ExecuteReader();
+
+            reader.Read();
+
+            return reader.GetInt64(0);
         }
     }
 }
