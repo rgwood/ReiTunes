@@ -1,14 +1,10 @@
-﻿using Dapper;
+﻿using System;
 using System.Data.SQLite;
 using System.IO;
 
 namespace ReiTunes.Core {
 
     public static class SQLiteHelpers {
-
-        public static long GetRowCount(this SQLiteConnection conn, string tableName) {
-            return conn.QuerySingle<long>($"SELECT COUNT() FROM {tableName}");
-        }
 
         public static void CreateEventsTableIfNotExists(this SQLiteConnection conn) {
             var sql = @"
@@ -21,8 +17,31 @@ events(
     MachineName TEXT NOT NULL,
     Serialized TEXT NOT NULL
 )";
+            conn.ExecuteNonQuery(sql);
+        }
 
-            conn.Execute(sql);
+        public static void ExecuteNonQuery(this SQLiteConnection conn, string sql) {
+            using var cmd = new SQLiteCommand(sql, conn);
+            cmd.ExecuteNonQuery();
+        }
+
+        public static void InsertEvent(this SQLiteConnection conn, IEvent @event) {
+            var serialized = EventSerialization.Serialize(@event);
+
+            var sql = @"INSERT INTO events(Id, AggregateId, AggregateType, CreatedTimeUtc, MachineName, Serialized)
+                            VALUES(@Id, @AggregateId, @AggregateType, @CreatedTimeUtc, @MachineName, @Serialized);";
+
+            using var cmd = new SQLiteCommand(sql, conn);
+
+            cmd.Parameters.AddWithValue("@Id", @event.Id.ToString());
+
+            cmd.Parameters.AddWithValue("@AggregateId", @event.AggregateId.ToString());
+            cmd.Parameters.AddWithValue("@AggregateType", @event.AggregateType);
+            cmd.Parameters.AddWithValue("@CreatedTimeUtc", @event.CreatedTimeUtc);
+            cmd.Parameters.AddWithValue("@MachineName", @event.MachineName);
+            cmd.Parameters.AddWithValue("@Serialized", serialized);
+
+            cmd.ExecuteNonQuery();
         }
 
         public static SQLiteConnection CreateFileDb(string filePath) {
