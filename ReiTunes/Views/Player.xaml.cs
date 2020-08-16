@@ -184,13 +184,5 @@ namespace ReiTunes {
         private void libraryDataGrid_RowEditEnded(object sender, Microsoft.Toolkit.Uwp.UI.Controls.DataGridRowEditEndedEventArgs e) {
             _dataGridIsEditing = false;
         }
-
-        private async void Pull_Click(object sender, RoutedEventArgs e) {
-            await ViewModel.Pull();
-        }
-
-        private async void Push_Click(object sender, RoutedEventArgs e) {
-            await ViewModel.Push();
-        }
     }
 }
