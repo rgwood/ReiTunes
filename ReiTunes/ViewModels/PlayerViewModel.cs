@@ -1,4 +1,5 @@
-﻿using Microsoft.Toolkit.Uwp.Helpers;
+﻿using Microsoft.Toolkit.Mvvm.Input;
+using Microsoft.Toolkit.Uwp.Helpers;
 using ReiTunes.Configuration;
 using ReiTunes.Core;
 using ReiTunes.Helpers;
@@ -74,10 +75,17 @@ namespace ReiTunes {
             set { Set(ref _downloadPercentFinished, value); }
         }
 
+        public AsyncRelayCommand PullEventsCommand { get; }
+        public AsyncRelayCommand PushEventsCommand { get; }
+
         public PlayerViewModel(ILogger logger, Library library) {
             _logger = logger;
             _library = library;
             _library.LibraryItemsRebuilt += LoadItemsFromLibrary;
+
+            PullEventsCommand = new AsyncRelayCommand(Pull);
+            PushEventsCommand = new AsyncRelayCommand(Push);
+
             LoadItemsFromLibrary();
         }
 
