@@ -88,11 +88,11 @@ namespace ReiTunes {
                     FilterBox.SelectAll();
                 }));
 
-            //open cache
+            //open local folder
             KeyboardAccelerators.Add(CreateAccelerator(VirtualKeyModifiers.Control, VirtualKey.E,
                 async (sender, args) => {
                     args.Handled = true;
-                    await Launcher.LaunchFolderAsync(Windows.Storage.ApplicationData.Current.LocalCacheFolder);
+                    await Launcher.LaunchFolderAsync(Windows.Storage.ApplicationData.Current.LocalFolder);
                 }));
         }
 
