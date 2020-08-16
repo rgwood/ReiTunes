@@ -1,4 +1,5 @@
 ﻿using Microsoft.AspNetCore.WebUtilities;
+using Serilog;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -11,9 +12,11 @@ namespace ReiTunes.Core {
     // There's gotta be a better name for this... but, like, it's a class for calling the server
     public class ServerCaller {
         private readonly HttpClient _client;
+        private readonly ILogger _logger;
 
-        public ServerCaller(HttpClient client) {
+        public ServerCaller(HttpClient client, ILogger logger) {
             _client = client;
+            _logger = logger;
         }
 
         public async Task<List<string>> PullAllSerializedEventsAsync() {
