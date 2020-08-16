@@ -26,6 +26,9 @@ namespace ReiTunes.Core {
         private readonly ILogger _logger;
         private readonly LibraryItemEventFactory _eventFactory;
 
+        public Library(SQLiteConnection connection, ServerCaller caller, ILogger logger)
+            : this(Environment.MachineName, connection, caller, logger, new Clock()) { }
+
         public Library(string machineName, SQLiteConnection connection, ServerCaller caller, ILogger logger)
             : this(machineName, connection, caller, logger, new Clock()) { }
 
