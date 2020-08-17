@@ -60,13 +60,12 @@ namespace ReiTunes.Core {
 
         public int PlayCount => _playCount;
 
-        //public string Text {
-        //    get => _text;
-        //    set {
-        //        ApplyUncommitted(new SimpleTextAggregateUpdatedEvent(Guid.NewGuid(), Id, DateTime.UtcNow, value));
-        //        NotifyPropertyChanged();
-        //    }
-        //}
+        // a single string with everything we might want to include in text search, useful for fuzzy find
+        public string AllSearchProperties {
+            get {
+                return $"{Name} {Artist} {Album} {FilePath}";
+            }
+        }
 
         public LibraryItem(LibraryItemEventFactory eventFactory) {
             _eventFactory = eventFactory;

@@ -19,14 +19,13 @@ namespace ReiTunes.Core {
             }
             else {
                 var fuzzyMatchResults =
-                    (from file in items
-                     let fuzzyResult = FuzzyMatcher.FuzzyMatch(file.FilePath, filterString)
+                    (from item in items
+                     let fuzzyResult = FuzzyMatcher.FuzzyMatch(item.AllSearchProperties, filterString)
                      where fuzzyResult.isMatch
                      orderby fuzzyResult.score descending
-                     select file);
+                     select item);
 
                 //TODO: short-circuit if the result hasn't changed, to avoid slow rerenders.
-
                 return new ObservableCollection<LibraryItem>(fuzzyMatchResults);
             }
         }
