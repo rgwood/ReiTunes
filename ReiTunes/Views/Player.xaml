@@ -154,7 +154,7 @@
             HeadersVisibility="Column"
             HorizontalScrollBarVisibility="Visible"
             ItemsSource="{x:Bind ViewModel.VisibleItems, Mode=OneWay}"
-            MaxColumnWidth="400"
+            MaxColumnWidth="600"
             RowDetailsVisibilityMode="Collapsed"
             RowEditEnded="libraryDataGrid_RowEditEnded"
             RowGroupHeaderPropertyNameAlternative="Range"
