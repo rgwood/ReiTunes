@@ -42,10 +42,13 @@ namespace ReiTunes.Core {
         }
 
         public async Task PushEventsAsync(IEnumerable<IEvent> events) {
+            var sw = Stopwatch.StartNew();
             var serialized = await EventSerialization.SerializeAsync(events.ToList());
             var content = new StringContent(serialized, Encoding.UTF8, "application/json");
 
             var putResponse = await _client.PutAsync("/reitunes/saveevents", content);
+
+            _logger.Information("Pushing {EventCount} events took {ElapsedMs} ms", events.Count(), sw.ElapsedMilliseconds);
 
             putResponse.EnsureSuccessStatusCode();
         }
