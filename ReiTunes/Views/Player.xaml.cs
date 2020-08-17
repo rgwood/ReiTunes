@@ -53,7 +53,7 @@ namespace ReiTunes {
 
         private void OpenSelectedLibraryItem(object sender = null, RoutedEventArgs e = null) {
             var selected = (LibraryItem)libraryDataGrid.SelectedItem;
-            ViewModel.ChangeSource(selected?.FilePath);
+            ViewModel.ChangeSource(selected);
             selected.IncrementPlayCount();
         }
 
@@ -74,11 +74,11 @@ namespace ReiTunes {
             }
 
             //refresh accelerator
-            KeyboardAccelerators.Add(CreateAccelerator(VirtualKeyModifiers.Control, VirtualKey.R,
-                async (sender, args) => {
-                    args.Handled = true;
-                    await ViewModel.Pull();
-                }));
+            //KeyboardAccelerators.Add(CreateAccelerator(VirtualKeyModifiers.Control, VirtualKey.R,
+            //    async (sender, args) => {
+            //        args.Handled = true;
+            //        await ViewModel.Pull();
+            //    }));
 
             //search accelerator
             KeyboardAccelerators.Add(CreateAccelerator(VirtualKeyModifiers.Control, VirtualKey.F,

@@ -37,13 +37,20 @@
                     <ColumnDefinition Width="*" />
                     <ColumnDefinition Width="100" />
                 </Grid.ColumnDefinitions>
-                <StackPanel>
+                <StackPanel HorizontalAlignment="Stretch">
+
                     <TextBlock
                         Grid.Row="1"
                         Margin="0,5,0,0"
                         HorizontalAlignment="Center"
-                        Style="{StaticResource BaseTextBlockStyle}"
-                        Text="{x:Bind ViewModel.SourceFileName, Mode=OneWay}" />
+                        Style="{StaticResource BaseTextBlockStyle}">
+                        <Run Text="{x:Bind ViewModel.CurrentlyPlayingItem.Name, Mode=OneWay}" />
+                        <Run FontWeight="Light">by</Run>
+                        <Run Text="{x:Bind ViewModel.CurrentlyPlayingItem.Artist, Mode=OneWay}" />
+                        <Run FontWeight="Light">on</Run>
+                        <Run Text="{x:Bind ViewModel.CurrentlyPlayingItem.Album, Mode=OneWay}" />
+                    </TextBlock>
+
                     <MediaPlayerElement
                         x:Name="musicPlayer"
                         Grid.Row="2"
