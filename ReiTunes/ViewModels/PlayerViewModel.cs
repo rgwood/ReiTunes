@@ -17,20 +17,19 @@ using Windows.Media.Core;
 using Windows.Media.Playback;
 using Windows.Networking.BackgroundTransfer;
 using Windows.Storage;
+using Windows.System;
 using Windows.UI.Core;
 
 namespace ReiTunes {
 
     public class PlayerViewModel : Observable {
         private Uri _cloudBaseUri = new Uri("https://reitunes.blob.core.windows.net/music/");
-        private const string _libraryFileName = "ReiTunesLibrary.txt";
-        private Uri _libraryFileUri = new Uri("https://reitunes.blob.core.windows.net/library/" + _libraryFileName);
 
         private readonly ILogger _logger;
         private readonly Library _library;
         private StorageFolder _libraryFolder;
         private IMediaPlaybackSource _source;
-        private string _sourceFileName;
+        private LibraryItem _currentlyPlayingItem;
         private string _downloadStatus = "";
         private bool _downloadInProgress = false;
         private double _downloadPercentFinished = 0;
@@ -42,9 +41,9 @@ namespace ReiTunes {
             set { Set(ref _source, value); }
         }
 
-        public string SourceFileName {
-            get { return _sourceFileName; }
-            set { Set(ref _sourceFileName, value); }
+        public LibraryItem CurrentlyPlayingItem {
+            get { return _currentlyPlayingItem; }
+            set { Set(ref _currentlyPlayingItem, value); }
         }
 
         public ObservableCollection<LibraryItem> LibraryItems {
@@ -117,35 +116,24 @@ namespace ReiTunes {
         public async Task FilterItems(string filterString) {
             var sw = Stopwatch.StartNew();
 
-            VisibleItems = await Task.Run(() => FuzzyMatcher.FuzzyMatch(filterString, LibraryItems));
+            var filteredItems = await Task.Run(() => FuzzyMatcher.FuzzyMatch(filterString, LibraryItems));
 
-            sw.Stop();
-            Debug.WriteLine($"Total filter time: {sw.ElapsedMilliseconds}ms");
+            _logger.Information("Fuzzy match time: {ElapsedMs}", sw.ElapsedMilliseconds);
+
+            VisibleItems = filteredItems;
+            _logger.Information("Total filter time: {ElapsedMs}", sw.ElapsedMilliseconds);
         }
-
-        //TODO: this should visually indicate that the file is being downloaded
-        //public async Task DownloadAndLoadLibraryFile() {
-        //    var libraryFile = await DownloadLibraryFile();
-        //    await LoadLibraryFile(libraryFile);
-        //}
-
-        //private async Task<StorageFile> DownloadLibraryFile() {
-        //    var httpService = ServiceLocator.Current.GetService<HttpDataService>();
-        //    _logger.Information("Downloading library file from {libraryUri}", _libraryFileUri);
-        //    var libraryContents = await httpService.GetStringAsync(_libraryFileUri);
-        //    _logger.Information("Finished downloading library file");
-        //    return await _libraryFolder.WriteTextToFileAsync(libraryContents,
-        //        _libraryFileName, CreationCollisionOption.ReplaceExisting);
-        //}
 
         private async Task LoadLibraryFile(IStorageItem libraryFile) {
             var libraryString = await FileIO.ReadTextAsync((StorageFile)libraryFile);
             LibraryItems = LibraryFileParser.ParseBlobList(libraryString);
         }
 
-        public async void ChangeSource(string filePath) {
-            if (filePath == null)
+        public async void ChangeSource(LibraryItem itemToPlay) {
+            if (itemToPlay == null)
                 return;
+
+            var filePath = itemToPlay.FilePath;
 
             // given a path like foo/bar/baz.txt, we need to get a StorageFolder for `bar` so we can save to it
             var split = filePath.Split('/');
@@ -188,7 +176,7 @@ namespace ReiTunes {
 
             if (storageItem.IsOfType(StorageItemTypes.File)) {
                 Source = MediaSource.CreateFromStorageFile((StorageFile)storageItem);
-                SourceFileName = filePath;
+                CurrentlyPlayingItem = itemToPlay;
             }
         }
 
