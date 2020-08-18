@@ -42,9 +42,10 @@
                     Margin="5,5,0,5"
                     HorizontalAlignment="Right"
                     VerticalAlignment="Center"
-                    Source="ms-appx:///Assets/VectorIcon.svg" />
+                    Source="{x:Bind ViewModel.CurrentlyPlayingItemThumbnail, TargetNullValue=ms-appx:///Assets/VectorIcon.svg, Mode=OneWay}" />
+                <!--  TargetNullValue=ms-appx:///Assets/VectorIcon.svg  -->
+                <!--  ms-appx:///Assets/VectorIcon.svg  -->
                 <StackPanel Grid.Column="1" HorizontalAlignment="Stretch">
-
 
                     <TextBlock
                         Grid.Row="1"

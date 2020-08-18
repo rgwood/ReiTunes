@@ -19,6 +19,9 @@ using Windows.Networking.BackgroundTransfer;
 using Windows.Storage;
 using Windows.System;
 using Windows.UI.Core;
+using Windows.UI.Xaml.Controls;
+using Windows.Storage.FileProperties;
+using Windows.UI.Xaml.Media.Imaging;
 
 namespace ReiTunes {
 
@@ -35,6 +38,7 @@ namespace ReiTunes {
         private double _downloadPercentFinished = 0;
         private ObservableCollection<LibraryItem> _libraryItems;
         private ObservableCollection<LibraryItem> _visibleItems;
+        private BitmapImage _currentlyPlayingItemThumbnail;
 
         public IMediaPlaybackSource Source {
             get { return _source; }
@@ -76,6 +80,11 @@ namespace ReiTunes {
 
         public AsyncRelayCommand PullEventsCommand { get; }
         public AsyncRelayCommand PushEventsCommand { get; }
+
+        public BitmapImage CurrentlyPlayingItemThumbnail {
+            get { return _currentlyPlayingItemThumbnail; }
+            set { Set(ref _currentlyPlayingItemThumbnail, value); }
+        }
 
         public PlayerViewModel(ILogger logger, Library library) {
             _logger = logger;
@@ -175,8 +184,19 @@ namespace ReiTunes {
             }
 
             if (storageItem.IsOfType(StorageItemTypes.File)) {
-                Source = MediaSource.CreateFromStorageFile((StorageFile)storageItem);
+                var file = (StorageFile)storageItem;
+                Source = MediaSource.CreateFromStorageFile(file);
                 CurrentlyPlayingItem = itemToPlay;
+                var thumbnail = await file.GetThumbnailAsync(ThumbnailMode.MusicView, 400, ThumbnailOptions.UseCurrentScale);
+
+                if (thumbnail != null && thumbnail.Type == ThumbnailType.Image) {
+                    var img = new BitmapImage();
+                    img.SetSource(thumbnail);
+                    CurrentlyPlayingItemThumbnail = img;
+                }
+                else {
+                    CurrentlyPlayingItemThumbnail = null;
+                }
             }
         }
 
