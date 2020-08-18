@@ -34,10 +34,17 @@
         <StackPanel Orientation="Vertical">
             <Grid>
                 <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="100" />
                     <ColumnDefinition Width="*" />
                     <ColumnDefinition Width="100" />
                 </Grid.ColumnDefinitions>
-                <StackPanel HorizontalAlignment="Stretch">
+                <Image
+                    Margin="5,5,0,5"
+                    HorizontalAlignment="Right"
+                    VerticalAlignment="Center"
+                    Source="ms-appx:///Assets/VectorIcon.svg" />
+                <StackPanel Grid.Column="1" HorizontalAlignment="Stretch">
+
 
                     <TextBlock
                         Grid.Row="1"
@@ -71,7 +78,7 @@
                         </MediaPlayerElement.TransportControls>
                     </MediaPlayerElement>
                 </StackPanel>
-                <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                <StackPanel Grid.Column="2" VerticalAlignment="Center">
                     <Button
                         Margin="0,5,5,5"
                         Padding="2"
