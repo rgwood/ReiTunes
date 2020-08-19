@@ -10,7 +10,7 @@
   <Identity
     Name="2b3c53fd-b804-4e1e-b26c-cae302ea1108"
     Publisher="CN=Reilly Wood"
-    Version="1.0.18.0" />
+    Version="1.0.19.0" />
 
   <mp:PhoneIdentity PhoneProductId="2b3c53fd-b804-4e1e-b26c-cae302ea1108" PhonePublisherId="00000000-0000-0000-0000-000000000000"/>
 
