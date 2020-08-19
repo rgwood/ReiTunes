@@ -22,6 +22,7 @@ using Windows.UI.Core;
 using Windows.UI.Xaml.Controls;
 using Windows.Storage.FileProperties;
 using Windows.UI.Xaml.Media.Imaging;
+using Windows.Storage.Streams;
 
 namespace ReiTunes {
 
@@ -138,11 +139,11 @@ namespace ReiTunes {
             LibraryItems = LibraryFileParser.ParseBlobList(libraryString);
         }
 
-        public async void ChangeSource(LibraryItem itemToPlay) {
-            if (itemToPlay == null)
+        public async void ChangeSource(LibraryItem libraryItemToPlay) {
+            if (libraryItemToPlay == null)
                 return;
 
-            var filePath = itemToPlay.FilePath;
+            var filePath = libraryItemToPlay.FilePath;
 
             // given a path like foo/bar/baz.txt, we need to get a StorageFolder for `bar` so we can save to it
             var split = filePath.Split('/');
@@ -185,8 +186,22 @@ namespace ReiTunes {
 
             if (storageItem.IsOfType(StorageItemTypes.File)) {
                 var file = (StorageFile)storageItem;
-                Source = MediaSource.CreateFromStorageFile(file);
-                CurrentlyPlayingItem = itemToPlay;
+                var mediaPlaybackItem = new MediaPlaybackItem(MediaSource.CreateFromStorageFile(file));
+
+                Source = mediaPlaybackItem;
+
+                CurrentlyPlayingItem = libraryItemToPlay;
+                MediaItemDisplayProperties props = mediaPlaybackItem.GetDisplayProperties();
+                props.Type = Windows.Media.MediaPlaybackType.Music;
+                props.MusicProperties.Title = libraryItemToPlay.Name;
+                props.MusicProperties.Artist = libraryItemToPlay.Artist;
+
+                if (libraryItemToPlay.Album != null) {
+                    props.MusicProperties.AlbumTitle = libraryItemToPlay.Album;
+                }
+
+                mediaPlaybackItem.ApplyDisplayProperties(props);
+
                 var thumbnail = await file.GetThumbnailAsync(ThumbnailMode.MusicView, 400, ThumbnailOptions.UseCurrentScale);
 
                 if (thumbnail != null && thumbnail.Type == ThumbnailType.Image) {
