@@ -65,20 +65,33 @@ namespace ReiTunes {
 
         #region KeyboardStuff
 
+        private void AddTooltip(DependencyObject target, string toolTip) {
+        }
+
         private void SetUpKeyboardAccelerators() {
             KeyboardAccelerator CreateAccelerator(VirtualKeyModifiers modifier, VirtualKey key,
                 TypedEventHandler<KeyboardAccelerator, KeyboardAcceleratorInvokedEventArgs> eventHandler) {
                 var ret = new KeyboardAccelerator() { Modifiers = modifier, Key = key };
                 ret.Invoked += eventHandler;
+
                 return ret;
             }
 
-            //refresh accelerator
-            //KeyboardAccelerators.Add(CreateAccelerator(VirtualKeyModifiers.Control, VirtualKey.R,
-            //    async (sender, args) => {
-            //        args.Handled = true;
-            //        await ViewModel.Pull();
-            //    }));
+            //pull
+
+            var pullAccelerator = CreateAccelerator(VirtualKeyModifiers.Control, VirtualKey.P,
+                async (sender, args) => {
+                    args.Handled = true;
+                    await ViewModel.Pull();
+                });
+            KeyboardAccelerators.Add(pullAccelerator);
+
+            //push
+            KeyboardAccelerators.Add(CreateAccelerator(VirtualKeyModifiers.Control | VirtualKeyModifiers.Shift, VirtualKey.P,
+    async (sender, args) => {
+        args.Handled = true;
+        await ViewModel.Push();
+    }));
 
             //search accelerator
             KeyboardAccelerators.Add(CreateAccelerator(VirtualKeyModifiers.Control, VirtualKey.F,
