@@ -8,6 +8,7 @@
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     xmlns:winui="using:Microsoft.UI.Xaml.Controls"
     Background="{ThemeResource ApplicationPageBackgroundThemeBrush}"
+    KeyboardAcceleratorPlacementMode="Hidden"
     Loaded="Page_Loaded"
     Unloaded="Page_Unloaded"
     mc:Ignorable="d">
@@ -81,26 +82,31 @@
                 </StackPanel>
                 <StackPanel Grid.Column="2" VerticalAlignment="Center">
                     <Button
+                        x:Name="pullButton"
                         Margin="0,5,5,5"
                         Padding="2"
                         HorizontalAlignment="Stretch"
                         Command="{x:Bind ViewModel.PullEventsCommand}"
-                        FontSize="12">
+                        FontSize="12"
+                        ToolTipService.ToolTip="Ctrl+P">
                         Pull
                     </Button>
                     <Button
+                        x:Name="pushButton"
                         Margin="0,5,5,5"
                         Padding="2"
                         HorizontalAlignment="Stretch"
                         Command="{x:Bind ViewModel.PushEventsCommand}"
-                        FontSize="12">
+                        FontSize="12"
+                        ToolTipService.ToolTip="Ctrl+Shift+P">
                         Push
                     </Button>
                     <Button
                         Margin="0,5,5,5"
                         Padding="2"
                         HorizontalAlignment="Stretch"
-                        FontSize="12">
+                        FontSize="12"
+                        IsEnabled="False">
                         View Events
                     </Button>
                 </StackPanel>
