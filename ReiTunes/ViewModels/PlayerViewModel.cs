@@ -200,11 +200,10 @@ namespace ReiTunes {
                     props.MusicProperties.AlbumTitle = libraryItemToPlay.Album;
                 }
 
-                mediaPlaybackItem.ApplyDisplayProperties(props);
-
                 var thumbnail = await file.GetThumbnailAsync(ThumbnailMode.MusicView, 400, ThumbnailOptions.UseCurrentScale);
 
                 if (thumbnail != null && thumbnail.Type == ThumbnailType.Image) {
+                    props.Thumbnail = RandomAccessStreamReference.CreateFromStream(thumbnail);
                     var img = new BitmapImage();
                     img.SetSource(thumbnail);
                     CurrentlyPlayingItemThumbnail = img;
@@ -212,6 +211,8 @@ namespace ReiTunes {
                 else {
                     CurrentlyPlayingItemThumbnail = null;
                 }
+
+                mediaPlaybackItem.ApplyDisplayProperties(props);
             }
         }
 
