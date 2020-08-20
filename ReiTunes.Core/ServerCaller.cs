@@ -23,10 +23,14 @@ namespace ReiTunes.Core {
         public async Task<List<string>> PullAllSerializedEventsAsync() {
             var sw = Stopwatch.StartNew();
             var response = await _client.GetAsync("/reitunes/allevents");
-            _logger.Information("Pulling all serialized events took {ElapsedMs} ms", sw.ElapsedMilliseconds);
             response.EnsureSuccessStatusCode();
 
             string contents = await response.Content.ReadAsStringAsync();
+
+            var serializedKiloByteCount = UnicodeEncoding.UTF8.GetByteCount(contents) / 1024;
+
+            _logger.Information("Pulled {PayloadSizeKb} kb of serialized events in {ElapsedMs} ms",
+                serializedKiloByteCount, sw.ElapsedMilliseconds);
 
             var deserialized = await Json.DeserializeAsync<List<string>>(contents);
             return deserialized;
@@ -46,9 +50,12 @@ namespace ReiTunes.Core {
             var serialized = await EventSerialization.SerializeAsync(events.ToList());
             var content = new StringContent(serialized, Encoding.UTF8, "application/json");
 
+            var serializedKiloByteCount = UnicodeEncoding.UTF8.GetByteCount(serialized) / 1024;
+            _logger.Information("About to push {EventCount} events. Serialized size: {eventsSizeKb} kb", events.Count(), serializedKiloByteCount);
+
             var putResponse = await _client.PutAsync("/reitunes/saveevents", content);
 
-            _logger.Information("Pushing {EventCount} events took {ElapsedMs} ms", events.Count(), sw.ElapsedMilliseconds);
+            _logger.Information("Pushing events took {ElapsedMs} ms", sw.ElapsedMilliseconds);
 
             putResponse.EnsureSuccessStatusCode();
         }
