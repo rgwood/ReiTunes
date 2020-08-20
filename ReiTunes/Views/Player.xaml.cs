@@ -9,9 +9,11 @@ using System.Threading.Tasks;
 using Windows.Foundation;
 using Windows.Media.Playback;
 using Windows.System;
+using Windows.UI.Text;
 using Windows.UI.ViewManagement;
 using Windows.UI.Xaml;
 using Windows.UI.Xaml.Controls;
+using Windows.UI.Xaml.Documents;
 using Windows.UI.Xaml.Input;
 using Windows.UI.Xaml.Navigation;
 
@@ -33,6 +35,23 @@ namespace ReiTunes {
             ApplicationView.GetForCurrentView().SetPreferredMinSize(new Size(200, 155));
             ViewModel = ServiceLocator.Current.GetService<PlayerViewModel>();
             SetUpKeyboardAccelerators();
+            ViewModel.PropertyChanged += ViewModel_PropertyChanged;
+        }
+
+        private void ViewModel_PropertyChanged(object sender, System.ComponentModel.PropertyChangedEventArgs e) {
+            if (e.PropertyName == nameof(ViewModel.CurrentlyPlayingItem)) {
+                CurrentlyPlayingItemDescription.Inlines.Clear();
+
+                CurrentlyPlayingItemDescription.Inlines.Add(new Run() { Text = ViewModel.CurrentlyPlayingItem?.Name });
+                CurrentlyPlayingItemDescription.Inlines.Add(new Run() { Text = " by ", FontWeight = FontWeights.Light });
+                CurrentlyPlayingItemDescription.Inlines.Add(new Run() { Text = ViewModel.CurrentlyPlayingItem?.Artist });
+                // doing this all in C# because these kinds of conditionals are a PITA in XAML
+                // Runs don't have a visibility property
+                if (!string.IsNullOrEmpty(ViewModel.CurrentlyPlayingItem.Album)) {
+                    CurrentlyPlayingItemDescription.Inlines.Add(new Run() { Text = " on ", FontWeight = FontWeights.Light });
+                    CurrentlyPlayingItemDescription.Inlines.Add(new Run() { Text = ViewModel.CurrentlyPlayingItem?.Album });
+                }
+            }
         }
 
         private void ToggleMediaPlaybackState() {
