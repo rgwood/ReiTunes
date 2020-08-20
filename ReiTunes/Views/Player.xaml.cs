@@ -43,11 +43,15 @@ namespace ReiTunes {
                 CurrentlyPlayingItemDescription.Inlines.Clear();
 
                 CurrentlyPlayingItemDescription.Inlines.Add(new Run() { Text = ViewModel.CurrentlyPlayingItem?.Name });
-                CurrentlyPlayingItemDescription.Inlines.Add(new Run() { Text = " by ", FontWeight = FontWeights.Light });
-                CurrentlyPlayingItemDescription.Inlines.Add(new Run() { Text = ViewModel.CurrentlyPlayingItem?.Artist });
+
                 // doing this all in C# because these kinds of conditionals are a PITA in XAML
                 // Runs don't have a visibility property
-                if (!string.IsNullOrEmpty(ViewModel.CurrentlyPlayingItem.Album)) {
+                if (!string.IsNullOrEmpty(ViewModel.CurrentlyPlayingItem?.Artist)) {
+                    CurrentlyPlayingItemDescription.Inlines.Add(new Run() { Text = " by ", FontWeight = FontWeights.Light });
+                    CurrentlyPlayingItemDescription.Inlines.Add(new Run() { Text = ViewModel.CurrentlyPlayingItem?.Artist });
+                }
+
+                if (!string.IsNullOrEmpty(ViewModel.CurrentlyPlayingItem?.Album)) {
                     CurrentlyPlayingItemDescription.Inlines.Add(new Run() { Text = " on ", FontWeight = FontWeights.Light });
                     CurrentlyPlayingItemDescription.Inlines.Add(new Run() { Text = ViewModel.CurrentlyPlayingItem?.Album });
                 }

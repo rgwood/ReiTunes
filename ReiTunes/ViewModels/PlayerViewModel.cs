@@ -194,7 +194,10 @@ namespace ReiTunes {
                 MediaItemDisplayProperties props = mediaPlaybackItem.GetDisplayProperties();
                 props.Type = Windows.Media.MediaPlaybackType.Music;
                 props.MusicProperties.Title = libraryItemToPlay.Name;
-                props.MusicProperties.Artist = libraryItemToPlay.Artist;
+
+                if (libraryItemToPlay.Artist != null) {
+                    props.MusicProperties.Artist = libraryItemToPlay.Artist;
+                }
 
                 if (libraryItemToPlay.Album != null) {
                     props.MusicProperties.AlbumTitle = libraryItemToPlay.Album;
