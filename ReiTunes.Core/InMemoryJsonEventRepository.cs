@@ -21,6 +21,11 @@ namespace ReiTunes.Core {
             return serializedEvents.Select(e => EventSerialization.Deserialize(e));
         }
 
+        //TODO: this is stupid and slow, find a better way
+        public IEnumerable<IEvent> GetAllEventsFromMachine(string machineName) {
+            return GetAllEvents().Where(e => e.MachineName.ToUpper() == machineName.ToUpper());
+        }
+
         public IEnumerable<IEvent> GetEvents(Guid aggregateId) {
             var serializedEvents = _events[aggregateId];
             var deserialized = serializedEvents.Select(e => EventSerialization.Deserialize(e));
