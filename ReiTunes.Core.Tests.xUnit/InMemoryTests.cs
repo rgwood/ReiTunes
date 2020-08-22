@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using Xunit;
 using System;
 using System.Linq;
+using FluentAssertions;
 using NuGet.Frameworks;
 using System.Diagnostics;
 using System.Collections;
@@ -45,6 +46,48 @@ namespace ReiTunes.Core.Tests.XUnit {
             Assert.False(badResult.isMatch);
 
             Assert.True(goodResult.score > badResult.score);
+        }
+
+        [Fact]
+        public void FuzzyMatchGivesReasonableResult1() {
+        }
+
+        [Theory]
+        [MemberData(nameof(AllReposToTest))]
+        public void CanGetEventsForSpecificMachine(IEventRepository repo) {
+            const string machine1 = "machine1";
+            const string machine2 = "machine2";
+            var factory1 = new LibraryItemEventFactory(machine1, new Clock());
+            var factory2 = new LibraryItemEventFactory(machine2, new Clock());
+
+            var guid = Guid.NewGuid();
+
+            repo.Save(factory1.GetPlayedEvent(guid));
+            repo.Save(factory2.GetPlayedEvent(guid));
+
+            repo.GetAllEvents().Count().Should().Be(2);
+            repo.GetAllEventsFromMachine(machine1).Count().Should().Be(1);
+            repo.GetAllEventsFromMachine(machine2).Count().Should().Be(1);
+        }
+
+        [Theory]
+        [MemberData(nameof(AllReposToTest))]
+        public void CanGetEventsMachineNameCaseDoesNotMatter(IEventRepository repo) {
+            const string machine1 = "machine1";
+            const string machine2 = "machine2";
+            var factory1 = new LibraryItemEventFactory(machine1, new Clock());
+            var factory2 = new LibraryItemEventFactory(machine2, new Clock());
+
+            var guid = Guid.NewGuid();
+
+            repo.Save(factory1.GetPlayedEvent(guid));
+
+            repo.GetAllEventsFromMachine(machine1.ToUpper()).Count().Should().Be(1);
+
+            repo.GetAllEventsFromMachine(machine2.ToUpper()).Count().Should().Be(0);
+
+            repo.Save(factory2.GetPlayedEvent(guid));
+            repo.GetAllEventsFromMachine(machine2.ToUpper()).Count().Should().Be(1);
         }
 
         [Fact]

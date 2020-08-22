@@ -76,5 +76,10 @@ namespace ReiTunes.Core {
                 Save(@event);
             }
         }
+
+        public IEnumerable<IEvent> GetAllEventsFromMachine(string machineName) {
+            return GetSerializedEvents($"select Serialized from events where MachineName = '{machineName}' COLLATE NOCASE;")
+                .Select(s => EventSerialization.Deserialize(s));
+        }
     }
 }

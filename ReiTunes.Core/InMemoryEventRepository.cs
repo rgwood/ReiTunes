@@ -16,6 +16,10 @@ namespace ReiTunes.Core {
             return _events;
         }
 
+        public IEnumerable<IEvent> GetAllEventsFromMachine(string machineName) {
+            return _events.Where(e => e.MachineName.ToUpper() == machineName.ToUpper());
+        }
+
         public IEnumerable<IEvent> GetEvents(Guid aggregateId) {
             return _events.Where(e => e.AggregateId == aggregateId);
         }
