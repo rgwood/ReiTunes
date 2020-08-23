@@ -15,6 +15,8 @@ using Windows.UI.Xaml;
 using Windows.UI.Xaml.Controls;
 using Windows.UI.Xaml.Documents;
 using Windows.UI.Xaml.Input;
+using Windows.UI.Xaml.Media;
+using Windows.UI.Xaml.Media.Animation;
 using Windows.UI.Xaml.Navigation;
 
 // The Blank Page item template is documented at https://go.microsoft.com/fwlink/?LinkId=402352&clcid=0x409
@@ -28,6 +30,8 @@ namespace ReiTunes {
         public PlayerViewModel ViewModel { get; }
 
         private bool _dataGridIsEditing;
+        private bool _thumbNailIsRotating;
+        private Storyboard _thumbnailStoryboard = new Storyboard();
 
         public Player() {
             this.InitializeComponent();
@@ -36,6 +40,8 @@ namespace ReiTunes {
             ViewModel = ServiceLocator.Current.GetService<PlayerViewModel>();
             SetUpKeyboardAccelerators();
             ViewModel.PropertyChanged += ViewModel_PropertyChanged;
+
+            SetUpThumbnailAnimation();
         }
 
         private void ViewModel_PropertyChanged(object sender, System.ComponentModel.PropertyChangedEventArgs e) {
@@ -88,9 +94,6 @@ namespace ReiTunes {
 
         #region KeyboardStuff
 
-        private void AddTooltip(DependencyObject target, string toolTip) {
-        }
-
         private void SetUpKeyboardAccelerators() {
             KeyboardAccelerator CreateAccelerator(VirtualKeyModifiers modifier, VirtualKey key,
                 TypedEventHandler<KeyboardAccelerator, KeyboardAcceleratorInvokedEventArgs> eventHandler) {
@@ -129,6 +132,15 @@ namespace ReiTunes {
                 async (sender, args) => {
                     args.Handled = true;
                     await Launcher.LaunchFolderAsync(Windows.Storage.ApplicationData.Current.LocalFolder);
+                }));
+
+            //show selected item(s) in File Explorer
+            KeyboardAccelerators.Add(CreateAccelerator(VirtualKeyModifiers.Control, VirtualKey.L,
+                async (sender, args) => {
+                    args.Handled = true;
+
+                    var selected = (LibraryItem)libraryDataGrid.SelectedItem;
+                    await ViewModel.ShowItemInExplorer(selected);
                 }));
         }
 
@@ -219,6 +231,36 @@ namespace ReiTunes {
 
         private void libraryDataGrid_RowEditEnded(object sender, Microsoft.Toolkit.Uwp.UI.Controls.DataGridRowEditEndedEventArgs e) {
             _dataGridIsEditing = false;
+        }
+
+        // called once in constructor
+        private void SetUpThumbnailAnimation() {
+            CurrentlyPlayingThumbnail.RenderTransformOrigin = new Point(0.5, 0.5);
+            CurrentlyPlayingThumbnail.RenderTransform = new RotateTransform();
+
+            var animation = new DoubleAnimation();
+
+            animation.Duration = new Duration(TimeSpan.FromSeconds(60d / 33)); // rekkid speed
+            animation.From = 0;
+            animation.To = 360;
+
+            Storyboard.SetTarget(animation, CurrentlyPlayingThumbnail);
+            Storyboard.SetTargetProperty(animation, "(UIElement.RenderTransform).(RotateTransform.Angle)");
+
+            _thumbnailStoryboard.Children.Add(animation);
+        }
+
+        private void CurrentlyPlayingThumbnail_Tapped(object sender, TappedRoutedEventArgs e) {
+            if (!_thumbNailIsRotating) {
+                _thumbnailStoryboard.RepeatBehavior = RepeatBehavior.Forever;
+
+                _thumbnailStoryboard.Begin();
+            }
+            else {
+                _thumbnailStoryboard.RepeatBehavior = new RepeatBehavior(1);
+            }
+
+            _thumbNailIsRotating = !_thumbNailIsRotating;
         }
     }
 }
