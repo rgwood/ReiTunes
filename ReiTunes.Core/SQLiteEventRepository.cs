@@ -1,6 +1,8 @@
-﻿using System;
+﻿using Serilog;
+using System;
 using System.Collections.Generic;
 using System.Data.SQLite;
+using System.Diagnostics;
 using System.Linq;
 using System.Text;
 
@@ -10,10 +12,11 @@ namespace ReiTunes.Core {
 
     public class SQLiteEventRepository : ISerializedEventRepository {
         private readonly SQLiteConnection _conn;
+        private readonly ILogger _logger;
 
-        public SQLiteEventRepository(SQLiteConnection conn) {
+        public SQLiteEventRepository(SQLiteConnection conn, ILogger logger = null) {
             _conn = conn;
-
+            _logger = logger ?? LoggerHelpers.DoNothingLogger();
             if (_conn.State != System.Data.ConnectionState.Open) {
                 _conn.Open();
             }
@@ -72,14 +75,20 @@ namespace ReiTunes.Core {
         }
 
         public void Save(IEnumerable<IEvent> events) {
+            var sw = Stopwatch.StartNew();
             foreach (IEvent @event in events) {
                 Save(@event);
             }
+
+            _logger.Information("Saving {EventCount} events took {ElapsedMs}", events.Count(), sw.ElapsedMilliseconds);
         }
 
         public IEnumerable<IEvent> GetAllEventsFromMachine(string machineName) {
-            return GetSerializedEvents($"select Serialized from events where MachineName = '{machineName}' COLLATE NOCASE;")
+            var sw = Stopwatch.StartNew();
+            var ret = GetSerializedEvents($"select Serialized from events where MachineName = '{machineName}' COLLATE NOCASE;")
                 .Select(s => EventSerialization.Deserialize(s));
+            _logger.Information("GetAllEventsFromMachine took {ElapsedMs}", sw.ElapsedMilliseconds);
+            return ret;
         }
     }
 }

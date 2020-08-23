@@ -189,64 +189,6 @@ namespace ReiTunes.Core.Tests.XUnit {
             Assert.Equal(item, itemFromEvents);
         }
 
-        [Fact]
-        public void BasicLibrarySyncingWorks() {
-            var app1 = new Library("machine1", SQLiteHelpers.CreateInMemoryDb(), caller: null, logger: Logger.None);
-            var app2 = new Library("machine2", SQLiteHelpers.CreateInMemoryDb(), caller: null, logger: Logger.None);
-
-            app1.Items.Add(new LibraryItem(_eventFactory, "foo.mp3"));
-            app1.Items.Single().IncrementPlayCount();
-
-            app2.Items.Add(new LibraryItem(_eventFactory, "bar.mp3"));
-
-            app2.ReceiveEvents(app1.GetAllEvents());
-            app1.ReceiveEvents(app2.GetAllEvents());
-
-            LibrariesHaveSameItems(app1, app2);
-        }
-
-        [Fact]
-        public void LibraryCanSyncAllPropertyChanges() {
-            var l1 = new Library("machine1", SQLiteHelpers.CreateInMemoryDb(), caller: null, logger: Logger.None);
-            var l2 = new Library("machine2", SQLiteHelpers.CreateInMemoryDb(), caller: null, logger: Logger.None);
-
-            var guid = Guid.NewGuid();
-            var name = "bar.mp3";
-            var path = "foo/bar.mp3";
-
-            var createdEvent = _eventFactory.GetCreatedEvent(guid, name, path);
-            l1.ReceiveEvent(createdEvent);
-
-            var item = l1.Items.Single();
-            item.IncrementPlayCount();
-            item.IncrementPlayCount();
-            item.Name = "GIMIX set";
-            item.FilePath = "bar.mp3";
-            item.Artist = "The Avalanches";
-            item.Album = "Mixes";
-
-            l2.ReceiveEvents(l1.GetAllEvents());
-
-            LibrariesHaveSameItems(l1, l2);
-
-            l2.Items.Single().IncrementPlayCount();
-
-            l1.ReceiveEvents(l2.GetAllEvents());
-
-            LibrariesHaveSameItems(l1, l2);
-        }
-
-        private void LibrariesHaveSameItems(Library l1, Library l2) {
-            Assert.Equal(l1.Items.Count, l2.Items.Count);
-
-            var orderedModels1 = l1.Items.OrderBy(m => m.AggregateId).ToArray();
-            var orderedModels2 = l2.Items.OrderBy(m => m.AggregateId).ToArray();
-
-            for (int i = 0; i < orderedModels1.Count(); i++) {
-                Assert.Equal(orderedModels1[i], orderedModels2[i]);
-            }
-        }
-
         //results: hella fast, 2.5s for a million events. Suggests that disk and network will be the bottlenecks
         //[Fact]
         //public void Benchmark() {

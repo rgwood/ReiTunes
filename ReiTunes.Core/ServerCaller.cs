@@ -38,7 +38,13 @@ namespace ReiTunes.Core {
 
         public async Task<IEnumerable<IEvent>> PullAllEventsAsync() {
             var allSerializedEvents = await PullAllSerializedEventsAsync();
-            return await Task.Run(() => allSerializedEvents.Select(e => EventSerialization.Deserialize(e)));
+
+            var sw = Stopwatch.StartNew();
+            var ret = await Task.Run(() => allSerializedEvents.Select(e => EventSerialization.Deserialize(e)));
+
+            _logger.Information("Deserializing {EventCount} events took {ElapsedMs} ms", ret.Count(), sw.ElapsedMilliseconds);
+
+            return ret;
         }
 
         public async Task PushEventAsync(IEvent @event) {
