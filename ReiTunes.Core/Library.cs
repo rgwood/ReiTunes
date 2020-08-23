@@ -36,7 +36,7 @@ namespace ReiTunes.Core {
             MachineName = machineName;
             _caller = caller;
             _logger = logger;
-            _repo = new SQLiteEventRepository(connection);
+            _repo = new SQLiteEventRepository(connection, logger);
             _eventFactory = new LibraryItemEventFactory(MachineName, clock);
             RebuildItems();
         }
@@ -52,13 +52,13 @@ namespace ReiTunes.Core {
             ReceiveEvents(new List<IEvent> { @event });
         }
 
-        public IEnumerable<IEvent> GetAllEvents() {
-            var sw = Stopwatch.StartNew();
-            var ret = _repo.GetAllEvents();
-            sw.Stop();
-            _logger.Information("GetAllEvents took {ElapsedMs}", sw.ElapsedMilliseconds);
-            return ret;
-        }
+        //public IEnumerable<IEvent> GetAllEvents() {
+        //    var sw = Stopwatch.StartNew();
+        //    var ret = _repo.GetAllEvents();
+        //    sw.Stop();
+        //    _logger.Information("GetAllEvents took {ElapsedMs}", sw.ElapsedMilliseconds);
+        //    return ret;
+        //}
 
         public async Task PullFromServer() {
             var events = await _caller.PullAllEventsAsync();
@@ -66,7 +66,7 @@ namespace ReiTunes.Core {
         }
 
         public async Task PushToServer() {
-            var allEvents = GetAllEvents();
+            var allEvents = _repo.GetAllEventsFromMachine(MachineName);
 
             await _caller.PushEventsAsync(allEvents);
         }
@@ -75,7 +75,7 @@ namespace ReiTunes.Core {
             var sw = Stopwatch.StartNew();
             Items.Clear();
 
-            var events = GetAllEvents();
+            var events = _repo.GetAllEvents();
 
             var groupedEvents = events.GroupBy(e => e.AggregateId).Select(g => g.OrderBy(e => e.CreatedTimeUtc).ThenBy(e => e.LocalId));
 
