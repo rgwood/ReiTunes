@@ -139,16 +139,24 @@ namespace ReiTunes {
             LibraryItems = LibraryFileParser.ParseBlobList(libraryString);
         }
 
-        public async void ChangeSource(LibraryItem libraryItemToPlay) {
-            if (libraryItemToPlay == null)
+        public async Task ShowItemInExplorer(LibraryItem item) {
+            if (item == null)
                 return;
 
-            var filePath = libraryItemToPlay.FilePath;
+            var folder = await GetStorageFolderForItem(item);
+            var storageItem = await folder.TryGetItemAsync(GetFileNameFromFullPath(item.FilePath));
 
-            // given a path like foo/bar/baz.txt, we need to get a StorageFolder for `bar` so we can save to it
-            var split = filePath.Split('/');
+            if (storageItem != null) {
+                var options = new FolderLauncherOptions();
+                options.ItemsToSelect.Add(storageItem);
+                await Launcher.LaunchFolderAsync(folder, options);
+            }
+        }
+
+        // given a path like foo/bar/baz.txt, we need to get a StorageFolder for `bar` so we can save to it
+        private async Task<StorageFolder> GetStorageFolderForItem(LibraryItem item) {
+            var split = item.FilePath.Split('/');
             var directories = new Queue<string>(split.Take(split.Length - 1));
-            var fileName = split.Last();
 
             var folder = _libraryFolder;
 
@@ -167,6 +175,19 @@ namespace ReiTunes {
                 }
             }
 
+            return folder;
+        }
+
+        private string GetFileNameFromFullPath(string fullPath) => fullPath.Split('/').Last();
+
+        public async void ChangeSource(LibraryItem libraryItemToPlay) {
+            if (libraryItemToPlay == null)
+                return;
+
+            var filePath = libraryItemToPlay.FilePath;
+            var fileName = GetFileNameFromFullPath(filePath);
+
+            var folder = await GetStorageFolderForItem(libraryItemToPlay);
             var storageItem = await folder.TryGetItemAsync(fileName);
 
             if (storageItem == null) // file not found, download it
