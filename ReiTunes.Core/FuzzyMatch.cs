@@ -38,13 +38,13 @@ namespace ReiTunes.Core {
         /// <returns>true if each character in pattern is found sequentially within stringToSearch; otherwise, false.</returns>
         public static (bool isMatch, int score) FuzzyMatch(string stringToSearch, string pattern) {
             // Score consts
-            const int adjacencyBonus = 5;               // bonus for adjacent matches
-            const int separatorBonus = 10;              // bonus if match occurs after a separator
+            const int adjacencyBonus = 20;               // bonus for adjacent matches
+            const int separatorBonus = 20;              // bonus if match occurs after a separator
             const int camelBonus = 10;                  // bonus if match is uppercase and prev is lower
 
             const int leadingLetterPenalty = -3;        // penalty applied for every letter in stringToSearch before the first match
             const int maxLeadingLetterPenalty = -9;     // maximum penalty for leading letters
-            const int unmatchedLetterPenalty = -1;      // penalty for every letter that doesn't matter
+            const int unmatchedLetterPenalty = 0;      // penalty for every letter that doesn't matter
 
             // Loop variables
             var score = 0;
