@@ -38,7 +38,7 @@ namespace ReiTunes.Core.Tests.XUnit {
         }
 
         [Fact]
-        public void FuzzyMatchWorks() {
+        public void FuzzyMatchWorks_Basic() {
             var goodResult = FuzzyMatcher.FuzzyMatch("Reilly Wood", "rei");
             Assert.True(goodResult.isMatch);
 
@@ -50,6 +50,18 @@ namespace ReiTunes.Core.Tests.XUnit {
 
         [Fact]
         public void FuzzyMatchGivesReasonableResult1() {
+            var desired = "Solid Steel Radio Show 6_1_2012 Part 1 + 2 Bonobo Solid Steel Radio Show Solid Steel Radio/Solid Steel Radio Show 6_1_2012 Part 1 + 2 - Bonobo.mp3";
+            var notDesired = "Breezeblock 2001-02-26 The Avalanches The Breezeblock Avalanches/The Avalanches on Radio 1 Breezebloc.mp3";
+
+            TestFuzzyMatch(desired, notDesired, "bonobo");
+            TestFuzzyMatch(desired, notDesired, "bonob");
+        }
+
+        private void TestFuzzyMatch(string desiredItem, string notDesiredItem, string searchText) {
+            var desiredItemResult = FuzzyMatcher.FuzzyMatch(desiredItem, searchText);
+            var notDesiredItemResult = FuzzyMatcher.FuzzyMatch(notDesiredItem, searchText);
+
+            desiredItemResult.score.Should().BeGreaterThan(notDesiredItemResult.score);
         }
 
         [Theory]
