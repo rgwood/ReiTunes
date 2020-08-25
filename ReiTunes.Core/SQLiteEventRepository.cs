@@ -90,5 +90,14 @@ namespace ReiTunes.Core {
             _logger.Information("GetAllEventsFromMachine took {ElapsedMs}", sw.ElapsedMilliseconds);
             return ret;
         }
+
+        public int CountOfAllEvents() {
+            string sql = $"SELECT COUNT() FROM events;";
+            var cmd = new SQLiteCommand(sql, _conn);
+            using var reader = cmd.ExecuteReader();
+            reader.Read();
+
+            return reader.GetInt32(0);
+        }
     }
 }

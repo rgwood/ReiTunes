@@ -15,6 +15,8 @@ namespace ReiTunes.Core {
             return GetAllEvents().Any(e => e.Id == eventId);
         }
 
+        public int CountOfAllEvents() => _events.Count();
+
         //TODO: this is stupid and slow, find a better way
         public IEnumerable<IEvent> GetAllEvents() {
             var serializedEvents = _events.Values.SelectMany(e => e);
