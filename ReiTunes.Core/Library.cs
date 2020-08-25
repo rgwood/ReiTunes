@@ -66,9 +66,15 @@ namespace ReiTunes.Core {
         }
 
         public async Task PushToServer() {
-            var allEvents = _repo.GetAllEventsFromMachine(MachineName);
+            var eventsToPush = _repo.GetAllEventsFromMachine(MachineName);
 
-            await _caller.PushEventsAsync(allEvents);
+            await _caller.PushEventsAsync(eventsToPush);
+
+            var pushedCount = eventsToPush.Count();
+            var totalEventCount = (double)_repo.CountOfAllEvents();
+
+            _logger.Information("Pushed {PushedCount} of {TotalEventCount} events ({PercentageOfAllEvents}%)",
+                pushedCount, totalEventCount, 100 * pushedCount / totalEventCount);
         }
 
         private void RebuildItems() {
