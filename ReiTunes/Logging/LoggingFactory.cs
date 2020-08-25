@@ -11,7 +11,7 @@ namespace ReiTunes.Logging {
             var logFile = Path.Combine(cache.Path, "ReiTunes.txt");
 
             return new LoggerConfiguration()
-                      .WriteTo.File(new CompactJsonFormatter(), logFile, rollingInterval: RollingInterval.Day)
+                      .WriteTo.File(new RenderedCompactJsonFormatter(), logFile, rollingInterval: RollingInterval.Day)
                       .CreateLogger();
         }
     }
