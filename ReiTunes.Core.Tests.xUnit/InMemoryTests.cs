@@ -322,5 +322,22 @@ namespace ReiTunes.Core.Tests.XUnit {
 
             Assert.Equal(2, repo.GetAllSerializedEvents().Count());
         }
+
+        [Theory]
+        [MemberData(nameof(AllReposToTest))]
+        public void EventCountWorks(IEventRepository repo) {
+            repo.CountOfAllEvents().Should().Be(0);
+
+            var agg = new SimpleTextAggregate("foo");
+            agg.Text = "bar";
+
+            repo.Save(_eventFactory.GetCreatedEvent(Guid.NewGuid(), "foo", "bar"));
+
+            repo.CountOfAllEvents().Should().Be(1);
+
+            repo.Save(_eventFactory.GetPlayedEvent(Guid.NewGuid()));
+
+            repo.CountOfAllEvents().Should().Be(2);
+        }
     }
 }

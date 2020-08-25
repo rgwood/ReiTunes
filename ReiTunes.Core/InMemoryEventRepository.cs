@@ -12,6 +12,8 @@ namespace ReiTunes.Core {
             return _events.Any(e => e.Id == eventId);
         }
 
+        public int CountOfAllEvents() => _events.Count();
+
         public IEnumerable<IEvent> GetAllEvents() {
             return _events;
         }

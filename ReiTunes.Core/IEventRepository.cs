@@ -13,6 +13,8 @@ namespace ReiTunes.Core {
 
         public IEnumerable<IEvent> GetAllEventsFromMachine(string machineName);
 
+        public int CountOfAllEvents();
+
         public void Save(IEvent @event);
 
         public void Save(IEnumerable<IEvent> events);
