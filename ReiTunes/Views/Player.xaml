@@ -132,10 +132,7 @@
                 <Rectangle Width="10" />
             </Grid>
             <Grid Padding="5">
-                <TextBox
-                    x:Name="FilterBox"
-                    PlaceholderText="Search"
-                    TextChanged="FilterBox_TextChanged" />
+                <TextBox x:Name="FilterBox" PlaceholderText="Search" />
                 <!--  Can't figure out how to make the icon not clash with the X delete button  -->
                 <!--<TextBlock
                     x:Name="findIcon"

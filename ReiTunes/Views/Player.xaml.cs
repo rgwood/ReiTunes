@@ -42,6 +42,7 @@ namespace ReiTunes {
             ViewModel.PropertyChanged += ViewModel_PropertyChanged;
 
             SetUpThumbnailAnimation();
+            libraryDataGrid.LostFocus += LibraryDataGrid_LostFocus;
         }
 
         private void ViewModel_PropertyChanged(object sender, System.ComponentModel.PropertyChangedEventArgs e) {
@@ -93,6 +94,11 @@ namespace ReiTunes {
         // Enter should start playing a file when in the file view
 
         #region KeyboardStuff
+
+        // For ease of implementation, this helps us reliably use enter to interpret a "filter now" request
+        private void LibraryDataGrid_LostFocus(object sender, RoutedEventArgs e) {
+            libraryDataGrid.SelectedItems.Clear();
+        }
 
         private void SetUpKeyboardAccelerators() {
             KeyboardAccelerator CreateAccelerator(VirtualKeyModifiers modifier, VirtualKey key,
@@ -158,22 +164,36 @@ namespace ReiTunes {
             }
         }
 
-        private void FilterBox_PreviewKeyDown(object sender, KeyRoutedEventArgs args) {
+        private async void FilterBox_PreviewKeyDown(object sender, KeyRoutedEventArgs args) {
             switch (args.Key) {
                 case VirtualKey.Escape:
-                    if (FilterBox.Text == "") {
-                        // hack: this just happens to move to the scrubbing control
-                        // TODO: find a way of changing focus to the scrubbing control that does
-                        // not rely on it being the next tab stop?
-                        FocusManager.TryMoveFocus(FocusNavigationDirection.Previous);
+
+                    if (libraryDataGrid.SelectedItems.Count > 0) {
+                        libraryDataGrid.SelectedItems.Clear();
                     }
                     else {
-                        FilterBox.Text = "";
+                        if (FilterBox.Text == "") {
+                            // hack: this just happens to move to the scrubbing control
+                            // TODO: find a way of changing focus to the scrubbing control that does
+                            // not rely on it being the next tab stop?
+                            FocusManager.TryMoveFocus(FocusNavigationDirection.Previous);
+                        }
+                        else {
+                            FilterBox.Text = "";
+                        }
                     }
+
+                    await FilterVMUsingFilterBoxText();
+
                     break;
 
                 case VirtualKey.Enter:
-                    OpenSelectedLibraryItem();
+                    if (libraryDataGrid.SelectedItems.Count > 0) {
+                        OpenSelectedLibraryItem();
+                    }
+                    else {
+                        await FilterVMUsingFilterBoxText();
+                    }
                     args.Handled = true;
                     break;
 
@@ -191,10 +211,15 @@ namespace ReiTunes {
             }
         }
 
+        private async Task FilterVMUsingFilterBoxText() {
+            var searchstring = FilterBox.Text;
+            await ViewModel.FilterItems(searchstring);
+        }
+
         private void HandleSpaceBar(object sender, KeyRoutedEventArgs args) {
-            if (args.Key == VirtualKey.Space) {
-                args.Handled = true;
-            }
+            //if (args.Key == VirtualKey.Space) {
+            //    args.Handled = true;
+            //}
         }
 
         private async void CoreWindow_KeyDown(Windows.UI.Core.CoreWindow sender, Windows.UI.Core.KeyEventArgs args) {
