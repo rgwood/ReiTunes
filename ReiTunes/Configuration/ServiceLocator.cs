@@ -40,7 +40,7 @@ namespace ReiTunes.Configuration {
 
             //serviceCollection.AddSingleton((provider) => new ServerCaller(provider.GetService<IHttpClientFactory>().CreateClient()));
 
-            var dbPath = Path.Combine(ApplicationData.Current.LocalFolder.Path, "library.db");
+            var dbPath = FileHelper.GetLibraryDbPath();
 
             serviceCollection.AddSingleton<SQLiteConnection>((_) => SQLiteHelpers.CreateFileDb(dbPath));
 
