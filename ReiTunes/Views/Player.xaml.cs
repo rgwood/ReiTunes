@@ -1,5 +1,6 @@
 ﻿using ReiTunes.Configuration;
 using ReiTunes.Core;
+using ReiTunes.Helpers;
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
@@ -138,6 +139,14 @@ namespace ReiTunes {
                 async (sender, args) => {
                     args.Handled = true;
                     await Launcher.LaunchFolderAsync(Windows.Storage.ApplicationData.Current.LocalFolder);
+                }));
+
+            //open library DB
+            KeyboardAccelerators.Add(CreateAccelerator(VirtualKeyModifiers.Control, VirtualKey.D,
+                async (sender, args) => {
+                    args.Handled = true;
+                    var dbFile = await FileHelper.GetLibraryDbFileAsync();
+                    await Launcher.LaunchFileAsync(dbFile);
                 }));
 
             //show selected item(s) in File Explorer
