@@ -66,12 +66,15 @@
                         <MediaPlayerElement.TransportControls>
                             <MediaTransportControls
                                 IsCompact="False"
-                                IsCompactOverlayEnabled="False"
-                                IsFastForwardButtonVisible="True"
-                                IsFastForwardEnabled="True"
-                                IsFastRewindButtonVisible="True"
-                                IsFastRewindEnabled="True"
+                                IsCompactOverlayButtonVisible="True"
+                                IsCompactOverlayEnabled="True"
                                 IsFullWindowButtonVisible="False"
+                                IsRepeatButtonVisible="True"
+                                IsRepeatEnabled="True"
+                                IsSkipBackwardButtonVisible="True"
+                                IsSkipBackwardEnabled="True"
+                                IsSkipForwardButtonVisible="True"
+                                IsSkipForwardEnabled="True"
                                 IsZoomButtonVisible="False"
                                 Style="{StaticResource CustomMediaTransportControlsStyle}" />
                         </MediaPlayerElement.TransportControls>
