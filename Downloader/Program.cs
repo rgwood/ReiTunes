@@ -27,12 +27,41 @@ namespace Downloader {
 
             if (item != null) {
                 try {
-                    // TODO: implement download
-
+                    Download(item.Url, item.Type);
                     InsertToFinished(conn, item);
                 }
                 catch (Exception ex) {
                     InsertToDeadLetter(conn, item, ex);
+                }
+            }
+        }
+
+        // TODO: handle video and audio differently
+        private static void Download(string url, string type) {
+            using (var process = new System.Diagnostics.Process()) {
+                process.StartInfo.FileName = "youtube-dl";
+                process.StartInfo.Arguments = url;
+
+                process.StartInfo.CreateNoWindow = true;
+                process.StartInfo.UseShellExecute = false;
+                process.StartInfo.RedirectStandardOutput = true;
+                process.StartInfo.RedirectStandardError = true;
+
+                process.OutputDataReceived += (sender, data) => Console.WriteLine(data.Data);
+                process.ErrorDataReceived += (sender, data) => Console.WriteLine(data.Data);
+
+                Console.WriteLine("[YOUTUBE-DL] STARTING...");
+
+                process.Start();
+                process.BeginOutputReadLine();
+                process.BeginErrorReadLine();
+                process.WaitForExit();
+
+
+                Console.WriteLine($"[YOUTUBE-DL] DONE!");
+
+                if(process.ExitCode != 0) {
+                    throw new Exception($"Youtube-dl failed, exit code {process.ExitCode}");
                 }
             }
         }
