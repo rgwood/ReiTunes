@@ -1,9 +1,9 @@
-﻿using Serilog;
+﻿using Microsoft.Data.Sqlite;
+using Serilog;
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
-using System.Data.SQLite;
 using System.Diagnostics;
 using System.Linq;
 using System.Runtime.CompilerServices;
@@ -26,13 +26,13 @@ namespace ReiTunes.Core {
         private readonly ILogger _logger;
         private readonly LibraryItemEventFactory _eventFactory;
 
-        public Library(SQLiteConnection connection, ServerCaller caller, ILogger logger)
+        public Library(SqliteConnection connection, ServerCaller caller, ILogger logger)
             : this(Environment.MachineName, connection, caller, logger, new Clock()) { }
 
-        public Library(string machineName, SQLiteConnection connection, ServerCaller caller, ILogger logger)
+        public Library(string machineName, SqliteConnection connection, ServerCaller caller, ILogger logger)
             : this(machineName, connection, caller, logger, new Clock()) { }
 
-        public Library(string machineName, SQLiteConnection connection, ServerCaller caller, ILogger logger, IClock clock) {
+        public Library(string machineName, SqliteConnection connection, ServerCaller caller, ILogger logger, IClock clock) {
             MachineName = machineName;
             _caller = caller;
             _logger = logger;
