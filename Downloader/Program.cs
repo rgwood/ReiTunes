@@ -3,7 +3,7 @@ using FluentAssertions;
 using ReiTunes.Core;
 using System;
 using System.ComponentModel.DataAnnotations;
-using System.Data.SQLite;
+using Microsoft.Data.Sqlite;
 using Xunit;
 
 namespace Downloader {
@@ -66,7 +66,7 @@ namespace Downloader {
             }
         }
 
-        private static DownloadItem PopQueue(SQLiteConnection conn) {
+        private static DownloadItem PopQueue(SqliteConnection conn) {
             var item = conn.QuerySingleOrDefault<DownloadItem>("select * from queue LIMIT 1;");
 
             if (item != null) {
@@ -76,21 +76,21 @@ namespace Downloader {
             return item;
         }
 
-        private static void InsertUrlToQueue(SQLiteConnection conn, string url, string type) {
+        private static void InsertUrlToQueue(SqliteConnection conn, string url, string type) {
             conn.Execute("insert into queue(Url, Type) values(@url, @type)", new { url, type });
         }
 
-        private static void InsertToFinished(SQLiteConnection conn, DownloadItem item) {
+        private static void InsertToFinished(SqliteConnection conn, DownloadItem item) {
             conn.Execute("insert into finished(Url, Type, CreatedTimestamp) values(@Url, @Type, @CreatedTimestamp)",
                 new { item.Url, item.Type, item.CreatedTimestamp });
         }
 
-        private static void InsertToDeadLetter(SQLiteConnection conn, DownloadItem item, Exception ex) {
+        private static void InsertToDeadLetter(SqliteConnection conn, DownloadItem item, Exception ex) {
             conn.Execute("insert into deadLetter(Url, Type, CreatedTimestamp, Exception) values(@Url, @Type, @CreatedTimestamp, @Ex)",
                 new { item.Url, item.Type, item.CreatedTimestamp, Ex = ex.ToString() });
         }
 
-        private static void CreateTablesIfNotExists(SQLiteConnection conn) {
+        private static void CreateTablesIfNotExists(SqliteConnection conn) {
             conn.Execute(@"
 CREATE TABLE IF NOT EXISTS
 queue(

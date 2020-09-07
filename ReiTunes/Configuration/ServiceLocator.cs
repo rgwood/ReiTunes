@@ -8,7 +8,7 @@ using ReiTunes.Services;
 using Serilog;
 using System;
 using System.Collections.Concurrent;
-using System.Data.SQLite;
+using Microsoft.Data.Sqlite;
 using System.IO;
 using System.Net.Http;
 using Windows.Storage;
@@ -42,7 +42,7 @@ namespace ReiTunes.Configuration {
 
             var dbPath = FileHelper.GetLibraryDbPath();
 
-            serviceCollection.AddSingleton<SQLiteConnection>((_) => SQLiteHelpers.CreateFileDb(dbPath));
+            serviceCollection.AddSingleton<SqliteConnection>((_) => SQLiteHelpers.CreateFileDb(dbPath));
 
             serviceCollection.AddSingleton<Library>();
 

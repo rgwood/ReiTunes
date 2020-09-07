@@ -1,7 +1,8 @@
-﻿using Serilog;
+﻿using Dapper;
+using Microsoft.Data.Sqlite;
+using Serilog;
 using System;
 using System.Collections.Generic;
-using System.Data.SQLite;
 using System.Diagnostics;
 using System.Linq;
 using System.Text;
@@ -11,10 +12,10 @@ namespace ReiTunes.Core {
     // https://stackoverflow.com/questions/54184301/platformnotsupportedexception-throws-when-using-dapper-with-wp
 
     public class SQLiteEventRepository : ISerializedEventRepository {
-        private readonly SQLiteConnection _conn;
+        private readonly SqliteConnection _conn;
         private readonly ILogger _logger;
 
-        public SQLiteEventRepository(SQLiteConnection conn, ILogger logger = null) {
+        public SQLiteEventRepository(SqliteConnection conn, ILogger logger = null) {
             _conn = conn;
             _logger = logger ?? LoggerHelpers.DoNothingLogger();
             if (_conn.State != System.Data.ConnectionState.Open) {
@@ -25,15 +26,7 @@ namespace ReiTunes.Core {
         }
 
         public bool ContainsEvent(Guid eventId) {
-            string sql = $"SELECT COUNT() FROM events WHERE Id ='{eventId}';";
-            var cmd = new SQLiteCommand(sql, _conn);
-            using var reader = cmd.ExecuteReader();
-
-            reader.Read();
-
-            var count = reader.GetInt32(0);
-
-            //var count = _conn.Query<long>($"SELECT COUNT() FROM events WHERE Id ='{eventId}';").Single();
+            var count = _conn.Query<long>($"SELECT COUNT() FROM events WHERE Id ='{eventId}';").Single();
             return count == 1;
         }
 
@@ -46,16 +39,7 @@ namespace ReiTunes.Core {
         }
 
         private List<string> GetSerializedEvents(string sql) {
-            var cmd = new SQLiteCommand(sql, _conn);
-            using var reader = cmd.ExecuteReader();
-
-            var result = new List<string>();
-
-            while (reader.Read()) {
-                result.Add(reader.GetString(0));
-            }
-
-            return result;
+            return _conn.Query<string>(sql).ToList();
         }
 
         public IEnumerable<IEvent> GetEvents(Guid aggregateId) {
@@ -93,11 +77,7 @@ namespace ReiTunes.Core {
 
         public int CountOfAllEvents() {
             string sql = $"SELECT COUNT() FROM events;";
-            var cmd = new SQLiteCommand(sql, _conn);
-            using var reader = cmd.ExecuteReader();
-            reader.Read();
-
-            return reader.GetInt32(0);
+            return _conn.QuerySingle<int>(sql);
         }
     }
 }
