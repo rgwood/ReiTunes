@@ -7,7 +7,7 @@ using FluentAssertions;
 using NuGet.Frameworks;
 using System.Diagnostics;
 using System.Collections;
-using System.Data.SQLite;
+using Microsoft.Data.Sqlite;
 using Serilog.Core;
 
 namespace ReiTunes.Core.Tests.XUnit {
@@ -24,7 +24,7 @@ namespace ReiTunes.Core.Tests.XUnit {
             {
                 new object[] { new InMemoryEventRepository() },
                 new object[] { new InMemoryJsonEventRepository() },
-                new object[] { new SQLiteEventRepository(new SQLiteConnection("DataSource=:memory:")) },
+                new object[] { new SQLiteEventRepository(new SqliteConnection("DataSource=:memory:")) },
             };
 
         // Just test that lists serialize and deserialize without failing. Had some issues with that earlier
@@ -311,7 +311,7 @@ namespace ReiTunes.Core.Tests.XUnit {
 
         [Fact]
         public void GetSerializedEventsWorks() {
-            var repo = new SQLiteEventRepository(new SQLiteConnection("DataSource=:memory:"));
+            var repo = new SQLiteEventRepository(new SqliteConnection("DataSource=:memory:"));
 
             var agg = new SimpleTextAggregate("foo");
             agg.Text = "bar";

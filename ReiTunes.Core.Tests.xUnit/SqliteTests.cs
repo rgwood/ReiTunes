@@ -1,10 +1,11 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Data.SQLite;
+using Microsoft.Data.Sqlite;
 using System.Diagnostics.Contracts;
 using System.Linq;
 using System.Text;
 using Xunit;
+using Dapper;
 
 namespace ReiTunes.Core.Tests.xUnit {
 
@@ -12,7 +13,7 @@ namespace ReiTunes.Core.Tests.xUnit {
         private const string MachineName = "Cornelius";
         private const string EventTableName = "events";
 
-        private SQLiteConnection _conn;
+        private SqliteConnection _conn;
 
         public SqliteTests() {
             _conn = SQLiteHelpers.CreateInMemoryDb();
@@ -66,21 +67,13 @@ namespace ReiTunes.Core.Tests.xUnit {
             Assert.ThrowsAny<Exception>(() => SaveEvent(@event, _conn));
         }
 
-        private void SaveEvent(IEvent @event, SQLiteConnection connection) {
+        private void SaveEvent(IEvent @event, SqliteConnection connection) {
             connection.InsertEvent(@event);
         }
 
         private long GetRowCount(string tableName) {
             // can't parameterize table names :(
-            using var cmd = new SQLiteCommand($"SELECT COUNT() FROM {tableName}", _conn);
-
-            cmd.Parameters.AddWithValue("@tableName", tableName);
-
-            using var reader = cmd.ExecuteReader();
-
-            reader.Read();
-
-            return reader.GetInt64(0);
+            return _conn.QuerySingle<long>($"SELECT COUNT() FROM {tableName}");
         }
     }
 }

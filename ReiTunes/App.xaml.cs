@@ -4,9 +4,12 @@ using Serilog;
 using System;
 using Windows.ApplicationModel;
 using Windows.ApplicationModel.Activation;
+using Windows.ApplicationModel.DataTransfer;
+using Windows.ApplicationModel.DataTransfer.ShareTarget;
 using Windows.Foundation;
 using Windows.UI.ViewManagement;
 using Windows.UI.Xaml;
+using Windows.UI.Xaml.Controls;
 
 namespace ReiTunes {
 
@@ -55,6 +58,22 @@ namespace ReiTunes {
 
         protected override async void OnActivated(IActivatedEventArgs args) {
             await Startup.ActivateAsync(args);
+        }
+
+        protected override async void OnShareTargetActivated(ShareTargetActivatedEventArgs args) {
+            ShareOperation shareOperation = args.ShareOperation;
+            if (shareOperation.Data.Contains(StandardDataFormats.WebLink)) {
+                Uri uri = await shareOperation.Data.GetWebLinkAsync();
+                if (uri != null) {
+
+                    var logger = ServiceLocator.Current.GetService<ILogger>();
+                    logger.Information("Received URI: {uri}", uri);
+                    args.ShareOperation.ReportCompleted();
+                    return;
+                }
+            }
+
+            args.ShareOperation.ReportError("Failed to share, couldn't get a URI");
         }
 
         private async void App_EnteredBackground(object sender, EnteredBackgroundEventArgs e) {
