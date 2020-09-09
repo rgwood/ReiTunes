@@ -1,8 +1,10 @@
 ﻿using Microsoft.Toolkit.Uwp.Helpers;
 using System;
 using System.Threading.Tasks;
+using Windows.ApplicationModel;
 using Windows.ApplicationModel.Core;
 using Windows.UI.Core;
+using Windows.UI.Xaml.Controls;
 
 namespace ReiTunes.Services
 {
@@ -14,16 +16,19 @@ namespace ReiTunes.Services
         internal static async Task ShowIfAppropriateAsync()
         {
             await CoreApplication.MainView.CoreWindow.Dispatcher.RunAsync(
-                // re-enable when we actually start using this feature
-#pragma warning disable CS1998 // Async method lacks 'await' operators and will run synchronously
                 CoreDispatcherPriority.Normal, async () =>
-#pragma warning restore CS1998 // Async method lacks 'await' operators and will run synchronously
                 {
                     if (SystemInformation.IsAppUpdated && !shown)
                     {
                         shown = true;
-                        //var dialog = new WhatsNewDialog();
-                        //await dialog.ShowAsync();
+                        var ver = Package.Current.Id.Version;
+
+                        ContentDialog dialog = new ContentDialog() {
+                            Title = "ReiTunes Was Updated",
+                            Content = $"Now on version {ver.Major}.{ver.Minor}.{ver.Build}.{ver.Revision}",
+                            CloseButtonText= "Cool"
+                        };
+                        await dialog.ShowAsync();
                     }
                 });
         }
