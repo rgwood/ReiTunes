@@ -1,12 +1,13 @@
-﻿using System;
-using System.Data.SQLite;
+﻿using Microsoft.Data.Sqlite;
+using System;
 using System.IO;
+using Dapper;
 
 namespace ReiTunes.Core {
 
     public static class SQLiteHelpers {
 
-        public static void CreateEventsTableIfNotExists(this SQLiteConnection conn) {
+        public static void CreateEventsTableIfNotExists(this SqliteConnection conn) {
             var sql = @"
 CREATE TABLE IF NOT EXISTS
 events(
@@ -17,45 +18,36 @@ events(
     MachineName TEXT NOT NULL,
     Serialized TEXT NOT NULL
 )";
-            conn.ExecuteNonQuery(sql);
+            conn.Execute(sql);
         }
 
-        public static void ExecuteNonQuery(this SQLiteConnection conn, string sql) {
-            using var cmd = new SQLiteCommand(sql, conn);
-            cmd.ExecuteNonQuery();
+        public static void ExecuteNonQuery(this SqliteConnection conn, string sql) {
+            conn.Execute(sql);
         }
 
-        public static void InsertEvent(this SQLiteConnection conn, IEvent @event) {
+        public static void InsertEvent(this SqliteConnection conn, IEvent @event) {
             var serialized = EventSerialization.Serialize(@event);
 
             var sql = @"INSERT INTO events(Id, AggregateId, AggregateType, CreatedTimeUtc, MachineName, Serialized)
                             VALUES(@Id, @AggregateId, @AggregateType, @CreatedTimeUtc, @MachineName, @Serialized);";
 
-            using var cmd = new SQLiteCommand(sql, conn);
-
-            cmd.Parameters.AddWithValue("@Id", @event.Id.ToString());
-
-            cmd.Parameters.AddWithValue("@AggregateId", @event.AggregateId.ToString());
-            cmd.Parameters.AddWithValue("@AggregateType", @event.AggregateType);
-            cmd.Parameters.AddWithValue("@CreatedTimeUtc", @event.CreatedTimeUtc);
-            cmd.Parameters.AddWithValue("@MachineName", @event.MachineName);
-            cmd.Parameters.AddWithValue("@Serialized", serialized);
-
-            cmd.ExecuteNonQuery();
+            conn.Execute(sql, new { Id = @event.Id.ToString(),
+               AggregateId = @event.AggregateId.ToString(),
+                @event.AggregateType,
+                @event.CreatedTimeUtc,
+                @event.MachineName,
+                Serialized = serialized
+            });
         }
 
-        public static SQLiteConnection CreateFileDb(string filePath) {
-            if (!File.Exists(filePath)) {
-                SQLiteConnection.CreateFile(filePath);
-            }
-
-            var connection = new SQLiteConnection($"DataSource={filePath}");
+        public static SqliteConnection CreateFileDb(string filePath) {
+            var connection = new SqliteConnection($"Data Source={filePath}");
             connection.Open();
             return connection;
         }
 
-        public static SQLiteConnection CreateInMemoryDb() {
-            var connection = new SQLiteConnection("DataSource=:memory:");
+        public static SqliteConnection CreateInMemoryDb() {
+            var connection = new SqliteConnection("DataSource=:memory:");
             connection.Open();
             return connection;
         }

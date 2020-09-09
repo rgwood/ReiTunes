@@ -7,12 +7,13 @@
   </PropertyGroup>
 
    <ItemGroup>
+     <PackageReference Include="Dapper" Version="2.0.35" />
      <PackageReference Include="Microsoft.AspNetCore.WebUtilities" Version="2.2.0" />
+     <PackageReference Include="Microsoft.Data.Sqlite" Version="3.1.7" />
      <PackageReference Include="Microsoft.Toolkit.Mvvm" Version="7.0.0-preview2" />
      <PackageReference Include="Newtonsoft.Json" Version="12.0.3" />
      <PackageReference Include="Serilog.Formatting.Compact" Version="1.1.0" />
      <PackageReference Include="Serilog.Sinks.Async" Version="1.4.0" />
      <PackageReference Include="Serilog.Sinks.File" Version="4.1.0" />
-     <PackageReference Include="System.Data.SQLite.Core" Version="1.0.113.1" />
    </ItemGroup>
 </Project>

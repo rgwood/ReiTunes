@@ -3,7 +3,7 @@ using FluentAssertions;
 using ReiTunes.Core;
 using System;
 using System.ComponentModel.DataAnnotations;
-using System.Data.SQLite;
+using Microsoft.Data.Sqlite;
 using Xunit;
 
 namespace Downloader {
@@ -11,6 +11,7 @@ namespace Downloader {
     public class Program {
         public const string AudioType = "Audio";
         public const string VideoType = "Video";
+        private const string YoutubeDlPath = "/usr/local/bin/youtube-dl";
 
         public class DownloadItem {
             public string Url { get; set; }
@@ -20,24 +21,96 @@ namespace Downloader {
 
         private static void Main(string[] args) {
             // TODO: get DB from filesystem. Or args?
-            var conn = SQLiteHelpers.CreateInMemoryDb();
+            var conn = SQLiteHelpers.CreateFileDb("/mnt/QNAP1/Downloads/Music/downloadQueue.db");
             CreateTablesIfNotExists(conn);
 
             var item = PopQueue(conn);
 
             if (item != null) {
                 try {
-                    // TODO: implement download
-
+                    Download(item.Url, item.Type);
                     InsertToFinished(conn, item);
                 }
                 catch (Exception ex) {
+                    Console.WriteLine("Failed :(");
+                    Console.WriteLine(ex.ToString());
                     InsertToDeadLetter(conn, item, ex);
                 }
             }
         }
 
-        private static DownloadItem PopQueue(SQLiteConnection conn) {
+        private static void Test() {
+            using (var process = new System.Diagnostics.Process()) {
+                process.StartInfo.FileName = "youtube-dl";
+
+                process.StartInfo.WorkingDirectory = "/mnt/QNAP1/Downloads/Music/";
+                        
+
+                process.StartInfo.CreateNoWindow = true;
+                process.StartInfo.UseShellExecute = false;
+                process.StartInfo.RedirectStandardOutput = true;
+                process.StartInfo.RedirectStandardError = true;
+
+                process.OutputDataReceived += (sender, data) => Console.WriteLine(data.Data);
+                process.ErrorDataReceived += (sender, data) => Console.WriteLine(data.Data);
+
+                Console.WriteLine("[YOUTUBE-DL] STARTING...");
+
+                process.Start();
+                process.BeginOutputReadLine();
+                process.BeginErrorReadLine();
+                process.WaitForExit();
+
+                Console.WriteLine($"[YOUTUBE-DL] DONE!");
+
+                if (process.ExitCode != 0) {
+                    throw new Exception($"Youtube-dl failed, exit code {process.ExitCode}");
+                }
+            }
+        }
+
+        private static void Download(string url, string type) {
+            using (var process = new System.Diagnostics.Process()) {
+                process.StartInfo.FileName = YoutubeDlPath;
+
+                switch (type.ToUpper()) {
+                    case "AUDIO":
+                        process.StartInfo.Arguments = $"--extract-audio --audio-format mp3 -- {url}";
+                        process.StartInfo.WorkingDirectory = "/mnt/QNAP1/Downloads/Music/";
+                        break;
+                    case "VIDEO":
+                        process.StartInfo.Arguments = url;
+                        process.StartInfo.WorkingDirectory = "/mnt/QNAP1/Downloads/YouTube/";
+                        break;
+                    default:
+                        throw new Exception($"unexpected type '{type}'");
+                }
+
+                process.StartInfo.CreateNoWindow = true;
+                process.StartInfo.UseShellExecute = false;
+                process.StartInfo.RedirectStandardOutput = true;
+                process.StartInfo.RedirectStandardError = true;
+
+                process.OutputDataReceived += (sender, data) => Console.WriteLine(data.Data);
+                process.ErrorDataReceived += (sender, data) => Console.WriteLine(data.Data);
+
+                Console.WriteLine("[YOUTUBE-DL] STARTING...");
+
+                process.Start();
+                process.BeginOutputReadLine();
+                process.BeginErrorReadLine();
+                process.WaitForExit();
+
+
+                Console.WriteLine($"[YOUTUBE-DL] DONE!");
+
+                if (process.ExitCode != 0) {
+                    throw new Exception($"Youtube-dl failed, exit code {process.ExitCode}");
+                }
+            }
+        }
+
+        private static DownloadItem PopQueue(SqliteConnection conn) {
             var item = conn.QuerySingleOrDefault<DownloadItem>("select * from queue LIMIT 1;");
 
             if (item != null) {
@@ -47,21 +120,21 @@ namespace Downloader {
             return item;
         }
 
-        private static void InsertUrlToQueue(SQLiteConnection conn, string url, string type) {
+        private static void InsertUrlToQueue(SqliteConnection conn, string url, string type) {
             conn.Execute("insert into queue(Url, Type) values(@url, @type)", new { url, type });
         }
 
-        private static void InsertToFinished(SQLiteConnection conn, DownloadItem item) {
+        private static void InsertToFinished(SqliteConnection conn, DownloadItem item) {
             conn.Execute("insert into finished(Url, Type, CreatedTimestamp) values(@Url, @Type, @CreatedTimestamp)",
                 new { item.Url, item.Type, item.CreatedTimestamp });
         }
 
-        private static void InsertToDeadLetter(SQLiteConnection conn, DownloadItem item, Exception ex) {
+        private static void InsertToDeadLetter(SqliteConnection conn, DownloadItem item, Exception ex) {
             conn.Execute("insert into deadLetter(Url, Type, CreatedTimestamp, Exception) values(@Url, @Type, @CreatedTimestamp, @Ex)",
                 new { item.Url, item.Type, item.CreatedTimestamp, Ex = ex.ToString() });
         }
 
-        private static void CreateTablesIfNotExists(SQLiteConnection conn) {
+        private static void CreateTablesIfNotExists(SqliteConnection conn) {
             conn.Execute(@"
 CREATE TABLE IF NOT EXISTS
 queue(
@@ -73,7 +146,7 @@ queue(
             conn.Execute(@"
 CREATE TABLE IF NOT EXISTS
 finished(
-    Url TEXT PRIMARY KEY NOT NULL,
+    Url TEXT NOT NULL,
     Type TEXT NOT NULL,
     CreatedTimestamp TEXT NOT NULL,
     FinishedTimestamp TEXT DEFAULT CURRENT_TIMESTAMP
@@ -81,7 +154,7 @@ finished(
             conn.Execute(@"
 CREATE TABLE IF NOT EXISTS
 deadLetter(
-    Url TEXT PRIMARY KEY NOT NULL,
+    Url TEXT NOT NULL,
     Type TEXT NOT NULL,
     CreatedTimestamp TEXT NOT NULL,
     Exception TEXT,
@@ -134,6 +207,11 @@ deadLetter(
             InsertToDeadLetter(db, item, new NullReferenceException());
 
             db.ExecuteScalar<int>("select count(*) from deadLetter").Should().Be(1);
+
+
+            InsertToDeadLetter(db, item, new NullReferenceException());
+
+            db.ExecuteScalar<int>("select count(*) from deadLetter").Should().Be(2);
         }
     }
 }
