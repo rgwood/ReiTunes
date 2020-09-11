@@ -178,6 +178,10 @@ namespace ReiTunes {
             return folder;
         }
 
+        public async Task OpenLibraryFolder() {
+            await Launcher.LaunchFolderAsync(_libraryFolder);
+        }
+
         private string GetFileNameFromFullPath(string fullPath) => fullPath.Split('/').Last();
 
         public async void ChangeSource(LibraryItem libraryItemToPlay) {

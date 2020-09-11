@@ -142,6 +142,13 @@ namespace ReiTunes {
                     await Launcher.LaunchFolderAsync(Windows.Storage.ApplicationData.Current.LocalFolder);
                 }));
 
+            //open music folder
+            KeyboardAccelerators.Add(CreateAccelerator(VirtualKeyModifiers.Control, VirtualKey.M,
+                async (sender, args) => {
+                    args.Handled = true;
+                    await ViewModel.OpenLibraryFolder();
+                }));
+
             //open library DB
             KeyboardAccelerators.Add(CreateAccelerator(VirtualKeyModifiers.Control, VirtualKey.D,
                 async (sender, args) => {
