@@ -43,7 +43,8 @@ namespace ReiTunes {
             ViewModel.PropertyChanged += ViewModel_PropertyChanged;
 
             SetUpThumbnailAnimation();
-            libraryDataGrid.LostFocus += LibraryDataGrid_LostFocus;
+            // this breaks editing :(
+            //libraryDataGrid.LostFocus += LibraryDataGrid_LostFocus;
         }
 
         private void ViewModel_PropertyChanged(object sender, System.ComponentModel.PropertyChangedEventArgs e) {
