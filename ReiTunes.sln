@@ -18,15 +18,13 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "ReiTunes.Core", "ReiTunes.C
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "ReiTunes.Core.Tests.xUnit", "ReiTunes.Core.Tests.xUnit\ReiTunes.Core.Tests.xUnit.csproj", "{EB6B2F04-3001-4B92-A95B-7E1A39A7AF3B}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "EventSourcingTester", "EventSourcingTester\EventSourcingTester.csproj", "{760C6FB8-5A8F-4317-975B-17F5E1693BF7}"
-EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "ReiTunes.AzureFunctions", "ReiTunes.AzureFunctions\ReiTunes.AzureFunctions.csproj", "{E124AE22-EA05-4E97-9F83-C4DFCB4E6996}"
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "ReiTunes.Server", "ReiTunes.Server\ReiTunes.Server.csproj", "{E46AAC53-2EAA-4E50-A78A-69C3A4A52CF3}"
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "ReiTunes.Server.Tests", "ReiTunes.Server.Tests\ReiTunes.Server.Tests.csproj", "{818B69F1-8781-46D9-B6D2-2632E99C4A57}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Downloader", "Downloader\Downloader.csproj", "{B34681F3-064D-49FD-800C-99887B1D0B3F}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Downloader", "Downloader\Downloader.csproj", "{B34681F3-064D-49FD-800C-99887B1D0B3F}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -126,32 +124,6 @@ Global
 		{EB6B2F04-3001-4B92-A95B-7E1A39A7AF3B}.Release|x64.ActiveCfg = Release|Any CPU
 		{EB6B2F04-3001-4B92-A95B-7E1A39A7AF3B}.Release|x86.ActiveCfg = Release|Any CPU
 		{EB6B2F04-3001-4B92-A95B-7E1A39A7AF3B}.Release|x86.Build.0 = Release|Any CPU
-		{760C6FB8-5A8F-4317-975B-17F5E1693BF7}.Debug|Any CPU.ActiveCfg = Debug|x86
-		{760C6FB8-5A8F-4317-975B-17F5E1693BF7}.Debug|ARM.ActiveCfg = Debug|ARM
-		{760C6FB8-5A8F-4317-975B-17F5E1693BF7}.Debug|ARM.Build.0 = Debug|ARM
-		{760C6FB8-5A8F-4317-975B-17F5E1693BF7}.Debug|ARM.Deploy.0 = Debug|ARM
-		{760C6FB8-5A8F-4317-975B-17F5E1693BF7}.Debug|ARM64.ActiveCfg = Debug|ARM64
-		{760C6FB8-5A8F-4317-975B-17F5E1693BF7}.Debug|ARM64.Build.0 = Debug|ARM64
-		{760C6FB8-5A8F-4317-975B-17F5E1693BF7}.Debug|ARM64.Deploy.0 = Debug|ARM64
-		{760C6FB8-5A8F-4317-975B-17F5E1693BF7}.Debug|x64.ActiveCfg = Debug|x64
-		{760C6FB8-5A8F-4317-975B-17F5E1693BF7}.Debug|x64.Build.0 = Debug|x64
-		{760C6FB8-5A8F-4317-975B-17F5E1693BF7}.Debug|x64.Deploy.0 = Debug|x64
-		{760C6FB8-5A8F-4317-975B-17F5E1693BF7}.Debug|x86.ActiveCfg = Debug|x86
-		{760C6FB8-5A8F-4317-975B-17F5E1693BF7}.Debug|x86.Build.0 = Debug|x86
-		{760C6FB8-5A8F-4317-975B-17F5E1693BF7}.Debug|x86.Deploy.0 = Debug|x86
-		{760C6FB8-5A8F-4317-975B-17F5E1693BF7}.Release|Any CPU.ActiveCfg = Release|x86
-		{760C6FB8-5A8F-4317-975B-17F5E1693BF7}.Release|ARM.ActiveCfg = Release|ARM
-		{760C6FB8-5A8F-4317-975B-17F5E1693BF7}.Release|ARM.Build.0 = Release|ARM
-		{760C6FB8-5A8F-4317-975B-17F5E1693BF7}.Release|ARM.Deploy.0 = Release|ARM
-		{760C6FB8-5A8F-4317-975B-17F5E1693BF7}.Release|ARM64.ActiveCfg = Release|ARM64
-		{760C6FB8-5A8F-4317-975B-17F5E1693BF7}.Release|ARM64.Build.0 = Release|ARM64
-		{760C6FB8-5A8F-4317-975B-17F5E1693BF7}.Release|ARM64.Deploy.0 = Release|ARM64
-		{760C6FB8-5A8F-4317-975B-17F5E1693BF7}.Release|x64.ActiveCfg = Release|x64
-		{760C6FB8-5A8F-4317-975B-17F5E1693BF7}.Release|x64.Build.0 = Release|x64
-		{760C6FB8-5A8F-4317-975B-17F5E1693BF7}.Release|x64.Deploy.0 = Release|x64
-		{760C6FB8-5A8F-4317-975B-17F5E1693BF7}.Release|x86.ActiveCfg = Release|x86
-		{760C6FB8-5A8F-4317-975B-17F5E1693BF7}.Release|x86.Build.0 = Release|x86
-		{760C6FB8-5A8F-4317-975B-17F5E1693BF7}.Release|x86.Deploy.0 = Release|x86
 		{E124AE22-EA05-4E97-9F83-C4DFCB4E6996}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
 		{E124AE22-EA05-4E97-9F83-C4DFCB4E6996}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{E124AE22-EA05-4E97-9F83-C4DFCB4E6996}.Debug|ARM.ActiveCfg = Debug|Any CPU
