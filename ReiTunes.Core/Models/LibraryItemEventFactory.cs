@@ -9,10 +9,6 @@ namespace ReiTunes.Core {
         private readonly string _machineName;
         private readonly IClock _clock;
 
-        // Resets to zero every time the event factory is created. This is good enough for my needs right now but
-        // maybe we should persist this?
-        private long _currentLocalId;
-
         public LibraryItemEventFactory() : this(Environment.MachineName, new Clock()) {
         }
 
