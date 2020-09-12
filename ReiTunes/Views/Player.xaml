@@ -3,6 +3,7 @@
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:controls="using:Microsoft.Toolkit.Uwp.UI.Controls"
+    xmlns:converters="using:ReiTunes.Core.Converters"
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
     xmlns:local="using:ReiTunes"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
@@ -81,6 +82,12 @@
                     </MediaPlayerElement>
                 </StackPanel>
                 <StackPanel Grid.Column="2" VerticalAlignment="Center">
+                    <winui:ProgressBar
+                        Margin="0,0,0,0"
+                        HorizontalAlignment="Stretch"
+                        IsIndeterminate="True"
+                        Opacity="{x:Bind converters:VisibilityConverter.OpacityOrFromBools(ViewModel.PullEventsCommand.IsRunning, ViewModel.PushEventsCommand.IsRunning), Mode=OneWay}" />
+
                     <Button
                         x:Name="pullButton"
                         Margin="0,5,5,5"
@@ -91,6 +98,7 @@
                         ToolTipService.ToolTip="Ctrl+P">
                         Pull
                     </Button>
+
                     <Button
                         x:Name="pushButton"
                         Margin="0,5,5,5"
