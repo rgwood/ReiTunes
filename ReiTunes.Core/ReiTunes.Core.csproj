@@ -16,4 +16,10 @@
      <PackageReference Include="Serilog.Sinks.Async" Version="1.4.0" />
      <PackageReference Include="Serilog.Sinks.File" Version="4.1.0" />
    </ItemGroup>
+
+   <ItemGroup>
+     <Reference Include="Windows.Foundation.UniversalApiContract">
+       <HintPath>..\..\..\..\..\..\Program Files (x86)\Windows Kits\10\References\10.0.18362.0\Windows.Foundation.UniversalApiContract\8.0.0.0\Windows.Foundation.UniversalApiContract.winmd</HintPath>
+     </Reference>
+   </ItemGroup>
 </Project>
