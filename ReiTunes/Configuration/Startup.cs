@@ -9,25 +9,21 @@ using Windows.ApplicationModel.Activation;
 using Windows.UI.Xaml;
 using Windows.UI.Xaml.Controls;
 
-namespace ReiTunes.Services
-{
+namespace ReiTunes.Services {
+
     // For more information on understanding and extending activation flow see
     // https://github.com/Microsoft/WindowsTemplateStudio/blob/master/docs/UWP/activation.md
-    static internal class Startup
-    {
+    static internal class Startup {
         static private readonly ServiceCollection _serviceCollection = new ServiceCollection();
         static private readonly Type _startupViewType = typeof(Player);
 
-        static public async Task ActivateAsync(object activationArgs)
-        {
-            if (IsInteractive(activationArgs))
-            {
+        static public async Task ActivateAsync(object activationArgs) {
+            if (IsInteractive(activationArgs)) {
                 ServiceLocator.Configure(_serviceCollection);
 
                 // Do not repeat app initialization when the Window already has content,
                 // just ensure that the window is active
-                if (Window.Current.Content == null)
-                {
+                if (Window.Current.Content == null) {
                     // Create a Frame to act as the navigation context
                     Window.Current.Content = new Frame();
                 }
@@ -37,11 +33,9 @@ namespace ReiTunes.Services
             // will navigate to the first page
             await HandleActivationAsync(activationArgs);
 
-            if (IsInteractive(activationArgs))
-            {
+            if (IsInteractive(activationArgs)) {
                 var activation = activationArgs as IActivatedEventArgs;
-                if (activation.PreviousExecutionState == ApplicationExecutionState.Terminated)
-                {
+                if (activation.PreviousExecutionState == ApplicationExecutionState.Terminated) {
                     await ServiceLocator.Current.GetService<SuspendAndResumeService>().RestoreSuspendAndResumeData();
                 }
 
@@ -53,40 +47,33 @@ namespace ReiTunes.Services
             }
         }
 
-        static private async Task HandleActivationAsync(object activationArgs)
-        {
+        static private async Task HandleActivationAsync(object activationArgs) {
             var activationHandler = GetActivationHandlers()
                                                 .FirstOrDefault(h => h.CanHandle(activationArgs));
 
-            if (activationHandler != null)
-            {
+            if (activationHandler != null) {
                 await activationHandler.HandleAsync(activationArgs);
             }
 
-            if (IsInteractive(activationArgs))
-            {
+            if (IsInteractive(activationArgs)) {
                 var defaultHandler = new DefaultActivationHandler(_startupViewType);
-                if (defaultHandler.CanHandle(activationArgs))
-                {
+                if (defaultHandler.CanHandle(activationArgs)) {
                     await defaultHandler.HandleAsync(activationArgs);
                 }
             }
         }
 
-        static private async Task StartupAsync()
-        {
+        static private async Task StartupAsync() {
             await WhatsNewDisplayService.ShowIfAppropriateAsync();
-            await FirstRunDisplayService.ShowIfAppropriateAsync();
+            await FirstRunService.ShowIfAppropriateAsync();
         }
 
-        static private IEnumerable<ActivationHandler> GetActivationHandlers()
-        {
+        static private IEnumerable<ActivationHandler> GetActivationHandlers() {
             yield return ServiceLocator.Current.GetService<SuspendAndResumeService>();
             yield return ServiceLocator.Current.GetService<CommandLineActivationHandler>();
         }
 
-        static private bool IsInteractive(object args)
-        {
+        static private bool IsInteractive(object args) {
             return args is IActivatedEventArgs;
         }
     }
