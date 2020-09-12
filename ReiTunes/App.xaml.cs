@@ -17,7 +17,7 @@ namespace ReiTunes {
     /// Provides application-specific behavior to supplement the default Application class.
     /// </summary>
     sealed partial class App : Application {
-        private readonly Size MainWindowSize = new Size(800, 650);
+        //private readonly Size MainWindowSize = new Size(800, 650);
 
         /// <summary>
         /// Initializes the singleton application object.  This is the first line of authored code
@@ -28,8 +28,10 @@ namespace ReiTunes {
 
             // Close the application when the primary window closes
             //ApplicationView.GetForCurrentView().Consolidated += App_Consolidated;
-            ApplicationView.PreferredLaunchViewSize = MainWindowSize;
-            ApplicationView.PreferredLaunchWindowingMode = ApplicationViewWindowingMode.PreferredLaunchViewSize;
+            //ApplicationView.PreferredLaunchViewSize = MainWindowSize;
+            //ApplicationView.PreferredLaunchWindowingMode = ApplicationViewWindowingMode.PreferredLaunchViewSize;
+
+            ApplicationView.PreferredLaunchWindowingMode = ApplicationViewWindowingMode.Maximized;
 
             EnteredBackground += App_EnteredBackground;
             Resuming += App_Resuming;
@@ -65,7 +67,6 @@ namespace ReiTunes {
             if (shareOperation.Data.Contains(StandardDataFormats.WebLink)) {
                 Uri uri = await shareOperation.Data.GetWebLinkAsync();
                 if (uri != null) {
-
                     var logger = ServiceLocator.Current.GetService<ILogger>();
                     logger.Information("Received URI: {uri}", uri);
                     args.ShareOperation.ReportCompleted();
