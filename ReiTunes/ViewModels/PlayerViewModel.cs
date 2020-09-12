@@ -55,8 +55,12 @@ namespace ReiTunes {
             get { return _libraryItems; }
             set {
                 Set(ref _libraryItems, value);
-                VisibleItems = new ObservableCollection<LibraryItem>(value);
+                SetVisibleItemsToDefaultSortedAllLibraryItems();
             }
+        }
+
+        private void SetVisibleItemsToDefaultSortedAllLibraryItems() {
+            VisibleItems = new ObservableCollection<LibraryItem>(LibraryItems.OrderByDescending(v => v.CreatedTimeUtc));
         }
 
         public ObservableCollection<LibraryItem> VisibleItems {
@@ -126,11 +130,17 @@ namespace ReiTunes {
         public async Task FilterItems(string filterString) {
             var sw = Stopwatch.StartNew();
 
-            var filteredItems = await Task.Run(() => FuzzyMatcher.FuzzyMatch(filterString, LibraryItems));
+            if (!string.IsNullOrEmpty(filterString)) {
+                var filteredItems = await Task.Run(() => FuzzyMatcher.FuzzyMatch(filterString, LibraryItems));
 
-            _logger.Information("Fuzzy match time: {ElapsedMs}", sw.ElapsedMilliseconds);
+                _logger.Information("Fuzzy match time: {ElapsedMs}", sw.ElapsedMilliseconds);
 
-            VisibleItems = filteredItems;
+                VisibleItems = filteredItems;
+            }
+            else {
+                SetVisibleItemsToDefaultSortedAllLibraryItems();
+            }
+
             _logger.Information("Total filter time: {ElapsedMs}", sw.ElapsedMilliseconds);
         }
 

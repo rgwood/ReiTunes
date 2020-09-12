@@ -185,6 +185,7 @@
             RowEditEnded="libraryDataGrid_RowEditEnded"
             RowGroupHeaderPropertyNameAlternative="Range"
             SelectionMode="Extended"
+            Sorting="libraryDataGrid_Sorting"
             VerticalScrollBarVisibility="Visible">
             <controls:DataGrid.Columns>
                 <controls:DataGridTextColumn
