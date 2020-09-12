@@ -1,4 +1,5 @@
-﻿using ReiTunes.Configuration;
+﻿using Microsoft.Toolkit.Uwp.UI.Controls;
+using ReiTunes.Configuration;
 using ReiTunes.Core;
 using ReiTunes.Helpers;
 using System;
@@ -303,6 +304,26 @@ namespace ReiTunes {
             }
 
             _thumbNailIsRotating = !_thumbNailIsRotating;
+        }
+
+        private void libraryDataGrid_Sorting(object sender, Microsoft.Toolkit.Uwp.UI.Controls.DataGridColumnEventArgs e) {
+            //TODO: implement
+            //Use the Tag property to pass the bound column name for the sorting implementation
+            //if (e.Column.Tag.ToString() == "") {
+            //    //Implement sort on the column "Range" using LINQ
+            //    if (e.Column.SortDirection == null || e.Column.SortDirection == DataGridSortDirection.Descending) {
+            //        libraryDataGrid.ItemsSource = new ObservableCollection<Mountain>(from item in _items
+            //                                                            orderby item.Range ascending
+            //                                                            select item);
+            //        e.Column.SortDirection = DataGridSortDirection.Ascending;
+            //    }
+            //    else {
+            //        dg.ItemsSource = new ObservableCollection<Mountain>(from item in _items
+            //                                                            orderby item.Range descending
+            //                                                            select item);
+            //        e.Column.SortDirection = DataGridSortDirection.Descending;
+            //    }
+            //}
         }
     }
 }
