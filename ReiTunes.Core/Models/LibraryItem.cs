@@ -95,6 +95,7 @@ namespace ReiTunes.Core {
             AggregateId = @event.AggregateId;
             _name = @event.Name;
             _filePath = @event.FilePath;
+            CreatedTimeUtc = @event.CreatedTimeUtc;
         }
 
         private void Apply(LibraryItemPlayedEvent @event) {
