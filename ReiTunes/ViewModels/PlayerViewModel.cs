@@ -204,41 +204,52 @@ namespace ReiTunes {
             var folder = await GetStorageFolderForItem(libraryItemToPlay);
             var storageItem = await folder.TryGetItemAsync(fileName);
 
-            if (storageItem == null) // file not found, download it
-            {
+            if (storageItem == null) { // file not found, download it
                 // Bad things happen if we try to download a 2nd file while one is already in progress
                 // TODO: make this a proper lock
                 if (DownloadInProgress)
                     return;
 
-                StorageFile downloadFile = await DownloadMusicFile(filePath, fileName, folder);
-                storageItem = downloadFile;
-            }
+                CurrentlyPlayingItem = libraryItemToPlay;
+                await DownloadAndStartMusicFile(filePath, fileName, folder, libraryItemToPlay);
 
-            if (storageItem.IsOfType(StorageItemTypes.Folder)) {
+                //var mediaPlaybackItem = new MediaPlaybackItem(mediaSource);
+
+                //Source = mediaPlaybackItem;
+
+                //await UpdateSystemMediaTransportControls(libraryItemToPlay, mediaPlaybackItem);
+            }
+            else if (storageItem.IsOfType(StorageItemTypes.Folder)) {
                 return;
             }
-
-            if (storageItem.IsOfType(StorageItemTypes.File)) {
+            else if (storageItem.IsOfType(StorageItemTypes.File)) {
                 var file = (StorageFile)storageItem;
+
                 var mediaPlaybackItem = new MediaPlaybackItem(MediaSource.CreateFromStorageFile(file));
 
                 Source = mediaPlaybackItem;
 
                 CurrentlyPlayingItem = libraryItemToPlay;
-                MediaItemDisplayProperties props = mediaPlaybackItem.GetDisplayProperties();
-                props.Type = Windows.Media.MediaPlaybackType.Music;
-                props.MusicProperties.Title = libraryItemToPlay.Name;
+                await UpdateSystemMediaTransportControls(libraryItemToPlay, mediaPlaybackItem, file);
+            }
+        }
 
-                if (libraryItemToPlay.Artist != null) {
-                    props.MusicProperties.Artist = libraryItemToPlay.Artist;
-                }
+        private async Task UpdateSystemMediaTransportControls(LibraryItem libraryItemToPlay, MediaPlaybackItem mediaPlaybackItem,
+            StorageFile fileWithThumbnail = null) {
+            MediaItemDisplayProperties props = mediaPlaybackItem.GetDisplayProperties();
+            props.Type = Windows.Media.MediaPlaybackType.Music;
+            props.MusicProperties.Title = libraryItemToPlay.Name;
 
-                if (libraryItemToPlay.Album != null) {
-                    props.MusicProperties.AlbumTitle = libraryItemToPlay.Album;
-                }
+            if (libraryItemToPlay.Artist != null) {
+                props.MusicProperties.Artist = libraryItemToPlay.Artist;
+            }
 
-                var thumbnail = await file.GetThumbnailAsync(ThumbnailMode.MusicView, 400, ThumbnailOptions.UseCurrentScale);
+            if (libraryItemToPlay.Album != null) {
+                props.MusicProperties.AlbumTitle = libraryItemToPlay.Album;
+            }
+
+            if (fileWithThumbnail != null) {
+                var thumbnail = await fileWithThumbnail.GetThumbnailAsync(ThumbnailMode.MusicView, 400, ThumbnailOptions.UseCurrentScale);
 
                 if (thumbnail != null && thumbnail.Type == ThumbnailType.Image) {
                     props.Thumbnail = RandomAccessStreamReference.CreateFromStream(thumbnail);
@@ -249,22 +260,34 @@ namespace ReiTunes {
                 else {
                     CurrentlyPlayingItemThumbnail = null;
                 }
-
-                mediaPlaybackItem.ApplyDisplayProperties(props);
             }
+
+            mediaPlaybackItem.ApplyDisplayProperties(props);
         }
 
-        private async Task<StorageFile> DownloadMusicFile(string relativeFilePath, string fileName, StorageFolder folderToSaveTo) {
+        private async Task<MediaSource> DownloadAndStartMusicFile(string relativeFilePath, string fileName, StorageFolder folderToSaveTo, LibraryItem libraryItemToPlay) {
             _logger.Information("Downloading music file {filePath}", relativeFilePath);
             var downloadUri = new Uri(_cloudBaseUri, relativeFilePath);
             var downloadFile = await folderToSaveTo.CreateFileAsync(fileName);
             DownloadInProgress = true;
             BackgroundDownloader downloader = new BackgroundDownloader();
             DownloadOperation download = downloader.CreateDownload(downloadUri, downloadFile);
+
+            download.IsRandomAccessRequired = true;
+
             Progress<DownloadOperation> progressCallback = new Progress<DownloadOperation>(HandleDownloadProgress);
-            await download.StartAsync().AsTask(progressCallback);
+            var downloadTask = download.StartAsync().AsTask(progressCallback);
+            var mediaSource = MediaSource.CreateFromDownloadOperation(download);
+
+            var mediaPlaybackItem = new MediaPlaybackItem(mediaSource);
+
+            Source = mediaPlaybackItem;
+
+            await UpdateSystemMediaTransportControls(libraryItemToPlay, mediaPlaybackItem);
+
+            await downloadTask;
             DownloadInProgress = false;
-            return downloadFile;
+            return mediaSource;
         }
 
         private void HandleDownloadProgress(DownloadOperation download) {
