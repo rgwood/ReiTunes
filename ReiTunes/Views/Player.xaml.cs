@@ -7,6 +7,7 @@ using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.Linq;
+using System.Reactive.Linq;
 using System.Threading.Tasks;
 using Windows.Foundation;
 using Windows.Media.Playback;
@@ -44,8 +45,16 @@ namespace ReiTunes {
             ViewModel.PropertyChanged += ViewModel_PropertyChanged;
 
             SetUpThumbnailAnimation();
-            // this breaks editing :(
-            //libraryDataGrid.LostFocus += LibraryDataGrid_LostFocus;
+
+            // without throttling, the DataGrid can't refresh fast enough to keep up with typing
+            // I don't love this solution because it adds delay to the first keystroke
+            // TODO: better Rx query that returns right away.
+            var textChangedSequence =
+                System.Reactive.Linq.Observable.FromEventPattern<TextChangedEventArgs>(FilterBox,
+                nameof(FilterBox.TextChanged))
+                .Throttle(TimeSpan.FromMilliseconds(200))
+                .ObserveOnDispatcher()
+                .Subscribe(async a => await FilterVMUsingFilterBoxText());
         }
 
         private void ViewModel_PropertyChanged(object sender, System.ComponentModel.PropertyChangedEventArgs e) {
@@ -170,7 +179,6 @@ namespace ReiTunes {
 
         private void Page_Loaded(object sender, RoutedEventArgs e) {
             Window.Current.CoreWindow.KeyDown += CoreWindow_KeyDown;
-            FilterBox.KeyDown += HandleSpaceBar;
             FilterBox.PreviewKeyDown += FilterBox_PreviewKeyDown;
             libraryDataGrid.PreviewKeyDown += LibraryDataGrid_PreviewKeyDown;
         }
@@ -209,9 +217,7 @@ namespace ReiTunes {
                     if (libraryDataGrid.SelectedItems.Count > 0) {
                         OpenSelectedLibraryItem();
                     }
-                    else {
-                        await FilterVMUsingFilterBoxText();
-                    }
+
                     args.Handled = true;
                     break;
 
@@ -230,14 +236,7 @@ namespace ReiTunes {
         }
 
         private async Task FilterVMUsingFilterBoxText() {
-            var searchstring = FilterBox.Text;
-            await ViewModel.FilterItems(searchstring);
-        }
-
-        private void HandleSpaceBar(object sender, KeyRoutedEventArgs args) {
-            //if (args.Key == VirtualKey.Space) {
-            //    args.Handled = true;
-            //}
+            await ViewModel.FilterItems(FilterBox.Text);
         }
 
         private async void CoreWindow_KeyDown(Windows.UI.Core.CoreWindow sender, Windows.UI.Core.KeyEventArgs args) {
