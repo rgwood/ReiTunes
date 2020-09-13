@@ -117,7 +117,7 @@ namespace ReiTunes {
             var pullAccelerator = CreateAccelerator(VirtualKeyModifiers.Control, VirtualKey.P,
                 async (sender, args) => {
                     args.Handled = true;
-                    await ViewModel.Pull();
+                    await ViewModel.PullEventsCommand.ExecuteAsync(null);
                 });
             KeyboardAccelerators.Add(pullAccelerator);
 
@@ -125,7 +125,7 @@ namespace ReiTunes {
             KeyboardAccelerators.Add(CreateAccelerator(VirtualKeyModifiers.Control | VirtualKeyModifiers.Shift, VirtualKey.P,
     async (sender, args) => {
         args.Handled = true;
-        await ViewModel.Push();
+        await ViewModel.PushEventsCommand.ExecuteAsync(null);
     }));
 
             //search accelerator
@@ -249,7 +249,7 @@ namespace ReiTunes {
             }
             //Not sure why but I can't get this to work in an accelerator, so it goes here
             else if (args.VirtualKey == VirtualKey.F5) {
-                await ViewModel.Pull();
+                await ViewModel.PullEventsCommand.ExecuteAsync(null);
             }
         }
 
