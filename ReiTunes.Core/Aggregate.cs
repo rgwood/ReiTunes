@@ -13,7 +13,7 @@ namespace ReiTunes.Core {
 
         public event EventHandler<IEvent> EventCreated;
 
-        public DateTime CreatedTimeUtc { get; private set; }
+        public DateTime CreatedTimeUtc { get; protected set; }
 
         protected Aggregate() {
             _uncommittedEvents = new List<IEvent>();
@@ -44,9 +44,6 @@ namespace ReiTunes.Core {
             }
             _eventAppliers[evtType](evt);
 
-            if (CreatedTimeUtc == null || CreatedTimeUtc < evt.CreatedTimeUtc) {
-                CreatedTimeUtc = evt.CreatedTimeUtc;
-            }
         }
 
         public void ApplyEvents(IEnumerable<IEvent> history) {
