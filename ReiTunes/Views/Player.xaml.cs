@@ -43,6 +43,8 @@ namespace ReiTunes {
             ViewModel = ServiceLocator.Current.GetService<PlayerViewModel>();
             SetUpKeyboardAccelerators();
             ViewModel.PropertyChanged += ViewModel_PropertyChanged;
+            // when items change underneath us, refilter them if applicable
+            ViewModel.ItemsReloaded += async (a, b) => await FilterVMUsingFilterBoxText();
 
             SetUpThumbnailAnimation();
 
@@ -257,11 +259,6 @@ namespace ReiTunes {
         }
 
         #endregion KeyboardStuff
-
-        private async void FilterBox_TextChanged(object sender, TextChangedEventArgs e) {
-            var searchstring = FilterBox.Text;
-            await ViewModel.FilterItems(searchstring);
-        }
 
         private void libraryDataGrid_BeginningEdit(object sender, Microsoft.Toolkit.Uwp.UI.Controls.DataGridBeginningEditEventArgs e) {
             _dataGridIsEditing = true;

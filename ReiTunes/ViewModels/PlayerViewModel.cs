@@ -41,6 +41,8 @@ namespace ReiTunes {
         private ObservableCollection<LibraryItem> _visibleItems;
         private BitmapImage _currentlyPlayingItemThumbnail;
 
+        public event EventHandler ItemsReloaded;
+
         public IMediaPlaybackSource Source {
             get { return _source; }
             set { Set(ref _source, value); }
@@ -121,6 +123,7 @@ namespace ReiTunes {
 
         private async Task Pull() {
             await _library.PullFromServer();
+            ItemsReloaded?.Invoke(this, EventArgs.Empty);
         }
 
         private async Task Push() {
