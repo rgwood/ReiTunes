@@ -119,11 +119,11 @@ namespace ReiTunes {
             //await LoadLibraryFile(libraryFile);
         }
 
-        public async Task Pull() {
+        private async Task Pull() {
             await _library.PullFromServer();
         }
 
-        public async Task Push() {
+        private async Task Push() {
             await _library.PushToServer();
         }
 
