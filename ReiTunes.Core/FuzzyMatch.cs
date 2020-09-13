@@ -52,7 +52,7 @@ namespace ReiTunes.Core {
             var patternLength = pattern.Length;
             var strIdx = 0;
             var strLength = stringToSearch.Length;
-            var prevMatched = false;
+            int prevMatched = 0;
             var prevLower = false;
             var prevSeparator = true;                   // true if first letter match gets separator bonus
 
@@ -97,9 +97,9 @@ namespace ReiTunes.Core {
                         score += penalty;
                     }
 
-                    // Apply bonus for consecutive bonuses
-                    if (prevMatched)
-                        newScore += adjacencyBonus;
+                    // Apply increasing bonus for consecutive bonuses
+                    if (prevMatched > 0)
+                        newScore += adjacencyBonus * prevMatched;
 
                     // Apply bonus for matches after a separator
                     if (prevSeparator)
@@ -125,11 +125,11 @@ namespace ReiTunes.Core {
                         bestLetterScore = newScore;
                     }
 
-                    prevMatched = true;
+                    prevMatched++;
                 }
                 else {
                     score += unmatchedLetterPenalty;
-                    prevMatched = false;
+                    prevMatched = 0;
                 }
 
                 // Includes "clever" isLetter check.
