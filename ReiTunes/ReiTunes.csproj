@@ -149,9 +149,7 @@
     <Compile Include="Services\SuspendAndResumeArgs.cs" />
     <Compile Include="Services\SuspendAndResumeService.cs" />
     <Compile Include="Services\SuspensionState.cs" />
-    <Compile Include="Services\ViewLifetimeControl.cs" />
     <Compile Include="Services\WhatsNewDisplayService.cs" />
-    <Compile Include="Services\WindowManagerService.cs" />
     <Compile Include="ViewModels\PlayerViewModel.cs" />
     <Compile Include="FileReader.cs" />
     <Compile Include="Views\Player.xaml.cs">
