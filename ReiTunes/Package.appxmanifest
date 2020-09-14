@@ -5,12 +5,13 @@
   xmlns:mp="http://schemas.microsoft.com/appx/2014/phone/manifest"
   xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
   xmlns:uap3="http://schemas.microsoft.com/appx/manifest/uap/windows10/3"
-  IgnorableNamespaces="uap mp uap3">
+  xmlns:uap5="http://schemas.microsoft.com/appx/manifest/uap/windows10/5"
+  IgnorableNamespaces="uap mp uap3 uap5">
 
   <Identity
     Name="2b3c53fd-b804-4e1e-b26c-cae302ea1108"
     Publisher="CN=Reilly Wood"
-    Version="1.1.0.0" />
+    Version="1.1.45.0" />
 
   <mp:PhoneIdentity PhoneProductId="2b3c53fd-b804-4e1e-b26c-cae302ea1108" PhonePublisherId="00000000-0000-0000-0000-000000000000"/>
 
@@ -48,6 +49,14 @@
         <uap:SplashScreen Image="Assets\SplashScreen.png" />
       </uap:VisualElements>
       <Extensions>
+        <uap5:Extension
+            Category="windows.appExecutionAlias"
+            Executable="ReiTunes.exe"
+            EntryPoint="ReiTunes.App">
+            <uap5:AppExecutionAlias>
+              <uap5:ExecutionAlias Alias="ReiTunes.exe" />
+            </uap5:AppExecutionAlias>
+        </uap5:Extension>
         <uap:Extension Category="windows.shareTarget">
           <uap:ShareTarget Description="Receive URL">
             <uap:SupportedFileTypes>
