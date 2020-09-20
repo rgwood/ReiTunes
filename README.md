@@ -15,7 +15,7 @@ I have 3 priorities for my music collection:
 
 Those aren't really met by any existing music services. I don't know if any given streaming service will be around next year, let alone 40 years from now. iTunes Match is OK as a service but the Windows client is not.
 
-So, like any sane person would do, I wrote my own app+service.
+So I decided to write my own app+service. How hard could it be? Well, 257 commits later... 😬
 
 ## What?
 
