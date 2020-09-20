@@ -23,11 +23,15 @@ The Windows client is a modern UWP application using WinUI, MSIX sideloading, Wi
 
 On the server side, an ASP.NET Core web API running on a Linux server acts as a central sync point for library metadata. Music files are stored in generic cloud object storage and accessible over HTTPS.
 
-The library metadata synchronization approach is heavily influenced by [Building offline-first web and mobile apps using event-sourcing](https://flpvsk.com/blog/2019-07-20-offline-first-apps-event-sourcing/) by Andrey Salomatin. Events are serialized to JSON and stored in SQLite locally immediately, and pushed to the server asynchronously later (possibly much later).
+Library metadata changes are treated as events; they are serialized to JSON and stored in SQLite locally immediately, then pushed to the server asynchronously later. You can think of the events like Git commits.
+
+The entire library is rebuilt from events on launch. There are plenty of easy optimizations to be made here; benchmarks suggest that they will not be necessary until I approach a few hundred thousand events.
 
 ## Acknowledgments
 
-This was partially motivated by [Tom MacWright's excellent post about his own music library](https://macwright.com/2020/01/27/my-music-library.html).
+The library metadata synchronization approach is heavily influenced by [Building offline-first web and mobile apps using event-sourcing](https://flpvsk.com/blog/2019-07-20-offline-first-apps-event-sourcing/) by Andrey Salomatin.
+
+ReiTunes was partially motivated by [Tom MacWright's excellent post about his own music library](https://macwright.com/2020/01/27/my-music-library.html).
 
 ## Disclaimers
 
