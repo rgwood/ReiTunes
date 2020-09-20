@@ -27,6 +27,8 @@ Library metadata changes are treated as events; they are serialized to JSON and 
 
 The entire library is rebuilt from events on launch. There are plenty of easy optimizations to be made here; benchmarks suggest that they will not be necessary until I approach a few hundred thousand events.
 
+SQLite and ASP.NET Core allow for in-memory distributed integration tests that run in NCrunch automatically in milliseconds. This is wonderful for development.
+
 ## Acknowledgments
 
 The library metadata synchronization approach is heavily influenced by [Building offline-first web and mobile apps using event-sourcing](https://flpvsk.com/blog/2019-07-20-offline-first-apps-event-sourcing/) by Andrey Salomatin.
