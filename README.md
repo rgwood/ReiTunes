@@ -37,6 +37,6 @@ ReiTunes was partially motivated by [Tom MacWright's excellent post about his ow
 
 ## Disclaimers
 
-This is provided with no promises around support or features. Happy to chat about feature ideas, but I am writing this for myself, for fun.
+This is provided with no promises around support or features. You will need to run your own server and bring your own music. Happy to chat about feature ideas, but I am writing this for myself, for fun.
 
 Music piracy is bad; you should buy your music from a reputable source like [Bandcamp](https://bandcamp.com/).
