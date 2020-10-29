@@ -2,6 +2,7 @@
 using ReiTunes.Configuration;
 using ReiTunes.Core;
 using ReiTunes.Helpers;
+using ReiTunes.Views;
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
@@ -320,6 +321,11 @@ namespace ReiTunes {
             //        e.Column.SortDirection = DataGridSortDirection.Descending;
             //    }
             //}
+        }
+
+        private async void ShowRecentEvents(object sender, RoutedEventArgs e) {
+            var recentEventsDialog = new RecentEventsContentDialog(ViewModel.GetRecentEvents());
+            await recentEventsDialog.ShowAsync();
         }
     }
 }

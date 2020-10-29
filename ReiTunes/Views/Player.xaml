@@ -114,7 +114,7 @@
                         Padding="2"
                         HorizontalAlignment="Stretch"
                         FontSize="12"
-                        IsEnabled="False">
+                        Click="ShowRecentEvents">
                         View Events
                     </Button>
                 </StackPanel>

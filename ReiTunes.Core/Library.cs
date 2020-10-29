@@ -77,6 +77,15 @@ namespace ReiTunes.Core {
                 pushedCount, totalEventCount, 100 * pushedCount / totalEventCount);
         }
 
+        //todo: make async
+        public IEnumerable<string> GetRecentEvents() {
+            return _repo.GetAllSerializedEvents().Reverse().Take(10);
+        }
+
+        //public async Task<IEnumerable<string>> GetRecentEventsAsync() {
+        //            _repo.GetAllSerializedEvents()
+        //}
+
         private void RebuildItems() {
             var sw = Stopwatch.StartNew();
             Items.Clear();

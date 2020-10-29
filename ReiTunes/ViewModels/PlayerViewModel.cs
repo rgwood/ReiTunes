@@ -166,6 +166,8 @@ namespace ReiTunes {
             }
         }
 
+        public IEnumerable<string> GetRecentEvents() => _library.GetRecentEvents();
+
         // given a path like foo/bar/baz.txt, we need to get a StorageFolder for `bar` so we can save to it
         private async Task<StorageFolder> GetStorageFolderForItem(LibraryItem item) {
             var split = item.FilePath.Split('/');
