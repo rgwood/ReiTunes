@@ -113,7 +113,6 @@ namespace ReiTunes.Core {
 
         private void Apply(LibraryItemDeletedEvent @event) {
             _tombStoned = true;
-            NotifyPropertyChanged(nameof(PlayCount));
         }
 
         private void Apply(LibraryItemNameChangedEvent @event) {
