@@ -54,68 +54,10 @@
                     <TextBlock
                         x:Name="CurrentlyPlayingItemDescription"
                         Grid.Row="1"
-                        Margin="0,0,0,10"
+                        Margin="0,5,0,0"
                         HorizontalAlignment="Center"
-                        Style="{StaticResource BaseTextBlockStyle}" 
-                        d:Text="Foo by bar"/>
-                    <Grid HorizontalAlignment="Stretch" Height="20"
-                          Margin="0,0,0,-10" Canvas.ZIndex="100">
-                       
+                        Style="{StaticResource BaseTextBlockStyle}" />
 
-                        <Grid Width="20" HorizontalAlignment="Left">
-                            <Grid.RenderTransform>
-                                <TranslateTransform X="150"/>
-                            </Grid.RenderTransform>
-                            <Ellipse HorizontalAlignment="Center"  Fill="{ThemeResource SystemAccentColor}" Height="20" Width="20" ></Ellipse>
-                            <Rectangle Width="2" Fill="{ThemeResource SystemAccentColor}" Height="20" HorizontalAlignment="Center">
-                                <Rectangle.RenderTransform>
-                                    <TranslateTransform Y="10"/>
-                                </Rectangle.RenderTransform>
-                            </Rectangle>
-                            <TextBlock HorizontalAlignment="Center" FontSize="12">
-                                <TextBlock.RenderTransform>
-                                    <TranslateTransform X="0" Y="1"/>
-                                </TextBlock.RenderTransform>
-                                ❤
-                            </TextBlock>
-                        </Grid>
-
-                        <Grid Width="20" HorizontalAlignment="Left" >
-                            <Grid.RenderTransform>
-                                <TranslateTransform X="350"/>
-                            </Grid.RenderTransform>
-                            <Ellipse HorizontalAlignment="Center"  Fill="{ThemeResource SystemAccentColor}" Height="20" Width="20" ></Ellipse>
-                            <Rectangle Width="2" Fill="{ThemeResource SystemAccentColor}" Height="20" HorizontalAlignment="Center">
-                                <Rectangle.RenderTransform>
-                                    <TranslateTransform Y="10"/>
-                                </Rectangle.RenderTransform>
-                            </Rectangle>
-                            <TextBlock HorizontalAlignment="Center" FontSize="12">
-                                <TextBlock.RenderTransform>
-                                    <TranslateTransform X="1" Y="0"/>
-                                </TextBlock.RenderTransform>
-                                🎺
-                            </TextBlock>
-                        </Grid>
-                        <Grid Width="20" HorizontalAlignment="Left">
-                            <Grid.RenderTransform>
-                                <TranslateTransform X="550"/>
-                            </Grid.RenderTransform>
-                            <Ellipse HorizontalAlignment="Center"  Fill="{ThemeResource SystemAccentColor}" Height="20" Width="20" ></Ellipse>
-                            <Rectangle Width="2" Fill="{ThemeResource SystemAccentColor}" Height="20" HorizontalAlignment="Center">
-                                <Rectangle.RenderTransform>
-                                    <TranslateTransform Y="10"/>
-                                </Rectangle.RenderTransform>
-                            </Rectangle>
-                            <TextBlock HorizontalAlignment="Center" FontSize="12">
-                                <TextBlock.RenderTransform>
-                                    <TranslateTransform X="0" Y="1"/>
-                                </TextBlock.RenderTransform>
-                                🥁
-                            </TextBlock>
-                        </Grid>
-                        
-                    </Grid>
                     <MediaPlayerElement
                         x:Name="musicPlayer"
                         Grid.Row="2"
