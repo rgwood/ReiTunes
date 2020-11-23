@@ -32,6 +32,7 @@ namespace ReiTunes {
         private readonly ILogger _logger;
         private readonly Library _library;
         private StorageFolder _libraryFolder;
+        private SonosIntermediary _sonosIntermediary;
         private IMediaPlaybackSource _source;
         private LibraryItem _currentlyPlayingItem;
         private string _downloadStatus = "";
@@ -110,6 +111,8 @@ namespace ReiTunes {
 
         public async Task Initialize() {
             _libraryFolder = await FileHelper.CreateLibraryFolderIfDoesntExist();
+
+            _sonosIntermediary = new SonosIntermediary(Secrets.SonosUrl);
 
             //var libraryFile = await _libraryFolder.TryGetItemAsync("ReiTunesLibrary.txt");
 
@@ -199,7 +202,16 @@ namespace ReiTunes {
 
         private string GetFileNameFromFullPath(string fullPath) => fullPath.Split('/').Last();
 
-        public async void ChangeSource(LibraryItem libraryItemToPlay) {
+        public async Task PlayOnSonos(LibraryItem libraryItemToPlay) {
+            //string uri = System.Web.HttpUtility.UrlEncode(new Uri(_cloudBaseUri, libraryItemToPlay.FilePath).ToString());
+            var uri = new Uri(_cloudBaseUri, libraryItemToPlay.FilePath);
+            var uriStr = uri.ToString();
+            var sw = Stopwatch.StartNew();
+            await _sonosIntermediary.Play(uriStr);
+            _logger.Information("Finished Sonos play calls in in {elapsedMs}", sw.ElapsedMilliseconds);
+        }
+
+        public async Task ChangeSource(LibraryItem libraryItemToPlay) {
             if (libraryItemToPlay == null)
                 return;
 
@@ -216,7 +228,7 @@ namespace ReiTunes {
                     return;
 
                 CurrentlyPlayingItem = libraryItemToPlay;
-                await DownloadAndStartMusicFile(filePath, fileName, folder, libraryItemToPlay);
+                await DownloadAndStartMusicFile(fileName, folder, libraryItemToPlay);
 
                 //var mediaPlaybackItem = new MediaPlaybackItem(mediaSource);
 
@@ -270,9 +282,9 @@ namespace ReiTunes {
             mediaPlaybackItem.ApplyDisplayProperties(props);
         }
 
-        private async Task<MediaSource> DownloadAndStartMusicFile(string relativeFilePath, string fileName, StorageFolder folderToSaveTo, LibraryItem libraryItemToPlay) {
-            _logger.Information("Downloading music file {filePath}", relativeFilePath);
-            var downloadUri = new Uri(_cloudBaseUri, relativeFilePath);
+        private async Task<MediaSource> DownloadAndStartMusicFile(string fileName, StorageFolder folderToSaveTo, LibraryItem libraryItemToPlay) {
+            _logger.Information("Downloading music file {filePath}", libraryItemToPlay.FilePath);
+            var downloadUri = new Uri(_cloudBaseUri, libraryItemToPlay.FilePath);
             var downloadFile = await folderToSaveTo.CreateFileAsync(fileName);
             DownloadInProgress = true;
             BackgroundDownloader downloader = new BackgroundDownloader();

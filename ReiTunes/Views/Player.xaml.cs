@@ -96,9 +96,9 @@ namespace ReiTunes {
             await ViewModel.Initialize();
         }
 
-        private void OpenSelectedLibraryItem(object sender = null, RoutedEventArgs e = null) {
+        private async void OpenSelectedLibraryItem(object sender = null, RoutedEventArgs e = null) {
             var selected = (LibraryItem)libraryDataGrid.SelectedItem;
-            ViewModel.ChangeSource(selected);
+            await ViewModel.ChangeSource(selected);
             selected.IncrementPlayCount();
         }
 
@@ -177,6 +177,15 @@ namespace ReiTunes {
 
                     var selected = (LibraryItem)libraryDataGrid.SelectedItem;
                     await ViewModel.ShowItemInExplorer(selected);
+                }));
+
+            //play on Sonos
+            KeyboardAccelerators.Add(CreateAccelerator(VirtualKeyModifiers.Control, VirtualKey.S,
+                async (sender, args) => {
+                    args.Handled = true;
+
+                    var selected = (LibraryItem)libraryDataGrid.SelectedItem;
+                    await ViewModel.PlayOnSonos(selected);
                 }));
         }
 
