@@ -16,6 +16,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Xunit;
 using Xunit.Sdk;
+using FluentAssertions;
 
 namespace ReiTunes.Server.Tests {
 
@@ -93,6 +94,16 @@ namespace ReiTunes.Server.Tests {
 
             await client2.PushToServer();
             await client1.PullFromServer();
+
+            AssertLibrariesHaveSameItems(client1, client2);
+
+            // delete and make sure the delete propagates
+            client1.Delete(client1.Items.Single());
+
+            client1.Items.Count.Should().Be(0);
+
+            await client1.PushToServer();
+            await client2.PullFromServer();
 
             AssertLibrariesHaveSameItems(client1, client2);
         }

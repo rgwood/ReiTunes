@@ -97,9 +97,13 @@ namespace ReiTunes {
         }
 
         private async void OpenSelectedLibraryItem(object sender = null, RoutedEventArgs e = null) {
-            var selected = (LibraryItem)libraryDataGrid.SelectedItem;
+            LibraryItem selected = GetSelectedLibraryItem();
             await ViewModel.ChangeSource(selected);
             selected.IncrementPlayCount();
+        }
+
+        private LibraryItem GetSelectedLibraryItem() {
+            return (LibraryItem)libraryDataGrid.SelectedItem;
         }
 
         // This is where I set up keyboard accelerators and do some ridiculous hacks
@@ -195,9 +199,32 @@ namespace ReiTunes {
             libraryDataGrid.PreviewKeyDown += LibraryDataGrid_PreviewKeyDown;
         }
 
-        private void LibraryDataGrid_PreviewKeyDown(object sender, KeyRoutedEventArgs args) {
+        private async void LibraryDataGrid_PreviewKeyDown(object sender, KeyRoutedEventArgs args) {
             if (args.Key == VirtualKey.Enter && !_dataGridIsEditing) {
                 OpenSelectedLibraryItem();
+                args.Handled = true;
+            }
+
+            if (args.Key == VirtualKey.Delete && !_dataGridIsEditing) {
+                var selected = GetSelectedLibraryItem();
+
+                if (selected is null)
+                    return;
+
+                var confirmDialog = new ContentDialog {
+                    Title = "Delete file?",
+                    Content = $"Are you sure you want to delete '{selected.Name}' from the library? Blob content will be unaffected.",
+                    PrimaryButtonText = "Delete",
+                    DefaultButton = ContentDialogButton.Primary,
+                    CloseButtonText = "Cancel"
+                };
+
+                var result = await confirmDialog.ShowAsync();
+
+                if (result == ContentDialogResult.Primary) {
+                    await ViewModel.Delete(selected);
+                }
+
                 args.Handled = true;
             }
         }

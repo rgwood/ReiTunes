@@ -58,6 +58,13 @@ namespace ReiTunes.Core {
         private int _playCount = 0;
         private readonly LibraryItemEventFactory _eventFactory;
 
+        /// <summary>
+        /// Was a tombstone event seen (i.e. was this deleted)?
+        /// </summary>
+        public bool Tombstoned => _tombStoned;
+
+        private bool _tombStoned = false;
+
         public int PlayCount => _playCount;
 
         // a single string with everything we might want to include in text search, useful for fuzzy find
@@ -85,6 +92,7 @@ namespace ReiTunes.Core {
         protected override void RegisterAppliers() {
             this.RegisterApplier<LibraryItemCreatedEvent>(this.Apply);
             this.RegisterApplier<LibraryItemPlayedEvent>(this.Apply);
+            this.RegisterApplier<LibraryItemDeletedEvent>(this.Apply);
             this.RegisterApplier<LibraryItemNameChangedEvent>(this.Apply);
             this.RegisterApplier<LibraryItemFilePathChangedEvent>(this.Apply);
             this.RegisterApplier<LibraryItemAlbumChangedEvent>(this.Apply);
@@ -100,6 +108,11 @@ namespace ReiTunes.Core {
 
         private void Apply(LibraryItemPlayedEvent @event) {
             _playCount++;
+            NotifyPropertyChanged(nameof(PlayCount));
+        }
+
+        private void Apply(LibraryItemDeletedEvent @event) {
+            _tombStoned = true;
             NotifyPropertyChanged(nameof(PlayCount));
         }
 

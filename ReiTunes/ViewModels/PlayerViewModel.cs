@@ -169,6 +169,10 @@ namespace ReiTunes {
             }
         }
 
+        public async Task Delete(LibraryItem item) {
+            _library.Delete(item);
+        }
+
         public IEnumerable<string> GetRecentEvents() => _library.GetRecentEvents();
 
         // given a path like foo/bar/baz.txt, we need to get a StorageFolder for `bar` so we can save to it

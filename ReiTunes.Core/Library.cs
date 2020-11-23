@@ -86,6 +86,11 @@ namespace ReiTunes.Core {
         //            _repo.GetAllSerializedEvents()
         //}
 
+        public void Delete(LibraryItem item) {
+            _repo.Save(_eventFactory.GetDeletedEvent(item.AggregateId));
+            RebuildItems();
+        }
+
         private void RebuildItems() {
             var sw = Stopwatch.StartNew();
             Items.Clear();
@@ -112,6 +117,12 @@ namespace ReiTunes.Core {
 
             sw.Stop();
             _logger.Information("Rebuilding all items took {ElapsedMs}", sw.ElapsedMilliseconds);
+
+            var itemsToDelete = Items.Where(i => i.Tombstoned).ToList();
+
+            foreach (LibraryItem item in itemsToDelete) {
+                Items.Remove(item);
+            }
 
             LibraryItemsRebuilt?.Invoke(this, EventArgs.Empty);
         }

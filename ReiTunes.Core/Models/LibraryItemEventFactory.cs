@@ -43,5 +43,9 @@ namespace ReiTunes.Core {
         public LibraryItemPlayedEvent GetPlayedEvent(Guid aggregateId) {
             return new LibraryItemPlayedEvent(Guid.NewGuid(), aggregateId, _clock.Now(), _clock.GetNextLocalId(), _machineName);
         }
+
+        public LibraryItemDeletedEvent GetDeletedEvent(Guid aggregateId) {
+            return new LibraryItemDeletedEvent(Guid.NewGuid(), aggregateId, _clock.Now(), _clock.GetNextLocalId(), _machineName);
+        }
     }
 }

@@ -20,6 +20,7 @@ namespace ReiTunes.Core {
             typeof(SimpleTextAggregateUpdatedEvent),
             typeof(LibraryItemCreatedEvent),
             typeof(LibraryItemPlayedEvent),
+            typeof(LibraryItemDeletedEvent),
             typeof(LibraryItemNameChangedEvent),
             typeof(LibraryItemFilePathChangedEvent),
             typeof(LibraryItemAlbumChangedEvent),

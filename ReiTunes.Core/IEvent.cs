@@ -91,6 +91,13 @@ namespace ReiTunes.Core {
         }
     }
 
+    public class LibraryItemDeletedEvent : LibraryItemEvent {
+
+        public LibraryItemDeletedEvent(Guid id, Guid aggregateId, DateTime createdTimeUtc, long localId, string machineName)
+            : base(id, aggregateId, createdTimeUtc, localId, machineName) {
+        }
+    }
+
     public class LibraryItemNameChangedEvent : LibraryItemEvent {
         public string NewName { get; private set; }
 
