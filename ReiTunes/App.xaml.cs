@@ -2,11 +2,13 @@
 using ReiTunes.Services;
 using Serilog;
 using System;
+using System.Threading.Tasks;
 using Windows.ApplicationModel;
 using Windows.ApplicationModel.Activation;
 using Windows.ApplicationModel.DataTransfer;
 using Windows.ApplicationModel.DataTransfer.ShareTarget;
 using Windows.Foundation;
+using Windows.System;
 using Windows.UI.ViewManagement;
 using Windows.UI.Xaml;
 using Windows.UI.Xaml.Controls;
@@ -42,9 +44,12 @@ namespace ReiTunes {
             throw new NotImplementedException();
         }
 
-        private void App_UnhandledException(object sender, Windows.UI.Xaml.UnhandledExceptionEventArgs e) {
+        private async void App_UnhandledException(object sender, Windows.UI.Xaml.UnhandledExceptionEventArgs e) {
             var logger = ServiceLocator.Current.GetService<ILogger>();
             logger.Fatal("Unhandled exception '{Message}': {Exception}", e.Message, e.Exception);
+
+            // help the user take a look at the logs
+            Launcher.LaunchFolderAsync(Windows.Storage.ApplicationData.Current.LocalFolder).AsTask().Wait();
         }
 
         /// <summary>
