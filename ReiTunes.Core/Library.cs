@@ -37,7 +37,7 @@ namespace ReiTunes.Core {
             _caller = caller;
             _logger = logger;
             _repo = new SQLiteEventRepository(connection, logger);
-            _eventFactory = new LibraryItemEventFactory(MachineName, clock);
+            _eventFactory = new LibraryItemEventFactory(clock, MachineName);
             RebuildItems();
         }
 

@@ -42,8 +42,8 @@ namespace ReiTunes.Core.Tests.XUnit {
         public void CanGetEventsForSpecificMachine(IEventRepository repo) {
             const string machine1 = "machine1";
             const string machine2 = "machine2";
-            var factory1 = new LibraryItemEventFactory(machine1, new Clock());
-            var factory2 = new LibraryItemEventFactory(machine2, new Clock());
+            var factory1 = new LibraryItemEventFactory(new Clock(), machine1);
+            var factory2 = new LibraryItemEventFactory(new Clock(), machine2);
 
             var guid = Guid.NewGuid();
 
@@ -60,8 +60,8 @@ namespace ReiTunes.Core.Tests.XUnit {
         public void CanGetEventsMachineNameCaseDoesNotMatter(IEventRepository repo) {
             const string machine1 = "machine1";
             const string machine2 = "machine2";
-            var factory1 = new LibraryItemEventFactory(machine1, new Clock());
-            var factory2 = new LibraryItemEventFactory(machine2, new Clock());
+            var factory1 = new LibraryItemEventFactory(new Clock(), machine1);
+            var factory2 = new LibraryItemEventFactory(new Clock(), machine2);
 
             var guid = Guid.NewGuid();
 
