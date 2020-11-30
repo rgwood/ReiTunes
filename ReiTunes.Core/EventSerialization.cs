@@ -6,9 +6,15 @@ namespace ReiTunes.Core {
 
     public static class EventSerialization {
 
-        private static JsonSerializerSettings SerializerSettings = new JsonSerializerSettings {
+        private static JsonSerializerSettings DefaultSerializerSettings = new JsonSerializerSettings {
             TypeNameHandling = TypeNameHandling.Objects,
             SerializationBinder = new EventBinder()
+        };
+
+        private static JsonSerializerSettings PrettySerializerSettings = new JsonSerializerSettings {
+            TypeNameHandling = TypeNameHandling.Objects,
+            SerializationBinder = new EventBinder(),
+            Formatting = Formatting.Indented
         };
 
         /// <summary>
@@ -16,21 +22,25 @@ namespace ReiTunes.Core {
         /// </summary>
         /// <param name="event"></param>
         /// <returns></returns>
-        public static string Serialize(IEvent @event) {
-            return JsonConvert.SerializeObject(@event, SerializerSettings);
-        }
+        public static string Serialize(IEvent @event) 
+            => JsonConvert.SerializeObject(@event, DefaultSerializerSettings);
 
-        public static string Serialize(List<IEvent> events) {
-            return JsonConvert.SerializeObject(events, SerializerSettings);
-        }
+        /// <summary>
+        /// Serializes events with their non-namespaced type name
+        /// </summary>
+        /// <param name="event"></param>
+        /// <returns></returns>
+        public static string PrettyPrint(IEvent @event) 
+            => JsonConvert.SerializeObject(@event, PrettySerializerSettings);
 
-        public static IEvent Deserialize(string value) {
-            return JsonConvert.DeserializeObject<IEvent>(value, SerializerSettings);
-        }
+        public static string Serialize(List<IEvent> events) 
+            => JsonConvert.SerializeObject(events, DefaultSerializerSettings);
 
-        public static List<IEvent> DeserializeList(string value) {
-            return JsonConvert.DeserializeObject<List<IEvent>>(value, SerializerSettings);
-        }
+        public static IEvent Deserialize(string value) 
+            => JsonConvert.DeserializeObject<IEvent>(value, DefaultSerializerSettings);
+
+        public static List<IEvent> DeserializeList(string value) 
+            => JsonConvert.DeserializeObject<List<IEvent>>(value, DefaultSerializerSettings);
 
         public static async Task<List<IEvent>> DeserializeListAsync(string value) {
             return await Task.Run(() => {
