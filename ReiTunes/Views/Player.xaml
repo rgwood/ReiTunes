@@ -113,8 +113,8 @@
                         Margin="0,5,5,5"
                         Padding="2"
                         HorizontalAlignment="Stretch"
-                        FontSize="12"
-                        Click="ShowRecentEvents">
+                        Click="ShowRecentEvents"
+                        FontSize="12">
                         View Events
                     </Button>
                 </StackPanel>
@@ -203,10 +203,12 @@
                 <controls:DataGridTextColumn
                     Binding="{Binding PlayCount}"
                     Header="Play Count"
+                    IsReadOnly="True"
                     Tag="PlayCount" />
                 <controls:DataGridTextColumn
                     Binding="{Binding CreatedTimeUtc}"
                     Header="Date Added"
+                    IsReadOnly="True"
                     Tag="DateAddedUtc" />
                 <controls:DataGridTextColumn
                     Binding="{Binding FilePath}"
