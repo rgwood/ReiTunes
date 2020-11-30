@@ -56,7 +56,7 @@ namespace ReiTunes {
                 System.Reactive.Linq.Observable.FromEventPattern<TextChangedEventArgs>(FilterBox,
                 nameof(FilterBox.TextChanged))
                 .Throttle(TimeSpan.FromMilliseconds(300))
-                .ObserveOnDispatcher()
+                .ObserveOnCoreDispatcher()
                 .Subscribe(async a => await FilterVMUsingFilterBoxText());
         }
 
