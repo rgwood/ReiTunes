@@ -10,7 +10,7 @@ using ApprovalTests.Reporters.ContinuousIntegration;
 namespace ReiTunes.Test {
 
     [UseReporter(typeof(BeyondCompareReporter))]
-    public class JsonTests {
+    public class JsonSnapshotTests {
 
         private static readonly Guid _item1ID = new("47b04010-5bc0-410e-9803-f5d6f3c5badc");
         private static readonly Guid _item2ID = new("a8fd3845-7b54-4a72-a818-bb7af3c6d3cc");
@@ -22,9 +22,8 @@ namespace ReiTunes.Test {
         private const string MachineName = "Cornelius";
 
         [Fact]
-        public void SnapshotTest_ItemCreatedEvent() {
+        public void ItemCreatedEvent() {
             LibraryItemCreatedEvent ev = _factory.GetCreatedEvent(_item1ID, "Hello 🌎", "foo/bar.mp3");
-
             Approvals.Verify(EventSerialization.PrettyPrint(ev));
         }
 

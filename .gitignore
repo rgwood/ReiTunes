@@ -7,6 +7,9 @@
 # ReiTunes secret file
 ReiTunes/Secrets.cs
 
+# ApprovalTests snapshot test files
+*.received.txt
+
 # User-specific files
 *.rsuser
 *.suo
