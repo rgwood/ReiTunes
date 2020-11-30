@@ -44,7 +44,7 @@ namespace ReiTunes {
             throw new NotImplementedException();
         }
 
-        private async void App_UnhandledException(object sender, Windows.UI.Xaml.UnhandledExceptionEventArgs e) {
+        private void App_UnhandledException(object sender, Windows.UI.Xaml.UnhandledExceptionEventArgs e) {
             var logger = ServiceLocator.Current.GetService<ILogger>();
             logger.Fatal("Unhandled exception '{Message}': {Exception}", e.Message, e.Exception);
 

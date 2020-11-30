@@ -222,7 +222,7 @@ namespace ReiTunes {
                 var result = await confirmDialog.ShowAsync();
 
                 if (result == ContentDialogResult.Primary) {
-                    await ViewModel.Delete(selected);
+                    ViewModel.Delete(selected);
                 }
 
                 args.Handled = true;

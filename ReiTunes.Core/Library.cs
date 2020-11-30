@@ -2,19 +2,13 @@
 using Serilog;
 using System;
 using System.Collections.Generic;
-using System.Collections.ObjectModel;
-using System.ComponentModel;
 using System.Diagnostics;
 using System.Linq;
-using System.Runtime.CompilerServices;
-using System.Text;
 using System.Threading.Tasks;
 
 namespace ReiTunes.Core {
 
     public class Library {
-
-        public event PropertyChangedEventHandler PropertyChanged;
 
         public event EventHandler LibraryItemsRebuilt;
 
@@ -52,14 +46,6 @@ namespace ReiTunes.Core {
             ReceiveEvents(new List<IEvent> { @event });
         }
 
-        //public IEnumerable<IEvent> GetAllEvents() {
-        //    var sw = Stopwatch.StartNew();
-        //    var ret = _repo.GetAllEvents();
-        //    sw.Stop();
-        //    _logger.Information("GetAllEvents took {ElapsedMs}", sw.ElapsedMilliseconds);
-        //    return ret;
-        //}
-
         public async Task PullFromServer() {
             var events = await _caller.PullAllEventsAsync();
             ReceiveEvents(events);
@@ -81,10 +67,6 @@ namespace ReiTunes.Core {
         public IEnumerable<string> GetRecentEvents() {
             return _repo.GetAllSerializedEvents().Reverse().Take(10);
         }
-
-        //public async Task<IEnumerable<string>> GetRecentEventsAsync() {
-        //            _repo.GetAllSerializedEvents()
-        //}
 
         public void Delete(LibraryItem item) {
             _repo.Save(_eventFactory.GetDeletedEvent(item.AggregateId));

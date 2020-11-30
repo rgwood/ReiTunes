@@ -169,7 +169,7 @@ namespace ReiTunes {
             }
         }
 
-        public async Task Delete(LibraryItem item) {
+        public void Delete(LibraryItem item) {
             _library.Delete(item);
         }
 
