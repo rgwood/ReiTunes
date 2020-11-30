@@ -1,0 +1,9 @@
+{
+  "$type": "LibraryItemNameChangedEvent",
+  "NewName": "newName",
+  "Id": "00000000-0000-0000-0000-000000000000",
+  "AggregateId": "47b04010-5bc0-410e-9803-f5d6f3c5badc",
+  "CreatedTimeUtc": "2000-01-01T00:00:00Z",
+  "LocalId": 1,
+  "MachineName": "Cornelius"
+}

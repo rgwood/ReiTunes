@@ -50,4 +50,14 @@ namespace ReiTunes.Core {
 
         public DateTime Now() => _now;
     }
+
+    // Same as above but also hold the local ID constant
+    public class NeverEverIncreasingClock : IClock {
+        private const int UnchangingLocalId = 0;
+        private static DateTime _now = new DateTime(2000, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+
+        public long GetNextLocalId() => UnchangingLocalId;
+
+        public DateTime Now() => _now;
+    }
 }
