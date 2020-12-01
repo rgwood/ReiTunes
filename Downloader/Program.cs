@@ -42,7 +42,22 @@ namespace Downloader {
                 Console.WriteLine($"About to attempt download for: {item}");
                 try {
                     Download(item.Url, item.Type);
+                    Console.WriteLine("Download finished");    
                     InsertToFinished(conn, item);
+
+                    if(item.Type == DlType.Audio) {
+                        Console.WriteLine($"Uploading to ReiTunes");
+                        // TODO: Download should return a file name so we don't need to look it up again
+                        Console.WriteLine($"Retrieving file name...");
+                        var fileName = GetFileName(item.Url, DlType.Audio);
+                        Console.WriteLine($"Retrieved file name: {fileName}");
+
+                        var filePath = Path.Combine(WorkingDirectory(item.Type), fileName);
+                        Console.WriteLine($"About to upload {filePath}");
+
+                        Upload(filePath, fileName);
+                        Console.WriteLine($"Upload Finished");
+                    }
                 }
                 catch (Exception ex) {
                     Console.WriteLine("Failed :(");
@@ -52,9 +67,20 @@ namespace Downloader {
             }
         }
 
+        private static void Upload(string localFilePath, string remoteFileName) {
+           BlobServiceClient blobServiceClient = new BlobServiceClient(Secrets.AzureStorageConnectionString);
+           BlobContainerClient containerClient = blobServiceClient.GetBlobContainerClient(Constants.MusicContainerName);
+
+           BlobClient blobClient = containerClient.GetBlobClient(remoteFileName);
+           using FileStream uploadFileStream = File.OpenRead(localFilePath);
+           blobClient.Upload(uploadFileStream, true);
+           uploadFileStream.Close();
+        }
+
         private static string WorkingDirectory(DlType type) => type switch {
             DlType.Audio => "/mnt/QNAP1/Downloads/Music/",
             DlType.Video => "/mnt/QNAP1/Downloads/YouTube/",
+	    DlType.Logs => "/mnt/QNAP1/Downloads/Logs/YTDL/",
             _ => throw new ArgumentOutOfRangeException($"WorkingDirectory not implemented for type'{type}")
         };
 
@@ -109,15 +135,7 @@ namespace Downloader {
             return new CommandResult(stdout, stderr);
         }
 
-        //private static void Upload(string localFilePath) {
-        //    BlobServiceClient blobServiceClient = new BlobServiceClient(Secrets.AzureStorageConnectionString);
-        //    BlobContainerClient containerClient = blobServiceClient.GetBlobContainerClient(Constants.MusicContainerName);
 
-        //    BlobClient blobClient = containerClient.GetBlobClient(fileName);
-        //    //using FileStream uploadFileStream = File.OpenRead(localFilePath);
-        //    //await blobClient.UploadAsync(uploadFileStream, true);
-        //    //uploadFileStream.Close();
-        //}
 
         // TODO: test this and use it to upload files
         private static string GetFileName(string url, DlType type) {
