@@ -14,6 +14,7 @@ namespace Downloader {
 
     public class Program {
         private const string YoutubeDlPath = "/usr/local/bin/youtube-dl";
+        private const string QueueDbFilePath = "/mnt/QNAP1/Downloads/Music/downloadQueue.db";
 
         private enum DlType {
             Audio,
@@ -33,7 +34,7 @@ namespace Downloader {
 
         private static void Main(string[] args) {
             // TODO: get DB from filesystem. Or args?
-            var conn = SQLiteHelpers.CreateFileDb("/mnt/QNAP1/Downloads/Music/downloadQueue.db");
+            var conn = SQLiteHelpers.CreateFileDb(QueueDbFilePath);
             CreateTablesIfNotExists(conn);
 
             var item = PopQueue(conn);
@@ -42,10 +43,10 @@ namespace Downloader {
                 Console.WriteLine($"About to attempt download for: {item}");
                 try {
                     Download(item.Url, item.Type);
-                    Console.WriteLine("Download finished");    
+                    Console.WriteLine("Download finished");
                     InsertToFinished(conn, item);
 
-                    if(item.Type == DlType.Audio) {
+                    if (item.Type == DlType.Audio) {
                         Console.WriteLine($"Uploading to ReiTunes");
                         // TODO: Download should return a file name so we don't need to look it up again
                         Console.WriteLine($"Retrieving file name...");
@@ -68,19 +69,19 @@ namespace Downloader {
         }
 
         private static void Upload(string localFilePath, string remoteFileName) {
-           BlobServiceClient blobServiceClient = new BlobServiceClient(Secrets.AzureStorageConnectionString);
-           BlobContainerClient containerClient = blobServiceClient.GetBlobContainerClient(Constants.MusicContainerName);
+            BlobServiceClient blobServiceClient = new BlobServiceClient(Secrets.AzureStorageConnectionString);
+            BlobContainerClient containerClient = blobServiceClient.GetBlobContainerClient(Constants.MusicContainerName);
 
-           BlobClient blobClient = containerClient.GetBlobClient(remoteFileName);
-           using FileStream uploadFileStream = File.OpenRead(localFilePath);
-           blobClient.Upload(uploadFileStream, true);
-           uploadFileStream.Close();
+            BlobClient blobClient = containerClient.GetBlobClient(remoteFileName);
+            using FileStream uploadFileStream = File.OpenRead(localFilePath);
+            blobClient.Upload(uploadFileStream, true);
+            uploadFileStream.Close();
         }
 
         private static string WorkingDirectory(DlType type) => type switch {
             DlType.Audio => "/mnt/QNAP1/Downloads/Music/",
             DlType.Video => "/mnt/QNAP1/Downloads/YouTube/",
-	    DlType.Logs => "/mnt/QNAP1/Downloads/Logs/YTDL/",
+            DlType.Logs => "/mnt/QNAP1/Logs/YTDL/",
             _ => throw new ArgumentOutOfRangeException($"WorkingDirectory not implemented for type'{type}")
         };
 
@@ -134,8 +135,6 @@ namespace Downloader {
 
             return new CommandResult(stdout, stderr);
         }
-
-
 
         // TODO: test this and use it to upload files
         private static string GetFileName(string url, DlType type) {
