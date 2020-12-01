@@ -5,6 +5,10 @@ using System;
 using System.ComponentModel.DataAnnotations;
 using Microsoft.Data.Sqlite;
 using Xunit;
+using Azure.Storage.Blobs;
+using System.Collections.Generic;
+using System.Linq;
+using System.IO;
 
 namespace Downloader {
 
@@ -13,11 +17,21 @@ namespace Downloader {
         public const string VideoType = "Video";
         private const string YoutubeDlPath = "/usr/local/bin/youtube-dl";
 
-        public class DownloadItem {
-            public string Url { get; set; }
-            public string Type { get; set; }
-            public string CreatedTimestamp { get; set; }
+        private enum DlType {
+            Audio,
+            Video,
+            Logs
         }
+
+        private static DlType DlTypeFromString(string s) => s.ToUpper() switch {
+            "AUDIO" => DlType.Audio,
+            "VIDEO" => DlType.Video,
+            "LOGS" => DlType.Logs,
+            _ => throw new ArgumentOutOfRangeException($"Bad DL type: '{s}'")
+        };
+
+        private record DownloadItem(string Url, DlType Type, string CreatedTimestamp);
+        private record CommandResult(IEnumerable<string> stdout, IEnumerable<string> stderr);
 
         private static void Main(string[] args) {
             // TODO: get DB from filesystem. Or args?
@@ -39,75 +53,86 @@ namespace Downloader {
             }
         }
 
-        private static void Test() {
-            using (var process = new System.Diagnostics.Process()) {
-                process.StartInfo.FileName = "youtube-dl";
+        private static string WorkingDirectory(DlType type) => type switch {
+            DlType.Audio => "/mnt/QNAP1/Downloads/Music/",
+            DlType.Video => "/mnt/QNAP1/Downloads/YouTube/",
+            _ => throw new ArgumentOutOfRangeException($"WorkingDirectory not implemented for type'{type}")
+        };
 
-                process.StartInfo.WorkingDirectory = "/mnt/QNAP1/Downloads/Music/";
-                        
+        private static string Arguments(DlType type, string url) => type switch {
+            DlType.Audio => $"--extract-audio --audio-format mp3 -- {url}",
+            _ => url,
+        };
 
-                process.StartInfo.CreateNoWindow = true;
-                process.StartInfo.UseShellExecute = false;
-                process.StartInfo.RedirectStandardOutput = true;
-                process.StartInfo.RedirectStandardError = true;
-
-                process.OutputDataReceived += (sender, data) => Console.WriteLine(data.Data);
-                process.ErrorDataReceived += (sender, data) => Console.WriteLine(data.Data);
-
-                Console.WriteLine("[YOUTUBE-DL] STARTING...");
-
-                process.Start();
-                process.BeginOutputReadLine();
-                process.BeginErrorReadLine();
-                process.WaitForExit();
-
-                Console.WriteLine($"[YOUTUBE-DL] DONE!");
-
-                if (process.ExitCode != 0) {
-                    throw new Exception($"Youtube-dl failed, exit code {process.ExitCode}");
-                }
-            }
+        private static CommandResult Download(string url, DlType type) {
+            string workingDirectory = WorkingDirectory(type);
+            string arguments = Arguments(type, url);
+            return RunYTDL(arguments, workingDirectory);
         }
 
-        private static void Download(string url, string type) {
-            using (var process = new System.Diagnostics.Process()) {
-                process.StartInfo.FileName = YoutubeDlPath;
+        private static CommandResult RunYTDL(string arguments, string workingDirectory) {
+            var stdout = new List<string>();
+            var stderr = new List<string>();
 
-                switch (type.ToUpper()) {
-                    case "AUDIO":
-                        process.StartInfo.Arguments = $"--extract-audio --audio-format mp3 -- {url}";
-                        process.StartInfo.WorkingDirectory = "/mnt/QNAP1/Downloads/Music/";
-                        break;
-                    case "VIDEO":
-                        process.StartInfo.Arguments = url;
-                        process.StartInfo.WorkingDirectory = "/mnt/QNAP1/Downloads/YouTube/";
-                        break;
-                    default:
-                        throw new Exception($"unexpected type '{type}'");
-                }
+            using var process = new System.Diagnostics.Process();
+            process.StartInfo.FileName = YoutubeDlPath;
 
-                process.StartInfo.CreateNoWindow = true;
-                process.StartInfo.UseShellExecute = false;
-                process.StartInfo.RedirectStandardOutput = true;
-                process.StartInfo.RedirectStandardError = true;
+            process.StartInfo.Arguments = arguments;
+            process.StartInfo.WorkingDirectory = workingDirectory;
 
-                process.OutputDataReceived += (sender, data) => Console.WriteLine(data.Data);
-                process.ErrorDataReceived += (sender, data) => Console.WriteLine(data.Data);
+            process.StartInfo.CreateNoWindow = true;
+            process.StartInfo.UseShellExecute = false;
+            process.StartInfo.RedirectStandardOutput = true;
+            process.StartInfo.RedirectStandardError = true;
 
-                Console.WriteLine("[YOUTUBE-DL] STARTING...");
+            process.OutputDataReceived += (sender, data) => {
+                Console.WriteLine(data.Data);
+                stdout.Add(data.Data);
+            };
+            process.ErrorDataReceived += (sender, data) => {
+                Console.WriteLine(data.Data);
+                stderr.Add(data.Data);
+            };
 
-                process.Start();
-                process.BeginOutputReadLine();
-                process.BeginErrorReadLine();
-                process.WaitForExit();
+            Console.WriteLine("[YOUTUBE-DL] STARTING...");
 
+            process.Start();
+            process.BeginOutputReadLine();
+            process.BeginErrorReadLine();
+            process.WaitForExit();
 
-                Console.WriteLine($"[YOUTUBE-DL] DONE!");
+            Console.WriteLine($"[YOUTUBE-DL] DONE!");
 
-                if (process.ExitCode != 0) {
-                    throw new Exception($"Youtube-dl failed, exit code {process.ExitCode}");
-                }
+            if (process.ExitCode != 0) {
+                throw new Exception($"Youtube-dl failed, exit code {process.ExitCode}");
             }
+
+            return new CommandResult(stdout, stderr);
+        }
+
+        //private static void Upload(string localFilePath) {
+        //    BlobServiceClient blobServiceClient = new BlobServiceClient(Secrets.AzureStorageConnectionString);
+        //    BlobContainerClient containerClient = blobServiceClient.GetBlobContainerClient(Constants.MusicContainerName);
+
+        //    BlobClient blobClient = containerClient.GetBlobClient(fileName);
+        //    //using FileStream uploadFileStream = File.OpenRead(localFilePath);
+        //    //await blobClient.UploadAsync(uploadFileStream, true);
+        //    //uploadFileStream.Close();
+        //}
+
+        // TODO: test this and use it to upload files
+        private static string GetFileName(string url, DlType type) {
+            var result = RunYTDL($"--get-filename -- {url}", WorkingDirectory(type));
+            var fileName = result.stdout.First();
+            return type == DlType.Audio ? RenameToMp3(fileName) : fileName;
+        }
+
+        private static string RenameToMp3(string filePath) => Path.ChangeExtension(filePath, "mp3");
+
+        [Fact]
+        public void RenameTests() {
+            RenameToMp3("foo.bar").Should().Be("foo.mp3");
+            RenameToMp3("foo.mp3").Should().Be("foo.mp3");
         }
 
         private static DownloadItem PopQueue(SqliteConnection conn) {
@@ -207,7 +232,6 @@ deadLetter(
             InsertToDeadLetter(db, item, new NullReferenceException());
 
             db.ExecuteScalar<int>("select count(*) from deadLetter").Should().Be(1);
-
 
             InsertToDeadLetter(db, item, new NullReferenceException());
 
