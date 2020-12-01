@@ -13,8 +13,6 @@ using System.IO;
 namespace Downloader {
 
     public class Program {
-        public const string AudioType = "Audio";
-        public const string VideoType = "Video";
         private const string YoutubeDlPath = "/usr/local/bin/youtube-dl";
 
         private enum DlType {
@@ -39,6 +37,8 @@ namespace Downloader {
             CreateTablesIfNotExists(conn);
 
             var item = PopQueue(conn);
+
+            Console.WriteLine($"About to attempt download for: {item}");
 
             if (item != null) {
                 try {
@@ -145,8 +145,8 @@ namespace Downloader {
             return item;
         }
 
-        private static void InsertUrlToQueue(SqliteConnection conn, string url, string type) {
-            conn.Execute("insert into queue(Url, Type) values(@url, @type)", new { url, type });
+        private static void InsertUrlToQueue(SqliteConnection conn, string url, DlType type) {
+            conn.Execute("insert into queue(Url, Type) values(@url, @type)", new { url, type = type.ToString() });
         }
 
         private static void InsertToFinished(SqliteConnection conn, DownloadItem item) {
@@ -203,9 +203,10 @@ deadLetter(
             var item = PopQueue(db);
             item.Should().BeNull();
 
-            InsertUrlToQueue(db, urlToUse, AudioType);
+            InsertUrlToQueue(db, urlToUse, DlType.Audio);
 
             db.ExecuteScalar<int>("select count(*) from queue").Should().Be(1);
+            db.ExecuteScalar<string>("select Type from queue").Should().Be("Audio");
 
             item = PopQueue(db);
             item.Url.Should().Be(urlToUse);
@@ -225,7 +226,7 @@ deadLetter(
             var db = SQLiteHelpers.CreateInMemoryDb();
             CreateTablesIfNotExists(db);
 
-            InsertUrlToQueue(db, urlToUse, AudioType);
+            InsertUrlToQueue(db, urlToUse, DlType.Audio);
 
             var item = PopQueue(db);
 
