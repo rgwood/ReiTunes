@@ -38,9 +38,8 @@ namespace Downloader {
 
             var item = PopQueue(conn);
 
-            Console.WriteLine($"About to attempt download for: {item}");
-
             if (item != null) {
+                Console.WriteLine($"About to attempt download for: {item}");
                 try {
                     Download(item.Url, item.Type);
                     InsertToFinished(conn, item);
