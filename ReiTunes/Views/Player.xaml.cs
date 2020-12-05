@@ -10,6 +10,7 @@ using System.Diagnostics;
 using System.Linq;
 using System.Reactive.Linq;
 using System.Threading.Tasks;
+using Windows.ApplicationModel;
 using Windows.Foundation;
 using Windows.Media.Playback;
 using Windows.System;
@@ -37,8 +38,13 @@ namespace ReiTunes {
         private bool _thumbNailIsRotating;
         private Storyboard _thumbnailStoryboard = new Storyboard();
 
+        public string MsixVersion { get; }
+
         public Player() {
             this.InitializeComponent();
+
+            var ver = Package.Current.Id.Version;
+            MsixVersion = $"v{ver.Major}.{ver.Minor}.{ver.Build}.{ver.Revision}";
 
             ApplicationView.GetForCurrentView().SetPreferredMinSize(new Size(200, 155));
             ViewModel = ServiceLocator.Current.GetService<PlayerViewModel>();

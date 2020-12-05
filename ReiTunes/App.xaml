@@ -36,7 +36,6 @@
                     <SolidColorBrush x:Key="SolarizedBackgroundBrush" Color="#fdf6e3" />
                     <SolidColorBrush x:Key="SolarizedAlternatingRow" Color="#eee8d5" />
                     <SolidColorBrush x:Key="SolarizedForeground" Color="#002b36" />
-
                 </ResourceDictionary>
             </ResourceDictionary.ThemeDictionaries>
         </ResourceDictionary>

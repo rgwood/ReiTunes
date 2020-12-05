@@ -22,10 +22,10 @@
                 <ResourceDictionary Source="ms-appx:///Microsoft.UI.Xaml/DensityStyles/Compact.xaml" />
             </ResourceDictionary.MergedDictionaries>
 
-            <Style x:Key="HeaderStyling" TargetType="primitives:DataGridColumnHeader">
+            <!--<Style x:Key="HeaderStyling" TargetType="primitives:DataGridColumnHeader">
                 <Setter Property="Background" Value="Beige" />
                 <Setter Property="Foreground" Value="{ThemeResource blue}" />
-            </Style>
+            </Style>-->
 
             <!--  https://github.com/windows-toolkit/WindowsCommunityToolkit/blob/7740ba715ace3ee249564fccf24b61d4f3512fea/Microsoft.Toolkit.Uwp.UI.Controls.DataGrid/DataGrid/DataGrid.xaml#L62  -->
             <SolidColorBrush
@@ -36,7 +36,7 @@
     </Page.Resources>
     <Grid>
         <Grid.RowDefinitions>
-            <RowDefinition Height="19" />
+            <RowDefinition Height="32" />
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
@@ -49,12 +49,24 @@
             IsIndeterminate="True"
             Opacity="{x:Bind converters:VisibilityConverter.OpacityOrFromBools(ViewModel.PullEventsCommand.IsRunning, ViewModel.PushEventsCommand.IsRunning), Mode=OneWay}" />
 
+        <StackPanel Margin="8,8,0,0" Orientation="Horizontal">
+            <TextBlock
+                FontFamily="Consolas"
+                FontSize="12"
+                Foreground="{ThemeResource SolarizedForeground}">
+                <TextBlock.Inlines>
+                    <Run Text="ReiTunes" />
+                    <Run Text="{x:Bind MsixVersion}" />
+                </TextBlock.Inlines>
+            </TextBlock>
+        </StackPanel>
+
         <StackPanel Grid.Row="2" Orientation="Vertical">
             <Grid>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="100" />
                     <ColumnDefinition Width="*" />
-                    <ColumnDefinition Width="137" />
+                    <ColumnDefinition Width="100" />
                 </Grid.ColumnDefinitions>
 
                 <!--  TargetNullValue=ms-appx:///Assets/VectorIcon.svg  -->
@@ -100,7 +112,7 @@
                     VerticalAlignment="Center"
                     Source="{x:Bind ViewModel.CurrentlyPlayingItemThumbnail, TargetNullValue=ms-appx:///Assets/VectorIcon.svg, Mode=OneWay}"
                     Tapped="CurrentlyPlayingThumbnail_Tapped" />
-                <StackPanel Grid.Column="2" VerticalAlignment="Center">
+                <StackPanel Grid.Column="2" VerticalAlignment="Top">
                     <winui:ProgressBar
                         Margin="0,0,0,0"
                         HorizontalAlignment="Stretch"
@@ -109,11 +121,12 @@
 
                     <Button
                         x:Name="pullButton"
-                        Margin="0,5,5,5"
-                        Padding="2"
+                        Margin="0,5,5,7"
+                        Padding="4"
                         HorizontalAlignment="Stretch"
-                        Background="{StaticResource base1}"
+                        Background="{StaticResource base01}"
                         Command="{x:Bind ViewModel.PullEventsCommand}"
+                        FontFamily="Consolas"
                         FontSize="12"
                         Foreground="{StaticResource base3}"
                         ToolTipService.ToolTip="Ctrl+P">
@@ -122,22 +135,24 @@
 
                     <Button
                         x:Name="pushButton"
-                        Margin="0,5,5,5"
-                        Padding="2"
+                        Margin="0,5,5,7"
+                        Padding="4"
                         HorizontalAlignment="Stretch"
-                        Background="{StaticResource base1}"
+                        Background="{StaticResource base01}"
                         Command="{x:Bind ViewModel.PushEventsCommand}"
+                        FontFamily="Consolas"
                         FontSize="12"
                         Foreground="{StaticResource base3}"
                         ToolTipService.ToolTip="Ctrl+Shift+P">
                         Push
                     </Button>
                     <Button
-                        Margin="0,5,5,5"
-                        Padding="2"
+                        Margin="0,5,5,0"
+                        Padding="4"
                         HorizontalAlignment="Stretch"
-                        Background="{StaticResource base1}"
+                        Background="{StaticResource base01}"
                         Click="ShowRecentEvents"
+                        FontFamily="Consolas"
                         FontSize="12"
                         Foreground="{StaticResource base3}">
                         Bookmark
@@ -199,7 +214,7 @@
             AreRowGroupHeadersFrozen="True"
             AutoGenerateColumns="False"
             BeginningEdit="libraryDataGrid_BeginningEdit"
-            BorderBrush="{StaticResource base0}"
+            BorderBrush="{StaticResource base01}"
             BorderThickness="0,1,0,0"
             CanUserReorderColumns="True"
             CanUserResizeColumns="True"
@@ -222,10 +237,24 @@
             Sorting="libraryDataGrid_Sorting"
             VerticalGridLinesBrush="{StaticResource base01}"
             VerticalScrollBarVisibility="Visible">
+            <controls:DataGrid.Resources>
+                <ResourceDictionary>
+                    <ResourceDictionary.ThemeDictionaries>
+                        <!--  Can't seem to style the header colours normally. Approach borrowed from: https://github.com/files-community/Files/blob/200fd540298fa7c7c76f0fabc50670f54bf1bd32/Files/Views/LayoutModes/GenericFileBrowser.xaml#L665  -->
+                        <!--  TODO: source these from centralized colours  -->
+                        <ResourceDictionary x:Key="Light">
+                            <SolidColorBrush x:Key="GridLinesBrush" Color="#586e75" />
+                            <Color x:Key="DataGridColumnHeaderBackgroundColor">#eee8d5</Color>
+                        </ResourceDictionary>
+                        <ResourceDictionary x:Key="Dark">
+                            <SolidColorBrush x:Key="GridLinesBrush" Color="#586e75" />
+                            <Color x:Key="DataGridColumnHeaderBackgroundColor">#002b36</Color>
+                        </ResourceDictionary>
+                    </ResourceDictionary.ThemeDictionaries>
+                </ResourceDictionary>
+            </controls:DataGrid.Resources>
             <controls:DataGrid.ColumnHeaderStyle>
                 <Style TargetType="primitives:DataGridColumnHeader">
-                    <!--  Why doesn't this work?  -->
-                    <!--<Setter Property="Background" Value="HotPink" />-->
 
                     <Setter Property="ContentTemplate">
                         <Setter.Value>
@@ -233,6 +262,7 @@
                                 <Grid>
                                     <TextBlock
                                         FontFamily="Consolas"
+                                        FontWeight="Bold"
                                         Foreground="{ThemeResource SolarizedForeground}"
                                         Text="{Binding}"
                                         TextAlignment="Center" />
