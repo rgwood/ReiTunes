@@ -1,4 +1,5 @@
-﻿using ReiTunes.Configuration;
+﻿using Microsoft.Toolkit.Uwp.UI.Helpers;
+using ReiTunes.Configuration;
 using ReiTunes.Services;
 using Serilog;
 using System;
@@ -13,6 +14,7 @@ using Windows.System;
 using Windows.UI.ViewManagement;
 using Windows.UI.Xaml;
 using Windows.UI.Xaml.Controls;
+using Windows.UI.Xaml.Media;
 
 namespace ReiTunes {
 
@@ -21,6 +23,8 @@ namespace ReiTunes {
     /// </summary>
     sealed partial class App : Application {
         //private readonly Size MainWindowSize = new Size(800, 650);
+
+        private ThemeListener _themeListener;
 
         /// <summary>
         /// Initializes the singleton application object.  This is the first line of authored code
@@ -63,9 +67,45 @@ namespace ReiTunes {
                 await Startup.ActivateAsync(args);
             }
 
-            // Hide default title bar. This setting persists and needs to be reset manually
             var coreTitleBar = CoreApplication.GetCurrentView().TitleBar;
+            // Hide default title bar. This setting persists and needs to be reset manually
             coreTitleBar.ExtendViewIntoTitleBar = true;
+
+            var titleBar = ApplicationView.GetForCurrentView().TitleBar;
+            _themeListener = new ThemeListener();
+            _themeListener.ThemeChanged += SetCloseButtonBackgroundColorFromTheme;
+
+            SetCloseButtonBackgroundColorFromTheme(_themeListener);
+        }
+
+        private void SetCloseButtonBackgroundColorFromTheme(ThemeListener sender) {
+            var titleBar = ApplicationView.GetForCurrentView().TitleBar;
+
+            switch (sender.CurrentTheme) {
+                case ApplicationTheme.Light:
+                    Windows.UI.Color lightBackground = GetColorFromHex("#fdf6e3");
+                    titleBar.ButtonBackgroundColor = lightBackground;
+                    titleBar.ButtonInactiveBackgroundColor = lightBackground;
+                    break;
+
+                case ApplicationTheme.Dark:
+                    Windows.UI.Color darkBackground = GetColorFromHex("#073642");
+                    titleBar.ButtonBackgroundColor = darkBackground;
+                    titleBar.ButtonInactiveBackgroundColor = darkBackground;
+                    break;
+
+                default:
+                    break;
+            }
+        }
+
+        private Windows.UI.Color GetColorFromHex(string hex) {
+            hex = hex.Replace("#", string.Empty);
+            byte a = (byte)(Convert.ToUInt32("FF", 16));
+            byte r = (byte)(Convert.ToUInt32(hex.Substring(0, 2), 16));
+            byte g = (byte)(Convert.ToUInt32(hex.Substring(2, 2), 16));
+            byte b = (byte)(Convert.ToUInt32(hex.Substring(4, 2), 16));
+            return Windows.UI.Color.FromArgb(a, r, g, b);
         }
 
         protected override async void OnActivated(IActivatedEventArgs args) {
