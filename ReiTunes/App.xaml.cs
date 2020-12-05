@@ -5,6 +5,7 @@ using System;
 using System.Threading.Tasks;
 using Windows.ApplicationModel;
 using Windows.ApplicationModel.Activation;
+using Windows.ApplicationModel.Core;
 using Windows.ApplicationModel.DataTransfer;
 using Windows.ApplicationModel.DataTransfer.ShareTarget;
 using Windows.Foundation;
@@ -61,6 +62,10 @@ namespace ReiTunes {
             if (!args.PrelaunchActivated) {
                 await Startup.ActivateAsync(args);
             }
+
+            // Hide default title bar. This setting persists and needs to be reset manually
+            var coreTitleBar = CoreApplication.GetCurrentView().TitleBar;
+            coreTitleBar.ExtendViewIntoTitleBar = true;
         }
 
         protected override async void OnActivated(IActivatedEventArgs args) {

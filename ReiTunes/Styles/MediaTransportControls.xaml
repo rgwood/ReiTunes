@@ -389,7 +389,7 @@
                             <Grid
                                 x:Name="ControlPanelGrid"
                                 VerticalAlignment="Bottom"
-                                Background="{ThemeResource MediaTransportControlsPanelBackground}"
+                                Background="Transparent"
                                 RenderTransformOrigin="0.5,0.5">
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="Auto" />
@@ -410,7 +410,7 @@
                                     Width="320"
                                     Height="96"
                                     HorizontalAlignment="Center"
-                                    Background="{ThemeResource MediaTransportControlsPanelBackground}"
+                                    Background="Transparent"
                                     Visibility="Collapsed">
                                     <TextBlock
                                         x:Name="ErrorTextBlock"

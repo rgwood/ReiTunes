@@ -7,8 +7,9 @@
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
     xmlns:local="using:ReiTunes"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    xmlns:primitives="using:Microsoft.Toolkit.Uwp.UI.Controls.Primitives"
     xmlns:winui="using:Microsoft.UI.Xaml.Controls"
-    Background="{ThemeResource ApplicationPageBackgroundThemeBrush}"
+    Background="{ThemeResource SolarizedBackgroundBrush}"
     KeyboardAcceleratorPlacementMode="Hidden"
     Loaded="Page_Loaded"
     Unloaded="Page_Unloaded"
@@ -20,6 +21,12 @@
                 <ResourceDictionary Source="../Styles/MediaTransportControls.xaml" />
                 <ResourceDictionary Source="ms-appx:///Microsoft.UI.Xaml/DensityStyles/Compact.xaml" />
             </ResourceDictionary.MergedDictionaries>
+
+            <Style x:Key="HeaderStyling" TargetType="primitives:DataGridColumnHeader">
+                <Setter Property="Background" Value="Beige" />
+                <Setter Property="Foreground" Value="{ThemeResource blue}" />
+            </Style>
+
             <!--  https://github.com/windows-toolkit/WindowsCommunityToolkit/blob/7740ba715ace3ee249564fccf24b61d4f3512fea/Microsoft.Toolkit.Uwp.UI.Controls.DataGrid/DataGrid/DataGrid.xaml#L62  -->
             <SolidColorBrush
                 x:Key="SystemControlGridLinesBaseMediumLowBrush"
@@ -29,16 +36,25 @@
     </Page.Resources>
     <Grid>
         <Grid.RowDefinitions>
+            <RowDefinition Height="19" />
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
-        <StackPanel Orientation="Vertical">
+
+        <winui:ProgressBar
+            Margin="0,0,0,0"
+            HorizontalAlignment="Stretch"
+            VerticalAlignment="Top"
+            IsIndeterminate="True"
+            Opacity="{x:Bind converters:VisibilityConverter.OpacityOrFromBools(ViewModel.PullEventsCommand.IsRunning, ViewModel.PushEventsCommand.IsRunning), Mode=OneWay}" />
+
+        <StackPanel Grid.Row="2" Orientation="Vertical">
             <Grid>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="100" />
                     <ColumnDefinition Width="*" />
-                    <ColumnDefinition Width="100" />
+                    <ColumnDefinition Width="137" />
                 </Grid.ColumnDefinitions>
 
                 <!--  TargetNullValue=ms-appx:///Assets/VectorIcon.svg  -->
@@ -96,8 +112,10 @@
                         Margin="0,5,5,5"
                         Padding="2"
                         HorizontalAlignment="Stretch"
+                        Background="{StaticResource base1}"
                         Command="{x:Bind ViewModel.PullEventsCommand}"
                         FontSize="12"
+                        Foreground="{StaticResource base3}"
                         ToolTipService.ToolTip="Ctrl+P">
                         Pull
                     </Button>
@@ -107,8 +125,10 @@
                         Margin="0,5,5,5"
                         Padding="2"
                         HorizontalAlignment="Stretch"
+                        Background="{StaticResource base1}"
                         Command="{x:Bind ViewModel.PushEventsCommand}"
                         FontSize="12"
+                        Foreground="{StaticResource base3}"
                         ToolTipService.ToolTip="Ctrl+Shift+P">
                         Push
                     </Button>
@@ -116,9 +136,11 @@
                         Margin="0,5,5,5"
                         Padding="2"
                         HorizontalAlignment="Stretch"
+                        Background="{StaticResource base1}"
                         Click="ShowRecentEvents"
-                        FontSize="12">
-                        View Events
+                        FontSize="12"
+                        Foreground="{StaticResource base3}">
+                        Bookmark
                     </Button>
                 </StackPanel>
             </Grid>
@@ -126,7 +148,11 @@
                 Margin="10"
                 Orientation="Vertical"
                 Visibility="{x:Bind ViewModel.DownloadInProgress, Mode=OneWay}">
-                <TextBlock Grid.Row="3" Text="{x:Bind ViewModel.DownloadStatus, Mode=OneWay}" />
+
+                <TextBlock
+                    Grid.Row="3"
+                    FontFamily="Consolas"
+                    Text="{x:Bind ViewModel.DownloadStatus, Mode=OneWay}" />
                 <winui:ProgressBar
                     Margin="0,5,0,5"
                     HorizontalAlignment="Stretch"
@@ -142,11 +168,14 @@
                     Grid.Column="1"
                     Width="Auto"
                     Height="1"
-                    Fill="{ThemeResource SystemChromeDisabledHighColor}" />
+                    Fill="{StaticResource base0}" />
                 <Rectangle Width="10" />
             </Grid>
             <Grid Padding="5">
-                <TextBox x:Name="FilterBox" PlaceholderText="Search" />
+                <TextBox
+                    x:Name="FilterBox"
+                    FontFamily="Consolas"
+                    PlaceholderText="Search" />
                 <!--  Can't figure out how to make the icon not clash with the X delete button  -->
                 <!--<TextBlock
                     x:Name="findIcon"
@@ -165,12 +194,12 @@
             Margin="0"
             HorizontalAlignment="Stretch"
             VerticalAlignment="Stretch"
-            AlternatingRowBackground="{ThemeResource SystemChromeLowColor}"
+            AlternatingRowBackground="{ThemeResource SolarizedAlternatingRow}"
             AreRowDetailsFrozen="False"
             AreRowGroupHeadersFrozen="True"
             AutoGenerateColumns="False"
             BeginningEdit="libraryDataGrid_BeginningEdit"
-            BorderBrush="{StaticResource SystemControlGridLinesBaseMediumLowBrush}"
+            BorderBrush="{StaticResource base0}"
             BorderThickness="0,1,0,0"
             CanUserReorderColumns="True"
             CanUserResizeColumns="True"
@@ -178,9 +207,11 @@
             CellEditEnded="libraryDataGrid_CellEditEnded"
             ColumnHeaderHeight="32"
             DoubleTapped="OpenSelectedLibraryItem"
+            FontFamily="Consolas"
             FrozenColumnCount="0"
             GridLinesVisibility="All"
             HeadersVisibility="Column"
+            HorizontalGridLinesBrush="{StaticResource base0}"
             HorizontalScrollBarVisibility="Visible"
             ItemsSource="{x:Bind ViewModel.VisibleItems, Mode=OneWay}"
             MaxColumnWidth="600"
@@ -189,7 +220,28 @@
             RowGroupHeaderPropertyNameAlternative="Range"
             SelectionMode="Extended"
             Sorting="libraryDataGrid_Sorting"
+            VerticalGridLinesBrush="{StaticResource base01}"
             VerticalScrollBarVisibility="Visible">
+            <controls:DataGrid.ColumnHeaderStyle>
+                <Style TargetType="primitives:DataGridColumnHeader">
+                    <!--  Why doesn't this work?  -->
+                    <!--<Setter Property="Background" Value="HotPink" />-->
+
+                    <Setter Property="ContentTemplate">
+                        <Setter.Value>
+                            <DataTemplate>
+                                <Grid>
+                                    <TextBlock
+                                        FontFamily="Consolas"
+                                        Foreground="{ThemeResource SolarizedForeground}"
+                                        Text="{Binding}"
+                                        TextAlignment="Center" />
+                                </Grid>
+                            </DataTemplate>
+                        </Setter.Value>
+                    </Setter>
+                </Style>
+            </controls:DataGrid.ColumnHeaderStyle>
             <controls:DataGrid.Columns>
                 <controls:DataGridTextColumn
                     Binding="{Binding Name}"

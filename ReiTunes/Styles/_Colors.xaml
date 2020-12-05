@@ -1,6 +1,30 @@
-﻿<ResourceDictionary
-    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+﻿<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <!--  Solarized Color Style: https://ethanschoonover.com/solarized/  -->
+    <SolidColorBrush x:Key="base03" Color="#002b36" />
+    <SolidColorBrush x:Key="base02" Color="#073642" />
+    <SolidColorBrush x:Key="base01" Color="#586e75" />
+    <SolidColorBrush x:Key="base00" Color="#657b83" />
+    <SolidColorBrush x:Key="base0" Color="#839496" />
+    <SolidColorBrush x:Key="base1" Color="#93a1a1" />
+    <SolidColorBrush x:Key="base2" Color="#eee8d5" />
+    <SolidColorBrush x:Key="base3" Color="#fdf6e3" />
+    <SolidColorBrush x:Key="yellow" Color="#b58900" />
+    <SolidColorBrush x:Key="orange" Color="#cb4b16" />
+    <SolidColorBrush x:Key="red" Color="#dc322f" />
+    <SolidColorBrush x:Key="magenta" Color="#d33682" />
+    <SolidColorBrush x:Key="violet" Color="#6c71c4" />
+    <SolidColorBrush x:Key="blue" Color="#268bd2" />
+    <SolidColorBrush x:Key="cyan" Color="#2aa198" />
+    <SolidColorBrush x:Key="green" Color="#859900" />
 
-    <SolidColorBrush x:Key="ThemeControlForegroundBaseHighBrush" Color="{ThemeResource SystemBaseHighColor}"></SolidColorBrush>
+    <!--<SolidColorBrush x:Key="ThemeControlForegroundBaseHighBrush" Color="{ThemeResource SystemBaseHighColor}" />-->
+
+    <ResourceDictionary.ThemeDictionaries>
+        <ResourceDictionary x:Key="Dark">
+            <SolidColorBrush x:Key="SolarizedBackgroundBrush" Color="#073642" />
+        </ResourceDictionary>
+        <ResourceDictionary x:Key="Light">
+            <SolidColorBrush x:Key="SolarizedBackgroundBrush" Color="#fdf6e3" />
+        </ResourceDictionary>
+    </ResourceDictionary.ThemeDictionaries>
 </ResourceDictionary>
