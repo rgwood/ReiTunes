@@ -190,7 +190,21 @@
                 <TextBox
                     x:Name="FilterBox"
                     FontFamily="Consolas"
-                    PlaceholderText="Search" />
+                    PlaceholderText="Search">
+                    <TextBox.Resources>
+                        <ResourceDictionary>
+                            <!--  Without these the background is white/black  -->
+                            <ResourceDictionary.ThemeDictionaries>
+                                <ResourceDictionary x:Key="Light">
+                                    <StaticResource x:Key="TextControlBackgroundFocused" ResourceKey="base2" />
+                                </ResourceDictionary>
+                                <ResourceDictionary x:Key="Dark">
+                                    <StaticResource x:Key="TextControlBackgroundFocused" ResourceKey="base03" />
+                                </ResourceDictionary>
+                            </ResourceDictionary.ThemeDictionaries>
+                        </ResourceDictionary>
+                    </TextBox.Resources>
+                </TextBox>
                 <!--  Can't figure out how to make the icon not clash with the X delete button  -->
                 <!--<TextBlock
                     x:Name="findIcon"
