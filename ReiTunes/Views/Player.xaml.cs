@@ -68,21 +68,25 @@ namespace ReiTunes {
 
         private void ViewModel_PropertyChanged(object sender, System.ComponentModel.PropertyChangedEventArgs e) {
             if (e.PropertyName == nameof(ViewModel.CurrentlyPlayingItem)) {
-                CurrentlyPlayingItemDescription.Inlines.Clear();
+                UpdateCurrentlyPlayingText();
+            }
+        }
 
-                CurrentlyPlayingItemDescription.Inlines.Add(new Run() { Text = ViewModel.CurrentlyPlayingItem?.Name });
+        private void UpdateCurrentlyPlayingText() {
+            CurrentlyPlayingItemDescription.Inlines.Clear();
 
-                // doing this all in C# because these kinds of conditionals are a PITA in XAML
-                // Runs don't have a visibility property
-                if (!string.IsNullOrEmpty(ViewModel.CurrentlyPlayingItem?.Artist)) {
-                    CurrentlyPlayingItemDescription.Inlines.Add(new Run() { Text = " by ", FontWeight = FontWeights.Light });
-                    CurrentlyPlayingItemDescription.Inlines.Add(new Run() { Text = ViewModel.CurrentlyPlayingItem?.Artist });
-                }
+            CurrentlyPlayingItemDescription.Inlines.Add(new Run() { Text = ViewModel.CurrentlyPlayingItem?.Name });
 
-                if (!string.IsNullOrEmpty(ViewModel.CurrentlyPlayingItem?.Album)) {
-                    CurrentlyPlayingItemDescription.Inlines.Add(new Run() { Text = " on ", FontWeight = FontWeights.Light });
-                    CurrentlyPlayingItemDescription.Inlines.Add(new Run() { Text = ViewModel.CurrentlyPlayingItem?.Album });
-                }
+            // doing this all in C# because these kinds of conditionals are a PITA in XAML
+            // Runs don't have a visibility property
+            if (!string.IsNullOrEmpty(ViewModel.CurrentlyPlayingItem?.Artist)) {
+                CurrentlyPlayingItemDescription.Inlines.Add(new Run() { Text = " by ", FontWeight = FontWeights.Light });
+                CurrentlyPlayingItemDescription.Inlines.Add(new Run() { Text = ViewModel.CurrentlyPlayingItem?.Artist });
+            }
+
+            if (!string.IsNullOrEmpty(ViewModel.CurrentlyPlayingItem?.Album)) {
+                CurrentlyPlayingItemDescription.Inlines.Add(new Run() { Text = " on ", FontWeight = FontWeights.Light });
+                CurrentlyPlayingItemDescription.Inlines.Add(new Run() { Text = ViewModel.CurrentlyPlayingItem?.Album });
             }
         }
 
@@ -309,10 +313,12 @@ namespace ReiTunes {
 
         private void libraryDataGrid_CellEditEnded(object sender, Microsoft.Toolkit.Uwp.UI.Controls.DataGridCellEditEndedEventArgs e) {
             _dataGridIsEditing = false;
+            UpdateCurrentlyPlayingText();
         }
 
         private void libraryDataGrid_RowEditEnded(object sender, Microsoft.Toolkit.Uwp.UI.Controls.DataGridRowEditEndedEventArgs e) {
             _dataGridIsEditing = false;
+            UpdateCurrentlyPlayingText();
         }
 
         // called once in constructor
