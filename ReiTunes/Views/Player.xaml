@@ -252,8 +252,7 @@
             RowGroupHeaderPropertyNameAlternative="Range"
             SelectionMode="Extended"
             Sorting="libraryDataGrid_Sorting"
-            VerticalGridLinesBrush="{StaticResource base01}"
-            VerticalScrollBarVisibility="Visible">
+            VerticalGridLinesBrush="{StaticResource base01}">
             <controls:DataGrid.Resources>
                 <ResourceDictionary>
                     <Style x:Key="ColHeaderStyle" TargetType="primitives:DataGridColumnHeader">
