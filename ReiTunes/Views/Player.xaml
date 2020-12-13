@@ -280,7 +280,11 @@
                     <Setter Property="controls:DataGridRow.ContextFlyout">
                         <Setter.Value>
                             <MenuFlyout>
-                                <MenuFlyoutItem x:Name="CopyURLMenuItem" Text="Copy URL" Icon="Copy" Click="CopyURLMenuItem_Click" />
+                                <MenuFlyoutItem
+                                    x:Name="CopyURLMenuItem"
+                                    Click="CopyURLMenuItem_Click"
+                                    Icon="Copy"
+                                    Text="Copy URL" />
                                 <MenuFlyoutItem
                                     x:Name="WorldMenuItem"
                                     Click="ShowRecentEvents"
@@ -322,28 +326,15 @@
                     </controls:DataGridTextColumn.CellStyle>
                 </controls:DataGridTextColumn>
                 <controls:DataGridTextColumn
-                    Binding="{Binding CreatedTimeUtc}"
-                    Header="Date Added (UTC)"
+                    Binding="{Binding CreatedTimeLocal}"
+                    Header="Date Added"
                     IsReadOnly="True"
-                    Tag="DateAddedUtc" />
+                    Tag="CreatedTimeLocal" />
                 <controls:DataGridTextColumn
                     Binding="{Binding FilePath}"
                     Header="File Path"
                     Tag="Path" />
             </controls:DataGrid.Columns>
         </controls:DataGrid>
-
-        <!--<winui:TreeView
-            x:Name="FileTreeView"
-            Grid.Row="5"
-            ItemsSource="{x:Bind ViewModel.FileTreeItems, Mode=OneWay}">
-        <winui:TreeView.ItemTemplate>
-            <DataTemplate x:DataType="local:FileTreeItem">
-                <winui:TreeViewItem DoubleTapped="OpenSelectedFileTreeItem" ItemsSource="{x:Bind Children}">
-                    <TextBlock Text="{x:Bind Name}" />
-                </winui:TreeViewItem>
-            </DataTemplate>
-        </winui:TreeView.ItemTemplate>
-        </winui:TreeView>-->
     </Grid>
 </Page>
