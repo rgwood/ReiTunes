@@ -280,12 +280,16 @@
                     <Setter Property="controls:DataGridRow.ContextFlyout">
                         <Setter.Value>
                             <MenuFlyout>
-                                <!--  TODO: add useful actions here. Delete for sure... what else?  -->
-                                <MenuFlyoutItem x:Name="HelloMenuItem" Text="Hello" />
+                                <MenuFlyoutItem x:Name="CopyURLMenuItem" Text="Copy URL" Icon="Copy" Click="CopyURLMenuItem_Click" />
                                 <MenuFlyoutItem
                                     x:Name="WorldMenuItem"
                                     Click="ShowRecentEvents"
-                                    Text="World" />
+                                    Text="Show recent events (WIP)" />
+                                <MenuFlyoutItem
+                                    x:Name="DeleteMenuItem"
+                                    Click="DeleteMenuItem_Click"
+                                    Icon="Delete"
+                                    Text="Delete" />
                             </MenuFlyout>
                         </Setter.Value>
                     </Setter>

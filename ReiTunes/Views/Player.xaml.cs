@@ -218,21 +218,25 @@ namespace ReiTunes {
                 if (selected is null)
                     return;
 
-                var confirmDialog = new ContentDialog {
-                    Title = "Delete file?",
-                    Content = $"Are you sure you want to delete '{selected.Name}' from the library? Blob content will be unaffected.",
-                    PrimaryButtonText = "Delete",
-                    DefaultButton = ContentDialogButton.Primary,
-                    CloseButtonText = "Cancel"
-                };
-
-                var result = await confirmDialog.ShowAsync();
-
-                if (result == ContentDialogResult.Primary) {
-                    ViewModel.Delete(selected);
-                }
+                await DeleteItemWithConfirmDialog(selected);
 
                 args.Handled = true;
+            }
+        }
+
+        private async Task DeleteItemWithConfirmDialog(LibraryItem item) {
+            var confirmDialog = new ContentDialog {
+                Title = "Delete file?",
+                Content = $"Are you sure you want to delete '{item.Name}' from the library? Blob content will be unaffected.",
+                PrimaryButtonText = "Delete",
+                DefaultButton = ContentDialogButton.Primary,
+                CloseButtonText = "Cancel"
+            };
+
+            var result = await confirmDialog.ShowAsync();
+
+            if (result == ContentDialogResult.Primary) {
+                ViewModel.Delete(item);
             }
         }
 
@@ -371,6 +375,20 @@ namespace ReiTunes {
         private async void ShowRecentEvents(object sender, RoutedEventArgs e) {
             var recentEventsDialog = new RecentEventsContentDialog(ViewModel.GetRecentEvents());
             await recentEventsDialog.ShowAsync();
+        }
+
+        private async void DeleteMenuItem_Click(object sender, RoutedEventArgs e) {
+            var item = (sender as FrameworkElement).DataContext as LibraryItem;
+
+            if (item != null) {
+                await DeleteItemWithConfirmDialog(item);
+            }
+        }
+
+        private void CopyURLMenuItem_Click(object sender, RoutedEventArgs e) {
+            var item = (sender as FrameworkElement).DataContext as LibraryItem;
+
+            ViewModel.CopyUriToClipboard(item);
         }
     }
 }

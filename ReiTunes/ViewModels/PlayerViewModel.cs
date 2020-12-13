@@ -22,6 +22,7 @@ using Windows.UI.Core;
 using Windows.Storage.FileProperties;
 using Windows.UI.Xaml.Media.Imaging;
 using Windows.Storage.Streams;
+using Windows.ApplicationModel.DataTransfer;
 
 namespace ReiTunes {
 
@@ -196,8 +197,7 @@ namespace ReiTunes {
         private string GetFileNameFromFullPath(string fullPath) => fullPath.Split('/').Last();
 
         public async Task PlayOnSonos(LibraryItem libraryItemToPlay) {
-            //string uri = System.Web.HttpUtility.UrlEncode(new Uri(_cloudBaseUri, libraryItemToPlay.FilePath).ToString());
-            var uri = new Uri(_cloudBaseUri, libraryItemToPlay.FilePath);
+            var uri = GetUri(libraryItemToPlay);
             var uriStr = uri.ToString();
             var sw = Stopwatch.StartNew();
             await _sonosIntermediary.Play(uriStr);
@@ -271,7 +271,7 @@ namespace ReiTunes {
 
         private async Task<MediaSource> DownloadAndStartMusicFile(string fileName, StorageFolder folderToSaveTo, LibraryItem libraryItemToPlay) {
             _logger.Information("Downloading music file {filePath}", libraryItemToPlay.FilePath);
-            var downloadUri = new Uri(_cloudBaseUri, libraryItemToPlay.FilePath);
+            Uri downloadUri = GetUri(libraryItemToPlay);
             var downloadFile = await folderToSaveTo.CreateFileAsync(fileName);
             DownloadInProgress = true;
             BackgroundDownloader downloader = new BackgroundDownloader();
@@ -295,6 +295,8 @@ namespace ReiTunes {
             DownloadInProgress = false;
             return mediaSource;
         }
+
+        internal Uri GetUri(LibraryItem libraryItemToPlay) => new Uri(_cloudBaseUri, libraryItemToPlay.FilePath);
 
         private void HandleDownloadProgress(DownloadOperation download) {
             // DownloadOperation.Progress is updated in real-time while the operation is ongoing. Therefore,
@@ -324,6 +326,13 @@ namespace ReiTunes {
                     DownloadStatus = message;
                     DownloadPercentFinished = percentageFinished;
                 });
+        }
+
+        public void CopyUriToClipboard(LibraryItem item) {
+            DataPackage dataPackage = new() { RequestedOperation = DataPackageOperation.Copy };
+            var uri = GetUri(item).ToString();
+            dataPackage.SetText(uri);
+            Clipboard.SetContent(dataPackage);
         }
     }
 }
