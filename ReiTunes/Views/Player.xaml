@@ -84,8 +84,7 @@
                         x:Name="musicPlayer"
                         Grid.Row="2"
                         AreTransportControlsEnabled="True"
-                        AutoPlay="True"
-                        Source="{x:Bind ViewModel.Source, Mode=OneWay}">
+                        AutoPlay="True">
                         <MediaPlayerElement.TransportControls>
                             <MediaTransportControls
                                 IsCompact="False"
@@ -154,7 +153,7 @@
                         Padding="4"
                         HorizontalAlignment="Stretch"
                         Background="{StaticResource base01}"
-                        Click="ShowRecentEvents"
+                        Command="{x:Bind ViewModel.BookmarkCommand}"
                         FontFamily="Consolas"
                         FontSize="12"
                         Foreground="{StaticResource base3}">
@@ -176,19 +175,6 @@
                     HorizontalAlignment="Stretch"
                     Value="{x:Bind ViewModel.DownloadPercentFinished, Mode=OneWay}" />
             </StackPanel>
-            <!--<Grid x:Name="separator" Margin="0,0,0,0">
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="0" />
-                    <ColumnDefinition Width="18*" />
-                    <ColumnDefinition Width="0" />
-                </Grid.ColumnDefinitions>
-                <Rectangle
-                    Grid.Column="1"
-                    Width="Auto"
-                    Height="1"
-                    Fill="{StaticResource base0}" />
-                <Rectangle Width="10" />
-            </Grid>-->
             <Grid Padding="5,0,5,10">
                 <TextBox
                     x:Name="FilterBox"
@@ -296,7 +282,10 @@
                             <MenuFlyout>
                                 <!--  TODO: add useful actions here. Delete for sure... what else?  -->
                                 <MenuFlyoutItem x:Name="HelloMenuItem" Text="Hello" />
-                                <MenuFlyoutItem x:Name="WorldMenuItem" Text="World" />
+                                <MenuFlyoutItem
+                                    x:Name="WorldMenuItem"
+                                    Click="ShowRecentEvents"
+                                    Text="World" />
                             </MenuFlyout>
                         </Setter.Value>
                     </Setter>

@@ -53,6 +53,8 @@ namespace ReiTunes {
             // when items change underneath us, refilter them if applicable
             ViewModel.ItemsReloaded += async (a, b) => await FilterVMUsingFilterBoxText();
 
+            musicPlayer.SetMediaPlayer(ViewModel.MediaPlayer);
+
             SetUpThumbnailAnimation();
 
             // without throttling, the DataGrid can't refresh fast enough to keep up with typing
@@ -123,11 +125,6 @@ namespace ReiTunes {
         // Enter should start playing a file when in the file view
 
         #region KeyboardStuff
-
-        // For ease of implementation, this helps us reliably use enter to interpret a "filter now" request
-        private void LibraryDataGrid_LostFocus(object sender, RoutedEventArgs e) {
-            libraryDataGrid.SelectedItems.Clear();
-        }
 
         private void SetUpKeyboardAccelerators() {
             KeyboardAccelerator CreateAccelerator(VirtualKeyModifiers modifier, VirtualKey key,
