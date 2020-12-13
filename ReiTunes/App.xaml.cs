@@ -11,6 +11,7 @@ using Windows.ApplicationModel.DataTransfer;
 using Windows.ApplicationModel.DataTransfer.ShareTarget;
 using Windows.Foundation;
 using Windows.System;
+using Windows.UI;
 using Windows.UI.ViewManagement;
 using Windows.UI.Xaml;
 using Windows.UI.Xaml.Controls;
@@ -75,6 +76,9 @@ namespace ReiTunes {
             _themeListener = new ThemeListener();
             _themeListener.ThemeChanged += SetCloseButtonBackgroundColorFromTheme;
 
+            titleBar.ButtonBackgroundColor = Colors.Transparent;
+            titleBar.ButtonInactiveBackgroundColor = Colors.Transparent;
+
             SetCloseButtonBackgroundColorFromTheme(_themeListener);
         }
 
@@ -83,29 +87,18 @@ namespace ReiTunes {
 
             switch (sender.CurrentTheme) {
                 case ApplicationTheme.Light:
-                    Windows.UI.Color lightBackground = GetColorFromHex("#fdf6e3");
-                    titleBar.ButtonBackgroundColor = lightBackground;
-                    titleBar.ButtonInactiveBackgroundColor = lightBackground;
+                    titleBar.ButtonForegroundColor = ((SolidColorBrush)Application.Current.Resources["base03"]).Color;
+                    titleBar.ButtonHoverBackgroundColor = ((SolidColorBrush)Application.Current.Resources["base2"]).Color;
                     break;
 
                 case ApplicationTheme.Dark:
-                    Windows.UI.Color darkBackground = GetColorFromHex("#073642");
-                    titleBar.ButtonBackgroundColor = darkBackground;
-                    titleBar.ButtonInactiveBackgroundColor = darkBackground;
+                    titleBar.ButtonForegroundColor = ((SolidColorBrush)Application.Current.Resources["base3"]).Color;
+                    titleBar.ButtonHoverBackgroundColor = ((SolidColorBrush)Application.Current.Resources["base03"]).Color;
                     break;
 
                 default:
                     break;
             }
-        }
-
-        private Windows.UI.Color GetColorFromHex(string hex) {
-            hex = hex.Replace("#", string.Empty);
-            byte a = (byte)(Convert.ToUInt32("FF", 16));
-            byte r = (byte)(Convert.ToUInt32(hex.Substring(0, 2), 16));
-            byte g = (byte)(Convert.ToUInt32(hex.Substring(2, 2), 16));
-            byte b = (byte)(Convert.ToUInt32(hex.Substring(4, 2), 16));
-            return Windows.UI.Color.FromArgb(a, r, g, b);
         }
 
         protected override async void OnActivated(IActivatedEventArgs args) {
