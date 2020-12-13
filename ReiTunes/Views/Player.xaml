@@ -112,7 +112,10 @@
                     VerticalAlignment="Center"
                     Source="{x:Bind ViewModel.CurrentlyPlayingItemThumbnail, TargetNullValue=ms-appx:///Assets/VectorIcon.svg, Mode=OneWay}"
                     Tapped="CurrentlyPlayingThumbnail_Tapped" />
-                <StackPanel Grid.Column="2" VerticalAlignment="Top">
+                <StackPanel
+                    Grid.Column="2"
+                    Margin="0,0,5,0"
+                    VerticalAlignment="Top">
                     <winui:ProgressBar
                         Margin="0,0,0,0"
                         HorizontalAlignment="Stretch"
@@ -121,7 +124,7 @@
 
                     <Button
                         x:Name="pullButton"
-                        Margin="0,5,5,7"
+                        Margin="0,5,0,7"
                         Padding="4"
                         HorizontalAlignment="Stretch"
                         Background="{StaticResource base01}"
@@ -135,7 +138,7 @@
 
                     <Button
                         x:Name="pushButton"
-                        Margin="0,5,5,7"
+                        Margin="0,5,0,7"
                         Padding="4"
                         HorizontalAlignment="Stretch"
                         Background="{StaticResource base01}"
@@ -147,7 +150,7 @@
                         Push
                     </Button>
                     <Button
-                        Margin="0,5,5,0"
+                        Margin="0,5,0,0"
                         Padding="4"
                         HorizontalAlignment="Stretch"
                         Background="{StaticResource base01}"
@@ -173,7 +176,7 @@
                     HorizontalAlignment="Stretch"
                     Value="{x:Bind ViewModel.DownloadPercentFinished, Mode=OneWay}" />
             </StackPanel>
-            <Grid x:Name="separator" Margin="0,0,0,0">
+            <!--<Grid x:Name="separator" Margin="0,0,0,0">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="0" />
                     <ColumnDefinition Width="18*" />
@@ -185,8 +188,8 @@
                     Height="1"
                     Fill="{StaticResource base0}" />
                 <Rectangle Width="10" />
-            </Grid>
-            <Grid Padding="5">
+            </Grid>-->
+            <Grid Padding="5,0,5,10">
                 <TextBox
                     x:Name="FilterBox"
                     FontFamily="Consolas"
@@ -253,6 +256,23 @@
             VerticalScrollBarVisibility="Visible">
             <controls:DataGrid.Resources>
                 <ResourceDictionary>
+                    <Style x:Key="ColHeaderStyle" TargetType="primitives:DataGridColumnHeader">
+
+                        <Setter Property="ContentTemplate">
+                            <Setter.Value>
+                                <DataTemplate>
+                                    <Grid>
+                                        <TextBlock
+                                            FontFamily="Consolas"
+                                            FontWeight="Bold"
+                                            Foreground="{ThemeResource SolarizedForeground}"
+                                            Text="{Binding}"
+                                            TextAlignment="Center" />
+                                    </Grid>
+                                </DataTemplate>
+                            </Setter.Value>
+                        </Setter>
+                    </Style>
                     <ResourceDictionary.ThemeDictionaries>
                         <!--  Can't seem to style the header colours normally. Approach borrowed from: https://github.com/files-community/Files/blob/200fd540298fa7c7c76f0fabc50670f54bf1bd32/Files/Views/LayoutModes/GenericFileBrowser.xaml#L665  -->
                         <!--  TODO: source these from centralized colours  -->
@@ -268,24 +288,21 @@
                 </ResourceDictionary>
             </controls:DataGrid.Resources>
             <controls:DataGrid.ColumnHeaderStyle>
-                <Style TargetType="primitives:DataGridColumnHeader">
-
-                    <Setter Property="ContentTemplate">
+                <StaticResource ResourceKey="ColHeaderStyle" />
+            </controls:DataGrid.ColumnHeaderStyle>
+            <controls:DataGrid.RowStyle>
+                <Style TargetType="controls:DataGridRow">
+                    <Setter Property="controls:DataGridRow.ContextFlyout">
                         <Setter.Value>
-                            <DataTemplate>
-                                <Grid>
-                                    <TextBlock
-                                        FontFamily="Consolas"
-                                        FontWeight="Bold"
-                                        Foreground="{ThemeResource SolarizedForeground}"
-                                        Text="{Binding}"
-                                        TextAlignment="Center" />
-                                </Grid>
-                            </DataTemplate>
+                            <MenuFlyout>
+                                <!--  TODO: add useful actions here. Delete for sure... what else?  -->
+                                <MenuFlyoutItem x:Name="HelloMenuItem" Text="Hello" />
+                                <MenuFlyoutItem x:Name="WorldMenuItem" Text="World" />
+                            </MenuFlyout>
                         </Setter.Value>
                     </Setter>
                 </Style>
-            </controls:DataGrid.ColumnHeaderStyle>
+            </controls:DataGrid.RowStyle>
             <controls:DataGrid.Columns>
                 <controls:DataGridTextColumn
                     Binding="{Binding Name}"
@@ -301,17 +318,25 @@
                     Tag="Album" />
                 <controls:DataGridTextColumn
                     Binding="{Binding PlayCount}"
-                    Header="Play Count"
+                    Header="Plays"
                     IsReadOnly="True"
-                    Tag="PlayCount" />
+                    Tag="Plays">
+                    <controls:DataGridTextColumn.CellStyle>
+                        <Style TargetType="controls:DataGridCell">
+                            <Style.Setters>
+                                <Setter Property="HorizontalAlignment" Value="Right" />
+                            </Style.Setters>
+                        </Style>
+                    </controls:DataGridTextColumn.CellStyle>
+                </controls:DataGridTextColumn>
                 <controls:DataGridTextColumn
                     Binding="{Binding CreatedTimeUtc}"
-                    Header="Date Added"
+                    Header="Date Added (UTC)"
                     IsReadOnly="True"
                     Tag="DateAddedUtc" />
                 <controls:DataGridTextColumn
                     Binding="{Binding FilePath}"
-                    Header="Path"
+                    Header="File Path"
                     Tag="Path" />
             </controls:DataGrid.Columns>
         </controls:DataGrid>
