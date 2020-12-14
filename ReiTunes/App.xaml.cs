@@ -1,17 +1,21 @@
-﻿using ReiTunes.Configuration;
+﻿using Microsoft.Toolkit.Uwp.UI.Helpers;
+using ReiTunes.Configuration;
 using ReiTunes.Services;
 using Serilog;
 using System;
 using System.Threading.Tasks;
 using Windows.ApplicationModel;
 using Windows.ApplicationModel.Activation;
+using Windows.ApplicationModel.Core;
 using Windows.ApplicationModel.DataTransfer;
 using Windows.ApplicationModel.DataTransfer.ShareTarget;
 using Windows.Foundation;
 using Windows.System;
+using Windows.UI;
 using Windows.UI.ViewManagement;
 using Windows.UI.Xaml;
 using Windows.UI.Xaml.Controls;
+using Windows.UI.Xaml.Media;
 
 namespace ReiTunes {
 
@@ -20,6 +24,8 @@ namespace ReiTunes {
     /// </summary>
     sealed partial class App : Application {
         //private readonly Size MainWindowSize = new Size(800, 650);
+
+        private ThemeListener _themeListener;
 
         /// <summary>
         /// Initializes the singleton application object.  This is the first line of authored code
@@ -44,7 +50,7 @@ namespace ReiTunes {
             throw new NotImplementedException();
         }
 
-        private async void App_UnhandledException(object sender, Windows.UI.Xaml.UnhandledExceptionEventArgs e) {
+        private void App_UnhandledException(object sender, Windows.UI.Xaml.UnhandledExceptionEventArgs e) {
             var logger = ServiceLocator.Current.GetService<ILogger>();
             logger.Fatal("Unhandled exception '{Message}': {Exception}", e.Message, e.Exception);
 
@@ -60,6 +66,38 @@ namespace ReiTunes {
         protected override async void OnLaunched(LaunchActivatedEventArgs args) {
             if (!args.PrelaunchActivated) {
                 await Startup.ActivateAsync(args);
+            }
+
+            var coreTitleBar = CoreApplication.GetCurrentView().TitleBar;
+            // Hide default title bar. This setting persists and needs to be reset manually
+            coreTitleBar.ExtendViewIntoTitleBar = true;
+
+            var titleBar = ApplicationView.GetForCurrentView().TitleBar;
+            _themeListener = new ThemeListener();
+            _themeListener.ThemeChanged += SetCloseButtonBackgroundColorFromTheme;
+
+            titleBar.ButtonBackgroundColor = Colors.Transparent;
+            titleBar.ButtonInactiveBackgroundColor = Colors.Transparent;
+
+            SetCloseButtonBackgroundColorFromTheme(_themeListener);
+        }
+
+        private void SetCloseButtonBackgroundColorFromTheme(ThemeListener sender) {
+            var titleBar = ApplicationView.GetForCurrentView().TitleBar;
+
+            switch (sender.CurrentTheme) {
+                case ApplicationTheme.Light:
+                    titleBar.ButtonForegroundColor = ((SolidColorBrush)Application.Current.Resources["base03"]).Color;
+                    titleBar.ButtonHoverBackgroundColor = ((SolidColorBrush)Application.Current.Resources["base2"]).Color;
+                    break;
+
+                case ApplicationTheme.Dark:
+                    titleBar.ButtonForegroundColor = ((SolidColorBrush)Application.Current.Resources["base3"]).Color;
+                    titleBar.ButtonHoverBackgroundColor = ((SolidColorBrush)Application.Current.Resources["base03"]).Color;
+                    break;
+
+                default:
+                    break;
             }
         }
 

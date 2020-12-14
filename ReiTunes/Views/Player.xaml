@@ -7,8 +7,9 @@
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
     xmlns:local="using:ReiTunes"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    xmlns:primitives="using:Microsoft.Toolkit.Uwp.UI.Controls.Primitives"
     xmlns:winui="using:Microsoft.UI.Xaml.Controls"
-    Background="{ThemeResource ApplicationPageBackgroundThemeBrush}"
+    Background="{ThemeResource SolarizedBackgroundBrush}"
     KeyboardAcceleratorPlacementMode="Hidden"
     Loaded="Page_Loaded"
     Unloaded="Page_Unloaded"
@@ -20,6 +21,12 @@
                 <ResourceDictionary Source="../Styles/MediaTransportControls.xaml" />
                 <ResourceDictionary Source="ms-appx:///Microsoft.UI.Xaml/DensityStyles/Compact.xaml" />
             </ResourceDictionary.MergedDictionaries>
+
+            <!--<Style x:Key="HeaderStyling" TargetType="primitives:DataGridColumnHeader">
+                <Setter Property="Background" Value="Beige" />
+                <Setter Property="Foreground" Value="{ThemeResource blue}" />
+            </Style>-->
+
             <!--  https://github.com/windows-toolkit/WindowsCommunityToolkit/blob/7740ba715ace3ee249564fccf24b61d4f3512fea/Microsoft.Toolkit.Uwp.UI.Controls.DataGrid/DataGrid/DataGrid.xaml#L62  -->
             <SolidColorBrush
                 x:Key="SystemControlGridLinesBaseMediumLowBrush"
@@ -29,24 +36,39 @@
     </Page.Resources>
     <Grid>
         <Grid.RowDefinitions>
+            <RowDefinition Height="32" />
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
-        <StackPanel Orientation="Vertical">
+
+        <winui:ProgressBar
+            Margin="0,0,0,0"
+            HorizontalAlignment="Stretch"
+            VerticalAlignment="Top"
+            IsIndeterminate="True"
+            Opacity="{x:Bind converters:VisibilityConverter.OpacityOrFromBools(ViewModel.PullEventsCommand.IsRunning, ViewModel.PushEventsCommand.IsRunning), Mode=OneWay}" />
+
+        <StackPanel Margin="8,8,0,0" Orientation="Horizontal">
+            <TextBlock
+                FontFamily="Consolas"
+                FontSize="12"
+                Foreground="{ThemeResource SolarizedForeground}">
+                <TextBlock.Inlines>
+                    <Run Text="ReiTunes" />
+                    <Run Text="{x:Bind MsixVersion}" />
+                </TextBlock.Inlines>
+            </TextBlock>
+        </StackPanel>
+
+        <StackPanel Grid.Row="2" Orientation="Vertical">
             <Grid>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="100" />
                     <ColumnDefinition Width="*" />
                     <ColumnDefinition Width="100" />
                 </Grid.ColumnDefinitions>
-                <Image
-                    x:Name="CurrentlyPlayingThumbnail"
-                    Margin="5,5,0,5"
-                    HorizontalAlignment="Right"
-                    VerticalAlignment="Center"
-                    Source="{x:Bind ViewModel.CurrentlyPlayingItemThumbnail, TargetNullValue=ms-appx:///Assets/VectorIcon.svg, Mode=OneWay}"
-                    Tapped="CurrentlyPlayingThumbnail_Tapped" />
+
                 <!--  TargetNullValue=ms-appx:///Assets/VectorIcon.svg  -->
                 <!--  ms-appx:///Assets/VectorIcon.svg  -->
                 <StackPanel Grid.Column="1" HorizontalAlignment="Stretch">
@@ -81,7 +103,19 @@
                         </MediaPlayerElement.TransportControls>
                     </MediaPlayerElement>
                 </StackPanel>
-                <StackPanel Grid.Column="2" VerticalAlignment="Center">
+                <!--  Thumbnail defined after player so it's above the player when rotating  -->
+                <Image
+                    x:Name="CurrentlyPlayingThumbnail"
+                    Grid.Column="0"
+                    Margin="5,5,0,5"
+                    HorizontalAlignment="Right"
+                    VerticalAlignment="Center"
+                    Source="{x:Bind ViewModel.CurrentlyPlayingItemThumbnail, TargetNullValue=ms-appx:///Assets/VectorIcon.svg, Mode=OneWay}"
+                    Tapped="CurrentlyPlayingThumbnail_Tapped" />
+                <StackPanel
+                    Grid.Column="2"
+                    Margin="0,0,5,0"
+                    VerticalAlignment="Top">
                     <winui:ProgressBar
                         Margin="0,0,0,0"
                         HorizontalAlignment="Stretch"
@@ -90,32 +124,41 @@
 
                     <Button
                         x:Name="pullButton"
-                        Margin="0,5,5,5"
-                        Padding="2"
+                        Margin="0,5,0,7"
+                        Padding="4"
                         HorizontalAlignment="Stretch"
+                        Background="{StaticResource base01}"
                         Command="{x:Bind ViewModel.PullEventsCommand}"
+                        FontFamily="Consolas"
                         FontSize="12"
+                        Foreground="{StaticResource base3}"
                         ToolTipService.ToolTip="Ctrl+P">
                         Pull
                     </Button>
 
                     <Button
                         x:Name="pushButton"
-                        Margin="0,5,5,5"
-                        Padding="2"
+                        Margin="0,5,0,7"
+                        Padding="4"
                         HorizontalAlignment="Stretch"
+                        Background="{StaticResource base01}"
                         Command="{x:Bind ViewModel.PushEventsCommand}"
+                        FontFamily="Consolas"
                         FontSize="12"
+                        Foreground="{StaticResource base3}"
                         ToolTipService.ToolTip="Ctrl+Shift+P">
                         Push
                     </Button>
                     <Button
-                        Margin="0,5,5,5"
-                        Padding="2"
+                        Margin="0,5,0,0"
+                        Padding="4"
                         HorizontalAlignment="Stretch"
+                        Background="{StaticResource base01}"
+                        Click="ShowRecentEvents"
+                        FontFamily="Consolas"
                         FontSize="12"
-                        Click="ShowRecentEvents">
-                        View Events
+                        Foreground="{StaticResource base3}">
+                        Bookmark
                     </Button>
                 </StackPanel>
             </Grid>
@@ -123,13 +166,17 @@
                 Margin="10"
                 Orientation="Vertical"
                 Visibility="{x:Bind ViewModel.DownloadInProgress, Mode=OneWay}">
-                <TextBlock Grid.Row="3" Text="{x:Bind ViewModel.DownloadStatus, Mode=OneWay}" />
+
+                <TextBlock
+                    Grid.Row="3"
+                    FontFamily="Consolas"
+                    Text="{x:Bind ViewModel.DownloadStatus, Mode=OneWay}" />
                 <winui:ProgressBar
                     Margin="0,5,0,5"
                     HorizontalAlignment="Stretch"
                     Value="{x:Bind ViewModel.DownloadPercentFinished, Mode=OneWay}" />
             </StackPanel>
-            <Grid x:Name="separator" Margin="0,0,0,0">
+            <!--<Grid x:Name="separator" Margin="0,0,0,0">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="0" />
                     <ColumnDefinition Width="18*" />
@@ -139,11 +186,28 @@
                     Grid.Column="1"
                     Width="Auto"
                     Height="1"
-                    Fill="{ThemeResource SystemChromeDisabledHighColor}" />
+                    Fill="{StaticResource base0}" />
                 <Rectangle Width="10" />
-            </Grid>
-            <Grid Padding="5">
-                <TextBox x:Name="FilterBox" PlaceholderText="Search" />
+            </Grid>-->
+            <Grid Padding="5,0,5,10">
+                <TextBox
+                    x:Name="FilterBox"
+                    FontFamily="Consolas"
+                    PlaceholderText="Search">
+                    <TextBox.Resources>
+                        <ResourceDictionary>
+                            <!--  Without these the background is white/black  -->
+                            <ResourceDictionary.ThemeDictionaries>
+                                <ResourceDictionary x:Key="Light">
+                                    <StaticResource x:Key="TextControlBackgroundFocused" ResourceKey="base2" />
+                                </ResourceDictionary>
+                                <ResourceDictionary x:Key="Dark">
+                                    <StaticResource x:Key="TextControlBackgroundFocused" ResourceKey="base03" />
+                                </ResourceDictionary>
+                            </ResourceDictionary.ThemeDictionaries>
+                        </ResourceDictionary>
+                    </TextBox.Resources>
+                </TextBox>
                 <!--  Can't figure out how to make the icon not clash with the X delete button  -->
                 <!--<TextBlock
                     x:Name="findIcon"
@@ -162,12 +226,12 @@
             Margin="0"
             HorizontalAlignment="Stretch"
             VerticalAlignment="Stretch"
-            AlternatingRowBackground="{ThemeResource SystemChromeLowColor}"
+            AlternatingRowBackground="{ThemeResource SolarizedAlternatingRow}"
             AreRowDetailsFrozen="False"
             AreRowGroupHeadersFrozen="True"
             AutoGenerateColumns="False"
             BeginningEdit="libraryDataGrid_BeginningEdit"
-            BorderBrush="{StaticResource SystemControlGridLinesBaseMediumLowBrush}"
+            BorderBrush="{StaticResource base01}"
             BorderThickness="0,1,0,0"
             CanUserReorderColumns="True"
             CanUserResizeColumns="True"
@@ -175,9 +239,11 @@
             CellEditEnded="libraryDataGrid_CellEditEnded"
             ColumnHeaderHeight="32"
             DoubleTapped="OpenSelectedLibraryItem"
+            FontFamily="Consolas"
             FrozenColumnCount="0"
             GridLinesVisibility="All"
             HeadersVisibility="Column"
+            HorizontalGridLinesBrush="{StaticResource base0}"
             HorizontalScrollBarVisibility="Visible"
             ItemsSource="{x:Bind ViewModel.VisibleItems, Mode=OneWay}"
             MaxColumnWidth="600"
@@ -186,7 +252,56 @@
             RowGroupHeaderPropertyNameAlternative="Range"
             SelectionMode="Extended"
             Sorting="libraryDataGrid_Sorting"
-            VerticalScrollBarVisibility="Visible">
+            VerticalGridLinesBrush="{StaticResource base01}">
+            <controls:DataGrid.Resources>
+                <ResourceDictionary>
+                    <Style x:Key="ColHeaderStyle" TargetType="primitives:DataGridColumnHeader">
+
+                        <Setter Property="ContentTemplate">
+                            <Setter.Value>
+                                <DataTemplate>
+                                    <Grid>
+                                        <TextBlock
+                                            FontFamily="Consolas"
+                                            FontWeight="Bold"
+                                            Foreground="{ThemeResource SolarizedForeground}"
+                                            Text="{Binding}"
+                                            TextAlignment="Center" />
+                                    </Grid>
+                                </DataTemplate>
+                            </Setter.Value>
+                        </Setter>
+                    </Style>
+                    <ResourceDictionary.ThemeDictionaries>
+                        <!--  Can't seem to style the header colours normally. Approach borrowed from: https://github.com/files-community/Files/blob/200fd540298fa7c7c76f0fabc50670f54bf1bd32/Files/Views/LayoutModes/GenericFileBrowser.xaml#L665  -->
+                        <!--  TODO: source these from centralized colours  -->
+                        <ResourceDictionary x:Key="Light">
+                            <SolidColorBrush x:Key="GridLinesBrush" Color="#586e75" />
+                            <Color x:Key="DataGridColumnHeaderBackgroundColor">#eee8d5</Color>
+                        </ResourceDictionary>
+                        <ResourceDictionary x:Key="Dark">
+                            <SolidColorBrush x:Key="GridLinesBrush" Color="#586e75" />
+                            <Color x:Key="DataGridColumnHeaderBackgroundColor">#002b36</Color>
+                        </ResourceDictionary>
+                    </ResourceDictionary.ThemeDictionaries>
+                </ResourceDictionary>
+            </controls:DataGrid.Resources>
+            <controls:DataGrid.ColumnHeaderStyle>
+                <StaticResource ResourceKey="ColHeaderStyle" />
+            </controls:DataGrid.ColumnHeaderStyle>
+            <controls:DataGrid.RowStyle>
+                <Style TargetType="controls:DataGridRow">
+                    <Setter Property="controls:DataGridRow.ContextFlyout">
+                        <Setter.Value>
+                            <MenuFlyout>
+                                <!--  TODO: add useful actions here. Delete for sure... what else?  -->
+                                <MenuFlyoutItem x:Name="HelloMenuItem" Text="Hello" />
+                                <MenuFlyoutItem x:Name="WorldMenuItem" Text="World" />
+                            </MenuFlyout>
+                        </Setter.Value>
+                    </Setter>
+                </Style>
+            </controls:DataGrid.RowStyle>
             <controls:DataGrid.Columns>
                 <controls:DataGridTextColumn
                     Binding="{Binding Name}"
@@ -202,15 +317,25 @@
                     Tag="Album" />
                 <controls:DataGridTextColumn
                     Binding="{Binding PlayCount}"
-                    Header="Play Count"
-                    Tag="PlayCount" />
+                    Header="Plays"
+                    IsReadOnly="True"
+                    Tag="Plays">
+                    <controls:DataGridTextColumn.CellStyle>
+                        <Style TargetType="controls:DataGridCell">
+                            <Style.Setters>
+                                <Setter Property="HorizontalAlignment" Value="Right" />
+                            </Style.Setters>
+                        </Style>
+                    </controls:DataGridTextColumn.CellStyle>
+                </controls:DataGridTextColumn>
                 <controls:DataGridTextColumn
                     Binding="{Binding CreatedTimeUtc}"
-                    Header="Date Added"
+                    Header="Date Added (UTC)"
+                    IsReadOnly="True"
                     Tag="DateAddedUtc" />
                 <controls:DataGridTextColumn
                     Binding="{Binding FilePath}"
-                    Header="Path"
+                    Header="File Path"
                     Tag="Path" />
             </controls:DataGrid.Columns>
         </controls:DataGrid>

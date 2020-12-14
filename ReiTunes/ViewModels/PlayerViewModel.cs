@@ -169,7 +169,7 @@ namespace ReiTunes {
             }
         }
 
-        public async Task Delete(LibraryItem item) {
+        public void Delete(LibraryItem item) {
             _library.Delete(item);
         }
 
@@ -319,16 +319,19 @@ namespace ReiTunes {
 
             double percentageFinished = 100d * progress.BytesReceived / progress.TotalBytesToReceive;
 
-            string message = "";
             if (progress.BytesReceived == progress.TotalBytesToReceive) {
-                message = "Download finished";
+                DownloadInProgress = false;
+                UpdateDownloadStatusOnUiThread(0, "");
             }
             else {
                 var mbReceived = progress.BytesReceived / 1024d / 1024d;
                 var totalMb = progress.TotalBytesToReceive / 1024d / 1024d;
-                message = $"Downloading: {mbReceived:N1}/{totalMb:N1} MB";
+                string message = $"Downloading: {mbReceived:N1}/{totalMb:N1} MB";
+                UpdateDownloadStatusOnUiThread(percentageFinished, message);
             }
+        }
 
+        private void UpdateDownloadStatusOnUiThread(double percentageFinished, string message) {
             // The ignore variable is to silence an async warning. Seems bad but
             // they did it in the BackgroundTransfer example 🤔
             var ignore = CoreApplication.MainView.CoreWindow.Dispatcher.RunAsync(
