@@ -75,6 +75,10 @@ namespace ReiTunes {
         }
 
         private void UpdateCurrentlyPlayingText() {
+            if (ViewModel.CurrentlyPlayingItem is null) {
+                return;
+            }
+
             CurrentlyPlayingItemDescription.Inlines.Clear();
 
             CurrentlyPlayingItemDescription.Inlines.Add(new Run() { Text = ViewModel.CurrentlyPlayingItem?.Name });
