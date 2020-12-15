@@ -51,7 +51,7 @@ namespace ReiTunes {
             SetUpKeyboardAccelerators();
             ViewModel.PropertyChanged += ViewModel_PropertyChanged;
             // when items change underneath us, refilter them if applicable
-            ViewModel.ItemsReloaded += async (a, b) => await FilterVMUsingFilterBoxText();
+            ViewModel.ItemsReloaded += async (_, _) => await FilterVMUsingFilterBoxText();
 
             musicPlayer.SetMediaPlayer(ViewModel.MediaPlayer);
 
