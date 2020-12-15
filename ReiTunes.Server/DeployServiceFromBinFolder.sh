@@ -2,7 +2,7 @@
 echo "Stopping service"
 sudo systemctl stop reitunes
 echo "Copying binaries"
-\sudo cp -r bin/Debug/net5.0/* /usr/local/bin/reitunes/
+sudo cp -r bin/Debug/net5.0/* /usr/local/bin/reitunes/
 echo "Copying unit file"
 sudo cp reitunes.service /etc/systemd/system/reitunes.service
 echo "Enabling service"
