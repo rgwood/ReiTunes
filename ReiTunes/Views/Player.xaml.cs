@@ -188,15 +188,6 @@ namespace ReiTunes {
                     var selected = (LibraryItem)libraryDataGrid.SelectedItem;
                     await ViewModel.ShowItemInExplorer(selected);
                 }));
-
-            //play on Sonos
-            KeyboardAccelerators.Add(CreateAccelerator(VirtualKeyModifiers.Control, VirtualKey.S,
-                async (sender, args) => {
-                    args.Handled = true;
-
-                    var selected = (LibraryItem)libraryDataGrid.SelectedItem;
-                    await ViewModel.PlayOnSonos(selected);
-                }));
         }
 
         private void Page_Loaded(object sender, RoutedEventArgs e) {

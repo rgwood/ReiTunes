@@ -10,16 +10,16 @@ using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 using Windows.ApplicationModel.Core;
+using Windows.ApplicationModel.DataTransfer;
 using Windows.Media.Core;
 using Windows.Media.Playback;
 using Windows.Networking.BackgroundTransfer;
 using Windows.Storage;
+using Windows.Storage.FileProperties;
+using Windows.Storage.Streams;
 using Windows.System;
 using Windows.UI.Core;
-using Windows.Storage.FileProperties;
 using Windows.UI.Xaml.Media.Imaging;
-using Windows.Storage.Streams;
-using Windows.ApplicationModel.DataTransfer;
 
 namespace ReiTunes {
 
@@ -29,7 +29,6 @@ namespace ReiTunes {
         private readonly ILogger _logger;
         private readonly Library _library;
         private StorageFolder _libraryFolder;
-        private SonosIntermediary _sonosIntermediary;
         private LibraryItem _currentlyPlayingItem;
         private string _downloadStatus = "";
         private bool _downloadInProgress = false;
@@ -107,7 +106,6 @@ namespace ReiTunes {
 
         public async Task Initialize() {
             _libraryFolder = await FileHelper.CreateLibraryFolderIfDoesntExist();
-            _sonosIntermediary = new SonosIntermediary(Secrets.SonosUrl);
         }
 
         private async Task Pull() {
@@ -192,14 +190,6 @@ namespace ReiTunes {
         }
 
         private string GetFileNameFromFullPath(string fullPath) => fullPath.Split('/').Last();
-
-        public async Task PlayOnSonos(LibraryItem libraryItemToPlay) {
-            var uri = GetUri(libraryItemToPlay);
-            var uriStr = uri.ToString();
-            var sw = Stopwatch.StartNew();
-            await _sonosIntermediary.Play(uriStr);
-            _logger.Information("Finished Sonos play calls in in {elapsedMs}", sw.ElapsedMilliseconds);
-        }
 
         public async Task ChangeSource(LibraryItem libraryItemToPlay) {
             if (libraryItemToPlay == null)
