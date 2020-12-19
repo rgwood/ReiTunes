@@ -1,4 +1,5 @@
-﻿using Microsoft.Extensions.DependencyInjection;
+﻿using Microsoft.Data.Sqlite;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using ReiTunes.Activation;
 using ReiTunes.Core;
@@ -8,7 +9,6 @@ using ReiTunes.Services;
 using Serilog;
 using System;
 using System.Collections.Concurrent;
-using Microsoft.Data.Sqlite;
 using System.Net.Http;
 using Windows.UI.ViewManagement;
 
@@ -23,7 +23,6 @@ namespace ReiTunes.Configuration {
             //TODO: add interfaces for some of these
             serviceCollection.AddSingleton<SuspendAndResumeService>();
             serviceCollection.AddSingleton<CommandLineActivationHandler>();
-            serviceCollection.AddSingleton<HttpDataService>();
 
             serviceCollection.AddHttpClient(Options.DefaultName, (client) => { client.BaseAddress = new Uri(Secrets.ServerUrl); });
 
