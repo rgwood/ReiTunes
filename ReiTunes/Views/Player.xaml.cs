@@ -1,13 +1,8 @@
-﻿using Microsoft.Toolkit.Uwp.UI.Controls;
-using ReiTunes.Configuration;
+﻿using ReiTunes.Configuration;
 using ReiTunes.Core;
 using ReiTunes.Helpers;
 using ReiTunes.Views;
 using System;
-using System.Collections.Generic;
-using System.Collections.ObjectModel;
-using System.Diagnostics;
-using System.Linq;
 using System.Reactive.Linq;
 using System.Threading.Tasks;
 using Windows.ApplicationModel;

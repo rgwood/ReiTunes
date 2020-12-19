@@ -1,10 +1,5 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
+﻿using System.Threading.Tasks;
 using ByteDev.Sonos;
-using ByteDev.Sonos.Models;
 using ByteDev.Sonos.Upnp.Services;
 
 namespace ReiTunes.Core {

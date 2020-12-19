@@ -9,9 +9,7 @@ using Serilog;
 using System;
 using System.Collections.Concurrent;
 using Microsoft.Data.Sqlite;
-using System.IO;
 using System.Net.Http;
-using Windows.Storage;
 using Windows.UI.ViewManagement;
 
 namespace ReiTunes.Configuration {

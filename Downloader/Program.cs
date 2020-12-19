@@ -1,14 +1,13 @@
-﻿using Dapper;
+﻿using Azure.Storage.Blobs;
+using Dapper;
 using FluentAssertions;
+using Microsoft.Data.Sqlite;
 using ReiTunes.Core;
 using System;
-using System.ComponentModel.DataAnnotations;
-using Microsoft.Data.Sqlite;
-using Xunit;
-using Azure.Storage.Blobs;
 using System.Collections.Generic;
-using System.Linq;
 using System.IO;
+using System.Linq;
+using Xunit;
 
 namespace Downloader {
 
@@ -21,13 +20,6 @@ namespace Downloader {
             Video,
             Logs
         }
-
-        private static DlType DlTypeFromString(string s) => s.ToUpper() switch {
-            "AUDIO" => DlType.Audio,
-            "VIDEO" => DlType.Video,
-            "LOGS" => DlType.Logs,
-            _ => throw new ArgumentOutOfRangeException($"Bad DL type: '{s}'")
-        };
 
         private record DownloadItem(string Url, DlType Type, string CreatedTimestamp);
         private record CommandResult(IEnumerable<string> stdout, IEnumerable<string> stderr);

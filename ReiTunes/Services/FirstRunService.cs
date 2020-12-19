@@ -1,6 +1,5 @@
 ﻿using Microsoft.Toolkit.Uwp.Helpers;
 using ReiTunes.Configuration;
-using ReiTunes.Core;
 using System;
 using System.Threading.Tasks;
 using Windows.ApplicationModel.Core;

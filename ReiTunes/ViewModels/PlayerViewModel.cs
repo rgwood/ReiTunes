@@ -1,9 +1,6 @@
 ﻿using Microsoft.Toolkit.Mvvm.Input;
-using Microsoft.Toolkit.Uwp.Helpers;
-using ReiTunes.Configuration;
 using ReiTunes.Core;
 using ReiTunes.Helpers;
-using ReiTunes.Services;
 using Serilog;
 using System;
 using System.Collections.Generic;

@@ -1,14 +1,9 @@
-﻿using ReiTunes.Core;
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using Xunit;
 using System;
 using System.Linq;
 using FluentAssertions;
-using NuGet.Frameworks;
-using System.Diagnostics;
-using System.Collections;
 using Microsoft.Data.Sqlite;
-using Serilog.Core;
 
 namespace ReiTunes.Core.Tests.XUnit {
 

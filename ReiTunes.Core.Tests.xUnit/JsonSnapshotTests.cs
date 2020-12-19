@@ -1,11 +1,8 @@
 ﻿using ReiTunes.Core;
-using System.Collections.Generic;
-using System.Collections.ObjectModel;
 using Xunit;
 using ApprovalTests;
 using System;
 using ApprovalTests.Reporters;
-using ApprovalTests.Reporters.ContinuousIntegration;
 
 namespace ReiTunes.Test {
 
