@@ -13,7 +13,7 @@ namespace ReiTunes.Core {
     /// Hence, this serializationbinder which is purely based on unqualified names.
     /// Got the idea from http://appetere.com/post/serializing-interfaces-with-jsonnet
     /// </summary>
-    public class EventBinder : ISerializationBinder {
+    public class EventSerializationBinder : ISerializationBinder {
 
         private IList<Type> _knownTypes = new List<Type> {
             typeof(SimpleTextAggregateCreatedEvent),

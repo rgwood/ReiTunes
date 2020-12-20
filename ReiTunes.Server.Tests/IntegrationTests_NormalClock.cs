@@ -7,15 +7,11 @@ using ReiTunes.Core;
 using ReiTunes.Server.Controllers;
 using Serilog;
 using Serilog.Core;
-using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Net.Http;
-using System.Text;
-using System.Threading;
 using System.Threading.Tasks;
 using Xunit;
-using Xunit.Sdk;
 using FluentAssertions;
 
 namespace ReiTunes.Server.Tests {

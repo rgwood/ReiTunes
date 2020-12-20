@@ -1,7 +1,5 @@
-﻿using Microsoft.Data.Sqlite;
-using System;
-using System.IO;
-using Dapper;
+﻿using Dapper;
+using Microsoft.Data.Sqlite;
 
 namespace ReiTunes.Core {
 
@@ -31,8 +29,9 @@ events(
             var sql = @"INSERT INTO events(Id, AggregateId, AggregateType, CreatedTimeUtc, MachineName, Serialized)
                             VALUES(@Id, @AggregateId, @AggregateType, @CreatedTimeUtc, @MachineName, @Serialized);";
 
-            conn.Execute(sql, new { Id = @event.Id.ToString(),
-               AggregateId = @event.AggregateId.ToString(),
+            conn.Execute(sql, new {
+                Id = @event.Id.ToString(),
+                AggregateId = @event.AggregateId.ToString(),
                 @event.AggregateType,
                 @event.CreatedTimeUtc,
                 @event.MachineName,

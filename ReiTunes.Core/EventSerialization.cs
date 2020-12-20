@@ -8,12 +8,12 @@ namespace ReiTunes.Core {
 
         private static JsonSerializerSettings DefaultSerializerSettings = new JsonSerializerSettings {
             TypeNameHandling = TypeNameHandling.Objects,
-            SerializationBinder = new EventBinder()
+            SerializationBinder = new EventSerializationBinder()
         };
 
         private static JsonSerializerSettings PrettySerializerSettings = new JsonSerializerSettings {
             TypeNameHandling = TypeNameHandling.Objects,
-            SerializationBinder = new EventBinder(),
+            SerializationBinder = new EventSerializationBinder(),
             Formatting = Formatting.Indented
         };
 

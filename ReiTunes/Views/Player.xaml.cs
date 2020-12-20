@@ -1,13 +1,8 @@
-﻿using Microsoft.Toolkit.Uwp.UI.Controls;
-using ReiTunes.Configuration;
+﻿using ReiTunes.Configuration;
 using ReiTunes.Core;
 using ReiTunes.Helpers;
 using ReiTunes.Views;
 using System;
-using System.Collections.Generic;
-using System.Collections.ObjectModel;
-using System.Diagnostics;
-using System.Linq;
 using System.Reactive.Linq;
 using System.Threading.Tasks;
 using Windows.ApplicationModel;
@@ -51,7 +46,9 @@ namespace ReiTunes {
             SetUpKeyboardAccelerators();
             ViewModel.PropertyChanged += ViewModel_PropertyChanged;
             // when items change underneath us, refilter them if applicable
-            ViewModel.ItemsReloaded += async (a, b) => await FilterVMUsingFilterBoxText();
+            ViewModel.ItemsReloaded += async (_, _) => await FilterVMUsingFilterBoxText();
+
+            musicPlayer.SetMediaPlayer(ViewModel.MediaPlayer);
 
             SetUpThumbnailAnimation();
 
@@ -73,6 +70,10 @@ namespace ReiTunes {
         }
 
         private void UpdateCurrentlyPlayingText() {
+            if (ViewModel.CurrentlyPlayingItem is null) {
+                return;
+            }
+
             CurrentlyPlayingItemDescription.Inlines.Clear();
 
             CurrentlyPlayingItemDescription.Inlines.Add(new Run() { Text = ViewModel.CurrentlyPlayingItem?.Name });
@@ -123,11 +124,6 @@ namespace ReiTunes {
         // Enter should start playing a file when in the file view
 
         #region KeyboardStuff
-
-        // For ease of implementation, this helps us reliably use enter to interpret a "filter now" request
-        private void LibraryDataGrid_LostFocus(object sender, RoutedEventArgs e) {
-            libraryDataGrid.SelectedItems.Clear();
-        }
 
         private void SetUpKeyboardAccelerators() {
             KeyboardAccelerator CreateAccelerator(VirtualKeyModifiers modifier, VirtualKey key,
@@ -192,15 +188,6 @@ namespace ReiTunes {
                     var selected = (LibraryItem)libraryDataGrid.SelectedItem;
                     await ViewModel.ShowItemInExplorer(selected);
                 }));
-
-            //play on Sonos
-            KeyboardAccelerators.Add(CreateAccelerator(VirtualKeyModifiers.Control, VirtualKey.S,
-                async (sender, args) => {
-                    args.Handled = true;
-
-                    var selected = (LibraryItem)libraryDataGrid.SelectedItem;
-                    await ViewModel.PlayOnSonos(selected);
-                }));
         }
 
         private void Page_Loaded(object sender, RoutedEventArgs e) {
@@ -221,21 +208,25 @@ namespace ReiTunes {
                 if (selected is null)
                     return;
 
-                var confirmDialog = new ContentDialog {
-                    Title = "Delete file?",
-                    Content = $"Are you sure you want to delete '{selected.Name}' from the library? Blob content will be unaffected.",
-                    PrimaryButtonText = "Delete",
-                    DefaultButton = ContentDialogButton.Primary,
-                    CloseButtonText = "Cancel"
-                };
-
-                var result = await confirmDialog.ShowAsync();
-
-                if (result == ContentDialogResult.Primary) {
-                    ViewModel.Delete(selected);
-                }
+                await DeleteItemWithConfirmDialog(selected);
 
                 args.Handled = true;
+            }
+        }
+
+        private async Task DeleteItemWithConfirmDialog(LibraryItem item) {
+            var confirmDialog = new ContentDialog {
+                Title = "Delete file?",
+                Content = $"Are you sure you want to delete '{item.Name}' from the library? Blob content will be unaffected.",
+                PrimaryButtonText = "Delete",
+                DefaultButton = ContentDialogButton.Primary,
+                CloseButtonText = "Cancel"
+            };
+
+            var result = await confirmDialog.ShowAsync();
+
+            if (result == ContentDialogResult.Primary) {
+                ViewModel.Delete(item);
             }
         }
 
@@ -374,6 +365,20 @@ namespace ReiTunes {
         private async void ShowRecentEvents(object sender, RoutedEventArgs e) {
             var recentEventsDialog = new RecentEventsContentDialog(ViewModel.GetRecentEvents());
             await recentEventsDialog.ShowAsync();
+        }
+
+        private async void DeleteMenuItem_Click(object sender, RoutedEventArgs e) {
+            var item = (sender as FrameworkElement).DataContext as LibraryItem;
+
+            if (item != null) {
+                await DeleteItemWithConfirmDialog(item);
+            }
+        }
+
+        private void CopyURLMenuItem_Click(object sender, RoutedEventArgs e) {
+            var item = (sender as FrameworkElement).DataContext as LibraryItem;
+
+            ViewModel.CopyUriToClipboard(item);
         }
     }
 }

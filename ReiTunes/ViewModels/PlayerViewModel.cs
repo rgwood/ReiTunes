@@ -1,9 +1,6 @@
 ﻿using Microsoft.Toolkit.Mvvm.Input;
-using Microsoft.Toolkit.Uwp.Helpers;
-using ReiTunes.Configuration;
 using ReiTunes.Core;
 using ReiTunes.Helpers;
-using ReiTunes.Services;
 using Serilog;
 using System;
 using System.Collections.Generic;
@@ -13,16 +10,16 @@ using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 using Windows.ApplicationModel.Core;
+using Windows.ApplicationModel.DataTransfer;
 using Windows.Media.Core;
 using Windows.Media.Playback;
 using Windows.Networking.BackgroundTransfer;
 using Windows.Storage;
+using Windows.Storage.FileProperties;
+using Windows.Storage.Streams;
 using Windows.System;
 using Windows.UI.Core;
-using Windows.UI.Xaml.Controls;
-using Windows.Storage.FileProperties;
 using Windows.UI.Xaml.Media.Imaging;
-using Windows.Storage.Streams;
 
 namespace ReiTunes {
 
@@ -32,22 +29,16 @@ namespace ReiTunes {
         private readonly ILogger _logger;
         private readonly Library _library;
         private StorageFolder _libraryFolder;
-        private SonosIntermediary _sonosIntermediary;
-        private IMediaPlaybackSource _source;
         private LibraryItem _currentlyPlayingItem;
         private string _downloadStatus = "";
         private bool _downloadInProgress = false;
         private double _downloadPercentFinished = 0;
+        private MediaPlayer _mediaPlayer = new MediaPlayer();
         private ObservableCollection<LibraryItem> _libraryItems;
         private ObservableCollection<LibraryItem> _visibleItems;
         private BitmapImage _currentlyPlayingItemThumbnail;
 
         public event EventHandler ItemsReloaded;
-
-        public IMediaPlaybackSource Source {
-            get { return _source; }
-            set { Set(ref _source, value); }
-        }
 
         public LibraryItem CurrentlyPlayingItem {
             get { return _currentlyPlayingItem; }
@@ -88,11 +79,14 @@ namespace ReiTunes {
 
         public AsyncRelayCommand PullEventsCommand { get; }
         public AsyncRelayCommand PushEventsCommand { get; }
+        public RelayCommand BookmarkCommand { get; }
 
         public BitmapImage CurrentlyPlayingItemThumbnail {
             get { return _currentlyPlayingItemThumbnail; }
             set { Set(ref _currentlyPlayingItemThumbnail, value); }
         }
+
+        public MediaPlayer MediaPlayer => _mediaPlayer;
 
         public PlayerViewModel(ILogger logger, Library library) {
             _logger = logger;
@@ -101,6 +95,7 @@ namespace ReiTunes {
 
             PullEventsCommand = new AsyncRelayCommand(Pull);
             PushEventsCommand = new AsyncRelayCommand(Push);
+            BookmarkCommand = new RelayCommand(Bookmark);
 
             LoadItemsFromLibrary();
         }
@@ -111,17 +106,6 @@ namespace ReiTunes {
 
         public async Task Initialize() {
             _libraryFolder = await FileHelper.CreateLibraryFolderIfDoesntExist();
-
-            _sonosIntermediary = new SonosIntermediary(Secrets.SonosUrl);
-
-            //var libraryFile = await _libraryFolder.TryGetItemAsync("ReiTunesLibrary.txt");
-
-            //if (libraryFile == null) {
-            //    _logger.Information("Library file not found, downloading...");
-            //    libraryFile = await DownloadLibraryFile();
-            //}
-
-            //await LoadLibraryFile(libraryFile);
         }
 
         private async Task Pull() {
@@ -131,6 +115,12 @@ namespace ReiTunes {
 
         private async Task Push() {
             await _library.PushToServer();
+        }
+
+        private void Bookmark() {
+            if (CurrentlyPlayingItem != null) {
+                _logger.Information("Bookmark created for item {itemId} at {playbackPosition}", CurrentlyPlayingItem.AggregateId, _mediaPlayer.PlaybackSession.Position);
+            }
         }
 
         public async Task FilterItems(string filterString) {
@@ -148,11 +138,6 @@ namespace ReiTunes {
             }
 
             _logger.Information("Total filter time: {ElapsedMs}", sw.ElapsedMilliseconds);
-        }
-
-        private async Task LoadLibraryFile(IStorageItem libraryFile) {
-            var libraryString = await FileIO.ReadTextAsync((StorageFile)libraryFile);
-            LibraryItems = LibraryFileParser.ParseBlobList(libraryString);
         }
 
         public async Task ShowItemInExplorer(LibraryItem item) {
@@ -206,15 +191,6 @@ namespace ReiTunes {
 
         private string GetFileNameFromFullPath(string fullPath) => fullPath.Split('/').Last();
 
-        public async Task PlayOnSonos(LibraryItem libraryItemToPlay) {
-            //string uri = System.Web.HttpUtility.UrlEncode(new Uri(_cloudBaseUri, libraryItemToPlay.FilePath).ToString());
-            var uri = new Uri(_cloudBaseUri, libraryItemToPlay.FilePath);
-            var uriStr = uri.ToString();
-            var sw = Stopwatch.StartNew();
-            await _sonosIntermediary.Play(uriStr);
-            _logger.Information("Finished Sonos play calls in in {elapsedMs}", sw.ElapsedMilliseconds);
-        }
-
         public async Task ChangeSource(LibraryItem libraryItemToPlay) {
             if (libraryItemToPlay == null)
                 return;
@@ -233,12 +209,6 @@ namespace ReiTunes {
 
                 CurrentlyPlayingItem = libraryItemToPlay;
                 await DownloadAndStartMusicFile(fileName, folder, libraryItemToPlay);
-
-                //var mediaPlaybackItem = new MediaPlaybackItem(mediaSource);
-
-                //Source = mediaPlaybackItem;
-
-                //await UpdateSystemMediaTransportControls(libraryItemToPlay, mediaPlaybackItem);
             }
             else if (storageItem.IsOfType(StorageItemTypes.Folder)) {
                 return;
@@ -248,7 +218,7 @@ namespace ReiTunes {
 
                 var mediaPlaybackItem = new MediaPlaybackItem(MediaSource.CreateFromStorageFile(file));
 
-                Source = mediaPlaybackItem;
+                _mediaPlayer.Source = mediaPlaybackItem;
 
                 CurrentlyPlayingItem = libraryItemToPlay;
                 await UpdateSystemMediaTransportControls(libraryItemToPlay, mediaPlaybackItem, file);
@@ -288,7 +258,7 @@ namespace ReiTunes {
 
         private async Task<MediaSource> DownloadAndStartMusicFile(string fileName, StorageFolder folderToSaveTo, LibraryItem libraryItemToPlay) {
             _logger.Information("Downloading music file {filePath}", libraryItemToPlay.FilePath);
-            var downloadUri = new Uri(_cloudBaseUri, libraryItemToPlay.FilePath);
+            Uri downloadUri = GetUri(libraryItemToPlay);
             var downloadFile = await folderToSaveTo.CreateFileAsync(fileName);
             DownloadInProgress = true;
             BackgroundDownloader downloader = new BackgroundDownloader();
@@ -296,13 +266,15 @@ namespace ReiTunes {
 
             download.IsRandomAccessRequired = true;
 
+            UpdateDownloadStatusOnUiThread(0, "Starting download...");
+
             Progress<DownloadOperation> progressCallback = new Progress<DownloadOperation>(HandleDownloadProgress);
             var downloadTask = download.StartAsync().AsTask(progressCallback);
             var mediaSource = MediaSource.CreateFromDownloadOperation(download);
 
             var mediaPlaybackItem = new MediaPlaybackItem(mediaSource);
 
-            Source = mediaPlaybackItem;
+            _mediaPlayer.Source = mediaPlaybackItem;
 
             await UpdateSystemMediaTransportControls(libraryItemToPlay, mediaPlaybackItem);
 
@@ -310,6 +282,8 @@ namespace ReiTunes {
             DownloadInProgress = false;
             return mediaSource;
         }
+
+        internal Uri GetUri(LibraryItem libraryItemToPlay) => new Uri(_cloudBaseUri, libraryItemToPlay.FilePath);
 
         private void HandleDownloadProgress(DownloadOperation download) {
             // DownloadOperation.Progress is updated in real-time while the operation is ongoing. Therefore,
@@ -339,6 +313,13 @@ namespace ReiTunes {
                     DownloadStatus = message;
                     DownloadPercentFinished = percentageFinished;
                 });
+        }
+
+        public void CopyUriToClipboard(LibraryItem item) {
+            DataPackage dataPackage = new() { RequestedOperation = DataPackageOperation.Copy };
+            var uri = GetUri(item).ToString();
+            dataPackage.SetText(uri);
+            Clipboard.SetContent(dataPackage);
         }
     }
 }

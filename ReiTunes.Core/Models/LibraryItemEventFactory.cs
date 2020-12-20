@@ -1,12 +1,8 @@
 ﻿using System;
-using System.Collections.Generic;
-using System.Text;
-using System.Threading;
 
 namespace ReiTunes.Core {
 
     public class LibraryItemEventFactory {
-
 
         private readonly string _machineName;
         private readonly Func<Guid> _guidFactory;

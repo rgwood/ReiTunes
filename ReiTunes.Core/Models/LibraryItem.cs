@@ -1,8 +1,5 @@
 ﻿using System;
-using System.Collections.ObjectModel;
-using System.ComponentModel;
 using System.Linq;
-using ReiTunes.Core;
 
 namespace ReiTunes.Core {
 
@@ -58,6 +55,8 @@ namespace ReiTunes.Core {
         private int _playCount = 0;
         private readonly LibraryItemEventFactory _eventFactory;
 
+        public DateTime CreatedTimeLocal => CreatedTimeUtc.ToLocalTime();
+
         /// <summary>
         /// Was a tombstone event seen (i.e. was this deleted)?
         /// </summary>
@@ -103,6 +102,9 @@ namespace ReiTunes.Core {
             AggregateId = @event.AggregateId;
             _name = @event.Name;
             _filePath = @event.FilePath;
+            if (@event.CreatedTimeUtc.Kind != DateTimeKind.Utc) {
+                throw new Exception($"Aggregate {@event.AggregateId} has a CreatedTimeUtc in {@event.CreatedTimeUtc.Kind} not UTC, wtf?");
+            }
             CreatedTimeUtc = @event.CreatedTimeUtc;
         }
 
