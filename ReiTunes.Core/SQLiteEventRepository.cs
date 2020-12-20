@@ -5,10 +5,9 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
-using System.Text;
 
 namespace ReiTunes.Core {
-    // I wanted to use Dapper in this but it doesn't work in .NET Native, fucking hell...
+    // Because we use Dapper we can't build for .NET Native, fucking hell...
     // https://stackoverflow.com/questions/54184301/platformnotsupportedexception-throws-when-using-dapper-with-wp
 
     public class SQLiteEventRepository : ISerializedEventRepository {
@@ -26,7 +25,7 @@ namespace ReiTunes.Core {
         }
 
         public bool ContainsEvent(Guid eventId) {
-            var count = _conn.Query<long>($"SELECT COUNT() FROM events WHERE Id ='{eventId}';").Single();
+            var count = _conn.Query<long>("SELECT COUNT() FROM events WHERE Id = @EventId", new { EventId = eventId.ToString() }).Single();
             return count == 1;
         }
 
@@ -38,13 +37,13 @@ namespace ReiTunes.Core {
             return GetSerializedEvents("select Serialized from events;");
         }
 
-        private List<string> GetSerializedEvents(string sql) {
-            return _conn.Query<string>(sql).ToList();
+        private List<string> GetSerializedEvents(string sql, object param = null) {
+            return _conn.Query<string>(sql, param).ToList();
         }
 
         public IEnumerable<IEvent> GetEvents(Guid aggregateId) {
             var serializedEvents =
-                GetSerializedEvents($"select Serialized from events WHERE AggregateId = '{aggregateId}'");
+                GetSerializedEvents("select Serialized from events WHERE AggregateId = @AggregateId", new { AggregateId = aggregateId.ToString() });
 
             var deserializedEvents = serializedEvents.Select(s => EventSerialization.Deserialize(s));
 
@@ -69,7 +68,7 @@ namespace ReiTunes.Core {
 
         public IEnumerable<IEvent> GetAllEventsFromMachine(string machineName) {
             var sw = Stopwatch.StartNew();
-            var ret = GetSerializedEvents($"select Serialized from events where MachineName = '{machineName}' COLLATE NOCASE;")
+            var ret = GetSerializedEvents("select Serialized from events where MachineName = @MachineName COLLATE NOCASE;", new { MachineName = machineName })
                 .Select(s => EventSerialization.Deserialize(s));
             _logger.Information("GetAllEventsFromMachine took {ElapsedMs}", sw.ElapsedMilliseconds);
             return ret;

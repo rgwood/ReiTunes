@@ -1,8 +1,4 @@
 ﻿using System;
-using System.Collections.ObjectModel;
-using System.ComponentModel;
-using System.Linq;
-using ReiTunes.Core;
 
 namespace ReiTunes.Core {
 

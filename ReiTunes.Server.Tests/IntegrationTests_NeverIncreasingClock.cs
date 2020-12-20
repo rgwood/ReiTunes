@@ -1,21 +1,13 @@
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
-using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.Extensions.DependencyInjection;
-using Newtonsoft.Json;
 using ReiTunes.Core;
-using ReiTunes.Server.Controllers;
 using Serilog;
 using Serilog.Core;
-using System;
-using System.Collections.Generic;
 using System.Linq;
 using System.Net.Http;
-using System.Text;
-using System.Threading;
 using System.Threading.Tasks;
 using Xunit;
-using Xunit.Sdk;
 
 namespace ReiTunes.Server.Tests {
 
