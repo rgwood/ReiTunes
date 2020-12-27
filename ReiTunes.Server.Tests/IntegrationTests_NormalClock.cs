@@ -1,3 +1,4 @@
+using FluentAssertions;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.AspNetCore.WebUtilities;
@@ -7,12 +8,12 @@ using ReiTunes.Core;
 using ReiTunes.Server.Controllers;
 using Serilog;
 using Serilog.Core;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Net.Http;
 using System.Threading.Tasks;
 using Xunit;
-using FluentAssertions;
 
 namespace ReiTunes.Server.Tests {
 
@@ -79,6 +80,8 @@ namespace ReiTunes.Server.Tests {
             item.FilePath = "bar.mp3";
             item.Artist = "The Avalanches";
             item.Album = "Mixes";
+            item.AddBookmark(TimeSpan.FromSeconds(30));
+            item.AddBookmark(TimeSpan.FromSeconds(40));
 
             // sync from 1 to 2
             await client1.PushToServer();
@@ -111,13 +114,47 @@ namespace ReiTunes.Server.Tests {
             var orderedModels2 = l2.Items.OrderBy(m => m.AggregateId).ToArray();
 
             for (int i = 0; i < orderedModels1.Count(); i++) {
-                Assert.Equal(orderedModels1[i], orderedModels2[i]);
+                AssertItemsAreEqual(orderedModels1[i], orderedModels2[i]);
             }
+        }
+
+        private static void AssertItemsAreEqual(LibraryItem item1, LibraryItem item2) {
+            item1.AggregateId.Should().Be(item2.AggregateId);
+            item1.CreatedTimeUtc.Should().Be(item2.CreatedTimeUtc);
+            item1.Name.Should().Be(item2.Name);
+            item1.FilePath.Should().Be(item2.FilePath);
+            item1.Artist.Should().Be(item2.Artist);
+            item1.Album.Should().Be(item2.Album);
+            item1.PlayCount.Should().Be(item2.PlayCount);
+            item1.Bookmarks.Should().HaveCount(item2.Bookmarks.Count);
+
+            var orderedBms1 = item1.Bookmarks.OrderBy(b => b.ID).ToArray();
+            var orderedBms2 = item2.Bookmarks.OrderBy(b => b.ID).ToArray();
+
+            for (int i = 0; i < orderedBms1.Length; i++) {
+                AssertBookmarksEqual(orderedBms1[i], orderedBms2[i]);
+            }
+
+            //this.AggregateId == other.AggregateId &&
+            //    this.CreatedTimeUtc == other.CreatedTimeUtc &&
+            //    this.Name == other.Name &&
+            //    this.FilePath == other.FilePath &&
+            //    this.Artist == other.Artist &&
+            //    this.Album == other.Album &&
+            //    this.PlayCount == other.PlayCount;
+        }
+
+        public static void AssertBookmarksEqual(Bookmark bm1, Bookmark bm2) {
+            bm1.ID.Should().Be(bm2.ID);
+            bm1.Position.Should().Be(bm2.Position);
+            bm1.Emoji.Should().Be(bm2.Emoji);
+            bm1.Emoji.Should().Be(bm2.Comment);
         }
 
         // TODO: should add better equality comparers to the event classes themselves
         private static void AssertEventsAreEqual(IEvent event1, IEvent event2) {
             Assert.Equal(event1.Id, event2.Id);
+
             Assert.Equal(event1.AggregateId, event2.AggregateId);
             Assert.Equal(event1.CreatedTimeUtc, event2.CreatedTimeUtc);
             Assert.Equal(event1.MachineName, event2.MachineName);

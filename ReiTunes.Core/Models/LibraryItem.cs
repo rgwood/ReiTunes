@@ -3,25 +3,18 @@ using System.Collections.ObjectModel;
 using System.Linq;
 
 namespace ReiTunes.Core {
-    public record Bookmark(Guid ID, TimeSpan Position, char Emoji, string Comment = null) {
+    public record Bookmark(Guid ID, TimeSpan Position, char? Emoji, string Comment = null) {
         public virtual bool Equals(Bookmark other) => ID == other.ID;
         public override int GetHashCode() => ID.GetHashCode();
     }
 
     public class LibraryItem : Aggregate, IEquatable<LibraryItem> {
         private ObservableCollection<Bookmark> _bookmarks = new ObservableCollection<Bookmark>();
-
         public ObservableCollection<Bookmark> Bookmarks => _bookmarks;
 
-        public void AddBookmark(Bookmark newBookmark) {
-            throw new NotImplementedException();
-        }
-
-        public void RemoveBookmark(Guid id) {
-            var bookmark = _bookmarks.FirstOrDefault(b => b.ID == id);
-            if (bookmark != null) {
-                _bookmarks.Remove(bookmark);
-            }
+        public void AddBookmark(TimeSpan position) {
+            ApplyButDoNotCommit(_eventFactory.GetBookmarkAddedEvent(AggregateId, Guid.NewGuid(), position));
+            NotifyPropertyChanged(nameof(Bookmarks));
         }
 
         private string _name;
@@ -116,6 +109,8 @@ namespace ReiTunes.Core {
             this.RegisterApplier<LibraryItemFilePathChangedEvent>(this.Apply);
             this.RegisterApplier<LibraryItemAlbumChangedEvent>(this.Apply);
             this.RegisterApplier<LibraryItemArtistChangedEvent>(this.Apply);
+
+            this.RegisterApplier<LibraryItemBookmarkAddedEvent>(this.Apply);
         }
 
         private void Apply(LibraryItemCreatedEvent @event) {
@@ -155,6 +150,11 @@ namespace ReiTunes.Core {
         private void Apply(LibraryItemArtistChangedEvent @event) {
             _artist = @event.NewArtist;
             NotifyPropertyChanged(nameof(Artist));
+        }
+
+        private void Apply(LibraryItemBookmarkAddedEvent @event) {
+            Bookmarks.Add(new Bookmark(@event.BookmarkId, @event.Position, null));
+            NotifyPropertyChanged(nameof(Bookmarks));
         }
 
         public override bool Equals(object obj) {

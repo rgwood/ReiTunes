@@ -3,7 +3,6 @@
 namespace ReiTunes.Core {
 
     public class LibraryItemEventFactory {
-
         private readonly string _machineName;
         private readonly Func<Guid> _guidFactory;
         private readonly IClock _clock;
@@ -44,6 +43,11 @@ namespace ReiTunes.Core {
 
         public LibraryItemDeletedEvent GetDeletedEvent(Guid aggregateId) {
             return new LibraryItemDeletedEvent(_guidFactory(), aggregateId, _clock.Now(), _clock.GetNextLocalId(), _machineName);
+        }
+
+        public LibraryItemBookmarkAddedEvent GetBookmarkAddedEvent(Guid aggregateId, Guid bookmarkId, TimeSpan position) {
+            return new LibraryItemBookmarkAddedEvent(_guidFactory(), aggregateId, _clock.Now(), _clock.GetNextLocalId(), _machineName,
+                bookmarkId, position);
         }
     }
 }

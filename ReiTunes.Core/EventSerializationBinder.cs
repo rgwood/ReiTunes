@@ -24,7 +24,8 @@ namespace ReiTunes.Core {
             typeof(LibraryItemNameChangedEvent),
             typeof(LibraryItemFilePathChangedEvent),
             typeof(LibraryItemAlbumChangedEvent),
-            typeof(LibraryItemArtistChangedEvent)
+            typeof(LibraryItemArtistChangedEvent),
+            typeof(LibraryItemBookmarkAddedEvent)
         };
 
         public Type BindToType(string assemblyName, string typeName) {

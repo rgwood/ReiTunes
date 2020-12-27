@@ -1,9 +1,9 @@
-﻿using System.Collections.Generic;
-using Xunit;
-using System;
-using System.Linq;
-using FluentAssertions;
+﻿using FluentAssertions;
 using Microsoft.Data.Sqlite;
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using Xunit;
 
 namespace ReiTunes.Core.Tests.XUnit {
 
@@ -99,6 +99,23 @@ namespace ReiTunes.Core.Tests.XUnit {
             ItemCanBeRebuiltFromUncommittedEvents(item);
 
             Assert.Equal(1, item.PlayCount);
+        }
+
+        [Fact]
+        public void LibraryItemAddBookmarkWorks() {
+            var item = new LibraryItem(_eventFactory, "foo/bar.mp3");
+
+            item.Bookmarks.Count.Should().Be(0);
+
+            var addBookmarkEvent = _eventFactory.GetBookmarkAddedEvent(item.AggregateId, Guid.NewGuid(), TimeSpan.FromSeconds(42));
+
+            item.Apply(addBookmarkEvent);
+
+            var bookmark = item.Bookmarks.Single();
+
+            bookmark.Position.Should().Be(TimeSpan.FromSeconds(42));
+            bookmark.Emoji.Should().BeNull();
+            bookmark.Comment.Should().BeNull();
         }
 
         [Fact]
