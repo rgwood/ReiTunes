@@ -1,15 +1,12 @@
-﻿using System;
+﻿using Dapper;
 using Microsoft.Data.Sqlite;
+using System;
 using System.Linq;
 using Xunit;
-using Dapper;
 
 namespace ReiTunes.Core.Tests.xUnit {
 
     public class SqliteTests : IDisposable {
-        private const string MachineName = "Cornelius";
-        private const string EventTableName = "events";
-
         private SqliteConnection _conn;
 
         public SqliteTests() {
