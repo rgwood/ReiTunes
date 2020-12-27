@@ -1,8 +1,8 @@
-﻿using ReiTunes.Core;
-using Xunit;
-using ApprovalTests;
-using System;
+﻿using ApprovalTests;
 using ApprovalTests.Reporters;
+using ReiTunes.Core;
+using System;
+using Xunit;
 
 namespace ReiTunes.Test {
 
@@ -49,5 +49,9 @@ namespace ReiTunes.Test {
         [Fact]
         public void ItemFilePathChangedEvent() =>
             VerifyJson(_factory.GetFilePathChangedEvent(_item1ID, "newFilePath.mp3"));
+
+        [Fact]
+        public void BookmarkAddedEvent() =>
+            VerifyJson(_factory.GetBookmarkAddedEvent(_item1ID, _item2ID, TimeSpan.FromSeconds(99)));
     }
 }
