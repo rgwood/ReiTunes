@@ -10,7 +10,7 @@ namespace ReiTunes.Core {
             get => _name;
             set {
                 if (_name != value) {
-                    ApplyUncommitted(_eventFactory.GetNameChangedEvent(AggregateId, value));
+                    ApplyButDoNotCommit(_eventFactory.GetNameChangedEvent(AggregateId, value));
                     NotifyPropertyChanged();
                 }
             }
@@ -22,7 +22,7 @@ namespace ReiTunes.Core {
             get => _filePath;
             set {
                 if (_filePath != value) {
-                    ApplyUncommitted(_eventFactory.GetFilePathChangedEvent(AggregateId, value));
+                    ApplyButDoNotCommit(_eventFactory.GetFilePathChangedEvent(AggregateId, value));
                     NotifyPropertyChanged();
                 }
             }
@@ -34,7 +34,7 @@ namespace ReiTunes.Core {
             get => _artist;
             set {
                 if (_artist != value) {
-                    ApplyUncommitted(_eventFactory.GetArtistChangedEvent(AggregateId, value));
+                    ApplyButDoNotCommit(_eventFactory.GetArtistChangedEvent(AggregateId, value));
                     NotifyPropertyChanged();
                 }
             }
@@ -46,7 +46,7 @@ namespace ReiTunes.Core {
             get => _album;
             set {
                 if (_album != value) {
-                    ApplyUncommitted(_eventFactory.GetAlbumChangedEvent(AggregateId, value));
+                    ApplyButDoNotCommit(_eventFactory.GetAlbumChangedEvent(AggregateId, value));
                     NotifyPropertyChanged();
                 }
             }
@@ -79,11 +79,11 @@ namespace ReiTunes.Core {
 
         public LibraryItem(LibraryItemEventFactory eventFactory, string relativePath) : this(eventFactory) {
             var fileName = GetFileNameFromPath(relativePath);
-            ApplyUncommitted(_eventFactory.GetCreatedEvent(Guid.NewGuid(), fileName, relativePath));
+            ApplyButDoNotCommit(_eventFactory.GetCreatedEvent(Guid.NewGuid(), fileName, relativePath));
         }
 
         public void IncrementPlayCount() {
-            ApplyUncommitted(_eventFactory.GetPlayedEvent(AggregateId));
+            ApplyButDoNotCommit(_eventFactory.GetPlayedEvent(AggregateId));
         }
 
         private string GetFileNameFromPath(string path) => path.Split('/').Last();

@@ -1,5 +1,5 @@
-﻿using System.Collections.Generic;
-using System;
+﻿using System;
+using System.Collections.Generic;
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
 
@@ -31,7 +31,7 @@ namespace ReiTunes.Core {
 
         public string AggregateName { get { return GetType().Name; } }
 
-        protected void ApplyUncommitted(IEvent evt) {
+        protected void ApplyButDoNotCommit(IEvent evt) {
             Apply(evt);
             _uncommittedEvents.Add(evt);
             EventCreated?.Invoke(this, evt);
@@ -43,7 +43,6 @@ namespace ReiTunes.Core {
                 throw new NotImplementedException($"Apply() not implemented for {evtType}");
             }
             _eventAppliers[evtType](evt);
-
         }
 
         public void ApplyEvents(IEnumerable<IEvent> history) {
