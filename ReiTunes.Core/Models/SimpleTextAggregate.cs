@@ -25,7 +25,7 @@ namespace ReiTunes.Core {
         }
 
         public void Initialize(Guid aggregateId, string text) {
-            ApplyButDoNotCommit(new SimpleTextAggregateCreatedEvent(Guid.NewGuid(), aggregateId: aggregateId, DateTime.UtcNow, text));
+            ApplyButDoNotCommit(new SimpleTextAggregateCreatedEvent(Guid.NewGuid(), aggregateId, DateTime.UtcNow, text));
         }
 
         protected override void RegisterAppliers() {

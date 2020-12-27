@@ -22,40 +22,18 @@ namespace ReiTunes.Core {
         public string AggregateType { get; }
     }
 
-    public class SimpleTextAggregateCreatedEvent : IEvent {
-        public Guid Id { get; private set; }
-        public Guid AggregateId { get; private set; }
+    public record SimpleTextAggregateCreatedEvent(Guid Id, Guid AggregateId, DateTime CreatedTimeUtc, string Text) : IEvent {
         public DateTime CreatedTimeUtc { get; private set; }
         public long LocalId { get; private set; }
-        public string Text { get; private set; }
         public string MachineName { get; set; } = "placeholder";
-
         public string AggregateType => nameof(SimpleTextAggregate);
-
-        public SimpleTextAggregateCreatedEvent(Guid id, Guid aggregateId, DateTime createdTimeUtc, string text) {
-            Id = id;
-            AggregateId = aggregateId;
-            CreatedTimeUtc = createdTimeUtc;
-            Text = text;
-        }
     }
 
-    public class SimpleTextAggregateUpdatedEvent : IEvent {
-        public Guid Id { get; private set; }
-        public Guid AggregateId { get; private set; }
+    public record SimpleTextAggregateUpdatedEvent(Guid Id, Guid AggregateId, DateTime CreatedTimeUtc, string Text) : IEvent {
         public DateTime CreatedTimeUtc { get; private set; }
         public long LocalId { get; private set; }
-        public string Text { get; private set; }
         public string MachineName { get; set; } = "placeholder";
-
         public string AggregateType => nameof(SimpleTextAggregate);
-
-        public SimpleTextAggregateUpdatedEvent(Guid id, Guid aggregateId, DateTime createdTimeUtc, string text) {
-            Id = id;
-            AggregateId = aggregateId;
-            CreatedTimeUtc = createdTimeUtc;
-            Text = text;
-        }
     }
 
     public abstract class LibraryItemEvent : IEvent {
