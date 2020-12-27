@@ -141,6 +141,11 @@ namespace ReiTunes {
             _logger.Information("Total filter time: {ElapsedMs}", sw.ElapsedMilliseconds);
         }
 
+        public async Task<StorageFile> GetStorageFile(LibraryItem item) {
+            var folder = await GetStorageFolderForItem(item);
+            return await folder.TryGetItemAsync(GetFileNameFromFullPath(item.FilePath)) as StorageFile;
+        }
+
         public async Task ShowItemInExplorer(LibraryItem item) {
             if (item == null)
                 return;

@@ -6,6 +6,7 @@
     xmlns:local="using:ReiTunes.Views"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     Title="{x:Bind _item.Name}"
+    Background="{ThemeResource SolarizedBackgroundBrush}"
     DefaultButton="Secondary"
     IsPrimaryButtonEnabled="False"
     SecondaryButtonClick="ContentDialog_SecondaryButtonClick"
@@ -14,18 +15,49 @@
 
     <Grid>
         <Grid.RowDefinitions>
+
+            <RowDefinition Height="Auto" />
+
             <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
-        <TextBlock Text="{x:Bind _item.Name}" />
 
-        <ListView x:Name="BookmarksView" Grid.Row="1">
+        <StackPanel>
+            <TextBlock>
+                <Run>On disk:</Run>
+                <Run Text="{x:Bind _existsOnDisk, Mode=OneWay}" />
+            </TextBlock>
+
+            <TextBlock>
+                <Run>Duration:</Run>
+                <Run Text="{x:Bind _musicProps.Duration, Mode=OneWay}" />
+            </TextBlock>
+
+            <TextBlock>
+                <Run>Bitrate:</Run>
+                <Run Text="{x:Bind BitsToKilobits(_musicProps.Bitrate), Mode=OneWay}" />
+                <Run Text="kbps" />
+            </TextBlock>
+        </StackPanel>
+
+        <TextBlock
+            Grid.Row="1"
+            Margin="0,5,0,5"
+            Text="Bookmarks:" />
+
+        <ListView
+            x:Name="BookmarksView"
+            Grid.Row="2"
+            DoubleTapped="BookmarksView_DoubleTapped">
             <ListView.ItemContainerTransitions>
                 <TransitionCollection />
             </ListView.ItemContainerTransitions>
             <ListView.ItemTemplate>
                 <DataTemplate>
-                    <TextBlock Text="{Binding Position}" TextWrapping="Wrap" />
+                    <TextBlock>
+                        <Run Text="{Binding Emoji}" />
+                        <Run Text="{Binding Position}" />
+                    </TextBlock>
                 </DataTemplate>
             </ListView.ItemTemplate>
         </ListView>

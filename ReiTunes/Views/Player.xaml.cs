@@ -188,6 +188,18 @@ namespace ReiTunes {
                     var selected = (LibraryItem)libraryDataGrid.SelectedItem;
                     await ViewModel.ShowItemInExplorer(selected);
                 }));
+
+            //show item info
+            KeyboardAccelerators.Add(CreateAccelerator(VirtualKeyModifiers.Control, VirtualKey.I,
+                async (sender, args) => {
+                    args.Handled = true;
+
+                    var selected = libraryDataGrid.SelectedItem as LibraryItem;
+                    if (selected != null) {
+                        var dialog = new LibraryItemInfo(selected);
+                        await dialog.ShowAsync();
+                    }
+                }));
         }
 
         private void Page_Loaded(object sender, RoutedEventArgs e) {
