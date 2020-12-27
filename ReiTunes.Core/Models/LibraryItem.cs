@@ -3,8 +3,9 @@ using System.Collections.ObjectModel;
 using System.Linq;
 
 namespace ReiTunes.Core {
+    // TODO: this should probably be a
     public record Bookmark(Guid ID, TimeSpan Position, char? Emoji, string Comment = null) {
-        public virtual bool Equals(Bookmark other) => ID == other.ID;
+        public virtual bool Equals(Bookmark other) => ID == other?.ID;
         public override int GetHashCode() => ID.GetHashCode();
     }
 
