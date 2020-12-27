@@ -362,6 +362,15 @@ namespace ReiTunes {
             //}
         }
 
+        private async void ShowItemInfo(object sender, RoutedEventArgs e) {
+            var item = (sender as FrameworkElement).DataContext as LibraryItem;
+
+            if (item != null) {
+                var dialog = new LibraryItemInfo(item);
+                await dialog.ShowAsync();
+            }
+        }
+
         private async void ShowRecentEvents(object sender, RoutedEventArgs e) {
             var recentEventsDialog = new RecentEventsContentDialog(ViewModel.GetRecentEvents());
             await recentEventsDialog.ShowAsync();

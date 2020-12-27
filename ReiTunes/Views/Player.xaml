@@ -287,8 +287,9 @@
                                     Text="Copy URL" />
                                 <MenuFlyoutItem
                                     x:Name="WorldMenuItem"
-                                    Click="ShowRecentEvents"
-                                    Text="Show recent events (WIP)" />
+                                    Click="ShowItemInfo"
+                                    Icon="Zoom"
+                                    Text="Show Info" />
                                 <MenuFlyoutItem
                                     x:Name="DeleteMenuItem"
                                     Click="DeleteMenuItem_Click"
