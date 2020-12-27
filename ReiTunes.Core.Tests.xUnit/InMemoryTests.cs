@@ -80,7 +80,7 @@ namespace ReiTunes.Core.Tests.XUnit {
             //new LibraryItemCreatedEvent(Guid.NewGuid(), guid, createdDate, name, path);
 
             var item = new LibraryItem(_eventFactory);
-            item.ApplyEvents(new List<IEvent>() { createdEvent });
+            item.Apply(new List<IEvent>() { createdEvent });
 
             Assert.Equal(guid, item.AggregateId);
             Assert.Equal(name, item.Name);
@@ -170,7 +170,7 @@ namespace ReiTunes.Core.Tests.XUnit {
                 repo.Save(@event);
             }
 
-            itemFromEvents.ApplyEvents(repo.GetEvents(item.AggregateId));
+            itemFromEvents.Apply(repo.GetEvents(item.AggregateId));
             Assert.Equal(item, itemFromEvents);
         }
 
@@ -208,7 +208,7 @@ namespace ReiTunes.Core.Tests.XUnit {
             var createdEvent = new SimpleTextAggregateCreatedEvent(Guid.NewGuid(), guid, createdDate, "foo");
 
             var agg = new SimpleTextAggregate();
-            agg.ApplyEvents(new List<IEvent>() { createdEvent });
+            agg.Apply(new List<IEvent>() { createdEvent });
 
             Assert.Equal(guid, agg.AggregateId);
             Assert.Equal("foo", agg.Text);
@@ -244,7 +244,7 @@ namespace ReiTunes.Core.Tests.XUnit {
             agg.Commit();
 
             var agg2 = new SimpleTextAggregate();
-            agg2.ApplyEvents(repo.GetEvents(agg.AggregateId));
+            agg2.Apply(repo.GetEvents(agg.AggregateId));
 
             Assert.Equal(agg.AggregateId, agg2.AggregateId);
             Assert.Equal(agg.Text, agg2.Text);

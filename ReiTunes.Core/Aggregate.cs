@@ -45,7 +45,7 @@ namespace ReiTunes.Core {
             _eventAppliers[evtType](evt);
         }
 
-        public void ApplyEvents(IEnumerable<IEvent> history) {
+        public void Apply(IEnumerable<IEvent> history) {
             foreach (var evt in history) {
                 Apply(evt);
             }

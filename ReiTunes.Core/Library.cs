@@ -91,9 +91,9 @@ namespace ReiTunes.Core {
                 }
 
                 aggregate.EventCreated += SaveEventToRepo;
-                foreach (var @event in aggregateEvents) {
-                    aggregate.Apply(@event);
-                }
+
+                aggregate.Apply(aggregateEvents);
+
                 Items.Add(aggregate);
             }
 
