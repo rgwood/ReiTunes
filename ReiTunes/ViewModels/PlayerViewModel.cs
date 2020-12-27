@@ -119,6 +119,7 @@ namespace ReiTunes {
 
         private void Bookmark() {
             if (CurrentlyPlayingItem != null) {
+                CurrentlyPlayingItem.AddBookmark(_mediaPlayer.PlaybackSession.Position);
                 _logger.Information("Bookmark created for item {itemId} at {playbackPosition}", CurrentlyPlayingItem.AggregateId, _mediaPlayer.PlaybackSession.Position);
             }
         }
