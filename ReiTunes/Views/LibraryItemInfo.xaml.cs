@@ -66,7 +66,6 @@ namespace ReiTunes.Views {
         }
 
         private void ContentDialog_SecondaryButtonClick(ContentDialog sender, ContentDialogButtonClickEventArgs args) {
-            //await PlaySelectedBookmark();
         }
 
         private string BitsToKilobits(uint bits) => (bits / 1000).ToString();
@@ -75,17 +74,16 @@ namespace ReiTunes.Views {
             var selected = BookmarksView.SelectedItem as Bookmark;
 
             if (selected != null) {
-                if (_viewModel.CurrentlyPlayingItem == _item) {
-                    _viewModel.MediaPlayer.PlaybackSession.Position = selected.Position;
-                }
-                else {
+                if (_viewModel.CurrentlyPlayingItem != _item) {
                     await _viewModel.ChangeSource(_item);
-                    _viewModel.MediaPlayer.PlaybackSession.Position = selected.Position;
                 }
+
+                _viewModel.MediaPlayer.PlaybackSession.Position = selected.Position;
+                _viewModel.MediaPlayer.Play();
             }
         }
 
-        private async void BookmarksView_DoubleTapped(object sender, Windows.UI.Xaml.Input.DoubleTappedRoutedEventArgs e) {
+        private async void BookmarksView_DoubleTapped(object sender, DoubleTappedRoutedEventArgs e) {
             await PlaySelectedBookmark();
         }
 
