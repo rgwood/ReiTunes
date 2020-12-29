@@ -116,14 +116,24 @@ namespace ReiTunes.Core {
     }
 
     public class LibraryItemBookmarkAddedEvent : LibraryItemEvent {
-        public TimeSpan Position { get; private set; }
         public Guid BookmarkId { get; private set; }
+        public TimeSpan Position { get; private set; }
 
         public LibraryItemBookmarkAddedEvent(Guid id, Guid aggregateId, DateTime createdTimeUtc, long localId, string machineName,
             Guid bookmarkId, TimeSpan position)
             : base(id, aggregateId, createdTimeUtc, localId, machineName) {
             BookmarkId = bookmarkId;
             Position = position;
+        }
+    }
+
+    public class LibraryItemBookmarkDeletedEvent : LibraryItemEvent {
+        public Guid BookmarkId { get; private set; }
+
+        public LibraryItemBookmarkDeletedEvent(Guid id, Guid aggregateId, DateTime createdTimeUtc, long localId, string machineName,
+            Guid bookmarkId)
+            : base(id, aggregateId, createdTimeUtc, localId, machineName) {
+            BookmarkId = bookmarkId;
         }
     }
 }

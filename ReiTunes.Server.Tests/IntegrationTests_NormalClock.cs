@@ -89,6 +89,11 @@ namespace ReiTunes.Server.Tests {
 
             AssertLibrariesHaveSameItems(client1, client2);
 
+            // Delete a bookmark
+            client2.Items.Single().Bookmarks.Count.Should().Be(2);
+            client2.Items.Single().DeleteBookmark(item.Bookmarks.First().ID);
+            client2.Items.Single().Bookmarks.Count.Should().Be(1);
+
             client2.Items.Single().IncrementPlayCount();
 
             await client2.PushToServer();

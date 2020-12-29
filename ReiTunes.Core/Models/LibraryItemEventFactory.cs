@@ -13,41 +13,36 @@ namespace ReiTunes.Core {
             _guidFactory = guidFactory ?? (() => Guid.NewGuid());
         }
 
-        public LibraryItemCreatedEvent GetCreatedEvent(Guid aggregateId, string name, string filePath) {
-            return new LibraryItemCreatedEvent(_guidFactory(), aggregateId, _clock.Now(), _clock.GetNextLocalId(), _machineName, name, filePath);
-        }
+        public LibraryItemCreatedEvent GetCreatedEvent(Guid aggregateId, string name, string filePath)
+            => new LibraryItemCreatedEvent(_guidFactory(), aggregateId, _clock.Now(), _clock.GetNextLocalId(), _machineName, name, filePath);
 
-        public LibraryItemCreatedEvent GetCreatedEvent(Guid aggregateId, string name, string filePath, Guid eventId) {
-            return new LibraryItemCreatedEvent(_guidFactory(), aggregateId, _clock.Now(), _clock.GetNextLocalId(), _machineName, name, filePath);
-        }
+        public LibraryItemCreatedEvent GetCreatedEvent(Guid aggregateId, string name, string filePath, Guid eventId)
+            => new LibraryItemCreatedEvent(_guidFactory(), aggregateId, _clock.Now(), _clock.GetNextLocalId(), _machineName, name, filePath);
 
-        public LibraryItemNameChangedEvent GetNameChangedEvent(Guid aggregateId, string newName) {
-            return new LibraryItemNameChangedEvent(_guidFactory(), aggregateId, _clock.Now(), _clock.GetNextLocalId(), _machineName, newName);
-        }
+        public LibraryItemNameChangedEvent GetNameChangedEvent(Guid aggregateId, string newName)
+            => new LibraryItemNameChangedEvent(_guidFactory(), aggregateId, _clock.Now(), _clock.GetNextLocalId(), _machineName, newName);
 
-        public LibraryItemAlbumChangedEvent GetAlbumChangedEvent(Guid aggregateId, string newAlbum) {
-            return new LibraryItemAlbumChangedEvent(_guidFactory(), aggregateId, _clock.Now(), _clock.GetNextLocalId(), _machineName, newAlbum);
-        }
+        public LibraryItemAlbumChangedEvent GetAlbumChangedEvent(Guid aggregateId, string newAlbum)
+            => new LibraryItemAlbumChangedEvent(_guidFactory(), aggregateId, _clock.Now(), _clock.GetNextLocalId(), _machineName, newAlbum);
 
-        public LibraryItemArtistChangedEvent GetArtistChangedEvent(Guid aggregateId, string newArtist) {
-            return new LibraryItemArtistChangedEvent(_guidFactory(), aggregateId, _clock.Now(), _clock.GetNextLocalId(), _machineName, newArtist);
-        }
+        public LibraryItemArtistChangedEvent GetArtistChangedEvent(Guid aggregateId, string newArtist)
+            => new LibraryItemArtistChangedEvent(_guidFactory(), aggregateId, _clock.Now(), _clock.GetNextLocalId(), _machineName, newArtist);
 
-        public LibraryItemFilePathChangedEvent GetFilePathChangedEvent(Guid aggregateId, string newFilePath) {
-            return new LibraryItemFilePathChangedEvent(_guidFactory(), aggregateId, _clock.Now(), _clock.GetNextLocalId(), _machineName, newFilePath);
-        }
+        public LibraryItemFilePathChangedEvent GetFilePathChangedEvent(Guid aggregateId, string newFilePath)
+            => new LibraryItemFilePathChangedEvent(_guidFactory(), aggregateId, _clock.Now(), _clock.GetNextLocalId(), _machineName, newFilePath);
 
-        public LibraryItemPlayedEvent GetPlayedEvent(Guid aggregateId) {
-            return new LibraryItemPlayedEvent(_guidFactory(), aggregateId, _clock.Now(), _clock.GetNextLocalId(), _machineName);
-        }
+        public LibraryItemPlayedEvent GetPlayedEvent(Guid aggregateId)
+            => new LibraryItemPlayedEvent(_guidFactory(), aggregateId, _clock.Now(), _clock.GetNextLocalId(), _machineName);
 
-        public LibraryItemDeletedEvent GetDeletedEvent(Guid aggregateId) {
-            return new LibraryItemDeletedEvent(_guidFactory(), aggregateId, _clock.Now(), _clock.GetNextLocalId(), _machineName);
-        }
+        public LibraryItemDeletedEvent GetDeletedEvent(Guid aggregateId)
+            => new LibraryItemDeletedEvent(_guidFactory(), aggregateId, _clock.Now(), _clock.GetNextLocalId(), _machineName);
 
-        public LibraryItemBookmarkAddedEvent GetBookmarkAddedEvent(Guid aggregateId, Guid bookmarkId, TimeSpan position) {
-            return new LibraryItemBookmarkAddedEvent(_guidFactory(), aggregateId, _clock.Now(), _clock.GetNextLocalId(), _machineName,
+        public LibraryItemBookmarkAddedEvent GetBookmarkAddedEvent(Guid aggregateId, Guid bookmarkId, TimeSpan position)
+            => new LibraryItemBookmarkAddedEvent(_guidFactory(), aggregateId, _clock.Now(), _clock.GetNextLocalId(), _machineName,
                 bookmarkId, position);
-        }
+
+        public LibraryItemBookmarkDeletedEvent GetBookmarkDeletedEvent(Guid aggregateId, Guid bookmarkId)
+            => new LibraryItemBookmarkDeletedEvent(_guidFactory(), aggregateId, _clock.Now(), _clock.GetNextLocalId(), _machineName,
+                bookmarkId);
     }
 }

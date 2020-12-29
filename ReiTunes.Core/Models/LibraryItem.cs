@@ -18,6 +18,11 @@ namespace ReiTunes.Core {
             NotifyPropertyChanged(nameof(Bookmarks));
         }
 
+        public void DeleteBookmark(Guid id) {
+            ApplyButDoNotCommit(_eventFactory.GetBookmarkDeletedEvent(AggregateId, id));
+            NotifyPropertyChanged(nameof(Bookmarks));
+        }
+
         private string _name;
 
         public string Name {
@@ -112,6 +117,7 @@ namespace ReiTunes.Core {
             this.RegisterApplier<LibraryItemArtistChangedEvent>(this.Apply);
 
             this.RegisterApplier<LibraryItemBookmarkAddedEvent>(this.Apply);
+            this.RegisterApplier<LibraryItemBookmarkDeletedEvent>(this.Apply);
         }
 
         private void Apply(LibraryItemCreatedEvent @event) {
@@ -156,6 +162,15 @@ namespace ReiTunes.Core {
         private void Apply(LibraryItemBookmarkAddedEvent @event) {
             Bookmarks.Add(new Bookmark(@event.BookmarkId, @event.Position, null));
             NotifyPropertyChanged(nameof(Bookmarks));
+        }
+
+        private void Apply(LibraryItemBookmarkDeletedEvent @event) {
+            Bookmark toDelete = Bookmarks.Where(bm => bm.ID == @event.BookmarkId).SingleOrDefault();
+
+            if (toDelete != null) {
+                Bookmarks.Remove(toDelete);
+                NotifyPropertyChanged(nameof(Bookmarks));
+            }
         }
 
         public override bool Equals(object obj) {
