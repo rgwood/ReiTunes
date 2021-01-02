@@ -136,6 +136,23 @@ namespace ReiTunes.Core {
             BookmarkId = bookmarkId;
         }
     }
+
+    public class LibraryItemBookmarkSetEmojiEvent : LibraryItemEvent {
+        public Guid BookmarkId { get; private set; }
+        public string Emoji { get; private set; }
+
+        public LibraryItemBookmarkSetEmojiEvent(Guid id, Guid aggregateId, DateTime createdTimeUtc, long localId, string machineName,
+            Guid bookmarkId, string emoji)
+            : base(id, aggregateId, createdTimeUtc, localId, machineName) {
+            int runeCount = emoji.TextElements().Count;
+            if (runeCount != 1) {
+                throw new ArgumentOutOfRangeException($"Emoji '{emoji}' has {runeCount} runes but it should only have 1.");
+            }
+
+            BookmarkId = bookmarkId;
+            Emoji = emoji;
+        }
+    }
 }
 
 //type LibraryItemCreatedEvent =

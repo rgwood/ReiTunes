@@ -324,5 +324,27 @@ namespace ReiTunes.Core.Tests.XUnit {
 
             repo.CountOfAllEvents().Should().Be(2);
         }
+
+        [Fact]
+        public void BookmarksOnlyHaveOneRune() {
+            shouldWork("🤔");
+            shouldWork("R");
+            shouldWork(" ");
+
+            shouldFail("");
+            shouldFail("  ");
+            shouldFail("🤔🤔");
+            shouldFail("🤔a");
+
+            void shouldWork(string emoji) {
+                _eventFactory.Invoking(f => f.GetBookmarkSetEmojiEvent(Guid.NewGuid(), Guid.NewGuid(), emoji))
+    .Should().NotThrow();
+            }
+
+            void shouldFail(string emoji) {
+                _eventFactory.Invoking(f => f.GetBookmarkSetEmojiEvent(Guid.NewGuid(), Guid.NewGuid(), emoji))
+    .Should().Throw<Exception>();
+            }
+        }
     }
 }

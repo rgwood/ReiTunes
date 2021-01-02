@@ -44,5 +44,9 @@ namespace ReiTunes.Core {
         public LibraryItemBookmarkDeletedEvent GetBookmarkDeletedEvent(Guid aggregateId, Guid bookmarkId)
             => new LibraryItemBookmarkDeletedEvent(_guidFactory(), aggregateId, _clock.Now(), _clock.GetNextLocalId(), _machineName,
                 bookmarkId);
+
+        public LibraryItemBookmarkSetEmojiEvent GetBookmarkSetEmojiEvent(Guid aggregateId, Guid bookmarkId, string emoji)
+            => new LibraryItemBookmarkSetEmojiEvent(_guidFactory(), aggregateId, _clock.Now(), _clock.GetNextLocalId(), _machineName,
+                bookmarkId, emoji);
     }
 }
