@@ -28,11 +28,11 @@ namespace ReiTunes.Views {
             _item = item;
 
             foreach (var bookmark in _item.Bookmarks.OrderBy(b => b.Position)) {
-                if (bookmark.Emoji.HasValue) {
+                if (bookmark.Emoji != null) {
                     BookmarksView.Items.Add(bookmark);
                 }
                 else {
-                    BookmarksView.Items.Add(bookmark with { Emoji = '❤' });
+                    BookmarksView.Items.Add(bookmark with { Emoji = "❤" });
                 }
             }
 
