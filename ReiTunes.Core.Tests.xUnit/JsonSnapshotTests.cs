@@ -53,5 +53,13 @@ namespace ReiTunes.Test {
         [Fact]
         public void BookmarkAddedEvent() =>
             VerifyJson(_factory.GetBookmarkAddedEvent(_item1ID, _item2ID, TimeSpan.FromSeconds(99)));
+
+        [Fact]
+        public void BookmarkDeletedEvent() =>
+            VerifyJson(_factory.GetBookmarkDeletedEvent(_item1ID, _item2ID));
+
+        //[Fact]
+        //public void BookmarkSetEmojiEvent() =>
+        //    VerifyJson(_factory.GetBookmarkSetEmojiEvent(_item1ID, _item2ID, '🤔'));
     }
 }
