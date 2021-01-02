@@ -149,7 +149,7 @@ namespace ReiTunes.Server.Tests {
             //    this.PlayCount == other.PlayCount;
         }
 
-        public static void AssertBookmarksEqual(Bookmark bm1, Bookmark bm2) {
+        private static void AssertBookmarksEqual(Bookmark bm1, Bookmark bm2) {
             bm1.ID.Should().Be(bm2.ID);
             bm1.Position.Should().Be(bm2.Position);
             bm1.Emoji.Should().Be(bm2.Emoji);
