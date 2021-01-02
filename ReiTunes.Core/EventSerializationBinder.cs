@@ -26,7 +26,8 @@ namespace ReiTunes.Core {
             typeof(LibraryItemAlbumChangedEvent),
             typeof(LibraryItemArtistChangedEvent),
             typeof(LibraryItemBookmarkAddedEvent),
-            typeof(LibraryItemBookmarkDeletedEvent)
+            typeof(LibraryItemBookmarkDeletedEvent),
+            typeof(LibraryItemBookmarkSetEmojiEvent)
         };
 
         public Type BindToType(string assemblyName, string typeName) {

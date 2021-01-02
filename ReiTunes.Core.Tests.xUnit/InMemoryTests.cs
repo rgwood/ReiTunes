@@ -119,6 +119,36 @@ namespace ReiTunes.Core.Tests.XUnit {
         }
 
         [Fact]
+        public void LibraryItemDeleteBookmarkWorks() {
+            var item = new LibraryItem(_eventFactory, "foo/bar.mp3");
+
+            item.Bookmarks.Count.Should().Be(0);
+
+            var addBookmarkEvent = _eventFactory.GetBookmarkAddedEvent(item.AggregateId, Guid.NewGuid(), TimeSpan.FromSeconds(42));
+
+            item.Apply(addBookmarkEvent);
+
+            var bookmark = item.Bookmarks.Single();
+
+            item.Apply(_eventFactory.GetBookmarkDeletedEvent(item.AggregateId, addBookmarkEvent.BookmarkId));
+
+            item.Bookmarks.Should().BeEmpty();
+        }
+
+        [Fact]
+        public void LibraryItemBookmarkSetEmojiWorks() {
+            var item = new LibraryItem(_eventFactory, "foo/bar.mp3");
+
+            var addBookmarkEvent = _eventFactory.GetBookmarkAddedEvent(item.AggregateId, Guid.NewGuid(), TimeSpan.FromSeconds(42));
+            item.Apply(addBookmarkEvent);
+
+            item.Bookmarks.Single();
+            item.Apply(_eventFactory.GetBookmarkSetEmojiEvent(item.AggregateId, addBookmarkEvent.BookmarkId, "🎶"));
+
+            item.Bookmarks.Single().Emoji.Should().Be("🎶");
+        }
+
+        [Fact]
         public void CanSerializeDeserializeAllLibraryItemEvents() {
             var item = new LibraryItem(_eventFactory, "foo/bar.mp3");
 

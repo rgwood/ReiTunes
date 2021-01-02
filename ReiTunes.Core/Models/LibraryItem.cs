@@ -4,7 +4,7 @@ using System.Linq;
 
 namespace ReiTunes.Core {
     // TODO: this should probably be a
-    public record Bookmark(Guid ID, TimeSpan Position, char? Emoji, string Comment = null) {
+    public record Bookmark(Guid ID, TimeSpan Position, string Emoji, string Comment = null) {
         public virtual bool Equals(Bookmark other) => ID == other?.ID;
         public override int GetHashCode() => ID.GetHashCode();
     }
@@ -20,6 +20,11 @@ namespace ReiTunes.Core {
 
         public void DeleteBookmark(Guid id) {
             ApplyButDoNotCommit(_eventFactory.GetBookmarkDeletedEvent(AggregateId, id));
+            NotifyPropertyChanged(nameof(Bookmarks));
+        }
+
+        public void SetBookmarkEmoji(Guid id, string emoji) {
+            ApplyButDoNotCommit(_eventFactory.GetBookmarkSetEmojiEvent(AggregateId, id, emoji));
             NotifyPropertyChanged(nameof(Bookmarks));
         }
 
@@ -118,6 +123,7 @@ namespace ReiTunes.Core {
 
             this.RegisterApplier<LibraryItemBookmarkAddedEvent>(this.Apply);
             this.RegisterApplier<LibraryItemBookmarkDeletedEvent>(this.Apply);
+            this.RegisterApplier<LibraryItemBookmarkSetEmojiEvent>(this.Apply);
         }
 
         private void Apply(LibraryItemCreatedEvent @event) {
@@ -171,6 +177,17 @@ namespace ReiTunes.Core {
                 Bookmarks.Remove(toDelete);
                 NotifyPropertyChanged(nameof(Bookmarks));
             }
+        }
+
+        private void Apply(LibraryItemBookmarkSetEmojiEvent @event) {
+            Bookmark toDelete = Bookmarks.Where(bm => bm.ID == @event.BookmarkId).SingleOrDefault();
+
+            //if (toDelete != null) {
+            Bookmarks.Remove(toDelete);
+            Bookmarks.Add(toDelete with { Emoji = @event.Emoji });
+
+            NotifyPropertyChanged(nameof(Bookmarks));
+            //}
         }
 
         public override bool Equals(object obj) {

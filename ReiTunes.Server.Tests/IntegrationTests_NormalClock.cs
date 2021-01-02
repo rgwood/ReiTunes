@@ -1,4 +1,4 @@
-using FluentAssertions;
+﻿using FluentAssertions;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.AspNetCore.WebUtilities;
@@ -93,6 +93,13 @@ namespace ReiTunes.Server.Tests {
             client2.Items.Single().Bookmarks.Count.Should().Be(2);
             client2.Items.Single().DeleteBookmark(item.Bookmarks.First().ID);
             client2.Items.Single().Bookmarks.Count.Should().Be(1);
+
+            // TODO test not currently passing
+            // Set bookmark emoji
+            var client2Item = client2.Items.Single();
+            var remainingBookmark = client2Item.Bookmarks.Single();
+            client2.Items.Single().SetBookmarkEmoji(remainingBookmark.ID, "🎶");
+            client2.Items.Single().Bookmarks.Single().Emoji.Should().Be("🎶");
 
             client2.Items.Single().IncrementPlayCount();
 
