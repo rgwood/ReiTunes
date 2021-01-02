@@ -101,36 +101,12 @@ namespace ReiTunes.Views {
 
         private void OnPropertyChanged(string propertyName) => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
 
-        private void EmojiHolder_BeforeTextChanging(TextBox sender, TextBoxBeforeTextChangingEventArgs args) {
-            // Trying to intercept text change events so there can only be 1 emoji in the box at a time.
-            // Doesn't quite work, new characters don't update properly in the UI 🤔
-
-            //    string oldText = sender.Text;
-            //    string newText = args.NewText;
-
-            //    if (emojiCount(newText) > 1) {
-            //        args.Cancel = true;
-            //        string newTextMinusOldText = new Regex(Regex.Escape(oldText)).Replace(newText, "", 1);
-            //        sender.Text = newTextMinusOldText;
-            //    }
-
-            //    int emojiCount(string input) => new System.Globalization.StringInfo(input).LengthInTextElements;
-        }
-
         private void EmojiHolder_GotFocus(object sender, RoutedEventArgs e) {
             CoreInputView.GetForCurrentView().TryShow(CoreInputViewKind.Emoji);
         }
 
         private void EmojiHolder_TextChanged(object sender, TextChangedEventArgs args) {
-            //string oldText =
-            //string newText = args.NewText;
-
-            //if (emojiCount(newText) > 1) {
-            //    string newTextMinusOldText = new Regex(Regex.Escape(oldText)).Replace(newText, "", 1);
-            //    sender.Text = newTextMinusOldText;
-            //}
-
-            //int emojiCount(string input) => new System.Globalization.StringInfo(input).LengthInTextElements;
+            EmojiResult.Text = (sender as TextBox).Text.TextElements().LastOrDefault() ?? "♥";
         }
 
         private void EmojiHolder_Tapped(object sender, TappedRoutedEventArgs e) {

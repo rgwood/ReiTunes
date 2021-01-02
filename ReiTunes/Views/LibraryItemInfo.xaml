@@ -65,12 +65,12 @@
             <TextBox
                 x:Name="EmojiHolder"
                 Width="300"
-                BeforeTextChanging="EmojiHolder_BeforeTextChanging"
                 GotFocus="EmojiHolder_GotFocus"
                 HorizontalTextAlignment="Center"
                 Tapped="EmojiHolder_Tapped"
                 TextChanged="EmojiHolder_TextChanged"
                 TextWrapping="Wrap" />
+            <TextBlock x:Name="EmojiResult" />
             <Button x:Name="SetEmojiButton" Click="SetEmojiButton_Click">Set</Button>
         </StackPanel>
     </Grid>
