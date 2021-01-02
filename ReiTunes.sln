@@ -24,6 +24,8 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "ReiTunes.Server", "ReiTunes
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "ReiTunes.Server.Tests", "ReiTunes.Server.Tests\ReiTunes.Server.Tests.csproj", "{818B69F1-8781-46D9-B6D2-2632E99C4A57}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Benchmarker", "Benchmarker\Benchmarker.csproj", "{3B6C5834-C301-4FE4-9AA1-EAF1F3BE3E04}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -182,6 +184,26 @@ Global
 		{818B69F1-8781-46D9-B6D2-2632E99C4A57}.Release|x64.Build.0 = Release|Any CPU
 		{818B69F1-8781-46D9-B6D2-2632E99C4A57}.Release|x86.ActiveCfg = Release|Any CPU
 		{818B69F1-8781-46D9-B6D2-2632E99C4A57}.Release|x86.Build.0 = Release|Any CPU
+		{3B6C5834-C301-4FE4-9AA1-EAF1F3BE3E04}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{3B6C5834-C301-4FE4-9AA1-EAF1F3BE3E04}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{3B6C5834-C301-4FE4-9AA1-EAF1F3BE3E04}.Debug|ARM.ActiveCfg = Debug|Any CPU
+		{3B6C5834-C301-4FE4-9AA1-EAF1F3BE3E04}.Debug|ARM.Build.0 = Debug|Any CPU
+		{3B6C5834-C301-4FE4-9AA1-EAF1F3BE3E04}.Debug|ARM64.ActiveCfg = Debug|Any CPU
+		{3B6C5834-C301-4FE4-9AA1-EAF1F3BE3E04}.Debug|ARM64.Build.0 = Debug|Any CPU
+		{3B6C5834-C301-4FE4-9AA1-EAF1F3BE3E04}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{3B6C5834-C301-4FE4-9AA1-EAF1F3BE3E04}.Debug|x64.Build.0 = Debug|Any CPU
+		{3B6C5834-C301-4FE4-9AA1-EAF1F3BE3E04}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{3B6C5834-C301-4FE4-9AA1-EAF1F3BE3E04}.Debug|x86.Build.0 = Debug|Any CPU
+		{3B6C5834-C301-4FE4-9AA1-EAF1F3BE3E04}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{3B6C5834-C301-4FE4-9AA1-EAF1F3BE3E04}.Release|Any CPU.Build.0 = Release|Any CPU
+		{3B6C5834-C301-4FE4-9AA1-EAF1F3BE3E04}.Release|ARM.ActiveCfg = Release|Any CPU
+		{3B6C5834-C301-4FE4-9AA1-EAF1F3BE3E04}.Release|ARM.Build.0 = Release|Any CPU
+		{3B6C5834-C301-4FE4-9AA1-EAF1F3BE3E04}.Release|ARM64.ActiveCfg = Release|Any CPU
+		{3B6C5834-C301-4FE4-9AA1-EAF1F3BE3E04}.Release|ARM64.Build.0 = Release|Any CPU
+		{3B6C5834-C301-4FE4-9AA1-EAF1F3BE3E04}.Release|x64.ActiveCfg = Release|Any CPU
+		{3B6C5834-C301-4FE4-9AA1-EAF1F3BE3E04}.Release|x64.Build.0 = Release|Any CPU
+		{3B6C5834-C301-4FE4-9AA1-EAF1F3BE3E04}.Release|x86.ActiveCfg = Release|Any CPU
+		{3B6C5834-C301-4FE4-9AA1-EAF1F3BE3E04}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
