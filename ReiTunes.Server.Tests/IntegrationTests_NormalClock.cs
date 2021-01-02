@@ -94,7 +94,6 @@ namespace ReiTunes.Server.Tests {
             client2.Items.Single().DeleteBookmark(item.Bookmarks.First().ID);
             client2.Items.Single().Bookmarks.Count.Should().Be(1);
 
-            // TODO test not currently passing
             // Set bookmark emoji
             var client2Item = client2.Items.Single();
             var remainingBookmark = client2Item.Bookmarks.Single();
@@ -160,7 +159,7 @@ namespace ReiTunes.Server.Tests {
             bm1.ID.Should().Be(bm2.ID);
             bm1.Position.Should().Be(bm2.Position);
             bm1.Emoji.Should().Be(bm2.Emoji);
-            bm1.Emoji.Should().Be(bm2.Comment);
+            bm1.Comment.Should().Be(bm2.Comment);
         }
 
         // TODO: should add better equality comparers to the event classes themselves
