@@ -231,6 +231,17 @@ namespace ReiTunes {
             }
         }
 
+        public async Task PlayBookmark(LibraryItem item, Bookmark bookmark) {
+            if (item != null && bookmark != null) {
+                if (CurrentlyPlayingItem != item) {
+                    await ChangeSource(item);
+                }
+
+                MediaPlayer.PlaybackSession.Position = bookmark.Position;
+                MediaPlayer.Play();
+            }
+        }
+
         private async Task UpdateSystemMediaTransportControls(LibraryItem libraryItemToPlay, MediaPlaybackItem mediaPlaybackItem,
             StorageFile fileWithThumbnail = null) {
             MediaItemDisplayProperties props = mediaPlaybackItem.GetDisplayProperties();

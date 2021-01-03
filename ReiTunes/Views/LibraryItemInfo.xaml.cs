@@ -75,12 +75,7 @@ namespace ReiTunes.Views {
             var selected = BookmarksView.SelectedItem as Bookmark;
 
             if (selected != null) {
-                if (_viewModel.CurrentlyPlayingItem != _item) {
-                    await _viewModel.ChangeSource(_item);
-                }
-
-                _viewModel.MediaPlayer.PlaybackSession.Position = selected.Position;
-                _viewModel.MediaPlayer.Play();
+                await _viewModel.PlayBookmark(_item, selected);
             }
         }
 

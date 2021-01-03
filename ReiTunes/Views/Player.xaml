@@ -279,7 +279,7 @@
                 <Style TargetType="controls:DataGridRow">
                     <Setter Property="controls:DataGridRow.ContextFlyout">
                         <Setter.Value>
-                            <MenuFlyout x:Name="LibraryItemFlyout">
+                            <MenuFlyout x:Name="LibraryItemFlyout" Opening="LibraryItemFlyout_Opening">
                                 <MenuFlyoutItem
                                     x:Name="CopyURLMenuItem"
                                     Click="CopyURLMenuItem_Click"

@@ -3,6 +3,7 @@ using ReiTunes.Core;
 using ReiTunes.Helpers;
 using ReiTunes.Views;
 using System;
+using System.Linq;
 using System.Reactive.Linq;
 using System.Threading.Tasks;
 using Windows.ApplicationModel;
@@ -400,6 +401,35 @@ namespace ReiTunes {
             var item = (sender as FrameworkElement).DataContext as LibraryItem;
 
             ViewModel.CopyUriToClipboard(item);
+        }
+
+        private void LibraryItemFlyout_Opening(object sender, object e) {
+            var flyout = (MenuFlyout)sender;
+
+            // Delete any tags we added previously
+            const string dynamicMenuItemTag = "DynamicMenuItem";
+            var existingDynamicItems = flyout.Items.Where(i => (i.Tag as string) == dynamicMenuItemTag);
+            foreach (var dynamicItem in existingDynamicItems) {
+                flyout.Items.Remove(dynamicItem);
+            }
+
+            var item = GetSelectedLibraryItem();
+            if (item != null && item.Bookmarks.Any()) {
+                var bookmarks = new MenuFlyoutSubItem() {
+                    Icon = new SymbolIcon(Symbol.Bookmarks),
+                    Tag = dynamicMenuItemTag,
+                    Text = $"Bookmarks ({item.Bookmarks.Count})",
+                };
+
+                foreach (Bookmark bookmark in item.Bookmarks.OrderBy(b => b.Position)) {
+                    // TODO: show emoji icon using a FontIcon
+                    var bookmarkItem = new MenuFlyoutItem() { Text = $"{bookmark.Emoji ?? "♥"} {bookmark.Position}" };
+                    bookmarkItem.Click += async (s, e) => { await ViewModel.PlayBookmark(item, bookmark); };
+                    bookmarks.Items.Add(bookmarkItem);
+                }
+
+                flyout.Items.Add(bookmarks);
+            }
         }
     }
 }
