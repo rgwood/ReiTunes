@@ -410,32 +410,76 @@ namespace ReiTunes {
             ViewModel.CopyUriToClipboard(item);
         }
 
+        // Build flyout completely in C#
+        // Need complex logic for bookmarks, and mixing XAML+C# is a big pain
         private void LibraryItemFlyout_Opening(object sender, object e) {
             var flyout = (MenuFlyout)sender;
 
-            // Delete any tags we added previously
-            const string dynamicMenuItemTag = "DynamicMenuItem";
-            var existingDynamicItems = flyout.Items.Where(i => (i.Tag as string) == dynamicMenuItemTag);
-            foreach (var dynamicItem in existingDynamicItems) {
-                flyout.Items.Remove(dynamicItem);
-            }
+            var items = flyout.Items;
+
+            items.Clear();
+
+            var copyItem = new MenuFlyoutItem() {
+                Icon = new SymbolIcon(Symbol.Copy),
+                Text = "Copy URL"
+            };
+            copyItem.Click += CopyURLMenuItem_Click;
+            items.Add(copyItem);
+
+            var showInfoItem = new MenuFlyoutItem() {
+                Icon = new SymbolIcon(Symbol.Zoom),
+                Text = "Show Info"
+            };
+            showInfoItem.Click += ShowItemInfo;
+            items.Add(showInfoItem);
+
+            var deleteMenuItem = new MenuFlyoutItem() {
+                Icon = new SymbolIcon(Symbol.Delete),
+                Text = "Delete"
+            };
+            deleteMenuItem.Click += DeleteMenuItem_Click;
+            items.Add(deleteMenuItem);
+
+            items.Add(new MenuFlyoutSeparator());
 
             var item = GetSelectedLibraryItem();
-            if (item != null && item.Bookmarks.Any()) {
+            if (item == null) {
+                flyout.Items.Add(new MenuFlyoutItem() { IsEnabled = false, Text = "Error: selected library item null" });
+                return;
+            }
+
+            if (!item.Bookmarks.Any()) {
+                flyout.Items.Add(new MenuFlyoutItem() { IsEnabled = false, Text = "No bookmarks yet" });
+                return;
+            }
+
+            var orderedBookmarks = item.Bookmarks.OrderBy(b => b.Position).ToList();
+            // Put the first few bookmarks directly in the first menu, only spill to a submenu if there are lots of bookmarks
+            var firstFew = orderedBookmarks.Take(4).ToList();
+
+            foreach (Bookmark bookmark in firstFew) {
+                flyout.Items.Add(flyoutItem(item, bookmark));
+            }
+
+            if (orderedBookmarks.Count > firstFew.Count) {
                 var bookmarks = new MenuFlyoutSubItem() {
                     Icon = new SymbolIcon(Symbol.Bookmarks),
-                    Tag = dynamicMenuItemTag,
-                    Text = $"Bookmarks ({item.Bookmarks.Count})",
+                    Text = $"All Bookmarks ({item.Bookmarks.Count})",
                 };
 
                 foreach (Bookmark bookmark in item.Bookmarks.OrderBy(b => b.Position)) {
-                    // TODO: show emoji icon using a FontIcon
-                    var bookmarkItem = new MenuFlyoutItem() { Text = $"{bookmark.Emoji ?? "♥"} {bookmark.Position}" };
-                    bookmarkItem.Click += async (s, e) => { await ViewModel.PlayBookmark(item, bookmark); };
-                    bookmarks.Items.Add(bookmarkItem);
+                    bookmarks.Items.Add(flyoutItem(item, bookmark));
                 }
-
                 flyout.Items.Add(bookmarks);
+            }
+
+            MenuFlyoutItem flyoutItem(LibraryItem item, Bookmark bookmark) {
+                var bookmarkItem = new MenuFlyoutItem() {
+                    Icon = new FontIcon { FontFamily = new FontFamily("Segoe UI Emoji"), Glyph = bookmark.Emoji ?? "🎵" },
+                    Text = bookmark.Position.ToString(@"hh\:mm\:ss")
+                };
+                bookmarkItem.Click += async (s, e) => { await ViewModel.PlayBookmark(item, bookmark); };
+                return bookmarkItem;
             }
         }
     }

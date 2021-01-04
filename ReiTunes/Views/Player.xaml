@@ -279,23 +279,7 @@
                 <Style TargetType="controls:DataGridRow">
                     <Setter Property="controls:DataGridRow.ContextFlyout">
                         <Setter.Value>
-                            <MenuFlyout x:Name="LibraryItemFlyout" Opening="LibraryItemFlyout_Opening">
-                                <MenuFlyoutItem
-                                    x:Name="CopyURLMenuItem"
-                                    Click="CopyURLMenuItem_Click"
-                                    Icon="Copy"
-                                    Text="Copy URL" />
-                                <MenuFlyoutItem
-                                    x:Name="WorldMenuItem"
-                                    Click="ShowItemInfo"
-                                    Icon="Zoom"
-                                    Text="Show Info" />
-                                <MenuFlyoutItem
-                                    x:Name="DeleteMenuItem"
-                                    Click="DeleteMenuItem_Click"
-                                    Icon="Delete"
-                                    Text="Delete" />
-                            </MenuFlyout>
+                            <MenuFlyout x:Name="LibraryItemFlyout" Opening="LibraryItemFlyout_Opening" />
                         </Setter.Value>
                     </Setter>
                 </Style>
