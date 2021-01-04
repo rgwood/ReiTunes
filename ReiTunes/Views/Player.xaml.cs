@@ -201,6 +201,13 @@ namespace ReiTunes {
                         await dialog.ShowAsync();
                     }
                 }));
+
+            //play a random bookmark
+            KeyboardAccelerators.Add(CreateAccelerator(VirtualKeyModifiers.Control, VirtualKey.R,
+                async (sender, args) => {
+                    args.Handled = true;
+                    await ViewModel.PlayRandomBookmark();
+                }));
         }
 
         private void Page_Loaded(object sender, RoutedEventArgs e) {

@@ -242,6 +242,14 @@ namespace ReiTunes {
             }
         }
 
+        public async Task PlayRandomBookmark() {
+            List<(LibraryItem, Bookmark)> pairs = LibraryItems.SelectMany(i => i.Bookmarks.Select(b => (i, b))).ToList();
+
+            int index = new Random().Next(pairs.Count);
+
+            await PlayBookmark(pairs[index].Item1, pairs[index].Item2);
+        }
+
         private async Task UpdateSystemMediaTransportControls(LibraryItem libraryItemToPlay, MediaPlaybackItem mediaPlaybackItem,
             StorageFile fileWithThumbnail = null) {
             MediaItemDisplayProperties props = mediaPlaybackItem.GetDisplayProperties();
