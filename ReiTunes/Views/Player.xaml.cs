@@ -349,7 +349,7 @@ namespace ReiTunes {
                 _thumbnailStoryboard.Begin();
             }
             else {
-                _thumbnailStoryboard.RepeatBehavior = new RepeatBehavior(1);
+                _thumbnailStoryboard.Stop();
             }
 
             _thumbNailIsRotating = !_thumbNailIsRotating;
