@@ -69,6 +69,11 @@ namespace ReiTunes {
                 UpdateCurrentlyPlayingText();
                 libraryDataGrid.SelectedItem = ViewModel.CurrentlyPlayingItem;
                 libraryDataGrid.ScrollIntoView(ViewModel.CurrentlyPlayingItem, null);
+
+                if (_thumbnailStoryboard.GetCurrentState() != ClockState.Active) {
+                    _thumbnailStoryboard.RepeatBehavior = new RepeatBehavior(1);
+                    _thumbnailStoryboard.Begin();
+                }
             }
         }
 
@@ -352,9 +357,8 @@ namespace ReiTunes {
         }
 
         private void CurrentlyPlayingThumbnail_Tapped(object sender, TappedRoutedEventArgs e) {
-            if (!_thumbNailIsRotating) {
+            if (_thumbnailStoryboard.GetCurrentState() == ClockState.Stopped) {
                 _thumbnailStoryboard.RepeatBehavior = RepeatBehavior.Forever;
-
                 _thumbnailStoryboard.Begin();
             }
             else {
