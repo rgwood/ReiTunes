@@ -1,8 +1,10 @@
-﻿using ReiTunes.Configuration;
+﻿using Microsoft.Toolkit.Uwp.UI.Controls;
+using ReiTunes.Configuration;
 using ReiTunes.Core;
 using ReiTunes.Helpers;
 using ReiTunes.Views;
 using System;
+using System.Collections.ObjectModel;
 using System.Linq;
 using System.Reactive.Linq;
 using System.Threading.Tasks;
@@ -303,7 +305,16 @@ namespace ReiTunes {
         }
 
         private async Task FilterVMUsingFilterBoxText() {
+            // Clear sort direction; sorting is taken over by fuzzy-find when the filter box changes
+            ClearDataGridColumnSorting();
+
             await ViewModel.FilterItems(FilterBox.Text);
+        }
+
+        private void ClearDataGridColumnSorting() {
+            foreach (DataGridColumn col in libraryDataGrid.Columns) {
+                col.SortDirection = null;
+            }
         }
 
         private async void CoreWindow_KeyDown(Windows.UI.Core.CoreWindow sender, Windows.UI.Core.KeyEventArgs args) {
@@ -369,23 +380,38 @@ namespace ReiTunes {
         }
 
         private void libraryDataGrid_Sorting(object sender, Microsoft.Toolkit.Uwp.UI.Controls.DataGridColumnEventArgs e) {
-            //TODO: implement
-            //Use the Tag property to pass the bound column name for the sorting implementation
-            //if (e.Column.Tag.ToString() == "") {
-            //    //Implement sort on the column "Range" using LINQ
-            //    if (e.Column.SortDirection == null || e.Column.SortDirection == DataGridSortDirection.Descending) {
-            //        libraryDataGrid.ItemsSource = new ObservableCollection<Mountain>(from item in _items
-            //                                                            orderby item.Range ascending
-            //                                                            select item);
-            //        e.Column.SortDirection = DataGridSortDirection.Ascending;
-            //    }
-            //    else {
-            //        dg.ItemsSource = new ObservableCollection<Mountain>(from item in _items
-            //                                                            orderby item.Range descending
-            //                                                            select item);
-            //        e.Column.SortDirection = DataGridSortDirection.Descending;
-            //    }
-            //}
+            string tag = e.Column.Tag.ToString();
+            bool descendingOrNull = e.Column.SortDirection == null || e.Column.SortDirection == DataGridSortDirection.Descending;
+
+            //TODO: implement remaining columns
+            switch (tag) {
+                case "Plays":
+                    if (descendingOrNull) {
+                        ViewModel.VisibleItems = new ObservableCollection<LibraryItem>(ViewModel.VisibleItems.OrderBy(x => x.PlayCount));
+                    }
+                    else {
+                        ViewModel.VisibleItems = new ObservableCollection<LibraryItem>(ViewModel.VisibleItems.OrderByDescending(x => x.PlayCount));
+                    }
+                    break;
+
+                case "CreatedTimeLocal":
+                    if (descendingOrNull) {
+                        ViewModel.VisibleItems = new ObservableCollection<LibraryItem>(ViewModel.VisibleItems.OrderBy(x => x.CreatedTimeUtc));
+                    }
+                    else {
+                        ViewModel.VisibleItems = new ObservableCollection<LibraryItem>(ViewModel.VisibleItems.OrderByDescending(x => x.CreatedTimeUtc));
+                    }
+                    break;
+            }
+
+            e.Column.SortDirection = descendingOrNull ? DataGridSortDirection.Ascending : DataGridSortDirection.Descending;
+
+            // Remove sorting indicators from other columns
+            foreach (var dgColumn in libraryDataGrid.Columns) {
+                if (dgColumn.Tag.ToString() != e.Column.Tag.ToString()) {
+                    dgColumn.SortDirection = null;
+                }
+            }
         }
 
         private async void ShowItemInfo(object sender, RoutedEventArgs e) {

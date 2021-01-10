@@ -221,7 +221,7 @@
             BorderThickness="0,1,0,0"
             CanUserReorderColumns="True"
             CanUserResizeColumns="True"
-            CanUserSortColumns="False"
+            CanUserSortColumns="True"
             CellEditEnded="libraryDataGrid_CellEditEnded"
             ColumnHeaderHeight="32"
             DoubleTapped="OpenSelectedLibraryItem"
