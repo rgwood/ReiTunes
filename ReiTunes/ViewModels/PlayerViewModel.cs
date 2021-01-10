@@ -210,11 +210,7 @@ namespace ReiTunes {
             if (libraryItemToPlay == null)
                 return;
 
-            var filePath = libraryItemToPlay.FilePath;
-            var fileName = GetFileNameFromFullPath(filePath);
-
-            var folder = await GetStorageFolderForItem(libraryItemToPlay);
-            var storageItem = await folder.TryGetItemAsync(fileName);
+            var storageItem = await GetStorageFile(libraryItemToPlay);
 
             if (storageItem == null) { // file not found, download it
                 // Bad things happen if we try to download a 2nd file while one is already in progress
@@ -223,20 +219,18 @@ namespace ReiTunes {
                     return;
 
                 CurrentlyPlayingItem = libraryItemToPlay;
-                await DownloadAndStartMusicFile(fileName, folder, libraryItemToPlay);
+                await DownloadAndStartMusicFile(libraryItemToPlay);
             }
             else if (storageItem.IsOfType(StorageItemTypes.Folder)) {
                 return;
             }
             else if (storageItem.IsOfType(StorageItemTypes.File)) {
-                var file = (StorageFile)storageItem;
+                var file = storageItem;
 
                 var mediaPlaybackItem = new MediaPlaybackItem(MediaSource.CreateFromStorageFile(file));
-
                 _mediaPlayer.Source = mediaPlaybackItem;
-
                 CurrentlyPlayingItem = libraryItemToPlay;
-                await UpdateSystemMediaTransportControls(libraryItemToPlay, mediaPlaybackItem, file);
+                await LoadMetadataAndThumbnailForCurrentlyPlayingItem();
             }
         }
 
@@ -251,6 +245,16 @@ namespace ReiTunes {
             }
         }
 
+        private async Task LoadMetadataAndThumbnailForCurrentlyPlayingItem() {
+            LibraryItem currentlyPlaying = CurrentlyPlayingItem;
+            MediaPlaybackItem mediaPlaybackItem = _mediaPlayer.Source as MediaPlaybackItem;
+            if (currentlyPlaying == null || mediaPlaybackItem == null)
+                return;
+
+            var file = await GetStorageFile(currentlyPlaying);
+            await UpdateSystemMediaTransportControlsAndThumbnail(currentlyPlaying, mediaPlaybackItem, file);
+        }
+
         public async Task PlayRandomBookmark() {
             List<(LibraryItem, Bookmark)> pairs = LibraryItems.SelectMany(i => i.Bookmarks.Select(b => (i, b))).ToList();
 
@@ -259,7 +263,7 @@ namespace ReiTunes {
             await PlayBookmark(pairs[index].Item1, pairs[index].Item2);
         }
 
-        private async Task UpdateSystemMediaTransportControls(LibraryItem libraryItemToPlay, MediaPlaybackItem mediaPlaybackItem,
+        private async Task UpdateSystemMediaTransportControlsAndThumbnail(LibraryItem libraryItemToPlay, MediaPlaybackItem mediaPlaybackItem,
             StorageFile fileWithThumbnail = null) {
             MediaItemDisplayProperties props = mediaPlaybackItem.GetDisplayProperties();
             props.Type = Windows.Media.MediaPlaybackType.Music;
@@ -274,24 +278,37 @@ namespace ReiTunes {
             }
 
             if (fileWithThumbnail != null) {
-                var thumbnail = await fileWithThumbnail.GetThumbnailAsync(ThumbnailMode.MusicView, 400, ThumbnailOptions.UseCurrentScale);
+                var thumbnail = await GetAndSetThumbnail(fileWithThumbnail);
 
-                if (thumbnail != null && thumbnail.Type == ThumbnailType.Image) {
+                if (thumbnail != null) {
                     props.Thumbnail = RandomAccessStreamReference.CreateFromStream(thumbnail);
-                    var img = new BitmapImage();
-                    img.SetSource(thumbnail);
-                    CurrentlyPlayingItemThumbnail = img;
-                }
-                else {
-                    CurrentlyPlayingItemThumbnail = null;
                 }
             }
 
             mediaPlaybackItem.ApplyDisplayProperties(props);
         }
 
-        private async Task<MediaSource> DownloadAndStartMusicFile(string fileName, StorageFolder folderToSaveTo, LibraryItem libraryItemToPlay) {
+        private async Task<StorageItemThumbnail> GetAndSetThumbnail(StorageFile fileWithThumbnail) {
+            var thumbnail = await fileWithThumbnail.GetThumbnailAsync(ThumbnailMode.MusicView, 400, ThumbnailOptions.UseCurrentScale);
+
+            if (thumbnail != null && thumbnail.Type == ThumbnailType.Image) {
+                var img = new BitmapImage();
+                img.SetSource(thumbnail);
+                CurrentlyPlayingItemThumbnail = img;
+                return thumbnail;
+            }
+            else {
+                CurrentlyPlayingItemThumbnail = null;
+                return null;
+            }
+        }
+
+        private async Task<MediaSource> DownloadAndStartMusicFile(LibraryItem libraryItemToPlay) {
+            string fileName = GetFileNameFromFullPath(libraryItemToPlay.FilePath);
+            StorageFolder folderToSaveTo = await GetStorageFolderForItem(libraryItemToPlay);
+
             _logger.Information("Downloading music file {filePath}", libraryItemToPlay.FilePath);
+            CurrentlyPlayingItemThumbnail = null;
             Uri downloadUri = GetUri(libraryItemToPlay);
             var downloadFile = await folderToSaveTo.CreateFileAsync(fileName);
             DownloadInProgress = true;
@@ -310,7 +327,7 @@ namespace ReiTunes {
 
             _mediaPlayer.Source = mediaPlaybackItem;
 
-            await UpdateSystemMediaTransportControls(libraryItemToPlay, mediaPlaybackItem);
+            await UpdateSystemMediaTransportControlsAndThumbnail(libraryItemToPlay, mediaPlaybackItem);
 
             await downloadTask;
             DownloadInProgress = false;
@@ -319,7 +336,7 @@ namespace ReiTunes {
 
         internal Uri GetUri(LibraryItem libraryItemToPlay) => new Uri(_cloudBaseUri, libraryItemToPlay.FilePath);
 
-        private void HandleDownloadProgress(DownloadOperation download) {
+        private async void HandleDownloadProgress(DownloadOperation download) {
             // DownloadOperation.Progress is updated in real-time while the operation is ongoing. Therefore,
             // we must make a local copy so that we can have a consistent view of that ever-changing state
             // throughout this method's lifetime.
@@ -330,6 +347,7 @@ namespace ReiTunes {
             if (progress.BytesReceived == progress.TotalBytesToReceive) {
                 DownloadInProgress = false;
                 UpdateDownloadStatusOnUiThread(0, "");
+                await LoadMetadataAndThumbnailForCurrentlyPlayingItem();
             }
             else {
                 var mbReceived = progress.BytesReceived / 1024d / 1024d;
