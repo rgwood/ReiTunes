@@ -357,7 +357,7 @@ namespace ReiTunes {
         }
 
         private void CurrentlyPlayingThumbnail_Tapped(object sender, TappedRoutedEventArgs e) {
-            if (_thumbnailStoryboard.GetCurrentState() == ClockState.Stopped) {
+            if (_thumbnailStoryboard.GetCurrentState() != ClockState.Active) {
                 _thumbnailStoryboard.RepeatBehavior = RepeatBehavior.Forever;
                 _thumbnailStoryboard.Begin();
             }
