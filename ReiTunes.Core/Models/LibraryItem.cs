@@ -79,7 +79,9 @@ namespace ReiTunes.Core {
         private int _playCount = 0;
         private readonly LibraryItemEventFactory _eventFactory;
 
-        public DateTime CreatedTimeLocal => CreatedTimeUtc.ToLocalTime();
+        private DateTime? _createdTimeLocal;
+
+        public DateTime CreatedTimeLocal => _createdTimeLocal ??= CreatedTimeUtc.ToLocalTime();
 
         /// <summary>
         /// Was a tombstone event seen (i.e. was this deleted)?
