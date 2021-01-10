@@ -118,7 +118,7 @@ namespace ReiTunes {
         private async void OpenSelectedLibraryItem(object sender = null, RoutedEventArgs e = null) {
             LibraryItem selected = GetSelectedLibraryItem();
             await ViewModel.ChangeSource(selected);
-            selected.IncrementPlayCount();
+            selected?.IncrementPlayCount();
         }
 
         private LibraryItem GetSelectedLibraryItem() {
