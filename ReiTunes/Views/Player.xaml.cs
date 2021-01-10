@@ -5,8 +5,10 @@ using ReiTunes.Helpers;
 using ReiTunes.Views;
 using System;
 using System.Collections.ObjectModel;
+using System.ComponentModel;
 using System.Linq;
 using System.Reactive.Linq;
+using System.Runtime.CompilerServices;
 using System.Threading.Tasks;
 using Windows.ApplicationModel;
 using Windows.Foundation;
@@ -20,6 +22,7 @@ using Windows.UI.Xaml.Documents;
 using Windows.UI.Xaml.Input;
 using Windows.UI.Xaml.Media;
 using Windows.UI.Xaml.Media.Animation;
+using Windows.UI.Xaml.Media.Imaging;
 using Windows.UI.Xaml.Navigation;
 
 // The Blank Page item template is documented at https://go.microsoft.com/fwlink/?LinkId=402352&clcid=0x409
@@ -29,14 +32,31 @@ namespace ReiTunes {
     /// <summary>
     /// The main UI of ReiTunes, a simple music player
     /// </summary>
-    public sealed partial class Player : Page {
+    public sealed partial class Player : Page, INotifyPropertyChanged {
+
+        public event PropertyChangedEventHandler PropertyChanged;
+
         public PlayerViewModel ViewModel { get; }
 
         private bool _dataGridIsEditing;
-        private bool _thumbNailIsRotating;
-        private Storyboard _thumbnailStoryboard = new Storyboard();
+        private Storyboard _newThumbnailStoryboard = new Storyboard();
+        private Storyboard _currThumbnailStoryboard = new Storyboard();
 
         public string MsixVersion { get; }
+
+        private BitmapImage _newThumbnail;
+
+        public BitmapImage NewThumbnail {
+            get { return _newThumbnail; }
+            set { Set(ref _newThumbnail, value); }
+        }
+
+        private BitmapImage _currThumbnail;
+
+        public BitmapImage CurrThumbnail {
+            get { return _currThumbnail; }
+            set { Set(ref _currThumbnail, value); }
+        }
 
         public Player() {
             this.InitializeComponent();
@@ -53,7 +73,7 @@ namespace ReiTunes {
 
             musicPlayer.SetMediaPlayer(ViewModel.MediaPlayer);
 
-            SetUpThumbnailAnimation();
+            SetUpThumbnailAnimations();
 
             // without throttling, the DataGrid can't refresh fast enough to keep up with typing
             // I don't love this solution because it adds delay to the first keystroke
@@ -67,15 +87,29 @@ namespace ReiTunes {
         }
 
         private void ViewModel_PropertyChanged(object sender, System.ComponentModel.PropertyChangedEventArgs e) {
-            if (e.PropertyName == nameof(ViewModel.CurrentlyPlayingItem)) {
-                UpdateCurrentlyPlayingText();
-                libraryDataGrid.SelectedItem = ViewModel.CurrentlyPlayingItem;
-                libraryDataGrid.ScrollIntoView(ViewModel.CurrentlyPlayingItem, null);
+            switch (e.PropertyName) {
+                case nameof(ViewModel.CurrentlyPlayingItem):
+                    UpdateCurrentlyPlayingText();
+                    libraryDataGrid.SelectedItem = ViewModel.CurrentlyPlayingItem;
+                    libraryDataGrid.ScrollIntoView(ViewModel.CurrentlyPlayingItem, null);
 
-                if (_thumbnailStoryboard.GetCurrentState() != ClockState.Active) {
-                    _thumbnailStoryboard.RepeatBehavior = new RepeatBehavior(1);
-                    _thumbnailStoryboard.Begin();
-                }
+                    // TODO: should probably check both storyboards' state before starting, just in case
+                    if (_currThumbnailStoryboard.GetCurrentState() != ClockState.Active) {
+                        _currThumbnailStoryboard.RepeatBehavior = new RepeatBehavior(1);
+                        _currThumbnailStoryboard.Begin();
+
+                        //_newThumbnailStoryboard.RepeatBehavior = new RepeatBehavior(1);
+                        //_newThumbnailStoryboard.Begin();
+                    }
+                    break;
+
+                case nameof(ViewModel.CurrentlyPlayingItemThumbnail):
+
+                    // for now-unused crossfade
+                    //NewThumbnail = ViewModel.CurrentlyPlayingItemThumbnail;
+
+                    CurrThumbnail = ViewModel.CurrentlyPlayingItemThumbnail;
+                    break;
             }
         }
 
@@ -351,32 +385,60 @@ namespace ReiTunes {
         }
 
         // called once in constructor
-        private void SetUpThumbnailAnimation() {
-            CurrentlyPlayingThumbnail.RenderTransformOrigin = new Point(0.5, 0.5);
-            CurrentlyPlayingThumbnail.RenderTransform = new RotateTransform();
+        private void SetUpThumbnailAnimations() {
+            SetUpCurrThumbnailAnimation();
+            //SetUpNewThumbnailAnimation();
+        }
 
-            var animation = new DoubleAnimation();
+        private Duration _animationDuration = new Duration(TimeSpan.FromSeconds(60d / 33)); // rekkid speed
 
-            animation.Duration = new Duration(TimeSpan.FromSeconds(60d / 33)); // rekkid speed
-            animation.From = 0;
-            animation.To = 360;
+        private void SetUpCurrThumbnailAnimation() {
+            CurrThumbnailImage.RenderTransformOrigin = new Point(0.5, 0.5);
+            CurrThumbnailImage.RenderTransform = new RotateTransform();
 
-            Storyboard.SetTarget(animation, CurrentlyPlayingThumbnail);
-            Storyboard.SetTargetProperty(animation, "(UIElement.RenderTransform).(RotateTransform.Angle)");
+            var spinAnimation = new DoubleAnimation { Duration = _animationDuration, From = 0, To = 360 };
+            Storyboard.SetTarget(spinAnimation, CurrThumbnailImage);
+            Storyboard.SetTargetProperty(spinAnimation, "(UIElement.RenderTransform).(RotateTransform.Angle)");
+            _currThumbnailStoryboard.Children.Add(spinAnimation);
 
-            _thumbnailStoryboard.Children.Add(animation);
+            // Disabling crossfade for now. Was fun but didn't quite look good visually because of timing of image load
+            //var fadeOutAnimation = new DoubleAnimation { Duration = _animationDuration, From = 1, To = 0 };
+            //Storyboard.SetTarget(fadeOutAnimation, CurrThumbnailImage);
+            //Storyboard.SetTargetProperty(fadeOutAnimation, "Opacity");
+            //_currThumbnailStoryboard.Children.Add(fadeOutAnimation);
+
+            //_currThumbnailStoryboard.Completed += _currThumbnailStoryboard_Completed;
+        }
+
+        private void _currThumbnailStoryboard_Completed(object sender, object e) {
+            CurrThumbnail = NewThumbnail;
+            CurrThumbnailImage.Opacity = 1;
+            NewThumbnailImage.Opacity = 0;
+        }
+
+        private void SetUpNewThumbnailAnimation() {
+            NewThumbnailImage.RenderTransformOrigin = new Point(0.5, 0.5);
+            NewThumbnailImage.RenderTransform = new RotateTransform();
+
+            var spinAnimation = new DoubleAnimation() { Duration = _animationDuration, From = 0, To = 360 };
+            Storyboard.SetTarget(spinAnimation, NewThumbnailImage);
+            Storyboard.SetTargetProperty(spinAnimation, "(UIElement.RenderTransform).(RotateTransform.Angle)");
+            _newThumbnailStoryboard.Children.Add(spinAnimation);
+
+            var fadeInAnimation = new DoubleAnimation() { Duration = _animationDuration, From = 0, To = 1 };
+            Storyboard.SetTarget(fadeInAnimation, NewThumbnailImage);
+            Storyboard.SetTargetProperty(fadeInAnimation, "Opacity");
+            _newThumbnailStoryboard.Children.Add(fadeInAnimation);
         }
 
         private void CurrentlyPlayingThumbnail_Tapped(object sender, TappedRoutedEventArgs e) {
-            if (_thumbnailStoryboard.GetCurrentState() != ClockState.Active) {
-                _thumbnailStoryboard.RepeatBehavior = RepeatBehavior.Forever;
-                _thumbnailStoryboard.Begin();
+            if (_currThumbnailStoryboard.GetCurrentState() != ClockState.Active) {
+                _currThumbnailStoryboard.RepeatBehavior = RepeatBehavior.Forever;
+                _currThumbnailStoryboard.Begin();
             }
             else {
-                _thumbnailStoryboard.Stop();
+                _currThumbnailStoryboard.Stop();
             }
-
-            _thumbNailIsRotating = !_thumbNailIsRotating;
         }
 
         private void libraryDataGrid_Sorting(object sender, Microsoft.Toolkit.Uwp.UI.Controls.DataGridColumnEventArgs e) {
@@ -514,5 +576,17 @@ namespace ReiTunes {
                 return bookmarkItem;
             }
         }
+
+        // INPC boilerplate
+        protected void Set<T>(ref T storage, T value, [CallerMemberName] string propertyName = null) {
+            if (Equals(storage, value)) {
+                return;
+            }
+
+            storage = value;
+            OnPropertyChanged(propertyName);
+        }
+
+        protected void OnPropertyChanged(string propertyName) => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
     }
 }
