@@ -93,6 +93,8 @@ namespace ReiTunes {
             _library = library;
             _library.LibraryItemsRebuilt += LoadItemsFromLibrary;
             _mediaPlayer.MediaEnded += mediaPlayer_MediaEnded;
+            _mediaPlayer.CommandManager.NextBehavior.EnablingRule = MediaCommandEnablingRule.Always;
+            _mediaPlayer.CommandManager.NextReceived += async (_, _) => await PlayRandomBookmark();
 
             PullEventsCommand = new AsyncRelayCommand(Pull);
             PushEventsCommand = new AsyncRelayCommand(Push);
