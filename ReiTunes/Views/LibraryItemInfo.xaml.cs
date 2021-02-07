@@ -110,5 +110,12 @@ namespace ReiTunes.Views {
 
         private void SetEmojiButton_Click(object sender, RoutedEventArgs e) {
         }
+
+        private void BookmarkSwipeDelete_Invoked(SwipeItem sender, SwipeItemInvokedEventArgs args) {
+            Bookmark bookmark = args.SwipeControl.DataContext as Bookmark;
+
+            _item.DeleteBookmark(bookmark.ID);
+            BookmarksView.Items.Remove(bookmark);
+        }
     }
 }

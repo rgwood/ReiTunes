@@ -48,15 +48,29 @@
             x:Name="BookmarksView"
             Grid.Row="2"
             DoubleTapped="BookmarksView_DoubleTapped">
+            <ListView.Resources>
+                <SymbolIconSource x:Key="DeleteIcon" Symbol="Delete" />
+            </ListView.Resources>
             <ListView.ItemContainerTransitions>
                 <TransitionCollection />
             </ListView.ItemContainerTransitions>
             <ListView.ItemTemplate>
                 <DataTemplate>
-                    <TextBlock>
-                        <Run Text="{Binding Emoji}" />
-                        <Run Text="{Binding Position}" />
-                    </TextBlock>
+                    <SwipeControl>
+                        <SwipeControl.RightItems>
+                            <SwipeItems Mode="Reveal">
+                                <SwipeItem
+                                    Background="Red"
+                                    IconSource="{StaticResource DeleteIcon}"
+                                    Invoked="BookmarkSwipeDelete_Invoked"
+                                    Text="Delete" />
+                            </SwipeItems>
+                        </SwipeControl.RightItems>
+                        <TextBlock>
+                            <Run Text="{Binding Emoji}" />
+                            <Run Text="{Binding Position}" />
+                        </TextBlock>
+                    </SwipeControl>
                 </DataTemplate>
             </ListView.ItemTemplate>
         </ListView>
