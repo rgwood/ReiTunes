@@ -23,14 +23,12 @@ namespace ReiTunes.Core {
     }
 
     public record SimpleTextAggregateCreatedEvent(Guid Id, Guid AggregateId, DateTime CreatedTimeUtc, string Text) : IEvent {
-        public DateTime CreatedTimeUtc { get; private set; }
         public long LocalId { get; private set; }
         public string MachineName { get; set; } = "placeholder";
         public string AggregateType => nameof(SimpleTextAggregate);
     }
 
     public record SimpleTextAggregateUpdatedEvent(Guid Id, Guid AggregateId, DateTime CreatedTimeUtc, string Text) : IEvent {
-        public DateTime CreatedTimeUtc { get; private set; }
         public long LocalId { get; private set; }
         public string MachineName { get; set; } = "placeholder";
         public string AggregateType => nameof(SimpleTextAggregate);
