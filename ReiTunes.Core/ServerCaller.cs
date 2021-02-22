@@ -11,6 +11,7 @@ namespace ReiTunes.Core {
 
     // There's gotta be a better name for this... but, like, it's a class for calling the server
     public class ServerCaller {
+        private const int EventPushBatchSize = 1000; // totally arbitrary limit on the # of events to push at once. Not even sure if we need this, but it makes me feel better
         private readonly HttpClient _client;
         private readonly ILogger _logger;
 
@@ -51,18 +52,21 @@ namespace ReiTunes.Core {
         }
 
         public async Task PushEventsAsync(IEnumerable<IEvent> events) {
-            var sw = Stopwatch.StartNew();
-            var serialized = await EventSerialization.SerializeAsync(events.ToList());
-            var content = new StringContent(serialized, Encoding.UTF8, "application/json");
+            Stopwatch sw = Stopwatch.StartNew();
 
-            var serializedKiloByteCount = UnicodeEncoding.UTF8.GetByteCount(serialized) / 1024;
-            _logger.Information("About to push {EventCount} events. Serialized size: {eventsSizeKb} kb", events.Count(), serializedKiloByteCount);
+            foreach (IEnumerable<IEvent> chunk in events.Chunk(EventPushBatchSize)) {
+                string serialized = await EventSerialization.SerializeAsync(chunk.ToList());
+                StringContent content = new StringContent(serialized, Encoding.UTF8, "application/json");
 
-            var putResponse = await _client.PutAsync("/reitunes/saveevents", content);
+                int serializedKiloByteCount = UnicodeEncoding.UTF8.GetByteCount(serialized) / 1024;
+                _logger.Information("About to push {EventCount} events. Serialized size: {eventsSizeKb} kb", events.Count(), serializedKiloByteCount);
 
-            _logger.Information("Pushing events took {ElapsedMs} ms", sw.ElapsedMilliseconds);
+                HttpResponseMessage putResponse = await _client.PutAsync("/reitunes/saveevents", content);
 
-            putResponse.EnsureSuccessStatusCode();
+                putResponse.EnsureSuccessStatusCode();
+            }
+
+            _logger.Information("Pushing all events took {ElapsedMs} ms", sw.ElapsedMilliseconds);
         }
 
         public async Task CreateNewLibraryItemAsync(string filePath) {
