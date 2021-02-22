@@ -47,9 +47,7 @@ namespace ReiTunes.Core {
             return ret;
         }
 
-        public async Task PushEventAsync(IEvent @event) {
-            await PushEventsAsync(new List<IEvent> { @event });
-        }
+        public async Task PushEventAsync(IEvent @event) => await PushEventsAsync(new List<IEvent> { @event });
 
         public async Task PushEventsAsync(IEnumerable<IEvent> events) {
             Stopwatch sw = Stopwatch.StartNew();
