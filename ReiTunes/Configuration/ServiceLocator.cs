@@ -66,7 +66,7 @@ namespace ReiTunes.Configuration {
             }
         }
 
-        private IServiceScope _serviceScope = null;
+        private readonly IServiceScope _serviceScope = null;
 
         private ServiceLocator() {
             _serviceScope = _rootServiceProvider.CreateScope();

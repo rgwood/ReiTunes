@@ -40,7 +40,7 @@ namespace ReiTunes.Core {
 
     // Useful for tests, will always get the same time. Simulate multiple events occurring so quickly that they get the same timestamp
     public class NeverIncreasingClock : IClock {
-        private static DateTime _now = new DateTime(2000, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+        private static readonly DateTime _now = new DateTime(2000, 1, 1, 0, 0, 0, DateTimeKind.Utc);
 
         private long _currentLocalId;
 
@@ -52,7 +52,7 @@ namespace ReiTunes.Core {
     // Same as above but also hold the local ID constant
     public class NeverEverIncreasingClock : IClock {
         private const int UnchangingLocalId = 0;
-        private static DateTime _now = new DateTime(2000, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+        private static readonly DateTime _now = new DateTime(2000, 1, 1, 0, 0, 0, DateTimeKind.Utc);
 
         public long GetNextLocalId() => UnchangingLocalId;
 

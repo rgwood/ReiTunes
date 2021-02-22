@@ -10,7 +10,7 @@ namespace ReiTunes.Core {
     }
 
     public class LibraryItem : Aggregate, IEquatable<LibraryItem> {
-        private ObservableCollection<Bookmark> _bookmarks = new ObservableCollection<Bookmark>();
+        private readonly ObservableCollection<Bookmark> _bookmarks = new ObservableCollection<Bookmark>();
         public ObservableCollection<Bookmark> Bookmarks => _bookmarks;
 
         public void AddBookmark(TimeSpan position) {

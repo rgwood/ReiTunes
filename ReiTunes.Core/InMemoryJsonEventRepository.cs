@@ -7,7 +7,7 @@ namespace ReiTunes.Core {
     public class InMemoryJsonEventRepository : IEventRepository {
 
         // Keyed off of aggregate ID
-        private Dictionary<Guid, List<string>> _events = new Dictionary<Guid, List<string>>();
+        private readonly Dictionary<Guid, List<string>> _events = new Dictionary<Guid, List<string>>();
 
         public bool ContainsEvent(Guid eventId) {
             return GetAllEvents().Any(e => e.Id == eventId);

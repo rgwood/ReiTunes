@@ -16,7 +16,7 @@ namespace ReiTunes.Server.Tests {
 
         private readonly ServiceProvider _serviceProvider;
 
-        private ServerCaller _serverCaller;
+        private readonly ServerCaller _serverCaller;
 
         public IntegrationTests_NeverIncreasingClock() {
             _factory = new WebApplicationFactory<Startup>().WithWebHostBuilder(builder => {

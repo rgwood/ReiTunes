@@ -6,12 +6,12 @@ namespace ReiTunes.Core {
 
     public static class EventSerialization {
 
-        private static JsonSerializerSettings DefaultSerializerSettings = new JsonSerializerSettings {
+        private static readonly JsonSerializerSettings DefaultSerializerSettings = new JsonSerializerSettings {
             TypeNameHandling = TypeNameHandling.Objects,
             SerializationBinder = new EventSerializationBinder()
         };
 
-        private static JsonSerializerSettings PrettySerializerSettings = new JsonSerializerSettings {
+        private static readonly JsonSerializerSettings PrettySerializerSettings = new JsonSerializerSettings {
             TypeNameHandling = TypeNameHandling.Objects,
             SerializationBinder = new EventSerializationBinder(),
             Formatting = Formatting.Indented

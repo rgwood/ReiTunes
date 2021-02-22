@@ -7,7 +7,7 @@ using Xunit;
 namespace ReiTunes.Core.Tests.xUnit {
 
     public class SqliteTests : IDisposable {
-        private SqliteConnection _conn;
+        private readonly SqliteConnection _conn;
 
         public SqliteTests() {
             _conn = SQLiteHelpers.CreateInMemoryDb();

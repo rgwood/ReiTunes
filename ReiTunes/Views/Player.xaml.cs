@@ -39,8 +39,8 @@ namespace ReiTunes {
         public PlayerViewModel ViewModel { get; }
 
         private bool _dataGridIsEditing;
-        private Storyboard _newThumbnailStoryboard = new Storyboard();
-        private Storyboard _currThumbnailStoryboard = new Storyboard();
+        private readonly Storyboard _newThumbnailStoryboard = new Storyboard();
+        private readonly Storyboard _currThumbnailStoryboard = new Storyboard();
 
         public string MsixVersion { get; }
 

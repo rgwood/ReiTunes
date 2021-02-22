@@ -15,7 +15,7 @@ namespace ReiTunes.Core {
     /// </summary>
     public class EventSerializationBinder : ISerializationBinder {
 
-        private IList<Type> _knownTypes = new List<Type> {
+        private readonly IList<Type> _knownTypes = new List<Type> {
             typeof(SimpleTextAggregateCreatedEvent),
             typeof(SimpleTextAggregateUpdatedEvent),
             typeof(LibraryItemCreatedEvent),

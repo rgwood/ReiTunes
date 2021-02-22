@@ -5,7 +5,7 @@ using System.Linq;
 namespace ReiTunes.Core {
 
     public class InMemoryEventRepository : IEventRepository {
-        private List<IEvent> _events = new List<IEvent>();
+        private readonly List<IEvent> _events = new List<IEvent>();
 
         public bool ContainsEvent(Guid eventId) {
             return _events.Any(e => e.Id == eventId);

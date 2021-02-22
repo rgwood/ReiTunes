@@ -24,7 +24,7 @@ using Windows.UI.Xaml.Media.Imaging;
 namespace ReiTunes {
 
     public class PlayerViewModel : Observable {
-        private Uri _cloudBaseUri = new Uri("https://reitunes.blob.core.windows.net/music/");
+        private readonly Uri _cloudBaseUri = new Uri("https://reitunes.blob.core.windows.net/music/");
 
         private readonly ILogger _logger;
         private readonly Library _library;
@@ -33,7 +33,7 @@ namespace ReiTunes {
         private string _downloadStatus = "";
         private bool _downloadInProgress = false;
         private double _downloadPercentFinished = 0;
-        private MediaPlayer _mediaPlayer = new MediaPlayer();
+        private readonly MediaPlayer _mediaPlayer = new MediaPlayer();
         private ObservableCollection<LibraryItem> _libraryItems;
         private ObservableCollection<LibraryItem> _visibleItems;
         private BitmapImage _currentlyPlayingItemThumbnail;

@@ -18,7 +18,7 @@ namespace ReiTunes.Views {
 
     public sealed partial class LibraryItemInfo : ContentDialog, INotifyPropertyChanged {
         private readonly LibraryItem _item;
-        private PlayerViewModel _viewModel;
+        private readonly PlayerViewModel _viewModel;
 
         private string _existsOnDisk = "Unknown";
         private MusicProperties _musicProps;
