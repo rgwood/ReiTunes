@@ -97,8 +97,7 @@ namespace ReiTunes.Core {
                 Items.Add(aggregate);
             }
 
-            sw.Stop();
-            _logger.Information("Rebuilding all items took {ElapsedMs}", sw.ElapsedMilliseconds);
+            _logger.Information("Rebuilding all items took {ElapsedMs} ms", sw.ElapsedMilliseconds);
 
             var itemsToDelete = Items.Where(i => i.Tombstoned).ToList();
 
