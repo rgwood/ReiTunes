@@ -12,9 +12,7 @@ namespace ReiTunes.Server.Controllers {
     [Route("reitunes")]
     public class EventController : ControllerBase {
 
-        //todo: log calls
         private readonly ILogger<EventController> _logger;
-
         private readonly ISerializedEventRepository _eventRepo;
         private readonly LibraryItemEventFactory _eventFactory;
 

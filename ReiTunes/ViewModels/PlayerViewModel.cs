@@ -92,7 +92,7 @@ namespace ReiTunes {
             _logger = logger;
             _library = library;
             _library.LibraryItemsRebuilt += LoadItemsFromLibrary;
-            _mediaPlayer.MediaEnded += mediaPlayer_MediaEnded;
+            _mediaPlayer.MediaEnded += MediaPlayer_MediaEnded;
             _mediaPlayer.CommandManager.NextBehavior.EnablingRule = MediaCommandEnablingRule.Always;
             _mediaPlayer.CommandManager.NextReceived += async (_, _) => await PlayRandomBookmark();
 
@@ -103,7 +103,7 @@ namespace ReiTunes {
             LoadItemsFromLibrary();
         }
 
-        private async void mediaPlayer_MediaEnded(MediaPlayer sender, object args) {
+        private async void MediaPlayer_MediaEnded(MediaPlayer sender, object args) {
             // Breaks with wrong thread exception unless we run on the UI thread.
             // Not sure why this is needed, I assumed I could call the MediaPlayer from background threads
             await CoreApplication.MainView.CoreWindow.Dispatcher.RunAsync(

@@ -410,26 +410,26 @@ namespace ReiTunes {
             //_currThumbnailStoryboard.Completed += _currThumbnailStoryboard_Completed;
         }
 
-        private void _currThumbnailStoryboard_Completed(object sender, object e) {
-            CurrThumbnail = NewThumbnail;
-            CurrThumbnailImage.Opacity = 1;
-            NewThumbnailImage.Opacity = 0;
-        }
+        //private void _currThumbnailStoryboard_Completed(object sender, object e) {
+        //    CurrThumbnail = NewThumbnail;
+        //    CurrThumbnailImage.Opacity = 1;
+        //    NewThumbnailImage.Opacity = 0;
+        //}
 
-        private void SetUpNewThumbnailAnimation() {
-            NewThumbnailImage.RenderTransformOrigin = new Point(0.5, 0.5);
-            NewThumbnailImage.RenderTransform = new RotateTransform();
+        //private void SetUpNewThumbnailAnimation() {
+        //    NewThumbnailImage.RenderTransformOrigin = new Point(0.5, 0.5);
+        //    NewThumbnailImage.RenderTransform = new RotateTransform();
 
-            var spinAnimation = new DoubleAnimation() { Duration = _animationDuration, From = 0, To = 360 };
-            Storyboard.SetTarget(spinAnimation, NewThumbnailImage);
-            Storyboard.SetTargetProperty(spinAnimation, "(UIElement.RenderTransform).(RotateTransform.Angle)");
-            _newThumbnailStoryboard.Children.Add(spinAnimation);
+        //    var spinAnimation = new DoubleAnimation() { Duration = _animationDuration, From = 0, To = 360 };
+        //    Storyboard.SetTarget(spinAnimation, NewThumbnailImage);
+        //    Storyboard.SetTargetProperty(spinAnimation, "(UIElement.RenderTransform).(RotateTransform.Angle)");
+        //    _newThumbnailStoryboard.Children.Add(spinAnimation);
 
-            var fadeInAnimation = new DoubleAnimation() { Duration = _animationDuration, From = 0, To = 1 };
-            Storyboard.SetTarget(fadeInAnimation, NewThumbnailImage);
-            Storyboard.SetTargetProperty(fadeInAnimation, "Opacity");
-            _newThumbnailStoryboard.Children.Add(fadeInAnimation);
-        }
+        //    var fadeInAnimation = new DoubleAnimation() { Duration = _animationDuration, From = 0, To = 1 };
+        //    Storyboard.SetTarget(fadeInAnimation, NewThumbnailImage);
+        //    Storyboard.SetTargetProperty(fadeInAnimation, "Opacity");
+        //    _newThumbnailStoryboard.Children.Add(fadeInAnimation);
+        //}
 
         private void CurrentlyPlayingThumbnail_Tapped(object sender, TappedRoutedEventArgs e) {
             if (_currThumbnailStoryboard.GetCurrentState() != ClockState.Active) {
@@ -483,11 +483,6 @@ namespace ReiTunes {
                 var dialog = new LibraryItemInfo(item);
                 await dialog.ShowAsync();
             }
-        }
-
-        private async void ShowRecentEvents(object sender, RoutedEventArgs e) {
-            var recentEventsDialog = new RecentEventsContentDialog(ViewModel.GetRecentEvents());
-            await recentEventsDialog.ShowAsync();
         }
 
         private async void DeleteMenuItem_Click(object sender, RoutedEventArgs e) {

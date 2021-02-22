@@ -11,13 +11,11 @@ namespace ReiTunes.Server.Controllers {
     [ApiController]
     [Route("test")]
     public class TestController : ControllerBase {
-        private readonly ILogger<TestController> _logger;
 
         public static string GoodString => "foo";
         public static string BadString => "bar";
 
-        public TestController(ILogger<TestController> logger) {
-            _logger = logger;
+        public TestController() {
         }
 
         [HttpGet]
