@@ -28,7 +28,7 @@
     <AppxBundle>Never</AppxBundle>
     <AppxBundlePlatforms>x64|arm</AppxBundlePlatforms>
     <AppInstallerUri>https://reitunes.blob.core.windows.net/windows-app</AppInstallerUri>
-    <HoursBetweenUpdateChecks>0</HoursBetweenUpdateChecks>
+    <HoursBetweenUpdateChecks>1</HoursBetweenUpdateChecks>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Debug|x86'">
     <DebugSymbols>true</DebugSymbols>
