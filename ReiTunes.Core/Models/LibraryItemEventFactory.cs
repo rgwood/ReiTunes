@@ -16,9 +16,6 @@ namespace ReiTunes.Core {
         public LibraryItemCreatedEvent GetCreatedEvent(Guid aggregateId, string name, string filePath)
             => new LibraryItemCreatedEvent(_guidFactory(), aggregateId, _clock.Now(), _clock.GetNextLocalId(), _machineName, name, filePath);
 
-        public LibraryItemCreatedEvent GetCreatedEvent(Guid aggregateId, string name, string filePath, Guid eventId)
-            => new LibraryItemCreatedEvent(_guidFactory(), aggregateId, _clock.Now(), _clock.GetNextLocalId(), _machineName, name, filePath);
-
         public LibraryItemNameChangedEvent GetNameChangedEvent(Guid aggregateId, string newName)
             => new LibraryItemNameChangedEvent(_guidFactory(), aggregateId, _clock.Now(), _clock.GetNextLocalId(), _machineName, newName);
 
