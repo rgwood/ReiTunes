@@ -8,10 +8,10 @@ namespace ReiTunes.Logging {
 
         static public ILogger BuildLogger() {
             var cache = Windows.Storage.ApplicationData.Current.LocalFolder;
-            var logFile = Path.Combine(cache.Path, "ReiTunes.txt");
+            var logFile = Path.Combine(cache.Path, "ReiTunes_Logs_.txt");
 
             return new LoggerConfiguration()
-                      .WriteTo.File(new RenderedCompactJsonFormatter(), logFile, rollingInterval: RollingInterval.Day)
+                      .WriteTo.File(logFile, rollingInterval: RollingInterval.Day)
                       .CreateLogger();
         }
     }
