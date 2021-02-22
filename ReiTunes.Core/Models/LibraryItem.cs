@@ -197,7 +197,7 @@ namespace ReiTunes.Core {
         }
 
         public bool Equals(LibraryItem other) {
-            if (Object.ReferenceEquals(other, null))
+            if (other is null)
                 return false;
 
             if (Object.ReferenceEquals(this, other))
@@ -214,8 +214,8 @@ namespace ReiTunes.Core {
 
         public static bool operator ==(LibraryItem lhs, LibraryItem rhs) {
             // Check for null on left side.
-            if (Object.ReferenceEquals(lhs, null)) {
-                if (Object.ReferenceEquals(rhs, null)) {
+            if (lhs is null) {
+                if (rhs is null) {
                     // null == null = true.
                     return true;
                 }
