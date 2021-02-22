@@ -22,7 +22,7 @@ namespace ReiTunes.Core {
         /// </summary>
         /// <param name="event"></param>
         /// <returns></returns>
-        public static string Serialize(IEvent @event) 
+        public static string Serialize(IEvent @event)
             => JsonConvert.SerializeObject(@event, DefaultSerializerSettings);
 
         /// <summary>
@@ -30,16 +30,16 @@ namespace ReiTunes.Core {
         /// </summary>
         /// <param name="event"></param>
         /// <returns></returns>
-        public static string PrettyPrint(IEvent @event) 
+        public static string PrettyPrint(IEvent @event)
             => JsonConvert.SerializeObject(@event, PrettySerializerSettings);
 
-        public static string Serialize(List<IEvent> events) 
+        public static string Serialize(List<IEvent> events)
             => JsonConvert.SerializeObject(events, DefaultSerializerSettings);
 
-        public static IEvent Deserialize(string value) 
+        public static IEvent Deserialize(string value)
             => JsonConvert.DeserializeObject<IEvent>(value, DefaultSerializerSettings);
 
-        public static List<IEvent> DeserializeList(string value) 
+        public static List<IEvent> DeserializeList(string value)
             => JsonConvert.DeserializeObject<List<IEvent>>(value, DefaultSerializerSettings);
 
         public static async Task<List<IEvent>> DeserializeListAsync(string value) {
