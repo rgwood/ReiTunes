@@ -61,7 +61,7 @@ namespace ReiTunes.Core.Tests.xUnit {
             Assert.ThrowsAny<Exception>(() => SaveEvent(@event, _conn));
         }
 
-        private void SaveEvent(IEvent @event, SqliteConnection connection) {
+        private static void SaveEvent(IEvent @event, SqliteConnection connection) {
             connection.InsertEvent(@event);
         }
 

@@ -70,7 +70,7 @@ namespace ReiTunes.Server.Tests {
             AssertLibrariesHaveSameItems(client1, client2);
         }
 
-        private void AssertLibrariesHaveSameItems(Library l1, Library l2) {
+        private static void AssertLibrariesHaveSameItems(Library l1, Library l2) {
             Assert.Equal(l1.Items.Count, l2.Items.Count);
 
             var orderedModels1 = l1.Items.OrderBy(m => m.AggregateId).ToArray();

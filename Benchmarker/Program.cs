@@ -25,7 +25,7 @@ namespace Benchmarker {
             return ret;
         }
 
-        public byte[] OneMegabyte() {
+        public static byte[] OneMegabyte() {
             return new byte[1024 * 1024];
         }
     }

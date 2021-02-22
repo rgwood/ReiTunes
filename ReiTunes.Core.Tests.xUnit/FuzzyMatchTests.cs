@@ -34,7 +34,7 @@ namespace ReiTunes.Core.Tests.XUnit {
             TestFuzzyMatch(desired, notDesired, "meta");
         }
 
-        private void TestFuzzyMatch(string desiredItem, string notDesiredItem, string searchText) {
+        private static void TestFuzzyMatch(string desiredItem, string notDesiredItem, string searchText) {
             var desiredItemResult = FuzzyMatcher.FuzzyMatch(desiredItem, searchText);
             var notDesiredItemResult = FuzzyMatcher.FuzzyMatch(notDesiredItem, searchText);
 
