@@ -20,8 +20,8 @@ namespace ReiTunes.Core {
         }
 
         public void Commit() {
-            foreach (var model in Models) {
-                foreach (var @event in model.GetUncommittedEvents()) {
+            foreach (SimpleTextAggregate model in Models) {
+                foreach (IEvent @event in model.GetUncommittedEvents()) {
                     Repo.Save(@event);
                 }
 
@@ -30,7 +30,7 @@ namespace ReiTunes.Core {
         }
 
         public void ReceiveEvents(IEnumerable<IEvent> events) {
-            foreach (var @event in events) {
+            foreach (IEvent @event in events) {
                 Repo.Save(@event);
             }
             RebuildModels();
@@ -39,13 +39,13 @@ namespace ReiTunes.Core {
         public void RebuildModels() {
             Models.Clear();
 
-            var events = GetAllEvents();
+            IEnumerable<IEvent> events = GetAllEvents();
 
-            var groupedEvents = events.GroupBy(e => e.AggregateId).Select(g => g.OrderBy(e => e.CreatedTimeUtc));
+            IEnumerable<IOrderedEnumerable<IEvent>> groupedEvents = events.GroupBy(e => e.AggregateId).Select(g => g.OrderBy(e => e.CreatedTimeUtc));
 
-            foreach (var aggregateEvents in groupedEvents) {
-                var aggregate = new SimpleTextAggregate();
-                foreach (var @event in aggregateEvents) {
+            foreach (IOrderedEnumerable<IEvent> aggregateEvents in groupedEvents) {
+                SimpleTextAggregate aggregate = new SimpleTextAggregate();
+                foreach (IEvent @event in aggregateEvents) {
                     aggregate.Apply(@event);
                 }
                 Models.Add(aggregate);

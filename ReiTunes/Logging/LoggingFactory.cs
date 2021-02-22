@@ -7,8 +7,8 @@ namespace ReiTunes.Logging {
     public static class LoggingFactory {
 
         static public ILogger BuildLogger() {
-            var cache = Windows.Storage.ApplicationData.Current.LocalFolder;
-            var logFile = Path.Combine(cache.Path, "ReiTunes_Logs_.txt");
+            Windows.Storage.StorageFolder cache = Windows.Storage.ApplicationData.Current.LocalFolder;
+            string logFile = Path.Combine(cache.Path, "ReiTunes_Logs_.txt");
 
             return new LoggerConfiguration()
                       .WriteTo.File(logFile, rollingInterval: RollingInterval.Day)

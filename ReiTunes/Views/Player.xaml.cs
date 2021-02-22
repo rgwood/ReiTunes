@@ -61,7 +61,7 @@ namespace ReiTunes {
         public Player() {
             this.InitializeComponent();
 
-            var ver = Package.Current.Id.Version;
+            PackageVersion ver = Package.Current.Id.Version;
             MsixVersion = $"v{ver.Major}.{ver.Minor}.{ver.Build}.{ver.Revision}";
 
             ApplicationView.GetForCurrentView().SetPreferredMinSize(new Size(200, 155));
@@ -78,7 +78,7 @@ namespace ReiTunes {
             // without throttling, the DataGrid can't refresh fast enough to keep up with typing
             // I don't love this solution because it adds delay to the first keystroke
             // TODO: better Rx query that returns right away.
-            var textChangedSequence =
+            IDisposable textChangedSequence =
                 System.Reactive.Linq.Observable.FromEventPattern<TextChangedEventArgs>(FilterBox,
                 nameof(FilterBox.TextChanged))
                 .Throttle(TimeSpan.FromMilliseconds(300))
@@ -136,8 +136,8 @@ namespace ReiTunes {
         }
 
         private void ToggleMediaPlaybackState() {
-            var mediaPlayer = musicPlayer.MediaPlayer;
-            var currState = mediaPlayer.PlaybackSession.PlaybackState;
+            MediaPlayer mediaPlayer = musicPlayer.MediaPlayer;
+            MediaPlaybackState currState = mediaPlayer.PlaybackSession.PlaybackState;
             if (currState == MediaPlaybackState.Playing) {
                 mediaPlayer.Pause();
             }
@@ -172,7 +172,7 @@ namespace ReiTunes {
         private void SetUpKeyboardAccelerators() {
             KeyboardAccelerator CreateAccelerator(VirtualKeyModifiers modifier, VirtualKey key,
                 TypedEventHandler<KeyboardAccelerator, KeyboardAcceleratorInvokedEventArgs> eventHandler) {
-                var ret = new KeyboardAccelerator() { Modifiers = modifier, Key = key };
+                KeyboardAccelerator ret = new KeyboardAccelerator() { Modifiers = modifier, Key = key };
                 ret.Invoked += eventHandler;
 
                 return ret;
@@ -180,7 +180,7 @@ namespace ReiTunes {
 
             //pull
 
-            var pullAccelerator = CreateAccelerator(VirtualKeyModifiers.Control, VirtualKey.P,
+            KeyboardAccelerator pullAccelerator = CreateAccelerator(VirtualKeyModifiers.Control, VirtualKey.P,
                 async (sender, args) => {
                     args.Handled = true;
                     await ViewModel.PullEventsCommand.ExecuteAsync(null);
@@ -220,7 +220,7 @@ namespace ReiTunes {
             KeyboardAccelerators.Add(CreateAccelerator(VirtualKeyModifiers.Control, VirtualKey.D,
                 async (sender, args) => {
                     args.Handled = true;
-                    var dbFile = await FileHelper.GetLibraryDbFileAsync();
+                    Windows.Storage.StorageFile dbFile = await FileHelper.GetLibraryDbFileAsync();
                     await Launcher.LaunchFileAsync(dbFile);
                 }));
 
@@ -229,7 +229,7 @@ namespace ReiTunes {
                 async (sender, args) => {
                     args.Handled = true;
 
-                    var selected = (LibraryItem)libraryDataGrid.SelectedItem;
+                    LibraryItem selected = (LibraryItem)libraryDataGrid.SelectedItem;
                     await ViewModel.ShowItemInExplorer(selected);
                 }));
 
@@ -238,9 +238,9 @@ namespace ReiTunes {
                 async (sender, args) => {
                     args.Handled = true;
 
-                    var selected = libraryDataGrid.SelectedItem as LibraryItem;
+                    LibraryItem selected = libraryDataGrid.SelectedItem as LibraryItem;
                     if (selected != null) {
-                        var dialog = new LibraryItemInfo(selected);
+                        LibraryItemInfo dialog = new LibraryItemInfo(selected);
                         await dialog.ShowAsync();
                     }
                 }));
@@ -266,7 +266,7 @@ namespace ReiTunes {
             }
 
             if (args.Key == VirtualKey.Delete && !_dataGridIsEditing) {
-                var selected = GetSelectedLibraryItem();
+                LibraryItem selected = GetSelectedLibraryItem();
 
                 if (selected is null)
                     return;
@@ -278,7 +278,7 @@ namespace ReiTunes {
         }
 
         private async Task DeleteItemWithConfirmDialog(LibraryItem item) {
-            var confirmDialog = new ContentDialog {
+            ContentDialog confirmDialog = new ContentDialog {
                 Title = "Delete file?",
                 Content = $"Are you sure you want to delete '{item.Name}' from the library? Blob content will be unaffected.",
                 PrimaryButtonText = "Delete",
@@ -286,7 +286,7 @@ namespace ReiTunes {
                 CloseButtonText = "Cancel"
             };
 
-            var result = await confirmDialog.ShowAsync();
+            ContentDialogResult result = await confirmDialog.ShowAsync();
 
             if (result == ContentDialogResult.Primary) {
                 ViewModel.Delete(item);
@@ -353,7 +353,7 @@ namespace ReiTunes {
 
         private async void CoreWindow_KeyDown(Windows.UI.Core.CoreWindow sender, Windows.UI.Core.KeyEventArgs args) {
             if (args.VirtualKey == VirtualKey.Space) {
-                var focusedCtrl = FocusManager.GetFocusedElement();
+                object focusedCtrl = FocusManager.GetFocusedElement();
                 if (!(focusedCtrl is TextBox)) {
                     ToggleMediaPlaybackState();
                 }
@@ -396,7 +396,7 @@ namespace ReiTunes {
             CurrThumbnailImage.RenderTransformOrigin = new Point(0.5, 0.5);
             CurrThumbnailImage.RenderTransform = new RotateTransform();
 
-            var spinAnimation = new DoubleAnimation { Duration = _animationDuration, From = 0, To = 360 };
+            DoubleAnimation spinAnimation = new DoubleAnimation { Duration = _animationDuration, From = 0, To = 360 };
             Storyboard.SetTarget(spinAnimation, CurrThumbnailImage);
             Storyboard.SetTargetProperty(spinAnimation, "(UIElement.RenderTransform).(RotateTransform.Angle)");
             _currThumbnailStoryboard.Children.Add(spinAnimation);
@@ -469,7 +469,7 @@ namespace ReiTunes {
             e.Column.SortDirection = descendingOrNull ? DataGridSortDirection.Ascending : DataGridSortDirection.Descending;
 
             // Remove sorting indicators from other columns
-            foreach (var dgColumn in libraryDataGrid.Columns) {
+            foreach (DataGridColumn dgColumn in libraryDataGrid.Columns) {
                 if (dgColumn.Tag.ToString() != e.Column.Tag.ToString()) {
                     dgColumn.SortDirection = null;
                 }
@@ -477,16 +477,16 @@ namespace ReiTunes {
         }
 
         private async void ShowItemInfo(object sender, RoutedEventArgs e) {
-            var item = (sender as FrameworkElement).DataContext as LibraryItem;
+            LibraryItem item = (sender as FrameworkElement).DataContext as LibraryItem;
 
             if (item != null) {
-                var dialog = new LibraryItemInfo(item);
+                LibraryItemInfo dialog = new LibraryItemInfo(item);
                 await dialog.ShowAsync();
             }
         }
 
         private async void DeleteMenuItem_Click(object sender, RoutedEventArgs e) {
-            var item = (sender as FrameworkElement).DataContext as LibraryItem;
+            LibraryItem item = (sender as FrameworkElement).DataContext as LibraryItem;
 
             if (item != null) {
                 await DeleteItemWithConfirmDialog(item);
@@ -494,7 +494,7 @@ namespace ReiTunes {
         }
 
         private void CopyURLMenuItem_Click(object sender, RoutedEventArgs e) {
-            var item = (sender as FrameworkElement).DataContext as LibraryItem;
+            LibraryItem item = (sender as FrameworkElement).DataContext as LibraryItem;
 
             ViewModel.CopyUriToClipboard(item);
         }
@@ -502,27 +502,27 @@ namespace ReiTunes {
         // Build flyout completely in C#
         // Need complex logic for bookmarks, and mixing XAML+C# is a big pain
         private void LibraryItemFlyout_Opening(object sender, object e) {
-            var flyout = (MenuFlyout)sender;
+            MenuFlyout flyout = (MenuFlyout)sender;
 
-            var items = flyout.Items;
+            System.Collections.Generic.IList<MenuFlyoutItemBase> items = flyout.Items;
 
             items.Clear();
 
-            var copyItem = new MenuFlyoutItem() {
+            MenuFlyoutItem copyItem = new MenuFlyoutItem() {
                 Icon = new SymbolIcon(Symbol.Copy),
                 Text = "Copy URL"
             };
             copyItem.Click += CopyURLMenuItem_Click;
             items.Add(copyItem);
 
-            var showInfoItem = new MenuFlyoutItem() {
+            MenuFlyoutItem showInfoItem = new MenuFlyoutItem() {
                 Icon = new SymbolIcon(Symbol.Zoom),
                 Text = "Show Info"
             };
             showInfoItem.Click += ShowItemInfo;
             items.Add(showInfoItem);
 
-            var deleteMenuItem = new MenuFlyoutItem() {
+            MenuFlyoutItem deleteMenuItem = new MenuFlyoutItem() {
                 Icon = new SymbolIcon(Symbol.Delete),
                 Text = "Delete"
             };
@@ -531,7 +531,7 @@ namespace ReiTunes {
 
             items.Add(new MenuFlyoutSeparator());
 
-            var item = GetSelectedLibraryItem();
+            LibraryItem item = GetSelectedLibraryItem();
             if (item == null) {
                 flyout.Items.Add(new MenuFlyoutItem() { IsEnabled = false, Text = "Error: selected library item null" });
                 return;
@@ -542,16 +542,16 @@ namespace ReiTunes {
                 return;
             }
 
-            var orderedBookmarks = item.Bookmarks.OrderBy(b => b.Position).ToList();
+            System.Collections.Generic.List<Bookmark> orderedBookmarks = item.Bookmarks.OrderBy(b => b.Position).ToList();
             // Put the first few bookmarks directly in the first menu, only spill to a submenu if there are lots of bookmarks
-            var firstFew = orderedBookmarks.Take(4).ToList();
+            System.Collections.Generic.List<Bookmark> firstFew = orderedBookmarks.Take(4).ToList();
 
             foreach (Bookmark bookmark in firstFew) {
                 flyout.Items.Add(flyoutItem(item, bookmark));
             }
 
             if (orderedBookmarks.Count > firstFew.Count) {
-                var bookmarks = new MenuFlyoutSubItem() {
+                MenuFlyoutSubItem bookmarks = new MenuFlyoutSubItem() {
                     Icon = new SymbolIcon(Symbol.Bookmarks),
                     Text = $"All Bookmarks ({item.Bookmarks.Count})",
                 };
@@ -563,7 +563,7 @@ namespace ReiTunes {
             }
 
             MenuFlyoutItem flyoutItem(LibraryItem item, Bookmark bookmark) {
-                var bookmarkItem = new MenuFlyoutItem() {
+                MenuFlyoutItem bookmarkItem = new MenuFlyoutItem() {
                     Icon = new FontIcon { FontFamily = new FontFamily("Segoe UI Emoji"), Glyph = bookmark.Emoji ?? "🎵" },
                     Text = bookmark.Position.ToString(@"hh\:mm\:ss")
                 };

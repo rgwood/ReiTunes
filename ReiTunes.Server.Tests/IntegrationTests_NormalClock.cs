@@ -32,7 +32,7 @@ namespace ReiTunes.Server.Tests {
                 });
             });
 
-            var services = new ServiceCollection();
+            ServiceCollection services = new ServiceCollection();
 
             services.AddSingleton<HttpClient>((_) => _factory.CreateClient());
             services.AddSingleton<ILogger>((_) => Logger.None);
@@ -49,13 +49,13 @@ namespace ReiTunes.Server.Tests {
 
             Assert.Empty(serialized);
 
-            var agg = new SimpleTextAggregate("foo");
-            var @event = agg.GetUncommittedEvents().Single();
+            SimpleTextAggregate agg = new SimpleTextAggregate("foo");
+            IEvent @event = agg.GetUncommittedEvents().Single();
             await _serverCaller.PushEventAsync(@event);
 
             serialized = await _serverCaller.PullAllSerializedEventsAsync();
 
-            var deserializedEvent = await EventSerialization.DeserializeAsync(serialized.Single());
+            IEvent deserializedEvent = await EventSerialization.DeserializeAsync(serialized.Single());
             AssertEventsAreEqual(@event, deserializedEvent);
         }
 
@@ -65,15 +65,15 @@ namespace ReiTunes.Server.Tests {
         /// </summary>
         [Fact]
         public async Task Integration_BasicItemSync() {
-            var client1 = new Library("machine1", SQLiteHelpers.CreateInMemoryDb(), _serverCaller, Logger.None);
-            var client2 = new Library("machine2", SQLiteHelpers.CreateInMemoryDb(), _serverCaller, Logger.None);
+            Library client1 = new Library("machine1", SQLiteHelpers.CreateInMemoryDb(), _serverCaller, Logger.None);
+            Library client2 = new Library("machine2", SQLiteHelpers.CreateInMemoryDb(), _serverCaller, Logger.None);
 
             // create item on server, pull to 1
             await _serverCaller.CreateNewLibraryItemAsync("foo/bar.mp3");
             await client1.PullFromServer();
 
             // modify item to generate a bunch of events
-            var item = client1.Items.Single();
+            LibraryItem item = client1.Items.Single();
             item.IncrementPlayCount();
             item.IncrementPlayCount();
             item.Name = "GIMIX set";
@@ -95,8 +95,8 @@ namespace ReiTunes.Server.Tests {
             client2.Items.Single().Bookmarks.Count.Should().Be(1);
 
             // Set bookmark emoji
-            var client2Item = client2.Items.Single();
-            var remainingBookmark = client2Item.Bookmarks.Single();
+            LibraryItem client2Item = client2.Items.Single();
+            Bookmark remainingBookmark = client2Item.Bookmarks.Single();
             client2.Items.Single().SetBookmarkEmoji(remainingBookmark.ID, "🎶");
             client2.Items.Single().Bookmarks.Single().Emoji.Should().Be("🎶");
 
@@ -121,8 +121,8 @@ namespace ReiTunes.Server.Tests {
         private static void AssertLibrariesHaveSameItems(Library l1, Library l2) {
             Assert.Equal(l1.Items.Count, l2.Items.Count);
 
-            var orderedModels1 = l1.Items.OrderBy(m => m.AggregateId).ToArray();
-            var orderedModels2 = l2.Items.OrderBy(m => m.AggregateId).ToArray();
+            LibraryItem[] orderedModels1 = l1.Items.OrderBy(m => m.AggregateId).ToArray();
+            LibraryItem[] orderedModels2 = l2.Items.OrderBy(m => m.AggregateId).ToArray();
 
             for (int i = 0; i < orderedModels1.Count(); i++) {
                 AssertItemsAreEqual(orderedModels1[i], orderedModels2[i]);
@@ -139,8 +139,8 @@ namespace ReiTunes.Server.Tests {
             item1.PlayCount.Should().Be(item2.PlayCount);
             item1.Bookmarks.Should().HaveCount(item2.Bookmarks.Count);
 
-            var orderedBms1 = item1.Bookmarks.OrderBy(b => b.ID).ToArray();
-            var orderedBms2 = item2.Bookmarks.OrderBy(b => b.ID).ToArray();
+            Bookmark[] orderedBms1 = item1.Bookmarks.OrderBy(b => b.ID).ToArray();
+            Bookmark[] orderedBms2 = item2.Bookmarks.OrderBy(b => b.ID).ToArray();
 
             for (int i = 0; i < orderedBms1.Length; i++) {
                 AssertBookmarksEqual(orderedBms1[i], orderedBms2[i]);
@@ -174,41 +174,41 @@ namespace ReiTunes.Server.Tests {
 
         [Fact]
         public async Task TestControllerGetWorks() {
-            var client = _factory.CreateClient();
+            HttpClient client = _factory.CreateClient();
 
-            var response = await client.GetAsync("/test");
+            HttpResponseMessage response = await client.GetAsync("/test");
 
             response.EnsureSuccessStatusCode();
 
-            var contents = await response.Content.ReadAsStringAsync();
+            string contents = await response.Content.ReadAsStringAsync();
 
             Assert.Equal("foo", contents);
         }
 
         [Fact]
         public async Task TestControllerGetWithParamWorks() {
-            var client = _factory.CreateClient();
+            HttpClient client = _factory.CreateClient();
 
-            var response = await client.GetAsync("/test/exclaim?input=foo");
+            HttpResponseMessage response = await client.GetAsync("/test/exclaim?input=foo");
 
             response.EnsureSuccessStatusCode();
 
-            var contents = await response.Content.ReadAsStringAsync();
+            string contents = await response.Content.ReadAsStringAsync();
 
             Assert.Equal("foo!", contents);
         }
 
         [Fact]
         public async Task TestControllerGetEnumerable() {
-            var client = _factory.CreateClient();
+            HttpClient client = _factory.CreateClient();
 
-            var response = await client.GetAsync("/test/enumerable");
+            HttpResponseMessage response = await client.GetAsync("/test/enumerable");
 
             response.EnsureSuccessStatusCode();
 
-            var contents = await response.Content.ReadAsStringAsync();
+            string contents = await response.Content.ReadAsStringAsync();
 
-            var deserialized = JsonConvert.DeserializeObject<List<string>>(contents);
+            List<string> deserialized = JsonConvert.DeserializeObject<List<string>>(contents);
 
             Assert.Equal(2, deserialized.Count());
             Assert.Equal(TestController.GoodString, deserialized[0]);
@@ -217,21 +217,21 @@ namespace ReiTunes.Server.Tests {
 
         [Fact]
         public async Task TestControllerPutOK() {
-            var client = _factory.CreateClient();
+            HttpClient client = _factory.CreateClient();
 
-            var uri = QueryHelpers.AddQueryString("/test/validate", "input", TestController.GoodString);
+            string uri = QueryHelpers.AddQueryString("/test/validate", "input", TestController.GoodString);
 
-            var response = await client.PutAsync(uri, null);
+            HttpResponseMessage response = await client.PutAsync(uri, null);
             response.EnsureSuccessStatusCode();
         }
 
         [Fact]
         public async Task TestControllerPutFails() {
-            var client = _factory.CreateClient();
+            HttpClient client = _factory.CreateClient();
 
-            var uri = QueryHelpers.AddQueryString("/test/validate", "input", TestController.BadString);
+            string uri = QueryHelpers.AddQueryString("/test/validate", "input", TestController.BadString);
 
-            var response = await client.PutAsync(uri, null);
+            HttpResponseMessage response = await client.PutAsync(uri, null);
             Assert.False(response.IsSuccessStatusCode);
         }
     }

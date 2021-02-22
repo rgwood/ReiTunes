@@ -11,7 +11,7 @@ namespace ReiTunes.Helpers
     {
         public static async Task<StorageFile> LoadImageFileAsync()
         {
-            var openPicker = new FileOpenPicker
+            FileOpenPicker openPicker = new FileOpenPicker
             {
                 SuggestedStartLocation = PickerLocationId.PicturesLibrary
             };
@@ -21,7 +21,7 @@ namespace ReiTunes.Helpers
             openPicker.FileTypeFilter.Add(".jpg");
             openPicker.FileTypeFilter.Add(".bmp");
 
-            var imageFile = await openPicker.PickSingleFileAsync();
+            StorageFile imageFile = await openPicker.PickSingleFileAsync();
 
             return imageFile;
         }
@@ -35,9 +35,9 @@ namespace ReiTunes.Helpers
 
             try
             {
-                using (var fileStream = await file.OpenAsync(FileAccessMode.Read))
+                using (Windows.Storage.Streams.IRandomAccessStream fileStream = await file.OpenAsync(FileAccessMode.Read))
                 {
-                    var bitmapImage = new BitmapImage();
+                    BitmapImage bitmapImage = new BitmapImage();
                     await bitmapImage.SetSourceAsync(fileStream);
                     return bitmapImage;
                 }

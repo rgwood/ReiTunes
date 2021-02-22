@@ -21,26 +21,26 @@ namespace ReiTunes.Core {
         }
 
         public async Task<List<string>> PullAllSerializedEventsAsync() {
-            var sw = Stopwatch.StartNew();
-            var response = await _client.GetAsync("/reitunes/allevents");
+            Stopwatch sw = Stopwatch.StartNew();
+            HttpResponseMessage response = await _client.GetAsync("/reitunes/allevents");
             response.EnsureSuccessStatusCode();
 
             string contents = await response.Content.ReadAsStringAsync();
 
-            var serializedKiloByteCount = UnicodeEncoding.UTF8.GetByteCount(contents) / 1024;
+            int serializedKiloByteCount = UnicodeEncoding.UTF8.GetByteCount(contents) / 1024;
 
             _logger.Information("Pulled {PayloadSizeKb} kb of serialized events in {ElapsedMs} ms",
                 serializedKiloByteCount, sw.ElapsedMilliseconds);
 
-            var deserialized = await Json.DeserializeAsync<List<string>>(contents);
+            List<string> deserialized = await Json.DeserializeAsync<List<string>>(contents);
             return deserialized;
         }
 
         public async Task<IEnumerable<IEvent>> PullAllEventsAsync() {
-            var allSerializedEvents = await PullAllSerializedEventsAsync();
+            List<string> allSerializedEvents = await PullAllSerializedEventsAsync();
 
-            var sw = Stopwatch.StartNew();
-            var ret = await Task.Run(() => allSerializedEvents.Select(e => EventSerialization.Deserialize(e)));
+            Stopwatch sw = Stopwatch.StartNew();
+            IEnumerable<IEvent> ret = await Task.Run(() => allSerializedEvents.Select(e => EventSerialization.Deserialize(e)));
 
             _logger.Information("Deserializing {EventCount} events took {ElapsedMs} ms", ret.Count(), sw.ElapsedMilliseconds);
 
@@ -68,8 +68,8 @@ namespace ReiTunes.Core {
         }
 
         public async Task CreateNewLibraryItemAsync(string filePath) {
-            var uri = QueryHelpers.AddQueryString("/reitunes/createitem", "filePath", filePath);
-            var putResponse = await _client.PutAsync(uri, null);
+            string uri = QueryHelpers.AddQueryString("/reitunes/createitem", "filePath", filePath);
+            HttpResponseMessage putResponse = await _client.PutAsync(uri, null);
             putResponse.EnsureSuccessStatusCode();
         }
     }

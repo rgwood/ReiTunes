@@ -20,8 +20,8 @@ namespace ReiTunes.Core.Tests.xUnit {
 
         [Fact]
         public void CanSaveEvent() {
-            var agg = new SimpleTextAggregate("foo");
-            var @event = agg.GetUncommittedEvents().Single();
+            SimpleTextAggregate agg = new SimpleTextAggregate("foo");
+            IEvent @event = agg.GetUncommittedEvents().Single();
 
             SaveEvent(@event, _conn);
             Assert.Equal(1, GetRowCount("events"));
@@ -29,8 +29,8 @@ namespace ReiTunes.Core.Tests.xUnit {
 
         [Fact]
         public void CanHookUpEventAutoSave() {
-            var agg = new SimpleTextAggregate("foo");
-            var @event = agg.GetUncommittedEvents().Single();
+            SimpleTextAggregate agg = new SimpleTextAggregate("foo");
+            IEvent @event = agg.GetUncommittedEvents().Single();
 
             SaveEvent(@event, _conn);
 
@@ -47,14 +47,14 @@ namespace ReiTunes.Core.Tests.xUnit {
 
         private void Agg_EventCreated(object sender, IEvent e) {
             SaveEvent(e, _conn);
-            var agg = (Aggregate)sender;
+            Aggregate agg = (Aggregate)sender;
             agg.Commit();
         }
 
         [Fact]
         public void SQLiteEnforcesNoSavingDuplicates() {
-            var agg = new SimpleTextAggregate("foo");
-            var @event = agg.GetUncommittedEvents().Single();
+            SimpleTextAggregate agg = new SimpleTextAggregate("foo");
+            IEvent @event = agg.GetUncommittedEvents().Single();
 
             SaveEvent(@event, _conn);
 

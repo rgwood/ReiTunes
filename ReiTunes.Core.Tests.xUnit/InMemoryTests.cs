@@ -25,10 +25,10 @@ namespace ReiTunes.Core.Tests.XUnit {
         // Just test that lists serialize and deserialize without failing. Had some issues with that earlier
         [Fact]
         public async void Json_ListSerialization() {
-            var l = new List<int>() { 1, 2, 3 };
+            List<int> l = new List<int>() { 1, 2, 3 };
 
-            var serialized = await Json.SerializeAsync(l);
-            var deserialized = await Json.DeserializeAsync<List<int>>(serialized);
+            string serialized = await Json.SerializeAsync(l);
+            List<int> deserialized = await Json.DeserializeAsync<List<int>>(serialized);
             Assert.Equal(3, deserialized.Count);
         }
 
@@ -37,10 +37,10 @@ namespace ReiTunes.Core.Tests.XUnit {
         public void CanGetEventsForSpecificMachine(IEventRepository repo) {
             const string machine1 = "machine1";
             const string machine2 = "machine2";
-            var factory1 = new LibraryItemEventFactory(new Clock(), machine1);
-            var factory2 = new LibraryItemEventFactory(new Clock(), machine2);
+            LibraryItemEventFactory factory1 = new LibraryItemEventFactory(new Clock(), machine1);
+            LibraryItemEventFactory factory2 = new LibraryItemEventFactory(new Clock(), machine2);
 
-            var guid = Guid.NewGuid();
+            Guid guid = Guid.NewGuid();
 
             repo.Save(factory1.GetPlayedEvent(guid));
             repo.Save(factory2.GetPlayedEvent(guid));
@@ -55,10 +55,10 @@ namespace ReiTunes.Core.Tests.XUnit {
         public void CanGetEventsMachineNameCaseDoesNotMatter(IEventRepository repo) {
             const string machine1 = "machine1";
             const string machine2 = "machine2";
-            var factory1 = new LibraryItemEventFactory(new Clock(), machine1);
-            var factory2 = new LibraryItemEventFactory(new Clock(), machine2);
+            LibraryItemEventFactory factory1 = new LibraryItemEventFactory(new Clock(), machine1);
+            LibraryItemEventFactory factory2 = new LibraryItemEventFactory(new Clock(), machine2);
 
-            var guid = Guid.NewGuid();
+            Guid guid = Guid.NewGuid();
 
             repo.Save(factory1.GetPlayedEvent(guid));
 
@@ -72,14 +72,14 @@ namespace ReiTunes.Core.Tests.XUnit {
 
         [Fact]
         public void CanCreateLibraryItemFromEvent() {
-            var guid = Guid.NewGuid();
-            var name = "bar.mp3";
-            var path = "foo/bar.mp3";
+            Guid guid = Guid.NewGuid();
+            string name = "bar.mp3";
+            string path = "foo/bar.mp3";
 
-            var createdEvent = _eventFactory.GetCreatedEvent(guid, name, path);
+            LibraryItemCreatedEvent createdEvent = _eventFactory.GetCreatedEvent(guid, name, path);
             //new LibraryItemCreatedEvent(Guid.NewGuid(), guid, createdDate, name, path);
 
-            var item = new LibraryItem(_eventFactory);
+            LibraryItem item = new LibraryItem(_eventFactory);
             item.Apply(new List<IEvent>() { createdEvent });
 
             Assert.Equal(guid, item.AggregateId);
@@ -90,7 +90,7 @@ namespace ReiTunes.Core.Tests.XUnit {
 
         [Fact]
         public void LibraryItemIncrementPlayCountWorks() {
-            var item = new LibraryItem(_eventFactory, "foo/bar.mp3");
+            LibraryItem item = new LibraryItem(_eventFactory, "foo/bar.mp3");
 
             Assert.Equal(0, item.PlayCount);
 
@@ -103,15 +103,15 @@ namespace ReiTunes.Core.Tests.XUnit {
 
         [Fact]
         public void LibraryItemAddBookmarkWorks() {
-            var item = new LibraryItem(_eventFactory, "foo/bar.mp3");
+            LibraryItem item = new LibraryItem(_eventFactory, "foo/bar.mp3");
 
             item.Bookmarks.Count.Should().Be(0);
 
-            var addBookmarkEvent = _eventFactory.GetBookmarkAddedEvent(item.AggregateId, Guid.NewGuid(), TimeSpan.FromSeconds(42));
+            LibraryItemBookmarkAddedEvent addBookmarkEvent = _eventFactory.GetBookmarkAddedEvent(item.AggregateId, Guid.NewGuid(), TimeSpan.FromSeconds(42));
 
             item.Apply(addBookmarkEvent);
 
-            var bookmark = item.Bookmarks.Single();
+            Bookmark bookmark = item.Bookmarks.Single();
 
             bookmark.Position.Should().Be(TimeSpan.FromSeconds(42));
             bookmark.Emoji.Should().BeNull();
@@ -120,15 +120,15 @@ namespace ReiTunes.Core.Tests.XUnit {
 
         [Fact]
         public void LibraryItemDeleteBookmarkWorks() {
-            var item = new LibraryItem(_eventFactory, "foo/bar.mp3");
+            LibraryItem item = new LibraryItem(_eventFactory, "foo/bar.mp3");
 
             item.Bookmarks.Count.Should().Be(0);
 
-            var addBookmarkEvent = _eventFactory.GetBookmarkAddedEvent(item.AggregateId, Guid.NewGuid(), TimeSpan.FromSeconds(42));
+            LibraryItemBookmarkAddedEvent addBookmarkEvent = _eventFactory.GetBookmarkAddedEvent(item.AggregateId, Guid.NewGuid(), TimeSpan.FromSeconds(42));
 
             item.Apply(addBookmarkEvent);
 
-            var bookmark = item.Bookmarks.Single();
+            Bookmark bookmark = item.Bookmarks.Single();
 
             item.Apply(_eventFactory.GetBookmarkDeletedEvent(item.AggregateId, addBookmarkEvent.BookmarkId));
 
@@ -137,9 +137,9 @@ namespace ReiTunes.Core.Tests.XUnit {
 
         [Fact]
         public void LibraryItemBookmarkSetEmojiWorks() {
-            var item = new LibraryItem(_eventFactory, "foo/bar.mp3");
+            LibraryItem item = new LibraryItem(_eventFactory, "foo/bar.mp3");
 
-            var addBookmarkEvent = _eventFactory.GetBookmarkAddedEvent(item.AggregateId, Guid.NewGuid(), TimeSpan.FromSeconds(42));
+            LibraryItemBookmarkAddedEvent addBookmarkEvent = _eventFactory.GetBookmarkAddedEvent(item.AggregateId, Guid.NewGuid(), TimeSpan.FromSeconds(42));
             item.Apply(addBookmarkEvent);
 
             item.Bookmarks.Single();
@@ -150,7 +150,7 @@ namespace ReiTunes.Core.Tests.XUnit {
 
         [Fact]
         public void CanSerializeDeserializeAllLibraryItemEvents() {
-            var item = new LibraryItem(_eventFactory, "foo/bar.mp3");
+            LibraryItem item = new LibraryItem(_eventFactory, "foo/bar.mp3");
 
             Assert.Equal(0, item.PlayCount);
 
@@ -163,7 +163,7 @@ namespace ReiTunes.Core.Tests.XUnit {
 
         [Fact]
         public void LibraryItemNameChangeWorks() {
-            var item = new LibraryItem(_eventFactory, "foo/bar.mp3");
+            LibraryItem item = new LibraryItem(_eventFactory, "foo/bar.mp3");
             item.Name = item.Name + "x";
             Assert.Equal(2, item.GetUncommittedEvents().Count());
             ItemCanBeRebuiltFromUncommittedEvents(item);
@@ -171,7 +171,7 @@ namespace ReiTunes.Core.Tests.XUnit {
 
         [Fact]
         public void LibraryItemFilePathChangeWorks() {
-            var item = new LibraryItem(_eventFactory, "foo/bar.mp3");
+            LibraryItem item = new LibraryItem(_eventFactory, "foo/bar.mp3");
             item.FilePath = item.FilePath + "x";
             Assert.Equal(2, item.GetUncommittedEvents().Count());
             ItemCanBeRebuiltFromUncommittedEvents(item);
@@ -180,7 +180,7 @@ namespace ReiTunes.Core.Tests.XUnit {
         // Tabbing through the datagrid generates meaningless set calls that just set value = oldValue. Make sure these don't generate events
         [Fact]
         public void NoEventsGeneratedIfDataHasNotChanged() {
-            var item = new LibraryItem(_eventFactory, "foo/bar.mp3");
+            LibraryItem item = new LibraryItem(_eventFactory, "foo/bar.mp3");
             item.Commit();
             item.Album = item.Album;
             item.Artist = item.Artist;
@@ -190,13 +190,13 @@ namespace ReiTunes.Core.Tests.XUnit {
         }
 
         private void ItemCanBeRebuiltFromUncommittedEvents(LibraryItem item) {
-            var itemFromEvents = new LibraryItem(_eventFactory);
+            LibraryItem itemFromEvents = new LibraryItem(_eventFactory);
 
-            var events = item.GetUncommittedEvents();
+            IEnumerable<IEvent> events = item.GetUncommittedEvents();
 
-            var repo = new InMemoryJsonEventRepository();
+            InMemoryJsonEventRepository repo = new InMemoryJsonEventRepository();
 
-            foreach (var @event in events) {
+            foreach (IEvent @event in events) {
                 repo.Save(@event);
             }
 
@@ -232,12 +232,12 @@ namespace ReiTunes.Core.Tests.XUnit {
 
         [Fact]
         public void TestSimpleTextAggregate() {
-            var guid = Guid.NewGuid();
-            var createdDate = new DateTime(2020, 12, 25);
+            Guid guid = Guid.NewGuid();
+            DateTime createdDate = new DateTime(2020, 12, 25);
 
-            var createdEvent = new SimpleTextAggregateCreatedEvent(Guid.NewGuid(), guid, createdDate, "foo");
+            SimpleTextAggregateCreatedEvent createdEvent = new SimpleTextAggregateCreatedEvent(Guid.NewGuid(), guid, createdDate, "foo");
 
-            var agg = new SimpleTextAggregate();
+            SimpleTextAggregate agg = new SimpleTextAggregate();
             agg.Apply(new List<IEvent>() { createdEvent });
 
             Assert.Equal(guid, agg.AggregateId);
@@ -250,7 +250,7 @@ namespace ReiTunes.Core.Tests.XUnit {
 
         [Fact]
         public void EditingSimpleAggregateCreatesEvents() {
-            var agg = new SimpleTextAggregate("foo");
+            SimpleTextAggregate agg = new SimpleTextAggregate("foo");
             Assert.Single(agg.GetUncommittedEvents());
             Assert.Equal("foo", agg.Text);
 
@@ -262,10 +262,10 @@ namespace ReiTunes.Core.Tests.XUnit {
         [Theory]
         [MemberData(nameof(AllReposToTest))]
         public void CanPersistAndRehydrateSimpleAggregate(IEventRepository repo) {
-            var agg = new SimpleTextAggregate("foo");
+            SimpleTextAggregate agg = new SimpleTextAggregate("foo");
             agg.Text = "bar";
 
-            foreach (var @event in agg.GetUncommittedEvents()) {
+            foreach (IEvent @event in agg.GetUncommittedEvents()) {
                 repo.Save(@event);
             }
 
@@ -273,7 +273,7 @@ namespace ReiTunes.Core.Tests.XUnit {
 
             agg.Commit();
 
-            var agg2 = new SimpleTextAggregate();
+            SimpleTextAggregate agg2 = new SimpleTextAggregate();
             agg2.Apply(repo.GetEvents(agg.AggregateId));
 
             Assert.Equal(agg.AggregateId, agg2.AggregateId);
@@ -283,10 +283,10 @@ namespace ReiTunes.Core.Tests.XUnit {
         [Theory]
         [MemberData(nameof(AllReposToTest))]
         public void ContainsEventWorks(IEventRepository repo) {
-            var agg = new SimpleTextAggregate("foo");
+            SimpleTextAggregate agg = new SimpleTextAggregate("foo");
             agg.Text = "bar";
 
-            foreach (var @event in agg.GetUncommittedEvents()) {
+            foreach (IEvent @event in agg.GetUncommittedEvents()) {
                 Assert.False(repo.ContainsEvent(@event.Id));
                 repo.Save(@event);
                 Assert.True(repo.ContainsEvent(@event.Id));
@@ -296,16 +296,16 @@ namespace ReiTunes.Core.Tests.XUnit {
         [Theory]
         [MemberData(nameof(AllReposToTest))]
         public void WillNotSaveSameEventTwice(IEventRepository repo) {
-            var agg = new SimpleTextAggregate("foo");
+            SimpleTextAggregate agg = new SimpleTextAggregate("foo");
             agg.Text = "bar";
 
-            foreach (var @event in agg.GetUncommittedEvents()) {
+            foreach (IEvent @event in agg.GetUncommittedEvents()) {
                 repo.Save(@event);
             }
 
             Assert.Equal(2, repo.GetAllEvents().Count());
 
-            foreach (var @event in agg.GetUncommittedEvents()) {
+            foreach (IEvent @event in agg.GetUncommittedEvents()) {
                 repo.Save(@event);
             }
 
@@ -314,24 +314,24 @@ namespace ReiTunes.Core.Tests.XUnit {
 
         [Fact]
         public void EventsHaveCorrectAggregateType() {
-            var guid = Guid.NewGuid();
-            var createdDate = new DateTime(2020, 12, 25);
-            var simpleEvent = new SimpleTextAggregateCreatedEvent(Guid.NewGuid(), guid, createdDate, "foo");
+            Guid guid = Guid.NewGuid();
+            DateTime createdDate = new DateTime(2020, 12, 25);
+            SimpleTextAggregateCreatedEvent simpleEvent = new SimpleTextAggregateCreatedEvent(Guid.NewGuid(), guid, createdDate, "foo");
 
             Assert.Equal("SimpleTextAggregate", simpleEvent.AggregateType);
 
-            var libraryItemEvent = _eventFactory.GetCreatedEvent(guid, "foo", "bar");
+            LibraryItemCreatedEvent libraryItemEvent = _eventFactory.GetCreatedEvent(guid, "foo", "bar");
             Assert.Equal("LibraryItem", libraryItemEvent.AggregateType);
         }
 
         [Fact]
         public void GetSerializedEventsWorks() {
-            var repo = new SQLiteEventRepository(new SqliteConnection("DataSource=:memory:"));
+            SQLiteEventRepository repo = new SQLiteEventRepository(new SqliteConnection("DataSource=:memory:"));
 
-            var agg = new SimpleTextAggregate("foo");
+            SimpleTextAggregate agg = new SimpleTextAggregate("foo");
             agg.Text = "bar";
 
-            foreach (var @event in agg.GetUncommittedEvents()) {
+            foreach (IEvent @event in agg.GetUncommittedEvents()) {
                 repo.Save(@event);
             }
 
@@ -343,7 +343,7 @@ namespace ReiTunes.Core.Tests.XUnit {
         public void EventCountWorks(IEventRepository repo) {
             repo.CountOfAllEvents().Should().Be(0);
 
-            var agg = new SimpleTextAggregate("foo");
+            SimpleTextAggregate agg = new SimpleTextAggregate("foo");
             agg.Text = "bar";
 
             repo.Save(_eventFactory.GetCreatedEvent(Guid.NewGuid(), "foo", "bar"));

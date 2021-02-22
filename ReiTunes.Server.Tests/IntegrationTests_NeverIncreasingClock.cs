@@ -27,7 +27,7 @@ namespace ReiTunes.Server.Tests {
                 });
             });
 
-            var services = new ServiceCollection();
+            ServiceCollection services = new ServiceCollection();
 
             services.AddSingleton<HttpClient>((_) => _factory.CreateClient());
             services.AddSingleton<ILogger>((_) => Logger.None);
@@ -40,16 +40,16 @@ namespace ReiTunes.Server.Tests {
 
         [Fact]
         public async Task Integration_BasicItemSync() {
-            var clock = new NeverIncreasingClock();
-            var client1 = new Library("machine1", SQLiteHelpers.CreateInMemoryDb(), _serverCaller, Logger.None, clock);
-            var client2 = new Library("machine2", SQLiteHelpers.CreateInMemoryDb(), _serverCaller, Logger.None, clock);
+            NeverIncreasingClock clock = new NeverIncreasingClock();
+            Library client1 = new Library("machine1", SQLiteHelpers.CreateInMemoryDb(), _serverCaller, Logger.None, clock);
+            Library client2 = new Library("machine2", SQLiteHelpers.CreateInMemoryDb(), _serverCaller, Logger.None, clock);
 
             // create item on server, pull to 1
             await _serverCaller.CreateNewLibraryItemAsync("foo/bar.mp3");
             await client1.PullFromServer();
 
             // modify item to generate a bunch of events with the same time but increasing ID
-            var item = client1.Items.Single();
+            LibraryItem item = client1.Items.Single();
             item.IncrementPlayCount();
             item.IncrementPlayCount();
             item.Name = "foo";
@@ -68,8 +68,8 @@ namespace ReiTunes.Server.Tests {
         private static void AssertLibrariesHaveSameItems(Library l1, Library l2) {
             Assert.Equal(l1.Items.Count, l2.Items.Count);
 
-            var orderedModels1 = l1.Items.OrderBy(m => m.AggregateId).ToArray();
-            var orderedModels2 = l2.Items.OrderBy(m => m.AggregateId).ToArray();
+            LibraryItem[] orderedModels1 = l1.Items.OrderBy(m => m.AggregateId).ToArray();
+            LibraryItem[] orderedModels2 = l2.Items.OrderBy(m => m.AggregateId).ToArray();
 
             for (int i = 0; i < orderedModels1.Count(); i++) {
                 Assert.Equal(orderedModels1[i], orderedModels2[i]);

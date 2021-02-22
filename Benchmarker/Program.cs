@@ -7,7 +7,7 @@ namespace Benchmarker {
     internal class Program {
 
         private static void Main(string[] args) {
-            var summary = BenchmarkRunner.Run<MemoryBenchmarker>();
+            BenchmarkDotNet.Reports.Summary summary = BenchmarkRunner.Run<MemoryBenchmarker>();
         }
     }
 
@@ -16,7 +16,7 @@ namespace Benchmarker {
 
         [Benchmark]
         public List<byte[]> Allocate() {
-            var ret = new List<byte[]>();
+            List<byte[]> ret = new List<byte[]>();
 
             for (int i = 0; i < 1024; i++) {
                 ret.Add(OneMegabyte());

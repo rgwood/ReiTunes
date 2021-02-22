@@ -9,7 +9,7 @@ namespace ReiTunes.Views {
 
         public RecentEventsContentDialog(IEnumerable<string> events) {
             this.InitializeComponent();
-            foreach (var @event in events) {
+            foreach (string @event in events) {
                 EventsListView.Items.Add(@event);
             }
         }

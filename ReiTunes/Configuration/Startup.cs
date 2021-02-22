@@ -34,7 +34,7 @@ namespace ReiTunes.Services {
             await HandleActivationAsync(activationArgs);
 
             if (IsInteractive(activationArgs)) {
-                var activation = activationArgs as IActivatedEventArgs;
+                IActivatedEventArgs activation = activationArgs as IActivatedEventArgs;
                 if (activation.PreviousExecutionState == ApplicationExecutionState.Terminated) {
                     await ServiceLocator.Current.GetService<SuspendAndResumeService>().RestoreSuspendAndResumeData();
                 }
@@ -48,7 +48,7 @@ namespace ReiTunes.Services {
         }
 
         static private async Task HandleActivationAsync(object activationArgs) {
-            var activationHandler = GetActivationHandlers()
+            ActivationHandler activationHandler = GetActivationHandlers()
                                                 .FirstOrDefault(h => h.CanHandle(activationArgs));
 
             if (activationHandler != null) {
@@ -56,7 +56,7 @@ namespace ReiTunes.Services {
             }
 
             if (IsInteractive(activationArgs)) {
-                var defaultHandler = new DefaultActivationHandler(_startupViewType);
+                DefaultActivationHandler defaultHandler = new DefaultActivationHandler(_startupViewType);
                 if (defaultHandler.CanHandle(activationArgs)) {
                     await defaultHandler.HandleAsync(activationArgs);
                 }

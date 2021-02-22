@@ -17,7 +17,7 @@ namespace ReiTunes.Services {
                 CoreDispatcherPriority.Normal, async () => {
                     if (SystemInformation.IsAppUpdated && !shown) {
                         shown = true;
-                        var ver = Package.Current.Id.Version;
+                        PackageVersion ver = Package.Current.Id.Version;
 
                         // TODO: move this into XAML and set the background colour appropriately
                         ContentDialog dialog = new ContentDialog() {

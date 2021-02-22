@@ -40,13 +40,13 @@ namespace ReiTunes.Services
 
             try
             {
-                var suspensionState = new SuspensionState()
+                SuspensionState suspensionState = new SuspensionState()
                 {
                     SuspensionDate = DateTime.Now
                 };
 
-                var target = OnBackgroundEntering?.Target.GetType();
-                var onBackgroundEnteringArgs = new SuspendAndResumeArgs(suspensionState, target);
+                Type target = OnBackgroundEntering?.Target.GetType();
+                SuspendAndResumeArgs onBackgroundEnteringArgs = new SuspendAndResumeArgs(suspensionState, target);
 
                 OnBackgroundEntering?.Invoke(this, onBackgroundEnteringArgs);
 
@@ -69,7 +69,7 @@ namespace ReiTunes.Services
 
         public async Task RestoreSuspendAndResumeData()
         {
-            var saveState = await GetSuspendAndResumeData();
+            SuspendAndResumeArgs saveState = await GetSuspendAndResumeData();
             if (saveState != null)
             {
                 OnDataRestored?.Invoke(this, saveState);
@@ -79,7 +79,7 @@ namespace ReiTunes.Services
         // This method restores application state when the App is launched after termination, it navigates to the stored Page passing the recovered state data.
         protected override async Task HandleInternalAsync(LaunchActivatedEventArgs args)
         {
-            var saveState = await GetSuspendAndResumeData();
+            SuspendAndResumeArgs saveState = await GetSuspendAndResumeData();
             if (saveState?.Target != null && typeof(Page).IsAssignableFrom(saveState.Target))
             {
                 NavigationService.Navigate(saveState.Target, saveState.SuspensionState);
@@ -94,7 +94,7 @@ namespace ReiTunes.Services
 
         public async Task<SuspendAndResumeArgs> GetSuspendAndResumeData()
         {
-            var saveState = await ApplicationData.Current.LocalFolder.ReadAsync<SuspendAndResumeArgs>(StateFilename);
+            SuspendAndResumeArgs saveState = await ApplicationData.Current.LocalFolder.ReadAsync<SuspendAndResumeArgs>(StateFilename);
             if (saveState?.Target != null && typeof(Page).IsAssignableFrom(saveState.Target))
             {
                 return saveState;

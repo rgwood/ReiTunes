@@ -37,7 +37,7 @@ namespace ReiTunes.Core {
         }
 
         public void Save(IEnumerable<IEvent> events) {
-            foreach (var @event in events) {
+            foreach (IEvent @event in events) {
                 Save(@event);
             }
         }

@@ -19,20 +19,20 @@ namespace ReiTunes.AzureFunctions {
             log.LogInformation(eventGridEvent.Data.ToString());
 
             //example subject: "/blobServices/default/containers/test-container/blobs/new-file.txt",
-            var tokens = eventGridEvent.Subject.Split("/");
-            var container = tokens[4];
+            string[]? tokens = eventGridEvent.Subject.Split("/");
+            string? container = tokens[4];
             if (container.Equals(Constants.MusicContainerName, StringComparison.OrdinalIgnoreCase)) {
-                var filePath = string.Join('/', tokens.Skip(6));
+                string? filePath = string.Join('/', tokens.Skip(6));
                 log.LogInformation($"Change detected in container {container} for file '{filePath}'");
 
                 // I know this is bad and idgaf. This thing shouldn't be invoked so often that it needs a shared HttpClient
-                var httpClient = new HttpClient();
-                var serverBaseUri = GetServerBaseUri();
+                HttpClient? httpClient = new HttpClient();
+                string? serverBaseUri = GetServerBaseUri();
                 httpClient.BaseAddress = new Uri(serverBaseUri);
 
                 log.LogInformation($"Server address: {serverBaseUri}");
 
-                var serverCaller = new ServerCaller(httpClient, Serilog.Core.Logger.None);
+                ServerCaller? serverCaller = new ServerCaller(httpClient, Serilog.Core.Logger.None);
 
                 await serverCaller.CreateNewLibraryItemAsync(filePath);
             }
@@ -42,7 +42,7 @@ namespace ReiTunes.AzureFunctions {
         }
 
         private static string GetServerBaseUri() {
-            var storageConnectionString = Environment.GetEnvironmentVariable("ReiTunesServerUri");
+            string? storageConnectionString = Environment.GetEnvironmentVariable("ReiTunesServerUri");
             if (storageConnectionString == null) {
                 throw new Exception("Could not get server URI");
             }

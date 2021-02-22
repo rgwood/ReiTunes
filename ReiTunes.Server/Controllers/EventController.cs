@@ -38,10 +38,10 @@ namespace ReiTunes.Server.Controllers {
         [Route("saveevents")]
         // TODO: wire up the ASP.NET Core custom deserialization instead of handling it myself?
         public async Task Save() {
-            using var reader = new StreamReader(Request.Body);
-            var serializedEvents = await reader.ReadToEndAsync();
+            using StreamReader reader = new StreamReader(Request.Body);
+            string serializedEvents = await reader.ReadToEndAsync();
 
-            var deserialized = await EventSerialization.DeserializeListAsync(serializedEvents);
+            List<IEvent> deserialized = await EventSerialization.DeserializeListAsync(serializedEvents);
 
             _eventRepo.Save(deserialized);
         }

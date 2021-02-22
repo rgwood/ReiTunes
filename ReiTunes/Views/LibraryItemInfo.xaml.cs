@@ -27,7 +27,7 @@ namespace ReiTunes.Views {
             this.InitializeComponent();
             _item = item;
 
-            foreach (var bookmark in _item.Bookmarks.OrderBy(b => b.Position)) {
+            foreach (Bookmark bookmark in _item.Bookmarks.OrderBy(b => b.Position)) {
                 if (bookmark.Emoji != null) {
                     BookmarksView.Items.Add(bookmark);
                 }
@@ -72,7 +72,7 @@ namespace ReiTunes.Views {
         private string BitsToKilobits(uint bits) => (bits / 1000).ToString();
 
         private async Task PlaySelectedBookmark() {
-            var selected = BookmarksView.SelectedItem as Bookmark;
+            Bookmark selected = BookmarksView.SelectedItem as Bookmark;
 
             if (selected != null) {
                 await _viewModel.PlayBookmark(_item, selected);

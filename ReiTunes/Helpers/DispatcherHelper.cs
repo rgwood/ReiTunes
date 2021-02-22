@@ -7,7 +7,7 @@ namespace ReiTunes.Helpers
     {
         public static void ThrowIfNotOnUiThread()
         {
-            var dispatcher = CoreWindow.GetForCurrentThread().Dispatcher;
+            CoreDispatcher dispatcher = CoreWindow.GetForCurrentThread().Dispatcher;
             if (!dispatcher.HasThreadAccess)
             {
                 throw new ThreadStateException("Not on UI thread");

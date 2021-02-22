@@ -6,7 +6,7 @@ namespace ReiTunes.Core {
     public static class SQLiteHelpers {
 
         public static void CreateEventsTableIfNotExists(this SqliteConnection conn) {
-            var sql = @"
+            string sql = @"
 CREATE TABLE IF NOT EXISTS
 events(
     Id TEXT PRIMARY KEY NOT NULL,
@@ -24,9 +24,9 @@ events(
         }
 
         public static void InsertEvent(this SqliteConnection conn, IEvent @event) {
-            var serialized = EventSerialization.Serialize(@event);
+            string serialized = EventSerialization.Serialize(@event);
 
-            var sql = @"INSERT INTO events(Id, AggregateId, AggregateType, CreatedTimeUtc, MachineName, Serialized)
+            string sql = @"INSERT INTO events(Id, AggregateId, AggregateType, CreatedTimeUtc, MachineName, Serialized)
                             VALUES(@Id, @AggregateId, @AggregateType, @CreatedTimeUtc, @MachineName, @Serialized);";
 
             conn.Execute(sql, new {
@@ -40,13 +40,13 @@ events(
         }
 
         public static SqliteConnection CreateFileDb(string filePath) {
-            var connection = new SqliteConnection($"Data Source={filePath}");
+            SqliteConnection connection = new SqliteConnection($"Data Source={filePath}");
             connection.Open();
             return connection;
         }
 
         public static SqliteConnection CreateInMemoryDb() {
-            var connection = new SqliteConnection("DataSource=:memory:");
+            SqliteConnection connection = new SqliteConnection("DataSource=:memory:");
             connection.Open();
             return connection;
         }

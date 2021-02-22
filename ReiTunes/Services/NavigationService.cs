@@ -59,7 +59,7 @@ namespace ReiTunes.Services
             // Don't open the same page multiple times
             if (Frame.Content?.GetType() != pageType || (parameter != null && !parameter.Equals(_lastParamUsed)))
             {
-                var navigationResult = Frame.Navigate(pageType, parameter, infoOverride);
+                bool navigationResult = Frame.Navigate(pageType, parameter, infoOverride);
                 if (navigationResult)
                 {
                     _lastParamUsed = parameter;

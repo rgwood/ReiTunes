@@ -25,7 +25,7 @@ namespace ReiTunes.Core {
         }
 
         public bool ContainsEvent(Guid eventId) {
-            var count = _conn.Query<long>("SELECT COUNT() FROM events WHERE Id = @EventId", new { EventId = eventId.ToString() }).Single();
+            long count = _conn.Query<long>("SELECT COUNT() FROM events WHERE Id = @EventId", new { EventId = eventId.ToString() }).Single();
             return count == 1;
         }
 
@@ -42,10 +42,10 @@ namespace ReiTunes.Core {
         }
 
         public IEnumerable<IEvent> GetEvents(Guid aggregateId) {
-            var serializedEvents =
+            List<string> serializedEvents =
                 GetSerializedEvents("select Serialized from events WHERE AggregateId = @AggregateId", new { AggregateId = aggregateId.ToString() });
 
-            var deserializedEvents = serializedEvents.Select(s => EventSerialization.Deserialize(s));
+            IEnumerable<IEvent> deserializedEvents = serializedEvents.Select(s => EventSerialization.Deserialize(s));
 
             return deserializedEvents.OrderBy(e => e.CreatedTimeUtc);
         }
@@ -58,7 +58,7 @@ namespace ReiTunes.Core {
         }
 
         public void Save(IEnumerable<IEvent> events) {
-            var sw = Stopwatch.StartNew();
+            Stopwatch sw = Stopwatch.StartNew();
             foreach (IEvent @event in events) {
                 Save(@event);
             }
@@ -67,8 +67,8 @@ namespace ReiTunes.Core {
         }
 
         public IEnumerable<IEvent> GetAllEventsFromMachine(string machineName) {
-            var sw = Stopwatch.StartNew();
-            var ret = GetSerializedEvents("select Serialized from events where MachineName = @MachineName COLLATE NOCASE;", new { MachineName = machineName })
+            Stopwatch sw = Stopwatch.StartNew();
+            IEnumerable<IEvent> ret = GetSerializedEvents("select Serialized from events where MachineName = @MachineName COLLATE NOCASE;", new { MachineName = machineName })
                 .Select(s => EventSerialization.Deserialize(s));
             _logger.Information("GetAllEventsFromMachine took {ElapsedMs}", sw.ElapsedMilliseconds);
             return ret;

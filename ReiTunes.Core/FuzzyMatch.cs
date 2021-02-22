@@ -18,7 +18,7 @@ namespace ReiTunes.Core {
                 return new ObservableCollection<LibraryItem>(items);
             }
             else {
-                var fuzzyMatchResults =
+                IEnumerable<LibraryItem> fuzzyMatchResults =
                     (from item in items
                      let fuzzyResult = FuzzyMatcher.FuzzyMatch(item.AllSearchProperties, filterString)
                      where fuzzyResult.isMatch
@@ -47,37 +47,37 @@ namespace ReiTunes.Core {
             const int unmatchedLetterPenalty = 0;      // penalty for every letter that doesn't matter
 
             // Loop variables
-            var score = 0;
-            var patternIdx = 0;
-            var patternLength = pattern.Length;
-            var strIdx = 0;
-            var strLength = stringToSearch.Length;
+            int score = 0;
+            int patternIdx = 0;
+            int patternLength = pattern.Length;
+            int strIdx = 0;
+            int strLength = stringToSearch.Length;
             int prevMatched = 0;
-            var prevLower = false;
-            var prevSeparator = true;                   // true if first letter match gets separator bonus
+            bool prevLower = false;
+            bool prevSeparator = true;                   // true if first letter match gets separator bonus
 
             // Use "best" matched letter if multiple string letters match the pattern
             char? bestLetter = null;
             char? bestLower = null;
             int? bestLetterIdx = null;
-            var bestLetterScore = 0;
+            int bestLetterScore = 0;
 
-            var matchedIndices = new List<int>();
+            List<int> matchedIndices = new List<int>();
 
             // Loop over strings
             while (strIdx != strLength) {
-                var patternChar = patternIdx != patternLength ? pattern[patternIdx] as char? : null;
-                var strChar = stringToSearch[strIdx];
+                char? patternChar = patternIdx != patternLength ? pattern[patternIdx] as char? : null;
+                char strChar = stringToSearch[strIdx];
 
-                var patternLower = patternChar != null ? char.ToLower((char)patternChar) as char? : null;
-                var strLower = char.ToLower(strChar);
-                var strUpper = char.ToUpper(strChar);
+                char? patternLower = patternChar != null ? char.ToLower((char)patternChar) as char? : null;
+                char strLower = char.ToLower(strChar);
+                char strUpper = char.ToUpper(strChar);
 
-                var nextMatch = patternChar != null && patternLower == strLower;
-                var rematch = bestLetter != null && bestLower == strLower;
+                bool nextMatch = patternChar != null && patternLower == strLower;
+                bool rematch = bestLetter != null && bestLower == strLower;
 
-                var advanced = nextMatch && bestLetter != null;
-                var patternRepeat = bestLetter != null && patternChar != null && bestLower == patternLower;
+                bool advanced = nextMatch && bestLetter != null;
+                bool patternRepeat = bestLetter != null && patternChar != null && bestLower == patternLower;
                 if (advanced || patternRepeat) {
                     score += bestLetterScore;
                     matchedIndices.Add((int)bestLetterIdx);
@@ -88,12 +88,12 @@ namespace ReiTunes.Core {
                 }
 
                 if (nextMatch || rematch) {
-                    var newScore = 0;
+                    int newScore = 0;
 
                     // Apply penalty for each letter before the first pattern match
                     // Note: Math.Max because penalties are negative values. So max is smallest penalty.
                     if (patternIdx == 0) {
-                        var penalty = Math.Max(strIdx * leadingLetterPenalty, maxLeadingLetterPenalty);
+                        int penalty = Math.Max(strIdx * leadingLetterPenalty, maxLeadingLetterPenalty);
                         score += penalty;
                     }
 

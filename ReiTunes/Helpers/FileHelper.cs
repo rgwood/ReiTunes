@@ -9,7 +9,7 @@ namespace ReiTunes.Helpers {
         public const string LibraryFolderName = "ReiTunes";
 
         public async static Task<StorageFolder> CreateLibraryFolderIfDoesntExist() {
-            var musicLibrary = KnownFolders.MusicLibrary;
+            StorageFolder musicLibrary = KnownFolders.MusicLibrary;
             return await musicLibrary.CreateFolderAsync(LibraryFolderName, CreationCollisionOption.OpenIfExists);
         }
 

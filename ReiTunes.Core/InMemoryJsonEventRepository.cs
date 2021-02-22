@@ -17,7 +17,7 @@ namespace ReiTunes.Core {
 
         //TODO: this is stupid and slow, find a better way
         public IEnumerable<IEvent> GetAllEvents() {
-            var serializedEvents = _events.Values.SelectMany(e => e);
+            IEnumerable<string> serializedEvents = _events.Values.SelectMany(e => e);
             return serializedEvents.Select(e => EventSerialization.Deserialize(e));
         }
 
@@ -27,13 +27,13 @@ namespace ReiTunes.Core {
         }
 
         public IEnumerable<IEvent> GetEvents(Guid aggregateId) {
-            var serializedEvents = _events[aggregateId];
-            var deserialized = serializedEvents.Select(e => EventSerialization.Deserialize(e));
+            List<string> serializedEvents = _events[aggregateId];
+            IEnumerable<IEvent> deserialized = serializedEvents.Select(e => EventSerialization.Deserialize(e));
             return deserialized.Cast<IEvent>();
         }
 
         public void Save(IEnumerable<IEvent> events) {
-            foreach (var @event in events) {
+            foreach (IEvent @event in events) {
                 Save(@event);
             }
         }
@@ -46,7 +46,7 @@ namespace ReiTunes.Core {
                 throw new Exception($"Machine name not specified on event {@event.Id}");
             }
 
-            var serialized = EventSerialization.Serialize(@event);
+            string serialized = EventSerialization.Serialize(@event);
             if (_events.ContainsKey(@event.AggregateId)) {
                 _events[@event.AggregateId].Add(serialized);
             }

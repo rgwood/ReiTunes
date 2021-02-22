@@ -38,7 +38,7 @@ namespace ReiTunes.Core {
         }
 
         public void Apply(IEvent evt) {
-            var evtType = evt.GetType();
+            Type evtType = evt.GetType();
             if (!_eventAppliers.ContainsKey(evtType)) {
                 throw new NotImplementedException($"Apply() not implemented for {evtType}");
             }
@@ -46,7 +46,7 @@ namespace ReiTunes.Core {
         }
 
         public void Apply(IEnumerable<IEvent> history) {
-            foreach (var evt in history) {
+            foreach (IEvent evt in history) {
                 Apply(evt);
             }
         }

@@ -17,8 +17,8 @@ namespace ReiTunes.Helpers {
         }
 
         public static async Task SaveAsync<T>(this StorageFolder folder, string name, T content) {
-            var file = await folder.CreateFileAsync(GetFileName(name), CreationCollisionOption.ReplaceExisting);
-            var fileContent = await Json.SerializeAsync(content);
+            StorageFile file = await folder.CreateFileAsync(GetFileName(name), CreationCollisionOption.ReplaceExisting);
+            string fileContent = await Json.SerializeAsync(content);
 
             await FileIO.WriteTextAsync(file, fileContent);
         }
@@ -28,8 +28,8 @@ namespace ReiTunes.Helpers {
                 return default(T);
             }
 
-            var file = await folder.GetFileAsync($"{name}.json");
-            var fileContent = await FileIO.ReadTextAsync(file);
+            StorageFile file = await folder.GetFileAsync($"{name}.json");
+            string fileContent = await FileIO.ReadTextAsync(file);
 
             return await Json.DeserializeAsync<T>(fileContent);
         }
@@ -61,16 +61,16 @@ namespace ReiTunes.Helpers {
                 throw new ArgumentException("ExceptionSettingsStorageExtensionsFileNameIsNullOrEmpty".GetLocalized(), nameof(fileName));
             }
 
-            var storageFile = await folder.CreateFileAsync(fileName, options);
+            StorageFile storageFile = await folder.CreateFileAsync(fileName, options);
             await FileIO.WriteBytesAsync(storageFile, content);
             return storageFile;
         }
 
         public static async Task<byte[]> ReadFileAsync(this StorageFolder folder, string fileName) {
-            var item = await folder.TryGetItemAsync(fileName).AsTask().ConfigureAwait(false);
+            IStorageItem item = await folder.TryGetItemAsync(fileName).AsTask().ConfigureAwait(false);
 
             if ((item != null) && item.IsOfType(StorageItemTypes.File)) {
-                var storageFile = await folder.GetFileAsync(fileName);
+                StorageFile storageFile = await folder.GetFileAsync(fileName);
                 byte[] content = await storageFile.ReadBytesAsync();
                 return content;
             }
@@ -81,9 +81,9 @@ namespace ReiTunes.Helpers {
         public static async Task<byte[]> ReadBytesAsync(this StorageFile file) {
             if (file != null) {
                 using (IRandomAccessStream stream = await file.OpenReadAsync()) {
-                    using (var reader = new DataReader(stream.GetInputStreamAt(0))) {
+                    using (DataReader reader = new DataReader(stream.GetInputStreamAt(0))) {
                         await reader.LoadAsync((uint)stream.Size);
-                        var bytes = new byte[stream.Size];
+                        byte[] bytes = new byte[stream.Size];
                         reader.ReadBytes(bytes);
                         return bytes;
                     }

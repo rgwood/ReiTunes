@@ -136,10 +136,10 @@ namespace ReiTunes {
         }
 
         public async Task FilterItems(string filterString) {
-            var sw = Stopwatch.StartNew();
+            Stopwatch sw = Stopwatch.StartNew();
 
             if (!string.IsNullOrEmpty(filterString)) {
-                var filteredItems = await Task.Run(() => FuzzyMatcher.FuzzyMatch(filterString, LibraryItems));
+                ObservableCollection<LibraryItem> filteredItems = await Task.Run(() => FuzzyMatcher.FuzzyMatch(filterString, LibraryItems));
 
                 _logger.Information("Fuzzy match time: {ElapsedMs}", sw.ElapsedMilliseconds);
 
@@ -153,7 +153,7 @@ namespace ReiTunes {
         }
 
         public async Task<StorageFile> GetStorageFile(LibraryItem item) {
-            var folder = await GetStorageFolderForItem(item);
+            StorageFolder folder = await GetStorageFolderForItem(item);
             return await folder.TryGetItemAsync(GetFileNameFromFullPath(item.FilePath)) as StorageFile;
         }
 
@@ -161,11 +161,11 @@ namespace ReiTunes {
             if (item == null)
                 return;
 
-            var folder = await GetStorageFolderForItem(item);
-            var storageItem = await folder.TryGetItemAsync(GetFileNameFromFullPath(item.FilePath));
+            StorageFolder folder = await GetStorageFolderForItem(item);
+            IStorageItem storageItem = await folder.TryGetItemAsync(GetFileNameFromFullPath(item.FilePath));
 
             if (storageItem != null) {
-                var options = new FolderLauncherOptions();
+                FolderLauncherOptions options = new FolderLauncherOptions();
                 options.ItemsToSelect.Add(storageItem);
                 await Launcher.LaunchFolderAsync(folder, options);
             }
@@ -179,14 +179,14 @@ namespace ReiTunes {
 
         // given a path like foo/bar/baz.txt, we need to get a StorageFolder for `bar` so we can save to it
         private async Task<StorageFolder> GetStorageFolderForItem(LibraryItem item) {
-            var split = item.FilePath.Split('/');
-            var directories = new Queue<string>(split.Take(split.Length - 1));
+            string[] split = item.FilePath.Split('/');
+            Queue<string> directories = new Queue<string>(split.Take(split.Length - 1));
 
-            var folder = _libraryFolder;
+            StorageFolder folder = _libraryFolder;
 
             while (directories.Any()) {
-                var curr = directories.Dequeue();
-                var subFolder = await folder.TryGetItemAsync(curr);
+                string curr = directories.Dequeue();
+                IStorageItem subFolder = await folder.TryGetItemAsync(curr);
                 if (subFolder == null) {
                     folder = await folder.CreateFolderAsync(curr);
                 }
@@ -212,7 +212,7 @@ namespace ReiTunes {
             if (libraryItemToPlay == null)
                 return;
 
-            var storageItem = await GetStorageFile(libraryItemToPlay);
+            StorageFile storageItem = await GetStorageFile(libraryItemToPlay);
 
             if (storageItem == null) { // file not found, download it
                 // Bad things happen if we try to download a 2nd file while one is already in progress
@@ -227,9 +227,9 @@ namespace ReiTunes {
                 return;
             }
             else if (storageItem.IsOfType(StorageItemTypes.File)) {
-                var file = storageItem;
+                StorageFile file = storageItem;
 
-                var mediaPlaybackItem = new MediaPlaybackItem(MediaSource.CreateFromStorageFile(file));
+                MediaPlaybackItem mediaPlaybackItem = new MediaPlaybackItem(MediaSource.CreateFromStorageFile(file));
                 _mediaPlayer.Source = mediaPlaybackItem;
                 CurrentlyPlayingItem = libraryItemToPlay;
                 await LoadMetadataAndThumbnailForCurrentlyPlayingItem();
@@ -253,7 +253,7 @@ namespace ReiTunes {
             if (currentlyPlaying == null || mediaPlaybackItem == null)
                 return;
 
-            var file = await GetStorageFile(currentlyPlaying);
+            StorageFile file = await GetStorageFile(currentlyPlaying);
             await UpdateSystemMediaTransportControlsAndThumbnail(currentlyPlaying, mediaPlaybackItem, file);
         }
 
@@ -280,7 +280,7 @@ namespace ReiTunes {
             }
 
             if (fileWithThumbnail != null) {
-                var thumbnail = await GetAndSetThumbnail(fileWithThumbnail);
+                StorageItemThumbnail thumbnail = await GetAndSetThumbnail(fileWithThumbnail);
 
                 if (thumbnail != null) {
                     props.Thumbnail = RandomAccessStreamReference.CreateFromStream(thumbnail);
@@ -291,10 +291,10 @@ namespace ReiTunes {
         }
 
         private async Task<StorageItemThumbnail> GetAndSetThumbnail(StorageFile fileWithThumbnail) {
-            var thumbnail = await fileWithThumbnail.GetThumbnailAsync(ThumbnailMode.MusicView, 400, ThumbnailOptions.UseCurrentScale);
+            StorageItemThumbnail thumbnail = await fileWithThumbnail.GetThumbnailAsync(ThumbnailMode.MusicView, 400, ThumbnailOptions.UseCurrentScale);
 
             if (thumbnail != null && thumbnail.Type == ThumbnailType.Image) {
-                var img = new BitmapImage();
+                BitmapImage img = new BitmapImage();
                 img.SetSource(thumbnail);
                 CurrentlyPlayingItemThumbnail = img;
                 return thumbnail;
@@ -312,7 +312,7 @@ namespace ReiTunes {
             _logger.Information("Downloading music file {filePath}", libraryItemToPlay.FilePath);
             CurrentlyPlayingItemThumbnail = null;
             Uri downloadUri = GetUri(libraryItemToPlay);
-            var downloadFile = await folderToSaveTo.CreateFileAsync(fileName);
+            StorageFile downloadFile = await folderToSaveTo.CreateFileAsync(fileName);
             DownloadInProgress = true;
             BackgroundDownloader downloader = new BackgroundDownloader();
             DownloadOperation download = downloader.CreateDownload(downloadUri, downloadFile);
@@ -322,10 +322,10 @@ namespace ReiTunes {
             UpdateDownloadStatusOnUiThread(0, "Starting download...");
 
             Progress<DownloadOperation> progressCallback = new Progress<DownloadOperation>(HandleDownloadProgress);
-            var downloadTask = download.StartAsync().AsTask(progressCallback);
-            var mediaSource = MediaSource.CreateFromDownloadOperation(download);
+            Task<DownloadOperation> downloadTask = download.StartAsync().AsTask(progressCallback);
+            MediaSource mediaSource = MediaSource.CreateFromDownloadOperation(download);
 
-            var mediaPlaybackItem = new MediaPlaybackItem(mediaSource);
+            MediaPlaybackItem mediaPlaybackItem = new MediaPlaybackItem(mediaSource);
 
             _mediaPlayer.Source = mediaPlaybackItem;
 
@@ -352,8 +352,8 @@ namespace ReiTunes {
                 await LoadMetadataAndThumbnailForCurrentlyPlayingItem();
             }
             else {
-                var mbReceived = progress.BytesReceived / 1024d / 1024d;
-                var totalMb = progress.TotalBytesToReceive / 1024d / 1024d;
+                double mbReceived = progress.BytesReceived / 1024d / 1024d;
+                double totalMb = progress.TotalBytesToReceive / 1024d / 1024d;
                 string message = $"Downloading: {mbReceived:N1}/{totalMb:N1} MB";
                 UpdateDownloadStatusOnUiThread(percentageFinished, message);
             }
@@ -362,7 +362,7 @@ namespace ReiTunes {
         private void UpdateDownloadStatusOnUiThread(double percentageFinished, string message) {
             // The ignore variable is to silence an async warning. Seems bad but
             // they did it in the BackgroundTransfer example 🤔
-            var ignore = CoreApplication.MainView.CoreWindow.Dispatcher.RunAsync(
+            Windows.Foundation.IAsyncAction ignore = CoreApplication.MainView.CoreWindow.Dispatcher.RunAsync(
                 CoreDispatcherPriority.Normal, () => {
                     DownloadStatus = message;
                     DownloadPercentFinished = percentageFinished;
@@ -371,7 +371,7 @@ namespace ReiTunes {
 
         public void CopyUriToClipboard(LibraryItem item) {
             DataPackage dataPackage = new() { RequestedOperation = DataPackageOperation.Copy };
-            var uri = GetUri(item).ToString();
+            string uri = GetUri(item).ToString();
             dataPackage.SetText(uri);
             Clipboard.SetContent(dataPackage);
         }

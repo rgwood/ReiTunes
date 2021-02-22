@@ -104,7 +104,7 @@ namespace ReiTunes.Core {
         }
 
         public LibraryItem(LibraryItemEventFactory eventFactory, string relativePath) : this(eventFactory) {
-            var fileName = GetFileNameFromPath(relativePath);
+            string fileName = GetFileNameFromPath(relativePath);
             ApplyButDoNotCommit(_eventFactory.GetCreatedEvent(Guid.NewGuid(), fileName, relativePath));
         }
 

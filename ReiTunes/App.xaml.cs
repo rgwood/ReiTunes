@@ -48,7 +48,7 @@ namespace ReiTunes {
         }
 
         private void App_UnhandledException(object sender, Windows.UI.Xaml.UnhandledExceptionEventArgs e) {
-            var logger = ServiceLocator.Current.GetService<ILogger>();
+            ILogger logger = ServiceLocator.Current.GetService<ILogger>();
             logger.Fatal("Unhandled exception '{Message}': {Exception}", e.Message, e.Exception);
 
             // help the user take a look at the logs
@@ -65,11 +65,11 @@ namespace ReiTunes {
                 await Startup.ActivateAsync(args);
             }
 
-            var coreTitleBar = CoreApplication.GetCurrentView().TitleBar;
+            CoreApplicationViewTitleBar coreTitleBar = CoreApplication.GetCurrentView().TitleBar;
             // Hide default title bar. This setting persists and needs to be reset manually
             coreTitleBar.ExtendViewIntoTitleBar = true;
 
-            var titleBar = ApplicationView.GetForCurrentView().TitleBar;
+            ApplicationViewTitleBar titleBar = ApplicationView.GetForCurrentView().TitleBar;
             _themeListener = new ThemeListener();
             _themeListener.ThemeChanged += SetCloseButtonBackgroundColorFromTheme;
 
@@ -80,7 +80,7 @@ namespace ReiTunes {
         }
 
         private void SetCloseButtonBackgroundColorFromTheme(ThemeListener sender) {
-            var titleBar = ApplicationView.GetForCurrentView().TitleBar;
+            ApplicationViewTitleBar titleBar = ApplicationView.GetForCurrentView().TitleBar;
 
             switch (sender.CurrentTheme) {
                 case ApplicationTheme.Light:
@@ -107,7 +107,7 @@ namespace ReiTunes {
             if (shareOperation.Data.Contains(StandardDataFormats.WebLink)) {
                 Uri uri = await shareOperation.Data.GetWebLinkAsync();
                 if (uri != null) {
-                    var logger = ServiceLocator.Current.GetService<ILogger>();
+                    ILogger logger = ServiceLocator.Current.GetService<ILogger>();
                     logger.Information("Received URI: {uri}", uri);
                     args.ShareOperation.ReportCompleted();
                     return;
@@ -118,7 +118,7 @@ namespace ReiTunes {
         }
 
         private async void App_EnteredBackground(object sender, EnteredBackgroundEventArgs e) {
-            var deferral = e.GetDeferral();
+            Windows.Foundation.Deferral deferral = e.GetDeferral();
             await ServiceLocator.Current.GetService<SuspendAndResumeService>().SaveStateAsync();
             deferral.Complete();
         }

@@ -7,7 +7,7 @@ namespace ReiTunes.DevTools {
 
         private static void Main(string[] args) {
             // setx AZURE_STORAGE_CONNECTION_STRING "<yourconnectionstring>"
-            var connectionString = Environment.GetEnvironmentVariable("AZURE_STORAGE_CONNECTION_STRING");
+            string connectionString = Environment.GetEnvironmentVariable("AZURE_STORAGE_CONNECTION_STRING");
             BlobServiceClient blobServiceClient = new BlobServiceClient(connectionString);
             BlobContainerClient containerClient = blobServiceClient.GetBlobContainerClient(Core.Constants.MusicContainerName);
 

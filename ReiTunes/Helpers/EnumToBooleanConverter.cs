@@ -17,7 +17,7 @@ namespace ReiTunes.Helpers
                     throw new ArgumentException("ExceptionEnumToBooleanConverterValueMustBeAnEnum".GetLocalized());
                 }
 
-                var enumValue = Enum.Parse(EnumType, enumString);
+                object enumValue = Enum.Parse(EnumType, enumString);
 
                 return enumValue.Equals(value);
             }
