@@ -24,30 +24,16 @@ namespace ReiTunes.Configuration {
             serviceCollection.AddSingleton<SuspendAndResumeService>();
             serviceCollection.AddSingleton<CommandLineActivationHandler>();
 
-            serviceCollection.AddHttpClient(Options.DefaultName, (client) => { client.BaseAddress = new Uri(Secrets.ServerUrl); });
+            serviceCollection.AddHttpClient();
 
             serviceCollection.AddSingleton<HttpClient>((provider) => provider.GetService<IHttpClientFactory>().CreateClient());
-
             serviceCollection.AddSingleton<ILogger>((_) => LoggingFactory.BuildLogger());
-
-            // Only ever have one player in the application
             serviceCollection.AddSingleton<PlayerViewModel>();
-
             serviceCollection.AddSingleton<ServerCaller>();
 
-            //serviceCollection.AddSingleton((provider) => new ServerCaller(provider.GetService<IHttpClientFactory>().CreateClient()));
-
             string dbPath = FileHelper.GetLibraryDbPath();
-
             serviceCollection.AddSingleton<SqliteConnection>((_) => SQLiteHelpers.CreateFileDb(dbPath));
-
             serviceCollection.AddSingleton<Library>();
-
-            //serviceCollection.AddSingleton((provider) => new Library(Environment.MachineName, SQLiteHelpers.CreateFileDb(dbPath),
-            //    provider.GetService<ServerCaller>(), provider.GetService<ILogger>()));
-
-            //serviceCollection.AddScoped<ICommonServices, CommonServices>();
-            //serviceCollection.AddTransient<LoginViewModel>();
 
             _rootServiceProvider = serviceCollection.BuildServiceProvider();
         }

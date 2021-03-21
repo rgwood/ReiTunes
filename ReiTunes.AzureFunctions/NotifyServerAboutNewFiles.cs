@@ -27,11 +27,6 @@ namespace ReiTunes.AzureFunctions {
 
                 // I know this is bad and idgaf. This thing shouldn't be invoked so often that it needs a shared HttpClient
                 HttpClient? httpClient = new HttpClient();
-                string? serverBaseUri = GetServerBaseUri();
-                httpClient.BaseAddress = new Uri(serverBaseUri);
-
-                log.LogInformation($"Server address: {serverBaseUri}");
-
                 ServerCaller? serverCaller = new ServerCaller(httpClient, Serilog.Core.Logger.None);
 
                 await serverCaller.CreateNewLibraryItemAsync(filePath);

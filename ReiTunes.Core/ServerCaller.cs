@@ -22,7 +22,7 @@ namespace ReiTunes.Core {
 
         public async Task<List<string>> PullAllSerializedEventsAsync() {
             Stopwatch sw = Stopwatch.StartNew();
-            HttpResponseMessage response = await _client.GetAsync("/reitunes/allevents");
+            HttpResponseMessage response = await _client.GetAsync(Secrets.ServerUrl + "/reitunes/allevents");
             response.EnsureSuccessStatusCode();
 
             string contents = await response.Content.ReadAsStringAsync();
@@ -59,7 +59,7 @@ namespace ReiTunes.Core {
                 int serializedKiloByteCount = UnicodeEncoding.UTF8.GetByteCount(serialized) / 1024;
                 _logger.Information("About to push {EventCount} events. Serialized size: {eventsSizeKb} kb", events.Count(), serializedKiloByteCount);
 
-                HttpResponseMessage putResponse = await _client.PutAsync("/reitunes/saveevents", content);
+                HttpResponseMessage putResponse = await _client.PutAsync(Secrets.ServerUrl + "/reitunes/saveevents", content);
 
                 putResponse.EnsureSuccessStatusCode();
             }
@@ -69,7 +69,7 @@ namespace ReiTunes.Core {
 
         public async Task CreateNewLibraryItemAsync(string filePath) {
             string uri = QueryHelpers.AddQueryString("/reitunes/createitem", "filePath", filePath);
-            HttpResponseMessage putResponse = await _client.PutAsync(uri, null);
+            HttpResponseMessage putResponse = await _client.PutAsync(Secrets.ServerUrl + uri, null);
             putResponse.EnsureSuccessStatusCode();
         }
     }
