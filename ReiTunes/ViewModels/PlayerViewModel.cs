@@ -309,9 +309,12 @@ namespace ReiTunes {
             string fileName = GetFileNameFromFullPath(libraryItemToPlay.FilePath);
             StorageFolder folderToSaveTo = await GetStorageFolderForItem(libraryItemToPlay);
 
-            _logger.Information("Downloading music file {filePath}", libraryItemToPlay.FilePath);
+            
             CurrentlyPlayingItemThumbnail = null;
             Uri downloadUri = GetUri(libraryItemToPlay);
+
+            _logger.Information($"Downloading music file from {downloadUri}");
+
             StorageFile downloadFile = await folderToSaveTo.CreateFileAsync(fileName);
             DownloadInProgress = true;
             BackgroundDownloader downloader = new BackgroundDownloader();
