@@ -531,7 +531,7 @@ namespace ReiTunes {
 
             items.Add(new MenuFlyoutSeparator());
 
-            LibraryItem item = GetSelectedLibraryItem();
+            LibraryItem item = flyout.Target.DataContext as LibraryItem;
             if (item == null) {
                 flyout.Items.Add(new MenuFlyoutItem() { IsEnabled = false, Text = "Error: selected library item null" });
                 return;
