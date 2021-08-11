@@ -291,6 +291,7 @@ namespace ReiTunes {
         }
 
         private async Task<StorageItemThumbnail> GetAndSetThumbnail(StorageFile fileWithThumbnail) {
+            // TODO: GetThumbnailAsync is unreliable (Windows bug), try PInvoking SHGetFileInfo or IShellItemImageFactory instead 
             StorageItemThumbnail thumbnail = await fileWithThumbnail.GetThumbnailAsync(ThumbnailMode.MusicView, 400, ThumbnailOptions.UseCurrentScale);
 
             if (thumbnail != null && thumbnail.Type == ThumbnailType.Image) {
