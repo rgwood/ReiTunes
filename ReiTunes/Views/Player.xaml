@@ -102,15 +102,7 @@
                         </MediaPlayerElement.TransportControls>
                     </MediaPlayerElement>
                 </StackPanel>
-                <!--  Thumbnails defined after player so it's above the player when rotating  -->
-                <Image
-                    x:Name="NewThumbnailImage"
-                    Grid.Column="0"
-                    Margin="5,5,0,5"
-                    HorizontalAlignment="Right"
-                    VerticalAlignment="Center"
-                    Opacity="0"
-                    Source="{x:Bind NewThumbnail, TargetNullValue=ms-appx:///Assets/VectorIcon.svg, Mode=OneWay}" />
+                <!--  Thumbnail defined after player so it's above the player when rotating  -->
                 <Image
                     x:Name="CurrThumbnailImage"
                     Grid.Column="0"
