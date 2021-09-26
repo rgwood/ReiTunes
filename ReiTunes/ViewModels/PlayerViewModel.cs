@@ -101,6 +101,21 @@ namespace ReiTunes {
             BookmarkCommand = new RelayCommand(Bookmark);
 
             LoadItemsFromLibrary();
+
+        }
+
+        public async Task<bool> TryPlayItem(string aggregateId) {
+            try {
+                Guid id = Guid.Parse(aggregateId);
+                LibraryItem libraryItemToPlay = LibraryItems.Single(i => i.AggregateId == id);
+                await ChangeSource(libraryItemToPlay);
+                MediaPlayer.Play();
+                return true;
+            }
+            catch (Exception ex){
+                _logger.Error(ex, $"Failed to play item {aggregateId}");
+                return false;
+            }
         }
 
         private async void MediaPlayer_MediaEnded(MediaPlayer sender, object args) {
