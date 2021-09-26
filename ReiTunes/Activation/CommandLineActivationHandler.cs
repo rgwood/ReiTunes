@@ -7,6 +7,15 @@ namespace ReiTunes.Activation
 {
     internal class CommandLineActivationHandler : ActivationHandler<CommandLineActivatedEventArgs>
     {
+        internal static string IdOfItemToPlayOnStartup = null;
+
+        // fzf gives us args like "559146d5-4901-4e09-abd9-e732a23f8429\tSongTitle...
+        // strip away quotes and everything from the \t onward
+        internal static string TrimArgsToGuidOnly(string input) {
+            return input.Substring(0, input.IndexOf('\t'))
+                .Trim('\"');
+        }
+
         // Learn more about these EventArgs at https://docs.microsoft.com/en-us/uwp/api/windows.applicationmodel.activation.commandlineactivatedeventargs
         protected override async Task HandleInternalAsync(CommandLineActivatedEventArgs args)
         {
@@ -14,6 +23,8 @@ namespace ReiTunes.Activation
 
             // Because these are supplied by the caller, they should be treated as untrustworthy.
             string cmdLineString = operation.Arguments;
+
+            IdOfItemToPlayOnStartup = TrimArgsToGuidOnly(cmdLineString);
 
             // The directory where the command-line activation request was made.
             // This is typically not the install location of the app itself, but could be any arbitrary path.

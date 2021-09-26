@@ -1,4 +1,5 @@
 ﻿using Microsoft.Toolkit.Uwp.UI.Controls;
+using ReiTunes.Activation;
 using ReiTunes.Configuration;
 using ReiTunes.Core;
 using ReiTunes.Helpers;
@@ -70,6 +71,13 @@ namespace ReiTunes {
                 .Throttle(TimeSpan.FromMilliseconds(300))
                 .ObserveOnCoreDispatcher()
                 .Subscribe(async a => await FilterVMUsingFilterBoxText());
+
+            Loaded += Player_Loaded;
+        }
+
+        private async void Player_Loaded(object sender, RoutedEventArgs e) {
+            if(CommandLineActivationHandler.IdOfItemToPlayOnStartup != null)
+                await ViewModel.TryPlayItem(CommandLineActivationHandler.IdOfItemToPlayOnStartup);
         }
 
         private void ViewModel_PropertyChanged(object sender, PropertyChangedEventArgs e) {
