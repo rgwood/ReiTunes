@@ -16,17 +16,20 @@ namespace ReiTunes.Core {
 
         public List<LibraryItem> Items { get; set; } = new List<LibraryItem>();
         private readonly ISerializedEventRepository _repo;
-        private readonly ServerCaller _caller;
+        private readonly IServerCaller _caller;
         private readonly ILogger _logger;
         private readonly LibraryItemEventFactory _eventFactory;
 
-        public Library(SqliteConnection connection, ServerCaller caller, ILogger logger)
+        public Library(SqliteConnection connection, ILogger logger)
+            : this(Environment.MachineName, connection, new NoopServerCaller(), logger, new Clock()) { }
+
+        public Library(SqliteConnection connection, IServerCaller caller, ILogger logger)
             : this(Environment.MachineName, connection, caller, logger, new Clock()) { }
 
-        public Library(string machineName, SqliteConnection connection, ServerCaller caller, ILogger logger)
+        public Library(string machineName, SqliteConnection connection, IServerCaller caller, ILogger logger)
             : this(machineName, connection, caller, logger, new Clock()) { }
 
-        public Library(string machineName, SqliteConnection connection, ServerCaller caller, ILogger logger, IClock clock) {
+        public Library(string machineName, SqliteConnection connection, IServerCaller caller, ILogger logger, IClock clock) {
             MachineName = machineName;
             _caller = caller;
             _logger = logger;

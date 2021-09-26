@@ -10,7 +10,7 @@ using System.Threading.Tasks;
 namespace ReiTunes.Core {
 
     // There's gotta be a better name for this... but, like, it's a class for calling the server
-    public class ServerCaller {
+    public class ServerCaller : IServerCaller {
         private const int EventPushBatchSize = 1000; // totally arbitrary limit on the # of events to push at once. Not even sure if we need this, but it makes me feel better
         private readonly HttpClient _client;
         private readonly ILogger _logger;
