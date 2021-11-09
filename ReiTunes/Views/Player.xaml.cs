@@ -64,11 +64,11 @@ namespace ReiTunes {
 
             SetUpThumbnailRotationAnimation();
 
-            // without throttling, the DataGrid can't refresh fast enough to keep up with typing
+            // without throttling, the DataGrid can't always refresh fast enough to keep up with typing
             IDisposable textChangedSequence =
                 System.Reactive.Linq.Observable.FromEventPattern<TextChangedEventArgs>(FilterBox,
                 nameof(FilterBox.TextChanged))
-                .Throttle(TimeSpan.FromMilliseconds(300))
+                .Throttle(TimeSpan.FromMilliseconds(20))
                 .ObserveOnCoreDispatcher()
                 .Subscribe(async a => await FilterVMUsingFilterBoxText());
 
