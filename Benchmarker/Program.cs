@@ -5,12 +5,12 @@ using ReiTunes.Core;
 namespace Benchmarker;
 
 internal class Program {
-
     private static void Main(string[] args) {
         BenchmarkDotNet.Reports.Summary summary = BenchmarkRunner.Run<EventBenchmarker>();
     }
 }
 
+[MemoryDiagnoser]
 [ShortRunJob]
 public class EventBenchmarker {
     private Library _lib;
@@ -28,14 +28,20 @@ public class EventBenchmarker {
     }
 
     [Benchmark]
-    public SQLiteEventRepository OpenDb() {
-
+    public SQLiteEventRepository OpenSqliteDbFromDisk() {
         string libraryPath = @"C:\Users\reill\Music\library.db";
         return new SQLiteEventRepository(SQLiteHelpers.CreateFileDb(libraryPath));
     }
 
     [Benchmark]
-    public List<IEvent> OpenDbAndGetAllEvents() {
+    public List<string> ReadAllEvents_RawJson() {
+        string libraryPath = @"C:\Users\reill\Music\library.db";
+        var repo = new SQLiteEventRepository(SQLiteHelpers.CreateFileDb(libraryPath));
+        return repo.GetAllSerializedEvents().ToList();
+    }
+
+    [Benchmark]
+    public List<IEvent> ReadAllEvents_Deserialized() {
         string libraryPath = @"C:\Users\reill\Music\library.db";
         var repo = new SQLiteEventRepository(SQLiteHelpers.CreateFileDb(libraryPath));
         return repo.GetAllEvents().ToList();
