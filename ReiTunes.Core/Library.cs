@@ -74,11 +74,16 @@ namespace ReiTunes.Core {
             RebuildItems();
         }
 
-        private void RebuildItems() {
+        internal void RebuildItems() {
             Stopwatch sw = Stopwatch.StartNew();
-            Items.Clear();
-
             IEnumerable<IEvent> events = _repo.GetAllEvents();
+            RebuildItems(events);
+
+            _logger.Information("Rebuilding all items took {ElapsedMs} ms", sw.ElapsedMilliseconds);
+        }
+
+        internal void RebuildItems(IEnumerable<IEvent> events) {
+            Items.Clear();
 
             IEnumerable<IOrderedEnumerable<IEvent>> groupedEvents = events.GroupBy(e => e.AggregateId).Select(g => g.OrderBy(e => e.CreatedTimeUtc).ThenBy(e => e.LocalId));
 
@@ -97,8 +102,6 @@ namespace ReiTunes.Core {
 
                 Items.Add(aggregate);
             }
-
-            _logger.Information("Rebuilding all items took {ElapsedMs} ms", sw.ElapsedMilliseconds);
 
             List<LibraryItem> itemsToDelete = Items.Where(i => i.Tombstoned).ToList();
 

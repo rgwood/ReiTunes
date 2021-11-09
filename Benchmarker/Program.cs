@@ -1,62 +1,77 @@
 ﻿using BenchmarkDotNet.Attributes;
 using BenchmarkDotNet.Running;
 using ReiTunes.Core;
-using System;
-using System.Collections.Generic;
-using System.Linq;
 
-namespace Benchmarker {
+namespace Benchmarker;
 
-    internal class Program {
+internal class Program {
 
-        private static void Main(string[] args) {
-            BenchmarkDotNet.Reports.Summary summary = BenchmarkRunner.Run<EventBenchmarker>();
-        }
+    private static void Main(string[] args) {
+        BenchmarkDotNet.Reports.Summary summary = BenchmarkRunner.Run<EventBenchmarker>();
+    }
+}
+
+[ShortRunJob]
+public class EventBenchmarker {
+    private Library _lib;
+    private List<IEvent> _events;
+
+    [GlobalSetup]
+    public void Setup() {
+
+        string libraryPath = @"C:\Users\reill\Music\library.db";
+        var repo = new SQLiteEventRepository(SQLiteHelpers.CreateFileDb(libraryPath));
+        var logger = LoggerHelpers.DoNothingLogger();
+        _lib = new Library(Environment.MachineName, SQLiteHelpers.CreateFileDb(libraryPath), new NoopServerCaller(), logger);
+
+        _events = repo.GetAllEvents().ToList();
     }
 
-    [MemoryDiagnoser]
-    public class EventBenchmarker {
+    [Benchmark]
+    public SQLiteEventRepository OpenDb() {
 
-        [Benchmark]
-        public SQLiteEventRepository OpenDb() {
-
-            string libraryPath = @"C:\Users\reill\Music\library.db";
-            return new SQLiteEventRepository(SQLiteHelpers.CreateFileDb(libraryPath));
-        }
-
-        [Benchmark]
-        public List<IEvent> OpenDbAndGetAllEvents() {
-            string libraryPath = @"C:\Users\reill\Music\library.db";
-            var repo = new SQLiteEventRepository(SQLiteHelpers.CreateFileDb(libraryPath));
-            return repo.GetAllEvents().ToList();
-        }
-
-        [Benchmark]
-        public List<LibraryItem> ReplayAllEventsFromDisk() {
-            string libraryPath = @"C:\Users\reill\Music\library.db";
-            var repo = new SQLiteEventRepository(SQLiteHelpers.CreateFileDb(libraryPath));
-            var logger = LoggerHelpers.DoNothingLogger();
-            var lib = new Library(Environment.MachineName, SQLiteHelpers.CreateFileDb(libraryPath), new NoopServerCaller(), logger);
-            return lib.Items;
-        }
+        string libraryPath = @"C:\Users\reill\Music\library.db";
+        return new SQLiteEventRepository(SQLiteHelpers.CreateFileDb(libraryPath));
     }
 
-    [MemoryDiagnoser]
-    public class MemoryBenchmarker {
+    [Benchmark]
+    public List<IEvent> OpenDbAndGetAllEvents() {
+        string libraryPath = @"C:\Users\reill\Music\library.db";
+        var repo = new SQLiteEventRepository(SQLiteHelpers.CreateFileDb(libraryPath));
+        return repo.GetAllEvents().ToList();
+    }
 
-        [Benchmark]
-        public List<byte[]> Allocate() {
-            List<byte[]> ret = new List<byte[]>();
+    [Benchmark]
+    public List<LibraryItem> ReplayAllEventsFromDisk() {
+        string libraryPath = @"C:\Users\reill\Music\library.db";
+        var repo = new SQLiteEventRepository(SQLiteHelpers.CreateFileDb(libraryPath));
+        var logger = LoggerHelpers.DoNothingLogger();
+        var lib = new Library(Environment.MachineName, SQLiteHelpers.CreateFileDb(libraryPath), new NoopServerCaller(), logger);
+        return lib.Items;
+    }
 
-            for (int i = 0; i < 1024; i++) {
-                ret.Add(OneMegabyte());
-            }
+    [Benchmark]
+    public List<LibraryItem> ReplayAllEventsFromMemory() {
+        _lib.RebuildItems(_events);
+        return _lib.Items;
+    }
+}
 
-            return ret;
+[MemoryDiagnoser]
+public class MemoryBenchmarker {
+
+    [Benchmark]
+    public List<byte[]> Allocate() {
+        List<byte[]> ret = new List<byte[]>();
+
+        for (int i = 0; i < 1024; i++) {
+            ret.Add(OneMegabyte());
         }
 
-        public static byte[] OneMegabyte() {
-            return new byte[1024 * 1024];
-        }
+        return ret;
+    }
+
+    public static byte[] OneMegabyte() {
+        return new byte[1024 * 1024];
     }
 }
