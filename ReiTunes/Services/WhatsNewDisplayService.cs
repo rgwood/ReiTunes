@@ -22,7 +22,7 @@ namespace ReiTunes.Services {
                         // TODO: move this into XAML and set the background colour appropriately
                         ContentDialog dialog = new ContentDialog() {
                             Title = "ReiTunes Was Updated",
-                            Content = $"Now on version {ver.Major}.{ver.Minor}.{ver.Build}.{ver.Revision}",
+                            Content = $"Now on version {ver.Major}.{ver.Minor}.{ver.Build}.{ver.Revision}. {Environment.NewLine}P.S. Juliette you're cute",
                             CloseButtonText = "Cool"
                         };
                         await dialog.ShowAsync();
