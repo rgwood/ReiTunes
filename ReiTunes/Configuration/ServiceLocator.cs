@@ -33,7 +33,9 @@ namespace ReiTunes.Configuration {
 
             string dbPath = FileHelper.GetLibraryDbPath();
             serviceCollection.AddSingleton<SqliteConnection>((_) => SQLiteHelpers.CreateFileDb(dbPath));
-            serviceCollection.AddSingleton<Library>();
+            serviceCollection.AddSingleton<Library>( provider => {
+                return new Library(provider.GetRequiredService<SqliteConnection>(), provider.GetRequiredService<ILogger>(), provider.GetRequiredService<ServerCaller>());
+            });
 
             _rootServiceProvider = serviceCollection.BuildServiceProvider();
         }

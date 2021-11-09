@@ -20,11 +20,9 @@ namespace ReiTunes.Core {
         private readonly ILogger _logger;
         private readonly LibraryItemEventFactory _eventFactory;
 
-        public Library(SqliteConnection connection, ILogger logger)
-            : this(Environment.MachineName, connection, new NoopServerCaller(), logger, new Clock()) { }
-
-        public Library(SqliteConnection connection, IServerCaller caller, ILogger logger)
+        public Library(SqliteConnection connection, ILogger logger, IServerCaller caller)
             : this(Environment.MachineName, connection, caller, logger, new Clock()) { }
+
 
         public Library(string machineName, SqliteConnection connection, IServerCaller caller, ILogger logger)
             : this(machineName, connection, caller, logger, new Clock()) { }

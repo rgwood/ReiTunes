@@ -1,6 +1,7 @@
 ﻿using BenchmarkDotNet.Attributes;
 using BenchmarkDotNet.Running;
 using ReiTunes.Core;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 
@@ -35,7 +36,7 @@ namespace Benchmarker {
             string libraryPath = @"C:\Users\reill\Music\library.db";
             var repo = new SQLiteEventRepository(SQLiteHelpers.CreateFileDb(libraryPath));
             var logger = LoggerHelpers.DoNothingLogger();
-            var lib = new Library(SQLiteHelpers.CreateFileDb(libraryPath), logger);
+            var lib = new Library(Environment.MachineName, SQLiteHelpers.CreateFileDb(libraryPath), new NoopServerCaller(), logger);
             return lib.Items;
         }
     }
