@@ -53,7 +53,7 @@ namespace ReiTunes.Core {
             Stopwatch sw = Stopwatch.StartNew();
 
             foreach (IEnumerable<IEvent> chunk in events.Chunk(EventPushBatchSize)) {
-                string serialized = await EventSerialization.SerializeAsync(chunk.ToList());
+                string serialized =  await Task.Run(() => EventSerialization.Serialize(chunk.ToList()));
                 StringContent content = new StringContent(serialized, Encoding.UTF8, "application/json");
 
                 int serializedKiloByteCount = UnicodeEncoding.UTF8.GetByteCount(serialized) / 1024;

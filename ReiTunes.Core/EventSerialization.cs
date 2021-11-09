@@ -53,13 +53,5 @@ namespace ReiTunes.Core {
                 return Deserialize(value);
             });
         }
-
-        public static async Task<string> SerializeAsync(IEvent @event) {
-            return await Task.Run(() => Serialize(@event));
-        }
-
-        public static async Task<string> SerializeAsync(List<IEvent> events) {
-            return await Task.Run(() => Serialize(events));
-        }
     }
 }
