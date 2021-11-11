@@ -2,28 +2,27 @@
 using System.IO;
 using System.Threading.Tasks;
 
-namespace ReiTunes
+namespace ReiTunes;
+
+public class FileReader
 {
-    public class FileReader
+    public const string MusicLibraryFileName = "reiTunesMusicLibrary.txt";
+
+    public static async Task<bool> MusicLibraryFileExists() => await FileExists(MusicLibraryFileName);
+
+    public static async Task<bool> FileExists(string fileName)
     {
-        public const string MusicLibraryFileName = "reiTunesMusicLibrary.txt";
+        Windows.Storage.StorageFolder localFolder = Windows.Storage.ApplicationData.Current.LocalFolder;
 
-        public static async Task<bool> MusicLibraryFileExists() => await FileExists(MusicLibraryFileName);
-
-        public static async Task<bool> FileExists(string fileName)
+        try
         {
-            Windows.Storage.StorageFolder localFolder = Windows.Storage.ApplicationData.Current.LocalFolder;
-
-            try
-            {
-                await localFolder.GetFileAsync(fileName);
-            }
-            catch (FileNotFoundException)
-            {
-                return false;
-            }
-
-            return true;
+            await localFolder.GetFileAsync(fileName);
         }
+        catch (FileNotFoundException)
+        {
+            return false;
+        }
+
+        return true;
     }
 }

@@ -1,11 +1,10 @@
 ﻿using System;
 
-namespace ReiTunes.Services
-{
-    public class SuspensionState
-    {
-        public object Data { get; set; }
+namespace ReiTunes.Services;
 
-        public DateTime SuspensionDate { get; set; }
-    }
+public class SuspensionState
+{
+    public object Data { get; set; }
+
+    public DateTime SuspensionDate { get; set; }
 }

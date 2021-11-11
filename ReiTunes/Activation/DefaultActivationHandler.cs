@@ -3,35 +3,34 @@ using System;
 using System.Threading.Tasks;
 using Windows.ApplicationModel.Activation;
 
-namespace ReiTunes.Activation
+namespace ReiTunes.Activation;
+
+internal class DefaultActivationHandler : ActivationHandler<IActivatedEventArgs>
 {
-    internal class DefaultActivationHandler : ActivationHandler<IActivatedEventArgs>
+    private readonly Type _navElement;
+
+    public DefaultActivationHandler(Type navElement)
     {
-        private readonly Type _navElement;
+        _navElement = navElement;
+    }
 
-        public DefaultActivationHandler(Type navElement)
+    protected override async Task HandleInternalAsync(IActivatedEventArgs args)
+    {
+        // When the navigation stack isn't restored, navigate to the first page and configure
+        // the new page by passing required information in the navigation parameter
+        object arguments = null;
+        if (args is LaunchActivatedEventArgs launchArgs)
         {
-            _navElement = navElement;
+            arguments = launchArgs.Arguments;
         }
 
-        protected override async Task HandleInternalAsync(IActivatedEventArgs args)
-        {
-            // When the navigation stack isn't restored, navigate to the first page and configure
-            // the new page by passing required information in the navigation parameter
-            object arguments = null;
-            if (args is LaunchActivatedEventArgs launchArgs)
-            {
-                arguments = launchArgs.Arguments;
-            }
+        NavigationService.Navigate(_navElement, arguments);
+        await Task.CompletedTask;
+    }
 
-            NavigationService.Navigate(_navElement, arguments);
-            await Task.CompletedTask;
-        }
-
-        protected override bool CanHandleInternal(IActivatedEventArgs args)
-        {
-            // None of the ActivationHandlers has handled the app activation
-            return NavigationService.Frame.Content == null && _navElement != null;
-        }
+    protected override bool CanHandleInternal(IActivatedEventArgs args)
+    {
+        // None of the ActivationHandlers has handled the app activation
+        return NavigationService.Frame.Content == null && _navElement != null;
     }
 }

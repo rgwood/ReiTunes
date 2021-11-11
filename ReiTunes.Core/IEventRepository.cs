@@ -1,30 +1,28 @@
 ﻿using System;
 using System.Collections.Generic;
 
-namespace ReiTunes.Core
+namespace ReiTunes.Core;
+
+public interface IEventRepository
 {
 
-    public interface IEventRepository
-    {
+    public IEnumerable<IEvent> GetEvents(Guid aggregateId);
 
-        public IEnumerable<IEvent> GetEvents(Guid aggregateId);
+    public IEnumerable<IEvent> GetAllEvents();
 
-        public IEnumerable<IEvent> GetAllEvents();
+    public IEnumerable<IEvent> GetAllEventsFromMachine(string machineName);
 
-        public IEnumerable<IEvent> GetAllEventsFromMachine(string machineName);
+    public int CountOfAllEvents();
 
-        public int CountOfAllEvents();
+    public void Save(IEvent @event);
 
-        public void Save(IEvent @event);
+    public void Save(IEnumerable<IEvent> events);
 
-        public void Save(IEnumerable<IEvent> events);
+    public bool ContainsEvent(Guid eventId);
+}
 
-        public bool ContainsEvent(Guid eventId);
-    }
+public interface ISerializedEventRepository : IEventRepository
+{
 
-    public interface ISerializedEventRepository : IEventRepository
-    {
-
-        public IEnumerable<string> GetAllSerializedEvents();
-    }
+    public IEnumerable<string> GetAllSerializedEvents();
 }

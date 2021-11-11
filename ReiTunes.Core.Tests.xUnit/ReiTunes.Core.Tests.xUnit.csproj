@@ -5,7 +5,6 @@
 
 		<IsPackable>false</IsPackable>
 		<RootNamespace>ReiTunes.Core.Tests.xUnit</RootNamespace>
-		<LangVersion>9.0</LangVersion>
 	</PropertyGroup>
 
 	<ItemGroup>

@@ -1,14 +1,12 @@
 ﻿using Serilog;
 
-namespace ReiTunes.Core
+namespace ReiTunes.Core;
+
+public class LoggerHelpers
 {
 
-    public class LoggerHelpers
+    public static ILogger DoNothingLogger()
     {
-
-        public static ILogger DoNothingLogger()
-        {
-            return new LoggerConfiguration().CreateLogger();
-        }
+        return new LoggerConfiguration().CreateLogger();
     }
 }

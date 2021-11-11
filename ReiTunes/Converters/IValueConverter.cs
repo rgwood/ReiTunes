@@ -1,4 +1,5 @@
-﻿namespace ReiTunes.Core.Converters {
-    public interface IValueConverter {
-    }
+﻿namespace ReiTunes.Core.Converters;
+
+public interface IValueConverter
+{
 }

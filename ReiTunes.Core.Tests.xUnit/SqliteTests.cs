@@ -4,70 +4,78 @@ using System;
 using System.Linq;
 using Xunit;
 
-namespace ReiTunes.Core.Tests.xUnit {
+namespace ReiTunes.Core.Tests.xUnit;
 
-    public class SqliteTests : IDisposable {
-        private readonly SqliteConnection _conn;
+public class SqliteTests : IDisposable
+{
+    private readonly SqliteConnection _conn;
 
-        public SqliteTests() {
-            _conn = SQLiteHelpers.CreateInMemoryDb();
-            _conn.CreateEventsTableIfNotExists();
-        }
+    public SqliteTests()
+    {
+        _conn = SQLiteHelpers.CreateInMemoryDb();
+        _conn.CreateEventsTableIfNotExists();
+    }
 
-        public void Dispose() {
-            _conn.Dispose();
-        }
+    public void Dispose()
+    {
+        _conn.Dispose();
+    }
 
-        [Fact]
-        public void CanSaveEvent() {
-            SimpleTextAggregate agg = new SimpleTextAggregate("foo");
-            IEvent @event = agg.GetUncommittedEvents().Single();
+    [Fact]
+    public void CanSaveEvent()
+    {
+        SimpleTextAggregate agg = new SimpleTextAggregate("foo");
+        IEvent @event = agg.GetUncommittedEvents().Single();
 
-            SaveEvent(@event, _conn);
-            Assert.Equal(1, GetRowCount("events"));
-        }
+        SaveEvent(@event, _conn);
+        Assert.Equal(1, GetRowCount("events"));
+    }
 
-        [Fact]
-        public void CanHookUpEventAutoSave() {
-            SimpleTextAggregate agg = new SimpleTextAggregate("foo");
-            IEvent @event = agg.GetUncommittedEvents().Single();
+    [Fact]
+    public void CanHookUpEventAutoSave()
+    {
+        SimpleTextAggregate agg = new SimpleTextAggregate("foo");
+        IEvent @event = agg.GetUncommittedEvents().Single();
 
-            SaveEvent(@event, _conn);
+        SaveEvent(@event, _conn);
 
-            agg.Commit();
+        agg.Commit();
 
-            agg.EventCreated += Agg_EventCreated;
+        agg.EventCreated += Agg_EventCreated;
 
-            agg.Text = "bar";
+        agg.Text = "bar";
 
-            Assert.Empty(agg.GetUncommittedEvents());
+        Assert.Empty(agg.GetUncommittedEvents());
 
-            Assert.Equal(2, GetRowCount("events"));
-        }
+        Assert.Equal(2, GetRowCount("events"));
+    }
 
-        private void Agg_EventCreated(object sender, IEvent e) {
-            SaveEvent(e, _conn);
-            Aggregate agg = (Aggregate)sender;
-            agg.Commit();
-        }
+    private void Agg_EventCreated(object sender, IEvent e)
+    {
+        SaveEvent(e, _conn);
+        Aggregate agg = (Aggregate)sender;
+        agg.Commit();
+    }
 
-        [Fact]
-        public void SQLiteEnforcesNoSavingDuplicates() {
-            SimpleTextAggregate agg = new SimpleTextAggregate("foo");
-            IEvent @event = agg.GetUncommittedEvents().Single();
+    [Fact]
+    public void SQLiteEnforcesNoSavingDuplicates()
+    {
+        SimpleTextAggregate agg = new SimpleTextAggregate("foo");
+        IEvent @event = agg.GetUncommittedEvents().Single();
 
-            SaveEvent(@event, _conn);
+        SaveEvent(@event, _conn);
 
-            Assert.ThrowsAny<Exception>(() => SaveEvent(@event, _conn));
-        }
+        Assert.ThrowsAny<Exception>(() => SaveEvent(@event, _conn));
+    }
 
-        private static void SaveEvent(IEvent @event, SqliteConnection connection) {
-            connection.InsertEvent(@event);
-        }
+    private static void SaveEvent(IEvent @event, SqliteConnection connection)
+    {
+        connection.InsertEvent(@event);
+    }
 
-        private long GetRowCount(string tableName) {
-            // can't parameterize table names :(
-            return _conn.QuerySingle<long>($"SELECT COUNT() FROM {tableName}");
-        }
+    private long GetRowCount(string tableName)
+    {
+        // can't parameterize table names :(
+        return _conn.QuerySingle<long>($"SELECT COUNT() FROM {tableName}");
     }
 }

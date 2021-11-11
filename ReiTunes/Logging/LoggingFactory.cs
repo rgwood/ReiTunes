@@ -2,17 +2,18 @@
 using Serilog.Formatting.Compact;
 using System.IO;
 
-namespace ReiTunes.Logging {
+namespace ReiTunes.Logging;
 
-    public static class LoggingFactory {
+public static class LoggingFactory
+{
 
-        static public ILogger BuildLogger() {
-            Windows.Storage.StorageFolder cache = Windows.Storage.ApplicationData.Current.LocalFolder;
-            string logFile = Path.Combine(cache.Path, "ReiTunes_Logs_.txt");
+    static public ILogger BuildLogger()
+    {
+        Windows.Storage.StorageFolder cache = Windows.Storage.ApplicationData.Current.LocalFolder;
+        string logFile = Path.Combine(cache.Path, "ReiTunes_Logs_.txt");
 
-            return new LoggerConfiguration()
-                      .WriteTo.File(logFile, rollingInterval: RollingInterval.Day)
-                      .CreateLogger();
-        }
+        return new LoggerConfiguration()
+                  .WriteTo.File(logFile, rollingInterval: RollingInterval.Day)
+                  .CreateLogger();
     }
 }

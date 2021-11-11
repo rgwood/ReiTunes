@@ -1,17 +1,16 @@
 ﻿using System;
 
-namespace ReiTunes.Services
+namespace ReiTunes.Services;
+
+public class SuspendAndResumeArgs : EventArgs
 {
-    public class SuspendAndResumeArgs : EventArgs
+    public SuspensionState SuspensionState { get; set; }
+
+    public Type Target { get; private set; }
+
+    public SuspendAndResumeArgs(SuspensionState suspensionState, Type target)
     {
-        public SuspensionState SuspensionState { get; set; }
-
-        public Type Target { get; private set; }
-
-        public SuspendAndResumeArgs(SuspensionState suspensionState, Type target)
-        {
-            SuspensionState = suspensionState;
-            Target = target;
-        }
+        SuspensionState = suspensionState;
+        Target = target;
     }
 }

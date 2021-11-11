@@ -14,108 +14,128 @@ using Windows.UI.Xaml.Input;
 
 // The Content Dialog item template is documented at https://go.microsoft.com/fwlink/?LinkId=234238
 
-namespace ReiTunes.Views {
+namespace ReiTunes.Views;
 
-    public sealed partial class LibraryItemInfo : ContentDialog, INotifyPropertyChanged {
-        private readonly LibraryItem _item;
-        private readonly PlayerViewModel _viewModel;
+public sealed partial class LibraryItemInfo : ContentDialog, INotifyPropertyChanged
+{
+    private readonly LibraryItem _item;
+    private readonly PlayerViewModel _viewModel;
 
-        private string _existsOnDisk = "Unknown";
-        private MusicProperties _musicProps;
+    private string _existsOnDisk = "Unknown";
+    private MusicProperties _musicProps;
 
-        public LibraryItemInfo(LibraryItem item) {
-            this.InitializeComponent();
-            _item = item;
+    public LibraryItemInfo(LibraryItem item)
+    {
+        this.InitializeComponent();
+        _item = item;
 
-            foreach (Bookmark bookmark in _item.Bookmarks.OrderBy(b => b.Position)) {
-                if (bookmark.Emoji != null) {
-                    BookmarksView.Items.Add(bookmark);
-                }
-                else {
-                    BookmarksView.Items.Add(bookmark with { Emoji = "❤" });
-                }
+        foreach (Bookmark bookmark in _item.Bookmarks.OrderBy(b => b.Position))
+        {
+            if (bookmark.Emoji != null)
+            {
+                BookmarksView.Items.Add(bookmark);
             }
-
-            _viewModel = ServiceLocator.Current.GetService<PlayerViewModel>();
-
-            Loaded += LibraryItemInfo_Loaded;
-
-            BookmarksView.Loaded += BookmarksView_Loaded;
-        }
-
-        // https://stackoverflow.com/a/44332607/854694
-        private void BookmarksView_Loaded(object sender, Windows.UI.Xaml.RoutedEventArgs e) {
-            (sender as ListView).AddHandler(UIElement.KeyDownEvent, new KeyEventHandler(BookmarksView_KeyDown), true);
-        }
-
-        private async void BookmarksView_KeyDown(object sender, KeyRoutedEventArgs args) {
-            if (args.Key == Windows.System.VirtualKey.Enter) {
-                await PlaySelectedBookmark();
+            else
+            {
+                BookmarksView.Items.Add(bookmark with { Emoji = "❤" });
             }
         }
 
-        private async void LibraryItemInfo_Loaded(object sender, Windows.UI.Xaml.RoutedEventArgs e) {
-            StorageFile file = await _viewModel.GetStorageFile(_item);
+        _viewModel = ServiceLocator.Current.GetService<PlayerViewModel>();
 
-            _existsOnDisk = file is null ? "No" : "Yes";
-            OnPropertyChanged(nameof(_existsOnDisk));
+        Loaded += LibraryItemInfo_Loaded;
 
-            if (file != null) {
-                _musicProps = await file.Properties.GetMusicPropertiesAsync();
-                OnPropertyChanged(nameof(_musicProps));
-            }
-        }
+        BookmarksView.Loaded += BookmarksView_Loaded;
+    }
 
-        private void ContentDialog_SecondaryButtonClick(ContentDialog sender, ContentDialogButtonClickEventArgs args) {
-        }
+    // https://stackoverflow.com/a/44332607/854694
+    private void BookmarksView_Loaded(object sender, Windows.UI.Xaml.RoutedEventArgs e)
+    {
+        (sender as ListView).AddHandler(UIElement.KeyDownEvent, new KeyEventHandler(BookmarksView_KeyDown), true);
+    }
 
-        private string BitsToKilobits(uint bits) => (bits / 1000).ToString();
-
-        private async Task PlaySelectedBookmark() {
-            Bookmark selected = BookmarksView.SelectedItem as Bookmark;
-
-            if (selected != null) {
-                await _viewModel.PlayBookmark(_item, selected);
-            }
-        }
-
-        private async void BookmarksView_DoubleTapped(object sender, DoubleTappedRoutedEventArgs e) {
+    private async void BookmarksView_KeyDown(object sender, KeyRoutedEventArgs args)
+    {
+        if (args.Key == Windows.System.VirtualKey.Enter)
+        {
             await PlaySelectedBookmark();
         }
+    }
 
-        public event PropertyChangedEventHandler PropertyChanged;
+    private async void LibraryItemInfo_Loaded(object sender, Windows.UI.Xaml.RoutedEventArgs e)
+    {
+        StorageFile file = await _viewModel.GetStorageFile(_item);
 
-        private void Set<T>(ref T storage, T value, [CallerMemberName] string propertyName = null) {
-            if (Equals(storage, value)) {
-                return;
-            }
+        _existsOnDisk = file is null ? "No" : "Yes";
+        OnPropertyChanged(nameof(_existsOnDisk));
 
-            storage = value;
-            OnPropertyChanged(propertyName);
+        if (file != null)
+        {
+            _musicProps = await file.Properties.GetMusicPropertiesAsync();
+            OnPropertyChanged(nameof(_musicProps));
+        }
+    }
+
+    private void ContentDialog_SecondaryButtonClick(ContentDialog sender, ContentDialogButtonClickEventArgs args)
+    {
+    }
+
+    private string BitsToKilobits(uint bits) => (bits / 1000).ToString();
+
+    private async Task PlaySelectedBookmark()
+    {
+        Bookmark selected = BookmarksView.SelectedItem as Bookmark;
+
+        if (selected != null)
+        {
+            await _viewModel.PlayBookmark(_item, selected);
+        }
+    }
+
+    private async void BookmarksView_DoubleTapped(object sender, DoubleTappedRoutedEventArgs e)
+    {
+        await PlaySelectedBookmark();
+    }
+
+    public event PropertyChangedEventHandler PropertyChanged;
+
+    private void Set<T>(ref T storage, T value, [CallerMemberName] string propertyName = null)
+    {
+        if (Equals(storage, value))
+        {
+            return;
         }
 
-        private void OnPropertyChanged(string propertyName) => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
+        storage = value;
+        OnPropertyChanged(propertyName);
+    }
 
-        private void EmojiHolder_GotFocus(object sender, RoutedEventArgs e) {
-            CoreInputView.GetForCurrentView().TryShow(CoreInputViewKind.Emoji);
-        }
+    private void OnPropertyChanged(string propertyName) => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
 
-        private void EmojiHolder_TextChanged(object sender, TextChangedEventArgs args) {
-            EmojiResult.Text = (sender as TextBox).Text.TextElements().LastOrDefault() ?? "♥";
-        }
+    private void EmojiHolder_GotFocus(object sender, RoutedEventArgs e)
+    {
+        CoreInputView.GetForCurrentView().TryShow(CoreInputViewKind.Emoji);
+    }
 
-        private void EmojiHolder_Tapped(object sender, TappedRoutedEventArgs e) {
-            CoreInputView.GetForCurrentView().TryShow(CoreInputViewKind.Emoji);
-        }
+    private void EmojiHolder_TextChanged(object sender, TextChangedEventArgs args)
+    {
+        EmojiResult.Text = (sender as TextBox).Text.TextElements().LastOrDefault() ?? "♥";
+    }
 
-        private void SetEmojiButton_Click(object sender, RoutedEventArgs e) {
-        }
+    private void EmojiHolder_Tapped(object sender, TappedRoutedEventArgs e)
+    {
+        CoreInputView.GetForCurrentView().TryShow(CoreInputViewKind.Emoji);
+    }
 
-        private void BookmarkSwipeDelete_Invoked(SwipeItem sender, SwipeItemInvokedEventArgs args) {
-            Bookmark bookmark = args.SwipeControl.DataContext as Bookmark;
+    private void SetEmojiButton_Click(object sender, RoutedEventArgs e)
+    {
+    }
 
-            _item.DeleteBookmark(bookmark.ID);
-            BookmarksView.Items.Remove(bookmark);
-        }
+    private void BookmarkSwipeDelete_Invoked(SwipeItem sender, SwipeItemInvokedEventArgs args)
+    {
+        Bookmark bookmark = args.SwipeControl.DataContext as Bookmark;
+
+        _item.DeleteBookmark(bookmark.ID);
+        BookmarksView.Items.Remove(bookmark);
     }
 }
