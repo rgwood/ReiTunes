@@ -5,20 +5,21 @@
 		<RootNamespace>ReiTunes.Core</RootNamespace>
 		<LangVersion>10.0</LangVersion>
 		<DebugType>embedded</DebugType>
+		<ImplicitUsings>enable</ImplicitUsings>
 	</PropertyGroup>
 
 	<ItemGroup>
-		<InternalsVisibleTo Include="Benchmarker"/>
+		<InternalsVisibleTo Include="Benchmarker" />
 	</ItemGroup>
 
 	<ItemGroup>
-		<PackageReference Include="Dapper" Version="2.0.78" />
+		<PackageReference Include="Dapper" Version="2.0.123" />
 		<PackageReference Include="Microsoft.AspNetCore.WebUtilities" Version="2.2.0" />
 		<PackageReference Include="Microsoft.Data.Sqlite" Version="5.0.0" />
-		<PackageReference Include="Microsoft.Toolkit.Mvvm" Version="7.0.0-preview2" />
-		<PackageReference Include="Newtonsoft.Json" Version="12.0.3" />
+		<PackageReference Include="Microsoft.Toolkit.Mvvm" Version="7.1.1" />
+		<PackageReference Include="Newtonsoft.Json" Version="13.0.1" />
 		<PackageReference Include="Serilog.Formatting.Compact" Version="1.1.0" />
-		<PackageReference Include="Serilog.Sinks.Async" Version="1.4.0" />
+		<PackageReference Include="Serilog.Sinks.Async" Version="1.5.0" />
 		<PackageReference Include="Serilog.Sinks.File" Version="5.0.0" />
 		<PackageReference Include="System.Reactive" Version="5.0.0" />
 		<PackageReference Include="System.Reactive.Linq" Version="5.0.0" />
