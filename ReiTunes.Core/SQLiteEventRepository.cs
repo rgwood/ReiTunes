@@ -25,7 +25,7 @@ namespace ReiTunes.Core {
         }
 
         public bool ContainsEvent(Guid eventId) {
-            long count = _conn.Query<long>("SELECT COUNT() FROM events WHERE Id = @EventId", new { EventId = eventId.ToString() }).Single();
+            long count = _conn.QuerySingle<long>("SELECT COUNT() FROM events WHERE Id = @EventId", new { EventId = eventId.ToString() });
             return count == 1;
         }
 
