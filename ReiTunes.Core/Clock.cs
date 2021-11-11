@@ -1,7 +1,4 @@
-﻿using System;
-using System.Threading;
-
-namespace ReiTunes.Core;
+﻿namespace ReiTunes.Core;
 
 public interface IClock
 {

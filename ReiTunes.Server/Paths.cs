@@ -1,7 +1,4 @@
-﻿using System;
-using System.IO;
-
-namespace ReiTunes.Server;
+﻿namespace ReiTunes.Server;
 
 internal static class Paths
 {

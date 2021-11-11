@@ -1,7 +1,4 @@
-﻿using System.Collections.Generic;
-using System.Linq;
-
-namespace ReiTunes.Core;
+﻿namespace ReiTunes.Core;
 
 public static class LinqExtensions
 {

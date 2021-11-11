@@ -1,6 +1,4 @@
-﻿using System.Collections.Generic;
-
-namespace ReiTunes.Core;
+﻿namespace ReiTunes.Core;
 
 public static class StringHelpers
 {

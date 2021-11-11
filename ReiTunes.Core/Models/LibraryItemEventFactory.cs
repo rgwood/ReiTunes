@@ -1,6 +1,4 @@
-﻿using System;
-
-namespace ReiTunes.Core;
+﻿namespace ReiTunes.Core;
 
 public class LibraryItemEventFactory
 {

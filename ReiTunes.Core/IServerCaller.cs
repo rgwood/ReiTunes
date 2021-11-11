@@ -1,7 +1,4 @@
-﻿using System.Collections.Generic;
-using System.Threading.Tasks;
-
-namespace ReiTunes.Core;
+﻿namespace ReiTunes.Core;
 
 public interface IServerCaller
 {

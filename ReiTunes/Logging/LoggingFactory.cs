@@ -1,5 +1,4 @@
 ﻿using Serilog;
-using Serilog.Formatting.Compact;
 using System.IO;
 
 namespace ReiTunes.Logging;

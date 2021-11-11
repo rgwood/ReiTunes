@@ -1,6 +1,5 @@
 ﻿using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Options;
 using ReiTunes.Activation;
 using ReiTunes.Core;
 using ReiTunes.Helpers;
