@@ -2,38 +2,47 @@
 using System.Collections.ObjectModel;
 using System.Linq;
 
-namespace ReiTunes.Core {
+namespace ReiTunes.Core
+{
     // TODO: this should probably be a
-    public record Bookmark(Guid ID, TimeSpan Position, string Emoji, string Comment = null) {
+    public record Bookmark(Guid ID, TimeSpan Position, string Emoji, string Comment = null)
+    {
         public virtual bool Equals(Bookmark other) => ID == other?.ID;
         public override int GetHashCode() => ID.GetHashCode();
     }
 
-    public class LibraryItem : Aggregate, IEquatable<LibraryItem> {
+    public class LibraryItem : Aggregate, IEquatable<LibraryItem>
+    {
         private readonly ObservableCollection<Bookmark> _bookmarks = new ObservableCollection<Bookmark>();
         public ObservableCollection<Bookmark> Bookmarks => _bookmarks;
 
-        public void AddBookmark(TimeSpan position) {
+        public void AddBookmark(TimeSpan position)
+        {
             ApplyButDoNotCommit(_eventFactory.GetBookmarkAddedEvent(AggregateId, Guid.NewGuid(), position));
             NotifyPropertyChanged(nameof(Bookmarks));
         }
 
-        public void DeleteBookmark(Guid id) {
+        public void DeleteBookmark(Guid id)
+        {
             ApplyButDoNotCommit(_eventFactory.GetBookmarkDeletedEvent(AggregateId, id));
             NotifyPropertyChanged(nameof(Bookmarks));
         }
 
-        public void SetBookmarkEmoji(Guid id, string emoji) {
+        public void SetBookmarkEmoji(Guid id, string emoji)
+        {
             ApplyButDoNotCommit(_eventFactory.GetBookmarkSetEmojiEvent(AggregateId, id, emoji));
             NotifyPropertyChanged(nameof(Bookmarks));
         }
 
         private string _name;
 
-        public string Name {
+        public string Name
+        {
             get => _name;
-            set {
-                if (_name != value) {
+            set
+            {
+                if (_name != value)
+                {
                     ApplyButDoNotCommit(_eventFactory.GetNameChangedEvent(AggregateId, value));
                     NotifyPropertyChanged();
                 }
@@ -42,10 +51,13 @@ namespace ReiTunes.Core {
 
         private string _filePath;
 
-        public string FilePath {
+        public string FilePath
+        {
             get => _filePath;
-            set {
-                if (_filePath != value) {
+            set
+            {
+                if (_filePath != value)
+                {
                     ApplyButDoNotCommit(_eventFactory.GetFilePathChangedEvent(AggregateId, value));
                     NotifyPropertyChanged();
                 }
@@ -54,10 +66,13 @@ namespace ReiTunes.Core {
 
         private string _artist;
 
-        public string Artist {
+        public string Artist
+        {
             get => _artist;
-            set {
-                if (_artist != value) {
+            set
+            {
+                if (_artist != value)
+                {
                     ApplyButDoNotCommit(_eventFactory.GetArtistChangedEvent(AggregateId, value));
                     NotifyPropertyChanged();
                 }
@@ -66,10 +81,13 @@ namespace ReiTunes.Core {
 
         private string _album;
 
-        public string Album {
+        public string Album
+        {
             get => _album;
-            set {
-                if (_album != value) {
+            set
+            {
+                if (_album != value)
+                {
                     ApplyButDoNotCommit(_eventFactory.GetAlbumChangedEvent(AggregateId, value));
                     NotifyPropertyChanged();
                 }
@@ -93,28 +111,34 @@ namespace ReiTunes.Core {
         public int PlayCount => _playCount;
 
         // a single string with everything we might want to include in text search, useful for fuzzy find
-        public string AllSearchProperties {
-            get {
+        public string AllSearchProperties
+        {
+            get
+            {
                 return $"{Name} {Artist} {Album} {FilePath}";
             }
         }
 
-        public LibraryItem(LibraryItemEventFactory eventFactory) {
+        public LibraryItem(LibraryItemEventFactory eventFactory)
+        {
             _eventFactory = eventFactory;
         }
 
-        public LibraryItem(LibraryItemEventFactory eventFactory, string relativePath) : this(eventFactory) {
+        public LibraryItem(LibraryItemEventFactory eventFactory, string relativePath) : this(eventFactory)
+        {
             string fileName = GetFileNameFromPath(relativePath);
             ApplyButDoNotCommit(_eventFactory.GetCreatedEvent(Guid.NewGuid(), fileName, relativePath));
         }
 
-        public void IncrementPlayCount() {
+        public void IncrementPlayCount()
+        {
             ApplyButDoNotCommit(_eventFactory.GetPlayedEvent(AggregateId));
         }
 
         private string GetFileNameFromPath(string path) => path.Split('/').Last();
 
-        protected override void RegisterAppliers() {
+        protected override void RegisterAppliers()
+        {
             this.RegisterApplier<LibraryItemCreatedEvent>(this.Apply);
             this.RegisterApplier<LibraryItemPlayedEvent>(this.Apply);
             this.RegisterApplier<LibraryItemDeletedEvent>(this.Apply);
@@ -128,60 +152,72 @@ namespace ReiTunes.Core {
             this.RegisterApplier<LibraryItemBookmarkSetEmojiEvent>(this.Apply);
         }
 
-        private void Apply(LibraryItemCreatedEvent @event) {
+        private void Apply(LibraryItemCreatedEvent @event)
+        {
             AggregateId = @event.AggregateId;
             _name = @event.Name;
             _filePath = @event.FilePath;
-            if (@event.CreatedTimeUtc.Kind != DateTimeKind.Utc) {
+            if (@event.CreatedTimeUtc.Kind != DateTimeKind.Utc)
+            {
                 throw new Exception($"Aggregate {@event.AggregateId} has a CreatedTimeUtc in {@event.CreatedTimeUtc.Kind} not UTC, wtf?");
             }
             CreatedTimeUtc = @event.CreatedTimeUtc;
         }
 
-        private void Apply(LibraryItemPlayedEvent @event) {
+        private void Apply(LibraryItemPlayedEvent @event)
+        {
             _playCount++;
             NotifyPropertyChanged(nameof(PlayCount));
         }
 
-        private void Apply(LibraryItemDeletedEvent @event) {
+        private void Apply(LibraryItemDeletedEvent @event)
+        {
             _tombStoned = true;
         }
 
-        private void Apply(LibraryItemNameChangedEvent @event) {
+        private void Apply(LibraryItemNameChangedEvent @event)
+        {
             _name = @event.NewName;
             NotifyPropertyChanged(nameof(Name));
         }
 
-        private void Apply(LibraryItemFilePathChangedEvent @event) {
+        private void Apply(LibraryItemFilePathChangedEvent @event)
+        {
             _filePath = @event.NewFilePath;
             NotifyPropertyChanged(nameof(FilePath));
         }
 
-        private void Apply(LibraryItemAlbumChangedEvent @event) {
+        private void Apply(LibraryItemAlbumChangedEvent @event)
+        {
             _album = @event.NewAlbum;
             NotifyPropertyChanged(nameof(Album));
         }
 
-        private void Apply(LibraryItemArtistChangedEvent @event) {
+        private void Apply(LibraryItemArtistChangedEvent @event)
+        {
             _artist = @event.NewArtist;
             NotifyPropertyChanged(nameof(Artist));
         }
 
-        private void Apply(LibraryItemBookmarkAddedEvent @event) {
+        private void Apply(LibraryItemBookmarkAddedEvent @event)
+        {
             Bookmarks.Add(new Bookmark(@event.BookmarkId, @event.Position, null));
             NotifyPropertyChanged(nameof(Bookmarks));
         }
 
-        private void Apply(LibraryItemBookmarkDeletedEvent @event) {
+        private void Apply(LibraryItemBookmarkDeletedEvent @event)
+        {
             Bookmark toDelete = Bookmarks.Where(bm => bm.ID == @event.BookmarkId).SingleOrDefault();
 
-            if (toDelete != null) {
+            if (toDelete != null)
+            {
                 Bookmarks.Remove(toDelete);
                 NotifyPropertyChanged(nameof(Bookmarks));
             }
         }
 
-        private void Apply(LibraryItemBookmarkSetEmojiEvent @event) {
+        private void Apply(LibraryItemBookmarkSetEmojiEvent @event)
+        {
             Bookmark toDelete = Bookmarks.Where(bm => bm.ID == @event.BookmarkId).SingleOrDefault();
 
             //if (toDelete != null) {
@@ -192,11 +228,13 @@ namespace ReiTunes.Core {
             //}
         }
 
-        public override bool Equals(object obj) {
+        public override bool Equals(object obj)
+        {
             return this.Equals(obj as LibraryItem);
         }
 
-        public bool Equals(LibraryItem other) {
+        public bool Equals(LibraryItem other)
+        {
             if (other is null)
                 return false;
 
@@ -212,10 +250,13 @@ namespace ReiTunes.Core {
                 this.PlayCount == other.PlayCount;
         }
 
-        public static bool operator ==(LibraryItem lhs, LibraryItem rhs) {
+        public static bool operator ==(LibraryItem lhs, LibraryItem rhs)
+        {
             // Check for null on left side.
-            if (lhs is null) {
-                if (rhs is null) {
+            if (lhs is null)
+            {
+                if (rhs is null)
+                {
                     // null == null = true.
                     return true;
                 }
@@ -227,11 +268,13 @@ namespace ReiTunes.Core {
             return lhs.Equals(rhs);
         }
 
-        public static bool operator !=(LibraryItem lhs, LibraryItem rhs) {
+        public static bool operator !=(LibraryItem lhs, LibraryItem rhs)
+        {
             return !(lhs == rhs);
         }
 
-        public override int GetHashCode() {
+        public override int GetHashCode()
+        {
             return AggregateId.GetHashCode();
         }
     }

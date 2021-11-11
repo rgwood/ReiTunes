@@ -2,16 +2,20 @@
 using System.Collections.Generic;
 using System.Threading.Tasks;
 
-namespace ReiTunes.Core {
+namespace ReiTunes.Core
+{
 
-    public static class EventSerialization {
+    public static class EventSerialization
+    {
 
-        private static readonly JsonSerializerSettings DefaultSerializerSettings = new JsonSerializerSettings {
+        private static readonly JsonSerializerSettings DefaultSerializerSettings = new JsonSerializerSettings
+        {
             TypeNameHandling = TypeNameHandling.Objects,
             SerializationBinder = new EventSerializationBinder()
         };
 
-        private static readonly JsonSerializerSettings PrettySerializerSettings = new JsonSerializerSettings {
+        private static readonly JsonSerializerSettings PrettySerializerSettings = new JsonSerializerSettings
+        {
             TypeNameHandling = TypeNameHandling.Objects,
             SerializationBinder = new EventSerializationBinder(),
             Formatting = Formatting.Indented
@@ -42,14 +46,18 @@ namespace ReiTunes.Core {
         public static List<IEvent> DeserializeList(string value)
             => JsonConvert.DeserializeObject<List<IEvent>>(value, DefaultSerializerSettings);
 
-        public static async Task<List<IEvent>> DeserializeListAsync(string value) {
-            return await Task.Run(() => {
+        public static async Task<List<IEvent>> DeserializeListAsync(string value)
+        {
+            return await Task.Run(() =>
+            {
                 return DeserializeList(value);
             });
         }
 
-        public static async Task<IEvent> DeserializeAsync(string value) {
-            return await Task.Run(() => {
+        public static async Task<IEvent> DeserializeAsync(string value)
+        {
+            return await Task.Run(() =>
+            {
                 return Deserialize(value);
             });
         }

@@ -7,20 +7,24 @@ using System.Net.Http;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace ReiTunes.Core {
+namespace ReiTunes.Core
+{
 
     // There's gotta be a better name for this... but, like, it's a class for calling the server
-    public class ServerCaller : IServerCaller {
+    public class ServerCaller : IServerCaller
+    {
         private const int EventPushBatchSize = 1000; // totally arbitrary limit on the # of events to push at once. Not even sure if we need this, but it makes me feel better
         private readonly HttpClient _client;
         private readonly ILogger _logger;
 
-        public ServerCaller(HttpClient client, ILogger logger) {
+        public ServerCaller(HttpClient client, ILogger logger)
+        {
             _client = client;
             _logger = logger;
         }
 
-        public async Task<List<string>> PullAllSerializedEventsAsync() {
+        public async Task<List<string>> PullAllSerializedEventsAsync()
+        {
             Stopwatch sw = Stopwatch.StartNew();
             HttpResponseMessage response = await _client.GetAsync(Secrets.ServerUrl + "/reitunes/allevents");
             response.EnsureSuccessStatusCode();
@@ -36,7 +40,8 @@ namespace ReiTunes.Core {
             return deserialized;
         }
 
-        public async Task<IEnumerable<IEvent>> PullAllEventsAsync() {
+        public async Task<IEnumerable<IEvent>> PullAllEventsAsync()
+        {
             List<string> allSerializedEvents = await PullAllSerializedEventsAsync();
 
             Stopwatch sw = Stopwatch.StartNew();
@@ -49,11 +54,13 @@ namespace ReiTunes.Core {
 
         public async Task PushEventAsync(IEvent @event) => await PushEventsAsync(new List<IEvent> { @event });
 
-        public async Task PushEventsAsync(IEnumerable<IEvent> events) {
+        public async Task PushEventsAsync(IEnumerable<IEvent> events)
+        {
             Stopwatch sw = Stopwatch.StartNew();
 
-            foreach (IEnumerable<IEvent> chunk in events.Chunk(EventPushBatchSize)) {
-                string serialized =  await Task.Run(() => EventSerialization.Serialize(chunk.ToList()));
+            foreach (IEnumerable<IEvent> chunk in events.Chunk(EventPushBatchSize))
+            {
+                string serialized = await Task.Run(() => EventSerialization.Serialize(chunk.ToList()));
                 StringContent content = new StringContent(serialized, Encoding.UTF8, "application/json");
 
                 int serializedKiloByteCount = UnicodeEncoding.UTF8.GetByteCount(serialized) / 1024;
@@ -67,7 +74,8 @@ namespace ReiTunes.Core {
             _logger.Information("Pushing all events took {ElapsedMs} ms", sw.ElapsedMilliseconds);
         }
 
-        public async Task CreateNewLibraryItemAsync(string filePath) {
+        public async Task CreateNewLibraryItemAsync(string filePath)
+        {
             string uri = QueryHelpers.AddQueryString("/reitunes/createitem", "filePath", filePath);
             HttpResponseMessage putResponse = await _client.PutAsync(Secrets.ServerUrl + uri, null);
             putResponse.EnsureSuccessStatusCode();

@@ -3,9 +3,11 @@ using System.Collections.Generic;
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
 
-namespace ReiTunes.Core {
+namespace ReiTunes.Core
+{
 
-    public abstract class Aggregate : INotifyPropertyChanged {
+    public abstract class Aggregate : INotifyPropertyChanged
+    {
         private readonly List<IEvent> _uncommittedEvents;
         protected Dictionary<Type, Action<IEvent>> _eventAppliers;
 
@@ -15,7 +17,8 @@ namespace ReiTunes.Core {
 
         public DateTime CreatedTimeUtc { get; protected set; }
 
-        protected Aggregate() {
+        protected Aggregate()
+        {
             _uncommittedEvents = new List<IEvent>();
             _eventAppliers = new Dictionary<Type, Action<IEvent>>();
             RegisterAppliers();
@@ -23,7 +26,8 @@ namespace ReiTunes.Core {
 
         protected abstract void RegisterAppliers();
 
-        protected void RegisterApplier<TEvent>(Action<TEvent> applier) where TEvent : IEvent {
+        protected void RegisterApplier<TEvent>(Action<TEvent> applier) where TEvent : IEvent
+        {
             _eventAppliers.Add(typeof(TEvent), (x) => applier((TEvent)x));
         }
 
@@ -31,31 +35,38 @@ namespace ReiTunes.Core {
 
         public string AggregateName { get { return GetType().Name; } }
 
-        protected void ApplyButDoNotCommit(IEvent evt) {
+        protected void ApplyButDoNotCommit(IEvent evt)
+        {
             Apply(evt);
             _uncommittedEvents.Add(evt);
             EventCreated?.Invoke(this, evt);
         }
 
-        public void Apply(IEvent evt) {
+        public void Apply(IEvent evt)
+        {
             Type evtType = evt.GetType();
-            if (!_eventAppliers.ContainsKey(evtType)) {
+            if (!_eventAppliers.ContainsKey(evtType))
+            {
                 throw new NotImplementedException($"Apply() not implemented for {evtType}");
             }
             _eventAppliers[evtType](evt);
         }
 
-        public void Apply(IEnumerable<IEvent> history) {
-            foreach (IEvent evt in history) {
+        public void Apply(IEnumerable<IEvent> history)
+        {
+            foreach (IEvent evt in history)
+            {
                 Apply(evt);
             }
         }
 
-        public IEnumerable<IEvent> GetUncommittedEvents() {
+        public IEnumerable<IEvent> GetUncommittedEvents()
+        {
             return _uncommittedEvents.AsReadOnly();
         }
 
-        public void Commit() {
+        public void Commit()
+        {
             _uncommittedEvents.Clear();
         }
 

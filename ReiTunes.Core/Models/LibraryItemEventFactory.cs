@@ -1,13 +1,16 @@
 ﻿using System;
 
-namespace ReiTunes.Core {
+namespace ReiTunes.Core
+{
 
-    public class LibraryItemEventFactory {
+    public class LibraryItemEventFactory
+    {
         private readonly string _machineName;
         private readonly Func<Guid> _guidFactory;
         private readonly IClock _clock;
 
-        public LibraryItemEventFactory(IClock clock = null, string machineName = null, Func<Guid> guidFactory = null) {
+        public LibraryItemEventFactory(IClock clock = null, string machineName = null, Func<Guid> guidFactory = null)
+        {
             _clock = clock ?? new Clock();
             _machineName = machineName ?? Environment.MachineName;
             _guidFactory = guidFactory ?? (() => Guid.NewGuid());

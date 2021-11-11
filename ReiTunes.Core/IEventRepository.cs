@@ -1,9 +1,11 @@
 ﻿using System;
 using System.Collections.Generic;
 
-namespace ReiTunes.Core {
+namespace ReiTunes.Core
+{
 
-    public interface IEventRepository {
+    public interface IEventRepository
+    {
 
         public IEnumerable<IEvent> GetEvents(Guid aggregateId);
 
@@ -20,7 +22,8 @@ namespace ReiTunes.Core {
         public bool ContainsEvent(Guid eventId);
     }
 
-    public interface ISerializedEventRepository : IEventRepository {
+    public interface ISerializedEventRepository : IEventRepository
+    {
 
         public IEnumerable<string> GetAllSerializedEvents();
     }

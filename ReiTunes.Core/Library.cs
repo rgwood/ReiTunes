@@ -6,9 +6,11 @@ using System.Diagnostics;
 using System.Linq;
 using System.Threading.Tasks;
 
-namespace ReiTunes.Core {
+namespace ReiTunes.Core
+{
 
-    public class Library {
+    public class Library
+    {
 
         public event EventHandler LibraryItemsRebuilt;
 
@@ -27,7 +29,8 @@ namespace ReiTunes.Core {
         public Library(string machineName, SqliteConnection connection, IServerCaller caller, ILogger logger)
             : this(machineName, connection, caller, logger, new Clock()) { }
 
-        public Library(string machineName, SqliteConnection connection, IServerCaller caller, ILogger logger, IClock clock) {
+        public Library(string machineName, SqliteConnection connection, IServerCaller caller, ILogger logger, IClock clock)
+        {
             MachineName = machineName;
             _caller = caller;
             _logger = logger;
@@ -36,23 +39,28 @@ namespace ReiTunes.Core {
             RebuildItems();
         }
 
-        public void ReceiveEvents(IEnumerable<IEvent> events) {
-            foreach (IEvent @event in events) {
+        public void ReceiveEvents(IEnumerable<IEvent> events)
+        {
+            foreach (IEvent @event in events)
+            {
                 _repo.Save(@event);
             }
             RebuildItems();
         }
 
-        public void ReceiveEvent(IEvent @event) {
+        public void ReceiveEvent(IEvent @event)
+        {
             ReceiveEvents(new List<IEvent> { @event });
         }
 
-        public async Task PullFromServer() {
+        public async Task PullFromServer()
+        {
             IEnumerable<IEvent> events = await _caller.PullAllEventsAsync();
             ReceiveEvents(events);
         }
 
-        public async Task PushToServer() {
+        public async Task PushToServer()
+        {
             IEnumerable<IEvent> eventsToPush = _repo.GetAllEventsFromMachine(MachineName);
 
             await _caller.PushEventsAsync(eventsToPush);
@@ -65,16 +73,19 @@ namespace ReiTunes.Core {
         }
 
         //todo: make async
-        public IEnumerable<string> GetRecentEvents() {
+        public IEnumerable<string> GetRecentEvents()
+        {
             return _repo.GetAllSerializedEvents().Reverse().Take(10);
         }
 
-        public void Delete(LibraryItem item) {
+        public void Delete(LibraryItem item)
+        {
             _repo.Save(_eventFactory.GetDeletedEvent(item.AggregateId));
             RebuildItems();
         }
 
-        internal void RebuildItems() {
+        internal void RebuildItems()
+        {
             Stopwatch sw = Stopwatch.StartNew();
             IEnumerable<IEvent> events = _repo.GetAllEvents();
             RebuildItems(events);
@@ -82,17 +93,20 @@ namespace ReiTunes.Core {
             _logger.Information("Rebuilding all items took {ElapsedMs} ms", sw.ElapsedMilliseconds);
         }
 
-        internal void RebuildItems(IEnumerable<IEvent> events) {
+        internal void RebuildItems(IEnumerable<IEvent> events)
+        {
             Items.Clear();
 
             IEnumerable<IOrderedEnumerable<IEvent>> groupedEvents = events.GroupBy(e => e.AggregateId).Select(g => g.OrderBy(e => e.CreatedTimeUtc).ThenBy(e => e.LocalId));
 
-            foreach (IOrderedEnumerable<IEvent> aggregateEvents in groupedEvents) {
+            foreach (IOrderedEnumerable<IEvent> aggregateEvents in groupedEvents)
+            {
                 LibraryItem aggregate = new LibraryItem(_eventFactory);
 
                 IEvent first = aggregateEvents.First();
 
-                if (!(first is LibraryItemCreatedEvent)) {
+                if (!(first is LibraryItemCreatedEvent))
+                {
                     throw new Exception($"Bad event data: first event for item {first.AggregateId} is of type {first.GetType()} not {nameof(LibraryItemCreatedEvent)}");
                 }
 
@@ -105,14 +119,16 @@ namespace ReiTunes.Core {
 
             List<LibraryItem> itemsToDelete = Items.Where(i => i.Tombstoned).ToList();
 
-            foreach (LibraryItem item in itemsToDelete) {
+            foreach (LibraryItem item in itemsToDelete)
+            {
                 Items.Remove(item);
             }
 
             LibraryItemsRebuilt?.Invoke(this, EventArgs.Empty);
         }
 
-        private void SaveEventToRepo(object sender, IEvent e) {
+        private void SaveEventToRepo(object sender, IEvent e)
+        {
             _repo.Save(e);
             Aggregate agg = (Aggregate)sender;
             agg.Commit();

@@ -1,8 +1,10 @@
 ﻿using System.Collections.Generic;
 using System.Threading.Tasks;
 
-namespace ReiTunes.Core {
-    public interface IServerCaller {
+namespace ReiTunes.Core
+{
+    public interface IServerCaller
+    {
         Task CreateNewLibraryItemAsync(string filePath);
         Task<IEnumerable<IEvent>> PullAllEventsAsync();
         Task<List<string>> PullAllSerializedEventsAsync();
@@ -10,11 +12,12 @@ namespace ReiTunes.Core {
         Task PushEventsAsync(IEnumerable<IEvent> events);
     }
 
-    public class NoopServerCaller : IServerCaller {
+    public class NoopServerCaller : IServerCaller
+    {
         public Task CreateNewLibraryItemAsync(string filePath) => Task.CompletedTask;
 
-        public Task<IEnumerable<IEvent>> PullAllEventsAsync() 
-            => Task.FromResult((IEnumerable<IEvent>) new List<IEvent>());   
+        public Task<IEnumerable<IEvent>> PullAllEventsAsync()
+            => Task.FromResult((IEnumerable<IEvent>)new List<IEvent>());
 
         public Task<List<string>> PullAllSerializedEventsAsync() =>
             Task.FromResult(new List<string>());
