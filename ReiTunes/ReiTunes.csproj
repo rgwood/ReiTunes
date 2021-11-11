@@ -260,12 +260,6 @@
     <PackageReference Include="Microsoft.Toolkit">
       <Version>6.1.1</Version>
     </PackageReference>
-    <PackageReference Include="Microsoft.Toolkit.Parsers">
-      <Version>6.1.1</Version>
-    </PackageReference>
-    <PackageReference Include="Microsoft.Toolkit.Uwp.Notifications">
-      <Version>6.1.1</Version>
-    </PackageReference>
     <PackageReference Include="Microsoft.Toolkit.Uwp.UI.Animations">
       <Version>6.1.1</Version>
     </PackageReference>
