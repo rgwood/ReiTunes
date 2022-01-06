@@ -1,43 +1,49 @@
 using Serilog;
 using Serilog.Events;
+using ReiTunes.Server;
+using ReiTunes.Core;
+using System.Diagnostics; // for Ben.Demystify
 
-namespace ReiTunes.Server;
-
-public class Program
+if (args.Any() && args[0] == "install")
 {
+    await Systemd.InstallService();
+    return;
+}
 
-    public static int Main(string[] args)
-    {
-        Log.Logger = new LoggerConfiguration()
-        .MinimumLevel.Override("Microsoft", LogEventLevel.Information)
-        .Enrich.FromLogContext()
-        .WriteTo.Console()
-        .WriteTo.File(Paths.LogFilePath, rollingInterval: RollingInterval.Day)
-        .CreateLogger();
+var builder = WebApplication.CreateBuilder(args);
 
-        try
-        {
-            Log.Information("Starting web host");
-            CreateHostBuilder(args).Build().Run();
-            return 0;
-        }
-        catch (Exception ex)
-        {
-            Log.Fatal(ex, "Host terminated unexpectedly");
-            return 1;
-        }
-        finally
-        {
-            Log.CloseAndFlush();
-        }
-    }
+// Add DI services
+builder.Services.AddControllers();
+builder.Services.AddSingleton<ISerializedEventRepository, SQLiteEventRepository>(
+    _ => new SQLiteEventRepository(SQLiteHelpers.CreateFileDb(Paths.LibraryDbPath)));
+builder.Services.AddTransient<IClock, Clock>();
+builder.Services.AddTransient<LibraryItemEventFactory>();
 
-    public static IHostBuilder CreateHostBuilder(string[] args) =>
-        Host.CreateDefaultBuilder(args)
-            .UseSerilog()
-            .UseSystemd()
-            .ConfigureWebHostDefaults(webBuilder =>
-            {
-                webBuilder.UseStartup<Startup>();
-            });
+// Configure host (i.e. process-level stuff conceptually outside of ASP.NET)
+Log.Logger = new LoggerConfiguration()
+.MinimumLevel.Override("Microsoft", LogEventLevel.Information)
+.Enrich.FromLogContext()
+.WriteTo.Console()
+.WriteTo.File(Paths.LogFilePath, rollingInterval: RollingInterval.Day)
+.CreateLogger();
+builder.Host.UseSerilog();
+builder.Host.UseSystemd();
+
+WebApplication app = builder.Build();
+
+// set up HTTP
+app.UseAuthorization();
+app.MapControllers();
+
+try
+{
+    app.Run();
+}
+catch (Exception ex)
+{
+    Log.Fatal(ex.Demystify(), "Host terminated unexpectedly");
+}
+finally
+{
+    Log.CloseAndFlush();
 }

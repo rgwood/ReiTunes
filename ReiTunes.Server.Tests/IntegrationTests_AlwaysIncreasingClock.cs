@@ -10,14 +10,14 @@ namespace ReiTunes.Server.Tests;
 
 public class IntegrationTests_AlwaysIncreasingClock
 {
-    private readonly WebApplicationFactory<Startup> _factory;
+    private readonly WebApplicationFactory<Program> _factory;
 
     private readonly ServiceProvider _serviceProvider;
     private readonly ServerCaller _serverCaller;
 
     public IntegrationTests_AlwaysIncreasingClock()
     {
-        _factory = new WebApplicationFactory<Startup>().WithWebHostBuilder(builder =>
+        _factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
             builder.ConfigureTestServices(services =>
             {
