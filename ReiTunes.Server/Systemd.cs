@@ -1,6 +1,6 @@
-﻿using CliWrap;
+﻿using System.Diagnostics;
+using CliWrap;
 using Spectre.Console;
-using System.Diagnostics;
 
 namespace ReiTunes.Server;
 

@@ -1,8 +1,8 @@
+using System.Diagnostics; // for Ben.Demystify
+using ReiTunes.Core;
+using ReiTunes.Server;
 using Serilog;
 using Serilog.Events;
-using ReiTunes.Server;
-using ReiTunes.Core;
-using System.Diagnostics; // for Ben.Demystify
 
 if (args.Any() && args[0] == "install")
 {

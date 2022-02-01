@@ -1,6 +1,6 @@
-﻿using Microsoft.Toolkit.Uwp.Helpers;
-using System;
+﻿using System;
 using System.Threading.Tasks;
+using Microsoft.Toolkit.Uwp.Helpers;
 using Windows.ApplicationModel;
 using Windows.ApplicationModel.Core;
 using Windows.UI.Core;
@@ -23,8 +23,8 @@ public static class WhatsNewDisplayService
                     shown = true;
                     PackageVersion ver = Package.Current.Id.Version;
 
-                        // TODO: move this into XAML and set the background colour appropriately
-                        ContentDialog dialog = new ContentDialog()
+                    // TODO: move this into XAML and set the background colour appropriately
+                    ContentDialog dialog = new ContentDialog()
                     {
                         Title = "ReiTunes Was Updated",
                         Content = $"Now on version {ver.Major}.{ver.Minor}.{ver.Build}.{ver.Revision}. {Environment.NewLine}P.S. Juliette you're cute",

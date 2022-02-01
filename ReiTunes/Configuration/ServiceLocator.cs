@@ -1,4 +1,7 @@
-﻿using Microsoft.Data.Sqlite;
+﻿using System;
+using System.Collections.Concurrent;
+using System.Net.Http;
+using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.DependencyInjection;
 using ReiTunes.Activation;
 using ReiTunes.Core;
@@ -6,9 +9,6 @@ using ReiTunes.Helpers;
 using ReiTunes.Logging;
 using ReiTunes.Services;
 using Serilog;
-using System;
-using System.Collections.Concurrent;
-using System.Net.Http;
 using Windows.UI.ViewManagement;
 
 namespace ReiTunes.Configuration;

@@ -1,8 +1,8 @@
-﻿using Microsoft.Toolkit.Uwp.UI.Helpers;
+﻿using System;
+using Microsoft.Toolkit.Uwp.UI.Helpers;
 using ReiTunes.Configuration;
 using ReiTunes.Services;
 using Serilog;
-using System;
 using Windows.ApplicationModel;
 using Windows.ApplicationModel.Activation;
 using Windows.ApplicationModel.Core;

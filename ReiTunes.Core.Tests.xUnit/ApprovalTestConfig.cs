@@ -1,3 +1,3 @@
 ﻿using ApprovalTests.Reporters;
 
-[assembly: UseReporter(typeof(DiffReporter))]
+[assembly: UseReporter(typeof(DiffReporter))] 

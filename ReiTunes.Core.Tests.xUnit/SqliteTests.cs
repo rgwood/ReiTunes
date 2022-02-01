@@ -1,7 +1,7 @@
-﻿using Dapper;
-using Microsoft.Data.Sqlite;
-using System;
+﻿using System;
 using System.Linq;
+using Dapper;
+using Microsoft.Data.Sqlite;
 using Xunit;
 
 namespace ReiTunes.Core.Tests.xUnit;

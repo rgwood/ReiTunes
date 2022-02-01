@@ -1,10 +1,10 @@
-﻿using ReiTunes.Configuration;
-using ReiTunes.Core;
-using System;
+﻿using System;
 using System.ComponentModel;
 using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Threading.Tasks;
+using ReiTunes.Configuration;
+using ReiTunes.Core;
 using Windows.Storage;
 using Windows.Storage.FileProperties;
 using Windows.UI.ViewManagement.Core;

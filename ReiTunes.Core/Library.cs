@@ -1,6 +1,6 @@
-﻿using Microsoft.Data.Sqlite;
+﻿using System.Diagnostics;
+using Microsoft.Data.Sqlite;
 using Serilog;
-using System.Diagnostics;
 
 namespace ReiTunes.Core;
 

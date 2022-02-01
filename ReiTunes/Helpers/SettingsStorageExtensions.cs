@@ -1,7 +1,7 @@
-﻿using ReiTunes.Core;
-using System;
+﻿using System;
 using System.IO;
 using System.Threading.Tasks;
+using ReiTunes.Core;
 using Windows.Storage;
 using Windows.Storage.Streams;
 

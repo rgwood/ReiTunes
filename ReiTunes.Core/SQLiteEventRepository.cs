@@ -1,7 +1,7 @@
-﻿using Dapper;
+﻿using System.Diagnostics;
+using Dapper;
 using Microsoft.Data.Sqlite;
 using Serilog;
-using System.Diagnostics;
 
 namespace ReiTunes.Core;
 

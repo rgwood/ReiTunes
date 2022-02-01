@@ -1,10 +1,10 @@
-﻿using Microsoft.Extensions.DependencyInjection;
-using ReiTunes.Activation;
-using ReiTunes.Configuration;
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
+using Microsoft.Extensions.DependencyInjection;
+using ReiTunes.Activation;
+using ReiTunes.Configuration;
 using Windows.ApplicationModel.Activation;
 using Windows.UI.Xaml;
 using Windows.UI.Xaml.Controls;

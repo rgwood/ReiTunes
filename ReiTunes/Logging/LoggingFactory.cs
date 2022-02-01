@@ -1,5 +1,5 @@
-﻿using Serilog;
-using System.IO;
+﻿using System.IO;
+using Serilog;
 
 namespace ReiTunes.Logging;
 

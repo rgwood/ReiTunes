@@ -1,7 +1,7 @@
-﻿using Microsoft.Toolkit.Uwp.Helpers;
-using ReiTunes.Configuration;
-using System;
+﻿using System;
 using System.Threading.Tasks;
+using Microsoft.Toolkit.Uwp.Helpers;
+using ReiTunes.Configuration;
 using Windows.ApplicationModel.Core;
 using Windows.UI.Core;
 
@@ -18,12 +18,12 @@ public static class FirstRunService
             {
                 if (SystemInformation.IsFirstRun && !shown)
                 {
-                        // pull events in for the first time
-                        await ServiceLocator.Current.GetService<PlayerViewModel>().PullEventsCommand.ExecuteAsync(null);
+                    // pull events in for the first time
+                    await ServiceLocator.Current.GetService<PlayerViewModel>().PullEventsCommand.ExecuteAsync(null);
                     shown = true;
-                        //var dialog = new FirstRunDialog();
-                        //await dialog.ShowAsync();
-                    }
+                    //var dialog = new FirstRunDialog();
+                    //await dialog.ShowAsync();
+                }
             });
     }
 }

@@ -4,20 +4,24 @@ using ReiTunes.Core;
 
 namespace Benchmarker;
 
-internal class Program {
-    private static void Main(string[] args) {
+internal class Program
+{
+    private static void Main(string[] args)
+    {
         BenchmarkDotNet.Reports.Summary summary = BenchmarkRunner.Run<EventBenchmarker>();
     }
 }
 
 [MemoryDiagnoser]
 [ShortRunJob]
-public class EventBenchmarker {
+public class EventBenchmarker
+{
     private Library _lib;
     private List<IEvent> _events;
 
     [GlobalSetup]
-    public void Setup() {
+    public void Setup()
+    {
 
         string libraryPath = @"C:\Users\reill\Music\library.db";
         var repo = new SQLiteEventRepository(SQLiteHelpers.CreateFileDb(libraryPath));
@@ -28,27 +32,31 @@ public class EventBenchmarker {
     }
 
     [Benchmark]
-    public SQLiteEventRepository OpenSqliteDbFromDisk() {
+    public SQLiteEventRepository OpenSqliteDbFromDisk()
+    {
         string libraryPath = @"C:\Users\reill\Music\library.db";
         return new SQLiteEventRepository(SQLiteHelpers.CreateFileDb(libraryPath));
     }
 
     [Benchmark]
-    public List<string> ReadAllEvents_RawJson() {
+    public List<string> ReadAllEvents_RawJson()
+    {
         string libraryPath = @"C:\Users\reill\Music\library.db";
         var repo = new SQLiteEventRepository(SQLiteHelpers.CreateFileDb(libraryPath));
         return repo.GetAllSerializedEvents().ToList();
     }
 
     [Benchmark]
-    public List<IEvent> ReadAllEvents_Deserialized() {
+    public List<IEvent> ReadAllEvents_Deserialized()
+    {
         string libraryPath = @"C:\Users\reill\Music\library.db";
         var repo = new SQLiteEventRepository(SQLiteHelpers.CreateFileDb(libraryPath));
         return repo.GetAllEvents().ToList();
     }
 
     [Benchmark]
-    public List<LibraryItem> ReplayAllEventsFromDisk() {
+    public List<LibraryItem> ReplayAllEventsFromDisk()
+    {
         string libraryPath = @"C:\Users\reill\Music\library.db";
         var repo = new SQLiteEventRepository(SQLiteHelpers.CreateFileDb(libraryPath));
         var logger = LoggerHelpers.DoNothingLogger();
@@ -57,27 +65,32 @@ public class EventBenchmarker {
     }
 
     [Benchmark]
-    public List<LibraryItem> ReplayAllEventsFromMemory() {
+    public List<LibraryItem> ReplayAllEventsFromMemory()
+    {
         _lib.RebuildItems(_events);
         return _lib.Items;
     }
 }
 
 [MemoryDiagnoser]
-public class MemoryBenchmarker {
+public class MemoryBenchmarker
+{
 
     [Benchmark]
-    public List<byte[]> Allocate() {
+    public List<byte[]> Allocate()
+    {
         List<byte[]> ret = new List<byte[]>();
 
-        for (int i = 0; i < 1024; i++) {
+        for (int i = 0; i < 1024; i++)
+        {
             ret.Add(OneMegabyte());
         }
 
         return ret;
     }
 
-    public static byte[] OneMegabyte() {
+    public static byte[] OneMegabyte()
+    {
         return new byte[1024 * 1024];
     }
 }

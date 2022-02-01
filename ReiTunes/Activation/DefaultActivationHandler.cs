@@ -1,6 +1,6 @@
-﻿using ReiTunes.Services;
-using System;
+﻿using System;
 using System.Threading.Tasks;
+using ReiTunes.Services;
 using Windows.ApplicationModel.Activation;
 
 namespace ReiTunes.Activation;

@@ -1,7 +1,7 @@
-﻿using Microsoft.AspNetCore.WebUtilities;
-using Serilog;
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using System.Text;
+using Microsoft.AspNetCore.WebUtilities;
+using Serilog;
 
 namespace ReiTunes.Core;
 

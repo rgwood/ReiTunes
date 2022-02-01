@@ -1,7 +1,7 @@
-﻿using ApprovalTests;
+﻿using System;
+using ApprovalTests;
 using ApprovalTests.Reporters;
 using ReiTunes.Core;
-using System;
 using Xunit;
 
 namespace ReiTunes.Test;
