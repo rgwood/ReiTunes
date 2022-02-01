@@ -52,10 +52,8 @@ public class SQLiteEventRepository : ISerializedEventRepository
 
     public void Save(IEvent @event)
     {
-        if (ContainsEvent(@event.Id))
-            return;
-
-        _conn.InsertEvent(@event);
+        if (!ContainsEvent(@event.Id))
+            _conn.InsertEvent(@event);
     }
 
     public void Save(IEnumerable<IEvent> events)
