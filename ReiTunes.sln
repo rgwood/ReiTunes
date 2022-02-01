@@ -27,8 +27,6 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "ReiTunes.Server.Tests", "Re
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Benchmarker", "Benchmarker\Benchmarker.csproj", "{3B6C5834-C301-4FE4-9AA1-EAF1F3BE3E04}"
 EndProject
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "ReiTunesFzf", "ReiTunesFzf\ReiTunesFzf.csproj", "{78755F10-2B58-42E5-B5DF-9E9E324845FD}"
-EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -207,26 +205,6 @@ Global
 		{3B6C5834-C301-4FE4-9AA1-EAF1F3BE3E04}.Release|x64.Build.0 = Release|Any CPU
 		{3B6C5834-C301-4FE4-9AA1-EAF1F3BE3E04}.Release|x86.ActiveCfg = Release|Any CPU
 		{3B6C5834-C301-4FE4-9AA1-EAF1F3BE3E04}.Release|x86.Build.0 = Release|Any CPU
-		{78755F10-2B58-42E5-B5DF-9E9E324845FD}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{78755F10-2B58-42E5-B5DF-9E9E324845FD}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{78755F10-2B58-42E5-B5DF-9E9E324845FD}.Debug|ARM.ActiveCfg = Debug|Any CPU
-		{78755F10-2B58-42E5-B5DF-9E9E324845FD}.Debug|ARM.Build.0 = Debug|Any CPU
-		{78755F10-2B58-42E5-B5DF-9E9E324845FD}.Debug|ARM64.ActiveCfg = Debug|Any CPU
-		{78755F10-2B58-42E5-B5DF-9E9E324845FD}.Debug|ARM64.Build.0 = Debug|Any CPU
-		{78755F10-2B58-42E5-B5DF-9E9E324845FD}.Debug|x64.ActiveCfg = Debug|Any CPU
-		{78755F10-2B58-42E5-B5DF-9E9E324845FD}.Debug|x64.Build.0 = Debug|Any CPU
-		{78755F10-2B58-42E5-B5DF-9E9E324845FD}.Debug|x86.ActiveCfg = Debug|Any CPU
-		{78755F10-2B58-42E5-B5DF-9E9E324845FD}.Debug|x86.Build.0 = Debug|Any CPU
-		{78755F10-2B58-42E5-B5DF-9E9E324845FD}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{78755F10-2B58-42E5-B5DF-9E9E324845FD}.Release|Any CPU.Build.0 = Release|Any CPU
-		{78755F10-2B58-42E5-B5DF-9E9E324845FD}.Release|ARM.ActiveCfg = Release|Any CPU
-		{78755F10-2B58-42E5-B5DF-9E9E324845FD}.Release|ARM.Build.0 = Release|Any CPU
-		{78755F10-2B58-42E5-B5DF-9E9E324845FD}.Release|ARM64.ActiveCfg = Release|Any CPU
-		{78755F10-2B58-42E5-B5DF-9E9E324845FD}.Release|ARM64.Build.0 = Release|Any CPU
-		{78755F10-2B58-42E5-B5DF-9E9E324845FD}.Release|x64.ActiveCfg = Release|Any CPU
-		{78755F10-2B58-42E5-B5DF-9E9E324845FD}.Release|x64.Build.0 = Release|Any CPU
-		{78755F10-2B58-42E5-B5DF-9E9E324845FD}.Release|x86.ActiveCfg = Release|Any CPU
-		{78755F10-2B58-42E5-B5DF-9E9E324845FD}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
