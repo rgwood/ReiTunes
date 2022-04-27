@@ -6,12 +6,12 @@ namespace ReiTunes.Core;
 
 public class Library
 {
-
+    private List<LibraryItem> _items = new();
     public event EventHandler LibraryItemsRebuilt;
 
     public string MachineName { get; private set; }
 
-    public List<LibraryItem> Items { get; set; } = new List<LibraryItem>();
+    public IEnumerable<LibraryItem> Items => _items;
     private readonly ISerializedEventRepository _repo;
     private readonly IServerCaller _caller;
     private readonly ILogger _logger;
@@ -90,7 +90,7 @@ public class Library
 
     internal void RebuildItems(IEnumerable<IEvent> events)
     {
-        Items.Clear();
+        _items.Clear();
 
         IEnumerable<IOrderedEnumerable<IEvent>> groupedEvents = events.GroupBy(e => e.AggregateId).Select(g => g.OrderBy(e => e.CreatedTimeUtc).ThenBy(e => e.LocalId));
 
@@ -109,14 +109,14 @@ public class Library
 
             aggregate.Apply(aggregateEvents);
 
-            Items.Add(aggregate);
+            _items.Add(aggregate);
         }
 
         List<LibraryItem> itemsToDelete = Items.Where(i => i.Tombstoned).ToList();
 
         foreach (LibraryItem item in itemsToDelete)
         {
-            Items.Remove(item);
+            _items.Remove(item);
         }
 
         LibraryItemsRebuilt?.Invoke(this, EventArgs.Empty);
