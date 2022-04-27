@@ -23,10 +23,8 @@ body
 
 .app
 {
-  @apply  m-auto pb-8 max-w-5xl 
-          pt-4 sm:pt-6 md:pt-8 lg:pt-12
+  @apply  m-auto max-w-5xl
           pl-6 pr-3 sm:px-8 md:px-10
-
           transition-[font-size,padding] duration-700 ease-in-out;
   
   @apply text-[14px] md:text-[16px] lg:md:text-[18px];
