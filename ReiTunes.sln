@@ -27,6 +27,8 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Benchmarker", "Benchmarker\
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ReiTunes.Blazor", "ReiTunes.Blazor\ReiTunes.Blazor.csproj", "{3399335B-E929-47A2-A3D3-DDE1A3618B35}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ReiTunes.Console", "ReiTunes.Console\ReiTunes.Console.csproj", "{33D88EDC-2539-4459-AD6D-EA209E266C00}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -206,6 +208,26 @@ Global
 		{3399335B-E929-47A2-A3D3-DDE1A3618B35}.Release|x64.Build.0 = Release|Any CPU
 		{3399335B-E929-47A2-A3D3-DDE1A3618B35}.Release|x86.ActiveCfg = Release|Any CPU
 		{3399335B-E929-47A2-A3D3-DDE1A3618B35}.Release|x86.Build.0 = Release|Any CPU
+		{33D88EDC-2539-4459-AD6D-EA209E266C00}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{33D88EDC-2539-4459-AD6D-EA209E266C00}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{33D88EDC-2539-4459-AD6D-EA209E266C00}.Debug|ARM.ActiveCfg = Debug|Any CPU
+		{33D88EDC-2539-4459-AD6D-EA209E266C00}.Debug|ARM.Build.0 = Debug|Any CPU
+		{33D88EDC-2539-4459-AD6D-EA209E266C00}.Debug|ARM64.ActiveCfg = Debug|Any CPU
+		{33D88EDC-2539-4459-AD6D-EA209E266C00}.Debug|ARM64.Build.0 = Debug|Any CPU
+		{33D88EDC-2539-4459-AD6D-EA209E266C00}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{33D88EDC-2539-4459-AD6D-EA209E266C00}.Debug|x64.Build.0 = Debug|Any CPU
+		{33D88EDC-2539-4459-AD6D-EA209E266C00}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{33D88EDC-2539-4459-AD6D-EA209E266C00}.Debug|x86.Build.0 = Debug|Any CPU
+		{33D88EDC-2539-4459-AD6D-EA209E266C00}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{33D88EDC-2539-4459-AD6D-EA209E266C00}.Release|Any CPU.Build.0 = Release|Any CPU
+		{33D88EDC-2539-4459-AD6D-EA209E266C00}.Release|ARM.ActiveCfg = Release|Any CPU
+		{33D88EDC-2539-4459-AD6D-EA209E266C00}.Release|ARM.Build.0 = Release|Any CPU
+		{33D88EDC-2539-4459-AD6D-EA209E266C00}.Release|ARM64.ActiveCfg = Release|Any CPU
+		{33D88EDC-2539-4459-AD6D-EA209E266C00}.Release|ARM64.Build.0 = Release|Any CPU
+		{33D88EDC-2539-4459-AD6D-EA209E266C00}.Release|x64.ActiveCfg = Release|Any CPU
+		{33D88EDC-2539-4459-AD6D-EA209E266C00}.Release|x64.Build.0 = Release|Any CPU
+		{33D88EDC-2539-4459-AD6D-EA209E266C00}.Release|x86.ActiveCfg = Release|Any CPU
+		{33D88EDC-2539-4459-AD6D-EA209E266C00}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

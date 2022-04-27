@@ -2,6 +2,7 @@
   "solution": {
     "path": "ReiTunes.sln",
     "projects": [
+      "ReiTunes.Console\\ReiTunes.Console.csproj",
       "ReiTunes.Core.Tests.xUnit\\ReiTunes.Core.Tests.xUnit.csproj",
       "ReiTunes.Core\\ReiTunes.Core.csproj",
       "ReiTunes.Server.Tests\\ReiTunes.Server.Tests.csproj",
