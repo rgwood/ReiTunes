@@ -109,13 +109,7 @@ public class LibraryItem : Aggregate, IEquatable<LibraryItem>
     public int PlayCount => _playCount;
 
     // a single string with everything we might want to include in text search, useful for fuzzy find
-    public string AllSearchProperties
-    {
-        get
-        {
-            return $"{Name} {Artist} {Album} {FilePath}";
-        }
-    }
+    public string AllSearchProperties => $"{Name} {Artist} {Album} {FilePath}";
 
     public LibraryItem(LibraryItemEventFactory eventFactory)
     {
@@ -266,13 +260,9 @@ public class LibraryItem : Aggregate, IEquatable<LibraryItem>
         return lhs.Equals(rhs);
     }
 
-    public static bool operator !=(LibraryItem lhs, LibraryItem rhs)
-    {
-        return !(lhs == rhs);
-    }
+    public static bool operator !=(LibraryItem lhs, LibraryItem rhs) => !(lhs == rhs);
 
-    public override int GetHashCode()
-    {
-        return AggregateId.GetHashCode();
-    }
+    public override int GetHashCode() => AggregateId.GetHashCode();
+
+    public override string ToString() => $"{Name} - {Artist} - {Album} - {FilePath} - Played {PlayCount}x";
 }
