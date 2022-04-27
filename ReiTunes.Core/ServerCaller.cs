@@ -31,8 +31,7 @@ public class ServerCaller : IServerCaller
         _logger.Information("Pulled {PayloadSizeKb} kb of serialized events in {ElapsedMs} ms",
             serializedKiloByteCount, sw.ElapsedMilliseconds);
 
-        List<string> deserialized = await Json.DeserializeAsync<List<string>>(contents);
-        return deserialized;
+        return await Json.DeserializeAsync<List<string>>(contents);
     }
 
     public async Task<IEnumerable<IEvent>> PullAllEventsAsync()

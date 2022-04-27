@@ -85,7 +85,7 @@ public class Library
         IEnumerable<IEvent> events = _repo.GetAllEvents();
         RebuildItems(events);
 
-        _logger.Information("Rebuilding all items took {ElapsedMs} ms", sw.ElapsedMilliseconds);
+        _logger.Information("Rebuilding all items from {EventCount} events took {ElapsedMs} ms", events.Count(), sw.ElapsedMilliseconds);
     }
 
     internal void RebuildItems(IEnumerable<IEvent> events)
