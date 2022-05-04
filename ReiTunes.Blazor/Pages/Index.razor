@@ -2,12 +2,42 @@
 
 @using ReiTunes.Core
 @inject Library MusicLibrary
+@inject LibrarySettings Settings
 
-@{
-    var cloudMusicLocation = new Uri("https://reitunes.blob.core.windows.net/music/");
-}
-    
-@foreach (LibraryItem item in MusicLibrary.Items.Take(10))
+<h1>@title</h1>
+
+<audio controls src="@audioUri" autoplay="true" class="w-full">
+    Your browser does not support the<code>audio</code> element.
+</audio>
+
+@foreach (LibraryItem item in MusicLibrary.Items)
 {
-    <p><a href="@(new Uri(cloudMusicLocation, item.FilePath))">@item.Name</a></p>
+    <button class="bg-blue-600 hover:bg-blue-700 text-white font-bold m-1 py-2 px-4 border border-blue-700 rounded"
+    @onclick="() => ItemClicked(item)">
+    @item.Name
+</button>
+}
+
+@code {
+    private string title = "Default Title";
+    private string audioUri = "";
+    ElementReference AudioPlayer;
+
+    private async Task ItemClicked(LibraryItem item)
+    {
+        Console.WriteLine($"Click handler for {item.Name}");
+
+        var expectedPath = Path.Combine(Settings.MusicFileLocation, item.FilePath);
+
+        if (File.Exists(expectedPath))
+        {
+            title = item.Name;
+            audioUri = $"musiclibrary/{item.FilePath}";
+        }
+        else
+        {
+            Console.WriteLine($"File not found at {expectedPath}");
+        }
+
+    }
 }

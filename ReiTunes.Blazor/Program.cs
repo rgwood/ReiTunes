@@ -1,4 +1,5 @@
 using Microsoft.Data.Sqlite;
+using Microsoft.Extensions.FileProviders;
 using ReiTunes.Blazor;
 using ReiTunes.Core;
 using Serilog;
@@ -23,6 +24,8 @@ builder.Services.AddSingleton<Serilog.ILogger>(serilog);
 builder.Services.AddSingleton<ServerCaller>();
 
 var libraryFilePath = Environment.ExpandEnvironmentVariables("%HOME%/.local/share/reitunes/library.db");
+var musicFileDirPath = Environment.ExpandEnvironmentVariables("%HOME%/Music/ReiTunes/");
+
 builder.Services.AddSingleton<SqliteConnection>((_) => SQLiteHelpers.CreateFileDb(libraryFilePath));
 // builder.Services.AddSingleton<Library>();
 
@@ -35,6 +38,8 @@ builder.Services.AddSingleton<Library>(provider =>
 
 builder.Services.AddHostedService<LibraryService>();
 
+builder.Services.AddSingleton<LibrarySettings>(_ => new LibrarySettings(musicFileDirPath));
+
 var app = builder.Build();
 
 // Configure the HTTP request pipeline.
@@ -46,6 +51,13 @@ if (!app.Environment.IsDevelopment())
 }
 
 app.UseHttpsRedirection();
+
+
+app.UseStaticFiles(new StaticFileOptions
+{
+    FileProvider = new PhysicalFileProvider(Environment.ExpandEnvironmentVariables("%HOME%/Music/ReiTunes")),
+    RequestPath = "/musiclibrary",
+});
 
 app.UseStaticFiles();
 
