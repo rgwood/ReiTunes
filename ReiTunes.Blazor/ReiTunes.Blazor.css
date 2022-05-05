@@ -23,7 +23,7 @@ body
 
 .app
 {
-  @apply  m-auto max-w-5xl
+  @apply  m-auto max-w-7xl
           pl-6 pr-3 sm:px-8 md:px-10
           transition-[font-size,padding] duration-700 ease-in-out;
   

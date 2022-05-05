@@ -1,0 +1,2 @@
+- [ ] Add Solarized colors to Tailwind
+- [ ] Turn icon into favicon

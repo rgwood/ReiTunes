@@ -4,14 +4,13 @@
 @inject Library MusicLibrary
 @inject LibrarySettings Settings
 
-<h1>@_title</h1>
+<h2>@_title</h2>
 
 <audio controls src="@_audioUri" autoplay="true" class="w-full">
     Your browser does not support the<code>audio</code> element.
 </audio>
 
 <div class="@(_showStatus ? "" : "hidden")">
-
     <div>@_status</div>
     <progress class="w-full" value=@_statusProgress max=100></progress>
 </div>
@@ -21,8 +20,8 @@
 {
     <button class="bg-blue-600 hover:bg-blue-700 text-white font-bold m-1 py-2 px-4 border border-blue-700 rounded"
     @onclick="() => ItemClicked(item)">
-    @item.Name
-</button>
+        @item.Name
+    </button>
 }
 
 @code {
@@ -51,20 +50,13 @@
         _statusProgress = 0;
     }
 
-
-
     private async Task ItemClicked(LibraryItem item)
     {
         Console.WriteLine($"Click handler for {item.Name}");
 
         var expectedPath = Path.Combine(Settings.MusicFileLocation, item.FilePath);
 
-        if (File.Exists(expectedPath))
-        {
-            _title = item.Name;
-            _audioUri = $"musiclibrary/{item.FilePath}";
-        }
-        else
+        if (!File.Exists(expectedPath))
         {
             var downloadFileUrl = new Uri(_cloudBaseUri, item.FilePath).ToString();
 
@@ -84,10 +76,9 @@
             Console.WriteLine($"Downloaded file to {expectedPath}");
 
             HideStatus();
-
-            _title = item.Name;
-            _audioUri = $"musiclibrary/{item.FilePath}";
         }
 
+        _title = $"{item.Name} - {item.Artist}";
+        _audioUri = $"musiclibrary/{item.FilePath}";
     }
 }
