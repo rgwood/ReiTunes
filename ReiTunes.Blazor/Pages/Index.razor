@@ -4,11 +4,18 @@
 @inject Library MusicLibrary
 @inject LibrarySettings Settings
 
-<h1>@title</h1>
+<h1>@_title</h1>
 
-<audio controls src="@audioUri" autoplay="true" class="w-full">
+<audio controls src="@_audioUri" autoplay="true" class="w-full">
     Your browser does not support the<code>audio</code> element.
 </audio>
+
+<div class="@(_showStatus ? "" : "hidden")">
+
+    <div>@_status</div>
+    <progress class="w-full" value=@_statusProgress max=100></progress>
+</div>
+
 
 @foreach (LibraryItem item in MusicLibrary.Items)
 {
@@ -19,9 +26,32 @@
 }
 
 @code {
-    private string title = "Default Title";
-    private string audioUri = "";
-    ElementReference AudioPlayer;
+
+    private readonly Uri _cloudBaseUri = new Uri("https://reitunes.blob.core.windows.net/music/");
+
+    private string _title = "Default Title";
+    private string _audioUri = "";
+
+    private bool _showStatus = false;
+    private string _status = "";
+
+    private int _statusProgress = 0;
+
+    private void HideStatus()
+    {
+        _showStatus = false;
+        _status = "";
+        _statusProgress = 0;
+    }
+
+    private void ShowStatus(string status)
+    {
+        _showStatus = true;
+        _status = status;
+        _statusProgress = 0;
+    }
+
+
 
     private async Task ItemClicked(LibraryItem item)
     {
@@ -31,12 +61,32 @@
 
         if (File.Exists(expectedPath))
         {
-            title = item.Name;
-            audioUri = $"musiclibrary/{item.FilePath}";
+            _title = item.Name;
+            _audioUri = $"musiclibrary/{item.FilePath}";
         }
         else
         {
-            Console.WriteLine($"File not found at {expectedPath}");
+            var downloadFileUrl = new Uri(_cloudBaseUri, item.FilePath).ToString();
+
+            ShowStatus($"Downloading {item.Name}...");
+
+            Console.WriteLine($"Downloading {item.Name} from {downloadFileUrl}");
+
+            using var client = new HttpClientDownloadWithProgress(downloadFileUrl, expectedPath);
+            client.ProgressChanged += (totalFileSize, totalBytesDownloaded, progressPercentage) =>
+            {
+                _statusProgress = (int) progressPercentage;
+                StateHasChanged();
+                Console.WriteLine($"{progressPercentage}% ({totalBytesDownloaded}/{totalFileSize})");
+            };
+
+            await client.Download();
+            Console.WriteLine($"Downloaded file to {expectedPath}");
+
+            HideStatus();
+
+            _title = item.Name;
+            _audioUri = $"musiclibrary/{item.FilePath}";
         }
 
     }
