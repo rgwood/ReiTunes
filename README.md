@@ -1,6 +1,6 @@
 # ReiTunes
 
-My personal music library system, with a Windows client and Linux server.
+My personal music library system, with a Windows client and Linux server. A web UI client (Blazor Server) is under development.
 
 ![Dark UI](https://res.cloudinary.com/reilly-wood/image/upload/v1608417001/reitunes/dark.jpg)
 ![Light UI](https://res.cloudinary.com/reilly-wood/image/upload/v1608417001/reitunes/light.jpg)
@@ -19,7 +19,7 @@ So I decided to write my own app+service. How hard could it be? Well, 257 commit
 
 ## What?
 
-The Windows client is a UWP application using WinUI, MSIX sideloading, WinRT APIs and the AppContainer sandbox. It can stream or download music from my personal collection, and it has a fast fuzzy-find search.
+The Windows client is a UWP application using WinUI and MSIX sideloading. It can stream or download music from my personal collection, and it has a fast fuzzy-find search.
 
 On the server side, a web API acts as a central sync point for library metadata. Music files are stored in cloud object storage and accessible over HTTPS.
 
