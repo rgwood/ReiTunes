@@ -3,6 +3,14 @@ using Microsoft.Extensions.FileProviders;
 using ReiTunes.Blazor;
 using ReiTunes.Core;
 using Serilog;
+using Utils;
+
+if (args.Any() && args[0] == "install")
+{
+    await Systemd.InstallServiceAsync("reitunes");
+    return;
+}
+
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -35,8 +43,6 @@ builder.Services.AddSingleton<Library>(provider =>
         provider.GetRequiredService<SqliteConnection>(),
         provider.GetRequiredService<Serilog.ILogger>(),
         provider.GetRequiredService<ServerCaller>()));
-
-builder.Services.AddHostedService<LibraryService>();
 
 builder.Services.AddSingleton<LibrarySettings>(_ => new LibrarySettings(musicFileDirPath));
 

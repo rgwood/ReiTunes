@@ -9,6 +9,7 @@
 
     <ItemGroup>
         <PackageReference Include="Ben.Demystifier" Version="0.4.1" />
+        <PackageReference Include="CliWrap" Version="3.4.4" />
         <PackageReference Include="Serilog.AspNetCore" Version="5.0.0" />
         <PackageReference Include="Serilog.Sinks.File" Version="5.0.0" />
         <PackageReference Include="Spectre.Console" Version="0.43.0" />
