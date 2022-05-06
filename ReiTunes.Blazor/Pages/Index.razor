@@ -19,7 +19,9 @@
 @foreach (LibraryItem item in MusicLibrary.Items)
 {
     <button class="bg-solarized-base02 hover:bg-solarized-blue text-solarized-base3 font-bold m-1 py-1 px-4 border-2 border-solarized-blue rounded"
-    @onclick="() => ItemClicked(item)">
+    title=@(GetTooltip(item))
+    @onclick="() => ItemClicked(item)"
+    >
         @item.Name
     </button>
 }
@@ -49,6 +51,8 @@
         _status = status;
         _statusProgress = 0;
     }
+
+    private string GetTooltip(LibraryItem item) => $"Artist: {item.Artist}\nPlays: {item.PlayCount}";
 
     private async Task ItemClicked(LibraryItem item)
     {
