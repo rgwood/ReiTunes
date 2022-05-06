@@ -1,23 +1,25 @@
 @inherits LayoutComponentBase
 
 <div class="flex flex-col h-full @debug">
-    
-    <div class="flex flex-row h-12 px-2 items-center">
 
-        <h2 class="flex-grow ">
-            ReiTunes
-        </h2>
+    <div class="flex flex-row h-10 px-2 items-center">
+
+        <span class="flex-grow font-bold text-solarized-blue mx-1 text-lg">
+            ReiTunes v1.3.3.7
+        </span>
+        <span class="text-2xl cursor-pointer" onclick="alert('not implemented yet')">🍔</span>
     </div>
 
     <main class="app">
         @Body
     </main>
 
-    <footer class="bg-gradient-to-b to-dotnet-blurple 
-                        from-white dark:from-neutral-900 
-                        text-black dark:text-white 
+    <!-- hiding for now, not currently in use -->
+    <footer class="hidden bg-gradient-to-b to-dotnet-blurple
+                        from-white dark:from-neutral-900
+                        text-black dark:text-white
 
-                    bottom-0 w-full 
+                    bottom-0 w-full
                     text-lg leading-[60px]
                     flex flex-row justify-evenly">
 

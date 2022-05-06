@@ -4,9 +4,9 @@
 @inject Library MusicLibrary
 @inject LibrarySettings Settings
 
-<h2>@_title</h2>
+<h2 class="text-center text-solarized-base2">@_title</h2>
 
-<audio controls src="@_audioUri" autoplay="true" class="w-full">
+<audio controls src="@_audioUri" autoplay="true" class="w-full mb-4">
     Your browser does not support the<code>audio</code> element.
 </audio>
 
@@ -18,7 +18,7 @@
 
 @foreach (LibraryItem item in MusicLibrary.Items)
 {
-    <button class="bg-blue-600 hover:bg-blue-700 text-white font-bold m-1 py-2 px-4 border border-blue-700 rounded"
+    <button class="bg-solarized-base02 hover:bg-solarized-blue text-solarized-base3 font-bold m-1 py-1 px-4 border-2 border-solarized-blue rounded"
     @onclick="() => ItemClicked(item)">
         @item.Name
     </button>

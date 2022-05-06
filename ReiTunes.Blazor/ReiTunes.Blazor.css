@@ -3,7 +3,6 @@
 @import "tailwindcss/utilities";
 @import "./obj/net6.0/scopedcss/bundle/ReiTunes.Blazor.styles.css";
 
-
 html,body
 {
   @apply h-full;

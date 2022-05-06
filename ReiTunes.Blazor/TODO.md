@@ -1,3 +1,4 @@
-- [ ] Turn icon into favicon
-- [ ] Add systemd installer fr
+- [ ] get systemd working properly
+- [x] Turn icon into favicon
+- [x] Add systemd installer fr
 - [x] Add Solarized colors to Tailwind
