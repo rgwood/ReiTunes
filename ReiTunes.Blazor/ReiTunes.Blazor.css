@@ -15,7 +15,7 @@ a
 
 body
 {
-  @apply bg-solarized-base3 dark:bg-solarized-base03
+  @apply bg-solarized-base2 dark:bg-solarized-base03
           text-black dark:text-white
           transition-colors duration-300 ease-in-out;
 }
@@ -25,18 +25,18 @@ body
   @apply  m-auto max-w-7xl
           pl-6 pr-3 sm:px-8 md:px-10
           transition-[font-size,padding] duration-700 ease-in-out;
-  
+
   @apply text-[14px] md:text-[16px] lg:md:text-[18px];
 }
 
 p
 {
   @apply first-of-type:pt-6 pb-6 sm:indent-8;
-         
+
   @apply leading-normal;
 }
 
-hr 
+hr
 {
   @apply m-8 border-neutral-300;
 }
@@ -51,7 +51,7 @@ h2
 {
   @apply text-[200%] font-bold
            leading-loose;
-  
+
 }
 
 h3
@@ -76,7 +76,7 @@ ul
 }
 
 code {
-  @apply p-0 m-0 px-1 rounded-md 
+  @apply p-0 m-0 px-1 rounded-md
       ring-1 ring-inset ring-neutral-300 dark:ring-0
       bg-neutral-100 dark:bg-neutral-700;
 }

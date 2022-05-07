@@ -1,10 +1,11 @@
 @page "/"
 
 @using ReiTunes.Core
+@using Utils
 @inject Library MusicLibrary
 @inject LibrarySettings Settings
 
-<h2 class="text-center text-solarized-base2">@_title</h2>
+<h2 class="text-center text-solarized-base01 dark:text-solarized-base2">@_title</h2>
 
 <audio controls src="@_audioUri" autoplay="true" class="w-full mb-4">
     Your browser does not support the<code>audio</code> element.
@@ -15,10 +16,18 @@
     <progress class="w-full" value=@_statusProgress max=100></progress>
 </div>
 
+<input
+@bind="SearchFilter"
+@bind:event="oninput"
+autofocus
+placeholder="Find (ctrl+F)"
+class="w-full m-2 px-2 bg-solarized-base3 dark:bg-solarized-base02 border-2 border-solarized-base01 rounded" />
 
-@foreach (LibraryItem item in MusicLibrary.Items)
+@foreach (LibraryItem item in FilteredItems())
 {
-    <button class="bg-solarized-base02 hover:bg-solarized-blue text-solarized-base3 font-bold m-1 py-1 px-4 border-2 border-solarized-blue rounded"
+    <button class="bg-solarized-base3 dark:bg-solarized-base02
+    hover:bg-solarized-blue hover:text-solarized-base3
+    text-solarized-blue dark:text-solarized-base3 font-bold m-1 py-1 px-4 border-2 border-solarized-blue rounded"
     title=@(GetTooltip(item))
     @onclick="() => ItemClicked(item)"
     >
@@ -30,13 +39,25 @@
 
     private readonly Uri _cloudBaseUri = new Uri("https://reitunes.blob.core.windows.net/music/");
 
-    private string _title = "Default Title";
+    private string _title = "🎶🎵 Welcome to ReiTunes 🎵🎶";
     private string _audioUri = "";
 
     private bool _showStatus = false;
     private string _status = "";
 
     private int _statusProgress = 0;
+
+    private string _searchFilter = "";
+
+    public string SearchFilter
+    {
+        get { return _searchFilter; }
+        set {
+            _searchFilter = value;
+            StateHasChanged();
+        }
+    }
+
 
     private void HideStatus()
     {
@@ -53,6 +74,11 @@
     }
 
     private string GetTooltip(LibraryItem item) => $"Artist: {item.Artist}\nPlays: {item.PlayCount}";
+
+    private IEnumerable<LibraryItem> FilteredItems()
+    {
+        return MusicLibrary.Items.Where(i => i.AllSearchProperties.Contains(_searchFilter, StringComparison.OrdinalIgnoreCase));
+    }
 
     private async Task ItemClicked(LibraryItem item)
     {
@@ -82,7 +108,7 @@
             HideStatus();
         }
 
-        _title = $"{item.Name} - {item.Artist}";
+        _title = Emoji.Blingify($"{item.Name} - {item.Artist}");
         _audioUri = $"musiclibrary/{item.FilePath}";
     }
 }
