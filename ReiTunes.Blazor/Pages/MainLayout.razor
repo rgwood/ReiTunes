@@ -1,4 +1,6 @@
 @inherits LayoutComponentBase
+@using ReiTunes.Core
+@inject Library MusicLibrary
 
 <div class="flex flex-col h-full @debug">
 
@@ -7,7 +9,20 @@
         <span class="flex-grow font-bold text-solarized-blue mx-1 text-lg">
             ReiTunes v1.3.3.7
         </span>
-        <button class="text-2xl" onclick="alert('not implemented yet')">🍔</button>
+        @* <button class="text-2xl" onclick="alert('not implemented yet')">🍔</button> *@
+
+        <button class="bg-solarized-base3 dark:bg-solarized-base02
+    hover:bg-solarized-blue hover:text-solarized-base3
+    text-solarized-blue dark:text-solarized-base3 font-bold m-1 py-1 px-4 border-2 border-solarized-blue rounded">
+        Push ⬆️
+    </button>
+
+    <button class="bg-solarized-base3 dark:bg-solarized-base02
+    hover:bg-solarized-blue hover:text-solarized-base3
+    text-solarized-blue dark:text-solarized-base3 font-bold m-1 py-1 px-4 border-2 border-solarized-blue rounded"
+    @onclick="() => Pull()">
+        Pull ⬇️
+    </button>
     </div>
 
     <main class="app">
@@ -39,4 +54,10 @@
     #else
     private string debug = "";
     #endif
+
+    private async Task Pull()
+    {
+        // FIXME: this doesn't refresh Index.razor after the pull. Either it should or this logic should be moved
+        await MusicLibrary.PullFromServer();
+    }
 }
