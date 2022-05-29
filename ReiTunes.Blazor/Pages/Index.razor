@@ -77,7 +77,8 @@ class="w-full m-2 px-2 bg-solarized-base3 dark:bg-solarized-base02 border-2 bord
 
     private IEnumerable<LibraryItem> FilteredItems()
     {
-        return MusicLibrary.Items.Where(i => i.AllSearchProperties.Contains(_searchFilter, StringComparison.OrdinalIgnoreCase));
+        return MusicLibrary.Items.Where(i => i.AllSearchProperties.Contains(_searchFilter, StringComparison.OrdinalIgnoreCase))
+        .OrderByDescending(i => i.CreatedTimeUtc);
     }
 
     private async Task ItemClicked(LibraryItem item)
