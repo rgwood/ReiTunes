@@ -3,6 +3,12 @@ set shell := ["nu", "-c"]
 watch:
     dotnet watch --project ReiTunes.Blazor/ReiTunes.Blazor.csproj
 
+run:
+    dotnet run --project ReiTunes.Blazor/ReiTunes.Blazor.csproj
+
+build:
+    dotnet build --project ReiTunes.Blazor/ReiTunes.Blazor.csproj --configuration Release
+
 watch-tests:
     watch . { dotnet test } --glob=**/*.cs
 
