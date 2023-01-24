@@ -14,7 +14,3 @@ publish:
 
 # upload: publish
 #     rsync -r publish/ SERVER_NAME:services/PROJECT_NAME_new
-
-# Razor tooling fails on this stupid bug: https://github.com/dotnet/razor-tooling/issues/6241
-workaround-razor-bug:
-    bash -c "export CLR_OPENSSL_VERSION_OVERRIDE=1.1; code ."
