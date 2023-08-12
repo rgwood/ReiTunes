@@ -9,6 +9,7 @@ var httpClient = new HttpClient();
 var serverCaller = new ServerCaller(httpClient, logger);
 
 var expectedLibraryFilePath = Environment.ExpandEnvironmentVariables("%HOME%/.local/share/reitunes/library.db");
+System.IO.Directory.CreateDirectory(expectedLibraryFilePath);
 var db = SQLiteHelpers.CreateFileDb(expectedLibraryFilePath);
 
 var library = new Library(db, logger, serverCaller);
