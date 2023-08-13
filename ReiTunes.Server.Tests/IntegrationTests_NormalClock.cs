@@ -111,7 +111,7 @@ public class IntegrationTests_NormalClock
         // delete and make sure the delete propagates
         client1.Delete(client1.Items.Single());
 
-        client1.Items.Count.Should().Be(0);
+        client1.Items.Count().Should().Be(0);
 
         await client1.PushToServer();
         await client2.PullFromServer();
@@ -121,7 +121,7 @@ public class IntegrationTests_NormalClock
 
     private static void AssertLibrariesHaveSameItems(Library l1, Library l2)
     {
-        Assert.Equal(l1.Items.Count, l2.Items.Count);
+        Assert.Equal(l1.Items.Count(), l2.Items.Count());
 
         LibraryItem[] orderedModels1 = l1.Items.OrderBy(m => m.AggregateId).ToArray();
         LibraryItem[] orderedModels2 = l2.Items.OrderBy(m => m.AggregateId).ToArray();

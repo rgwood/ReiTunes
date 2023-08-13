@@ -69,7 +69,7 @@ public class IntegrationTests_NeverIncreasingClock
 
     private static void AssertLibrariesHaveSameItems(Library l1, Library l2)
     {
-        Assert.Equal(l1.Items.Count, l2.Items.Count);
+        Assert.Equal(l1.Items.Count(), l2.Items.Count());
 
         LibraryItem[] orderedModels1 = l1.Items.OrderBy(m => m.AggregateId).ToArray();
         LibraryItem[] orderedModels2 = l2.Items.OrderBy(m => m.AggregateId).ToArray();
