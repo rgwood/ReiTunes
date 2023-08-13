@@ -32,7 +32,9 @@ builder.Services.AddSingleton<Serilog.ILogger>(serilog);
 builder.Services.AddSingleton<ServerCaller>();
 
 var libraryFilePath = Environment.ExpandEnvironmentVariables("%HOME%/.local/share/reitunes/library.db");
+System.IO.Directory.CreateDirectory(libraryFilePath);
 var musicFileDirPath = Environment.ExpandEnvironmentVariables("%HOME%/Music/ReiTunes/");
+System.IO.Directory.CreateDirectory(musicFileDirPath);
 
 builder.Services.AddSingleton<SqliteConnection>((_) => SQLiteHelpers.CreateFileDb(libraryFilePath));
 // builder.Services.AddSingleton<Library>();
