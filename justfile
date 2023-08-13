@@ -17,7 +17,6 @@ watch-tests:
 
 publish:
     dotnet publish ReiTunes.Blazor/ReiTunes.Blazor.csproj \
-    --runtime linux-arm64 \
     --output publish/ \
     --configuration Release --self-contained true -p:PublishSingleFile=true -p:DebugType=embedded -p:IncludeNativeLibrariesForSelfExtract=true
 
