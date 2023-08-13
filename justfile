@@ -9,6 +9,9 @@ run:
 build:
     dotnet build ReiTunes.Blazor/ReiTunes.Blazor.csproj --configuration Release
 
+test:
+    dotnet test
+
 watch-tests:
     watch . { dotnet test } --glob=**/*.cs
 
