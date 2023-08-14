@@ -1,3 +1,5 @@
+- [ ] Consider rewriting w/ htmx.
+- [ ] Use Tailwind Play in dev at least
 - [ ] get systemd working properly
 - [x] Turn icon into favicon
 - [x] Add systemd installer fr

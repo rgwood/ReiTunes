@@ -15,14 +15,14 @@ a
 
 body
 {
-  @apply bg-solarized-base2 dark:bg-solarized-base03
-          text-black dark:text-white
+  @apply bg-slate-100 dark:bg-solarized-base03
+          text-slate-900 dark:text-white
           transition-colors duration-300 ease-in-out;
 }
 
 .app
 {
-  @apply  m-auto max-w-7xl
+  @apply  m-auto
           pl-6 pr-3 sm:px-8 md:px-10
           transition-[font-size,padding] duration-700 ease-in-out;
 
