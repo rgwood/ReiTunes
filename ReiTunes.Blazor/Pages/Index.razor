@@ -4,6 +4,7 @@
 @using Utils
 @inject Library MusicLibrary
 @inject LibrarySettings Settings
+@inject IJSRuntime JS
 
 @if(_currItem is not null) {
     <h2 class="text-center text-solarized-base01 dark:text-solarized-base2">
@@ -12,7 +13,8 @@
     <div>
         <span>Bookmarks:</span>
         @foreach (var bookmark in _currItem.Bookmarks) {
-            <button class="mx-1 px-1 border border-solarized-blue rounded dark:bg-solarized-base02 dark:hover:bg-solarized-base03"
+            <button class="mx-1 px-1 border border-solarized-blue rounded
+            dark:bg-solarized-base02 hover:bg-solarized-base2 dark:hover:bg-solarized-base03"
             onclick="function setPosition(){document.getElementById('player').currentTime = @bookmark.Position.TotalSeconds};setPosition()">
                 @bookmark.Position.ToString("hh\\:mm\\:ss")
             </button>
@@ -20,9 +22,17 @@
     </div>
 }
 
-<audio id="player" controls src="@_audioUri" autoplay="true" class="w-full mt-2 mb-4" currentTime="@_currentTime">
+<div class="flex items-center mt-2 mb-4">
+<audio id="player" controls src="@_audioUri" autoplay="true" class="w-full"
+    currentTime="@_currentTime">
     Your browser does not support the<code>audio</code> element.
 </audio>
+<button class="ml-2 px-1 border border-solarized-blue rounded whitespace-nowrap
+    dark:bg-solarized-base02 hover:bg-solarized-base2 dark:hover:bg-solarized-base03"
+    @onclick="AddBookmark">
+    Add Bookmark
+</button>
+</div>
 
 <div class="@(_showStatus ? "" : "hidden")">
     <div>@_status</div>
@@ -106,6 +116,18 @@ class="w-full m-2 px-2 bg-solarized-base3 dark:bg-solarized-base02 border-2 bord
     {
         return MusicLibrary.Items.Where(i => i.AllSearchProperties.Contains(_searchFilter, StringComparison.OrdinalIgnoreCase))
         .OrderByDescending(i => i.CreatedTimeUtc);
+    }
+
+    private async Task AddBookmark() {
+        Console.WriteLine($"Adding bookmark for {_currItem?.Name}");
+
+        try {
+            var elapsedSeconds = await JS.InvokeAsync<double>("getCurrentTime");
+            Console.WriteLine($"Current time: {elapsedSeconds}s");
+            _currItem?.AddBookmark(TimeSpan.FromSeconds(elapsedSeconds));
+        } catch (Exception ex) {
+            Console.WriteLine($"Error adding bookmark: {ex}");
+        }
     }
 
     private async Task ItemClicked(LibraryItem item)
