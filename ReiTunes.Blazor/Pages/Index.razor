@@ -10,9 +10,10 @@
         @Emoji.Blingify($"{_currItem.Name} - {_currItem.Artist}")
     </h2>
     <div>
-        <span>Bookmarks: </span>
+        <span>Bookmarks:</span>
         @foreach (var bookmark in _currItem.Bookmarks) {
-            <button onclick="function setPosition(){document.getElementById('player').currentTime = @bookmark.Position.TotalSeconds};setPosition()">
+            <button class="mx-1 px-1 border border-solarized-blue rounded dark:bg-solarized-base02 dark:hover:bg-solarized-base03"
+            onclick="function setPosition(){document.getElementById('player').currentTime = @bookmark.Position.TotalSeconds};setPosition()">
                 @bookmark.Position.ToString("hh\\:mm\\:ss")
             </button>
         }
