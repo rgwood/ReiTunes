@@ -61,14 +61,14 @@ public class EventBenchmarker
         var repo = new SQLiteEventRepository(SQLiteHelpers.CreateFileDb(libraryPath));
         var logger = LoggerHelpers.DoNothingLogger();
         var lib = new Library(Environment.MachineName, SQLiteHelpers.CreateFileDb(libraryPath), new NoopServerCaller(), logger);
-        return lib.Items;
+        return lib.Items.ToList();
     }
 
     [Benchmark]
     public List<LibraryItem> ReplayAllEventsFromMemory()
     {
         _lib.RebuildItems(_events);
-        return _lib.Items;
+        return _lib.Items.ToList();
     }
 }
 
