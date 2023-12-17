@@ -5,9 +5,21 @@
 @inject Library MusicLibrary
 @inject LibrarySettings Settings
 
-<h2 class="text-center text-solarized-base01 dark:text-solarized-base2">@_title</h2>
+@if(_currItem is not null) {
+    <h2 class="text-center text-solarized-base01 dark:text-solarized-base2">
+        @Emoji.Blingify($"{_currItem.Name} - {_currItem.Artist}")
+    </h2>
+    <div>
+        <span>Bookmarks: </span>
+        @foreach (var bookmark in _currItem.Bookmarks) {
+            <button onclick="function setPosition(){document.getElementById('player').currentTime = @bookmark.Position.TotalSeconds};setPosition()">
+                @bookmark.Position.ToString("hh\\:mm\\:ss")
+            </button>
+        }
+    </div>
+}
 
-<audio controls src="@_audioUri" autoplay="true" class="w-full mb-4">
+<audio id="player" controls src="@_audioUri" autoplay="true" class="w-full mt-2 mb-4" currentTime="@_currentTime">
     Your browser does not support the<code>audio</code> element.
 </audio>
 
@@ -22,8 +34,6 @@
 autofocus
 placeholder="Find (ctrl+F)"
 class="w-full m-2 px-2 bg-solarized-base3 dark:bg-solarized-base02 border-2 border-solarized-base01 rounded" />
-
-
 
 <table class="w-full">
     <thead>
@@ -53,6 +63,10 @@ class="w-full m-2 px-2 bg-solarized-base3 dark:bg-solarized-base02 border-2 bord
 
     private string _title = "🎶🎵 Welcome to ReiTunes 🎵🎶";
     private string _audioUri = "";
+
+    private LibraryItem? _currItem;
+    // in seconds
+    private int _currentTime = 0;
 
     private bool _showStatus = false;
     private string _status = "";
@@ -110,9 +124,13 @@ class="w-full m-2 px-2 bg-solarized-base3 dark:bg-solarized-base02 border-2 bord
             using var client = new HttpClientDownloadWithProgress(downloadFileUrl, expectedPath);
             client.ProgressChanged += (totalFileSize, totalBytesDownloaded, progressPercentage) =>
             {
-                _statusProgress = (int) progressPercentage;
-                StateHasChanged();
-                Console.WriteLine($"{progressPercentage}% ({totalBytesDownloaded}/{totalFileSize})");
+                int rounded = (int) (progressPercentage ?? 0);
+                if (_statusProgress != rounded)
+                {
+                    _statusProgress = rounded;
+                    StateHasChanged();
+                    Console.WriteLine($"{progressPercentage}% ({totalBytesDownloaded}/{totalFileSize} B)");
+                }
             };
 
             await client.Download();
@@ -121,7 +139,7 @@ class="w-full m-2 px-2 bg-solarized-base3 dark:bg-solarized-base02 border-2 bord
             HideStatus();
         }
 
-        _title = Emoji.Blingify($"{item.Name} - {item.Artist}");
+        _currItem = item;
         _audioUri = $"musiclibrary/{item.FilePath}";
     }
 }
