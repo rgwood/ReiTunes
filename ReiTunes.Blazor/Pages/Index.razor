@@ -52,6 +52,7 @@ class="w-full m-2 px-2 bg-solarized-base3 dark:bg-solarized-base02 border-2 bord
             <th class="text-left">Name</th>
             <th class="text-left">Artist</th>
             <th class="text-left">Plays</th>
+            <th class="text-left">Bookmarks</th>
             <th class="text-left">Added</th>
         </tr>
     </thead>
@@ -62,6 +63,7 @@ class="w-full m-2 px-2 bg-solarized-base3 dark:bg-solarized-base02 border-2 bord
                 <td class="text-left">@item.Name</td>
                 <td class="text-left">@item.Artist</td>
                 <td class="text-left">@item.PlayCount</td>
+                <td class="text-left">@item.Bookmarks.Count()</td>
                 <td class="text-left">@item.CreatedTimeUtc</td>
             </tr>
         }
