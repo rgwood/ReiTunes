@@ -2,9 +2,14 @@
 
 @using ReiTunes.Core
 @using Utils
+@using BlazorContextMenu
 @inject Library MusicLibrary
 @inject LibrarySettings Settings
 @inject IJSRuntime JS
+
+<ContextMenu Id="myMenu" CssClass="bg-black text-blue-600">
+    <Item OnClick="@DeleteBookmark">🚮️ Delete</Item>
+</ContextMenu>
 
 @if(_currItem is not null) {
     <h2 class="text-center text-solarized-base01 dark:text-solarized-base2">
@@ -13,11 +18,13 @@
     <div>
         <span>Bookmarks:</span>
         @foreach (var bookmark in _currItem.Bookmarks.OrderBy(b => b.Position)) {
-            <button class="mx-1 px-1 border border-solarized-blue rounded
-            dark:bg-solarized-base02 hover:bg-solarized-base2 dark:hover:bg-solarized-base03"
-            onclick="function setPosition(){document.getElementById('player').currentTime = @bookmark.Position.TotalSeconds};setPosition()">
-                @bookmark.Position.ToString("hh\\:mm\\:ss")
-            </button>
+            <ContextMenuTrigger MenuId="myMenu" CssClass="inline">
+                <button class="mx-1 px-1 border border-solarized-blue rounded
+                dark:bg-solarized-base02 hover:bg-solarized-base2 dark:hover:bg-solarized-base03"
+                onclick="function setPosition(){document.getElementById('player').currentTime = @bookmark.Position.TotalSeconds};setPosition()">
+                    @bookmark.Position.ToString("hh\\:mm\\:ss")
+                </button>
+            </ContextMenuTrigger>
         }
     </div>
 }
@@ -166,5 +173,11 @@ class="w-full m-2 px-2 bg-solarized-base3 dark:bg-solarized-base02 border-2 bord
 
         _currItem = item;
         _audioUri = $"musiclibrary/{item.FilePath}";
+    }
+
+    void DeleteBookmark(BlazorContextMenu.ItemClickEventArgs e)
+    {
+        Console.WriteLine($"Not implemented: Delete bookmark for {_currItem?.Name}");
+        Console.WriteLine($"Item Clicked => Menu: {e.ContextMenuId}, MenuTarget: {e.ContextMenuTargetId}, IsCanceled: {e.IsCanceled}, MenuItem: {e.MenuItemElement}, MouseEvent: {e.MouseEvent}");
     }
 }

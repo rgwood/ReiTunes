@@ -60,11 +60,6 @@ h3
           leading-loose;
 }
 
-ol,ul
-{
-  @apply py-6;
-}
-
 ol
 {
   @apply list-decimal;

@@ -12,6 +12,7 @@ if (args.Any() && args[0] == "install")
 }
 
 
+
 var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
@@ -30,6 +31,8 @@ builder.Logging.AddSerilog(serilog);
 
 builder.Services.AddSingleton<Serilog.ILogger>(serilog);
 builder.Services.AddSingleton<ServerCaller>();
+
+builder.Services.AddBlazorContextMenu();
 
 var libraryFilePath = Environment.ExpandEnvironmentVariables("%HOME%/.local/share/reitunes/library.db");
 var musicFileDirPath = Environment.ExpandEnvironmentVariables("%HOME%/Music/ReiTunes/");
