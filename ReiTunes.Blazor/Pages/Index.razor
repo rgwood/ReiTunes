@@ -62,10 +62,10 @@ class="w-full mb-2 px-2 bg-solarized-base3 dark:bg-solarized-base02 border-2 bor
 <table class="w-full">
     <thead>
         <tr>
-            <th class="text-left">Name</th>
-            <th class="text-left">Artist</th>
-            <th class="text-left">Plays</th>
-            <th class="text-left">Bookmarks</th>
+            <th class="text-left pr-2">Name</th>
+            <th class="text-left pr-2">Artist</th>
+            <th class="text-left pr-2" title="Plays">▶️</th>
+            <th class="text-left pr-2" title="Bookmarks">🔖️</th>
             <th class="text-left">Added</th>
         </tr>
     </thead>
@@ -73,11 +73,15 @@ class="w-full mb-2 px-2 bg-solarized-base3 dark:bg-solarized-base02 border-2 bor
         @foreach (LibraryItem item in FilteredItems())
         {
             <tr @onclick="() => ItemClicked(item)">
-                <td class="text-left">@item.Name</td>
-                <td class="text-left">@item.Artist</td>
-                <td class="text-left">@item.PlayCount</td>
-                <td class="text-left">@item.Bookmarks.Count()</td>
-                <td class="text-left">@item.CreatedTimeUtc</td>
+                <td class="text-left pr-2">@item.Name</td>
+                <td class="text-left pr-2" title='@item.Artist'>
+                    @(item.Artist.Truncate(40))
+                </td>
+                <td class="text-left pr-2">@item.PlayCount</td>
+                <td class="text-left pr-2">@item.Bookmarks.Count()</td>
+                <td class="text-left pr-2" title='@item.CreatedTimeUtc'>
+                    @item.CreatedTimeUtc.ToString("yyyy-MM-dd")
+                </td>
             </tr>
         }
     </tbody>
