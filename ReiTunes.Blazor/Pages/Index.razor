@@ -29,7 +29,7 @@
     </div>
 }
 
-<div class="flex items-center mt-2 mb-4">
+<div class="flex items-center mt-2 mb-2">
 <audio id="player" controls src="@_audioUri" autoplay="true" class="w-full"
     currentTime="@_currentTime">
     Your browser does not support the<code>audio</code> element.
@@ -39,6 +39,12 @@
     @onclick="AddBookmark">
     Add Bookmark
 </button>
+</div>
+
+<div class="flex max-w-fit justify-center align-center text-blue-300 space-x-2 border border-blue-300 rounded px-1 mb-2">
+    <button class="text-4xl font-bold hover:text-blue-500" @onclick="() => {MinBookmarksToShow--;}">-</button>
+    <ruby class="text-2xl font-serif">@MinBookmarksToShow<rt>Min 🔖️</rt></ruby>
+    <button class="text-4xl font-bold hover:text-blue-500" @onclick="() => {MinBookmarksToShow++;}">+</button>
 </div>
 
 <div class="@(_showStatus ? "" : "hidden")">
@@ -51,7 +57,7 @@
 @bind:event="oninput"
 autofocus
 placeholder="Find (ctrl+F)"
-class="w-full m-2 px-2 bg-solarized-base3 dark:bg-solarized-base02 border-2 border-solarized-base01 rounded" />
+class="w-full mb-2 px-2 bg-solarized-base3 dark:bg-solarized-base02 border-2 border-solarized-base01 rounded" />
 
 <table class="w-full">
     <thead>
@@ -95,6 +101,8 @@ class="w-full m-2 px-2 bg-solarized-base3 dark:bg-solarized-base02 border-2 bord
 
     private string _searchFilter = "";
 
+    private int MinBookmarksToShow{ get; set; } = 0;
+
     public string SearchFilter
     {
         get { return _searchFilter; }
@@ -124,6 +132,7 @@ class="w-full m-2 px-2 bg-solarized-base3 dark:bg-solarized-base02 border-2 bord
     private IEnumerable<LibraryItem> FilteredItems()
     {
         return MusicLibrary.Items.Where(i => i.AllSearchProperties.Contains(_searchFilter, StringComparison.OrdinalIgnoreCase))
+        .Where(i => i.Bookmarks.Count >= MinBookmarksToShow)
         .OrderByDescending(i => i.CreatedTimeUtc);
     }
 
