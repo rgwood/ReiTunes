@@ -11,8 +11,6 @@ if (args.Any() && args[0] == "install")
     return;
 }
 
-
-
 var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
@@ -34,8 +32,14 @@ builder.Services.AddSingleton<ServerCaller>();
 
 builder.Services.AddBlazorContextMenu();
 
-var libraryFilePath = Environment.ExpandEnvironmentVariables("%HOME%/.local/share/reitunes/library.db");
+var libraryFilePath = Environment.ExpandEnvironmentVariables("%HOME%/Music/ReiTunes/library.db");
 var musicFileDirPath = Environment.ExpandEnvironmentVariables("%HOME%/Music/ReiTunes/");
+
+// create the music file directory if it doesn't exist
+if (!Directory.Exists(musicFileDirPath))
+{
+    Directory.CreateDirectory(musicFileDirPath);
+}
 
 builder.Services.AddSingleton<SqliteConnection>((_) => SQLiteHelpers.CreateFileDb(libraryFilePath));
 // builder.Services.AddSingleton<Library>();
