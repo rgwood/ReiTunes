@@ -162,10 +162,15 @@ async fn index_handler(State(library): State<Arc<RwLock<Library>>>) -> Html<Stri
 
     for item in items {
         let bookmarks_html = item.bookmarks.iter().map(|(_, bookmark)| {
+            let emoji = if bookmark.emoji.is_empty() {
+                "🔖"
+            } else {
+                &bookmark.emoji
+            };
             format!(
                 r#"<span class="bookmark-emoji" data-position="{}">{}</span>"#,
                 bookmark.position.as_secs(),
-                bookmark.emoji.chars().next().unwrap_or('🔖')
+                emoji
             )
         }).collect::<Vec<_>>().join("");
 

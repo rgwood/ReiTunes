@@ -1,4 +1,5 @@
 use anyhow::{Context, Result};
+use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 use serde_rusqlite::*;
 use std::{collections::HashMap, time::Duration};
@@ -168,7 +169,7 @@ impl Library {
                     artist: String::new(),
                     album: String::new(),
                     play_count: 0,
-                    bookmarks: HashMap::new(),
+                    bookmarks: IndexMap::new(),
                 };
                 self.items.insert(item.id, item);
             }
@@ -213,11 +214,12 @@ impl Library {
                             emoji: String::new(),
                         },
                     );
+                    item.bookmarks.sort_by(|_, v1, _, v2| Ord::cmp(&v1.position, &v2.position));
                 }
             }
             Event::LibraryItemBookmarkDeletedEvent { bookmark_id } => {
                 if let Some(item) = self.items.get_mut(&event.aggregate_id) {
-                    item.bookmarks.remove(&bookmark_id);
+                    item.bookmarks.shift_remove(&bookmark_id);
                 }
             }
             Event::LibraryItemBookmarkSetEmojiEvent { bookmark_id, emoji } => {
@@ -274,7 +276,7 @@ pub struct LibraryItem {
     pub artist: String,
     pub album: String,
     pub play_count: u32,
-    pub bookmarks: HashMap<uuid::Uuid, Bookmark>,
+    pub bookmarks: IndexMap<uuid::Uuid, Bookmark>,
 }
 
 const STORAGE_URL: &str = "https://reitunes.blob.core.windows.net/music/";
