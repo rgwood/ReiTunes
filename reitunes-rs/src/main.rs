@@ -11,27 +11,7 @@ use tokio::sync::RwLock;
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let conn = rusqlite::Connection::open("test-library.db")?;
-    let mut stmt = conn.prepare_cached("SELECT * FROM events ORDER BY CreatedTimeUtc")?;
-
-    let mut start = std::time::Instant::now();
-
-    let rows = from_rows::<EventRow>(stmt.query([])?);
-
-    let mut events = Vec::new();
-    for row in rows {
-        let row = row?;
-        let event = EventWithMetadata::from_row(row)?;
-        events.push(event);
-    }
-
-    let ms_to_load_events = start.elapsed().as_millis();
-    println!("Loaded {} events in {}ms", events.len(), ms_to_load_events);
-
-    start = std::time::Instant::now();
-    let library = Library::build_from_events(events);
-    println!("Library built with {} items in {}ms", library.items.len(), start.elapsed().as_millis());
-
+    let library = load_library_from_db("test-library.db")?;
     let shared_state = Arc::new(RwLock::new(library));
 
     let app = Router::new()
@@ -46,6 +26,31 @@ async fn main() -> Result<()> {
         .unwrap();
 
     Ok(())
+}
+
+fn load_library_from_db(db_path: &str) -> Result<Library> {
+    let conn = rusqlite::Connection::open(db_path)?;
+    let mut stmt = conn.prepare_cached("SELECT * FROM events ORDER BY CreatedTimeUtc")?;
+
+    let start = std::time::Instant::now();
+
+    let rows = from_rows::<EventRow>(stmt.query([])?);
+
+    let mut events = Vec::new();
+    for row in rows {
+        let row = row?;
+        let event = EventWithMetadata::from_row(row)?;
+        events.push(event);
+    }
+
+    let ms_to_load_events = start.elapsed().as_millis();
+    println!("Loaded {} events in {}ms", events.len(), ms_to_load_events);
+
+    let start = std::time::Instant::now();
+    let library = Library::build_from_events(events);
+    println!("Library built with {} items in {}ms", library.items.len(), start.elapsed().as_millis());
+
+    Ok(library)
 }
 
 async fn index_handler(State(library): State<Arc<RwLock<Library>>>) -> Html<String> {
@@ -459,3 +464,41 @@ pub struct Bookmark {
 }
 
 // {"$type":"LibraryItemPlayedEvent","Id":"ba6f6676-9c39-4262-b69a-1433b3b43255","AggregateId":"559146d5-4901-4e09-abd9-e732a23f8429","CreatedTimeUtc":"2020-08-15T22:52:09.8397077Z","LocalId":1,"MachineName":"SURFACESPUD"}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_load_library_from_db() {
+        let library = load_library_from_db("test-library.db").unwrap();
+        
+        // Check that the library is not empty
+        assert!(!library.items.is_empty(), "Library should not be empty");
+
+        // Check for a specific known item (you may need to adjust this based on your test data)
+        let known_item_id = uuid::Uuid::parse_str("559146d5-4901-4e09-abd9-e732a23f8429").unwrap();
+        assert!(library.items.contains_key(&known_item_id), "Library should contain a known item");
+
+        // Check that play counts are being incremented
+        if let Some(item) = library.items.get(&known_item_id) {
+            assert!(item.play_count > 0, "Known item should have been played at least once");
+        }
+
+        // Check for the presence of different event types
+        let event_types: Vec<_> = library.items.values()
+            .flat_map(|item| {
+                vec![
+                    !item.name.is_empty(),
+                    !item.file_path.is_empty(),
+                    item.play_count > 0,
+                    !item.artist.is_empty(),
+                    !item.album.is_empty(),
+                    !item.bookmarks.is_empty(),
+                ]
+            })
+            .collect();
+
+        assert!(event_types.iter().any(|&x| x), "Library should contain items affected by various event types");
+    }
+}
