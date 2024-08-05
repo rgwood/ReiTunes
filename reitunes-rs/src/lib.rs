@@ -92,7 +92,7 @@ pub struct EventRow {
     serialized: String,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 #[allow(dead_code)]
 pub struct EventWithMetadata {
     id: uuid::Uuid,
