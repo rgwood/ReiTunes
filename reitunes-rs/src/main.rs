@@ -68,6 +68,18 @@ async fn index_handler(State(library): State<Arc<RwLock<Library>>>) -> Html<Stri
                     color: #00ff00;
                     font-family: 'Comic Sans MS', cursive;
                 }
+                #search {
+                    width: 100%;
+                    padding: 10px;
+                    margin-bottom: 10px;
+                    background-color: #000033;
+                    color: #00ff00;
+                    border: 2px solid #00ffff;
+                    font-family: 'Comic Sans MS', cursive;
+                }
+                #search::placeholder {
+                    color: #008800;
+                }
                 h1 {
                     text-align: center;
                     font-size: 36px;
@@ -110,8 +122,8 @@ async fn index_handler(State(library): State<Arc<RwLock<Library>>>) -> Html<Stri
             <h1><span class="blink">🎵</span> ReiTunes Library <span class="blink">🎵</span></h1>
             <audio id="player" controls></audio>
                 <input type="text" id="search" name="query" placeholder="Search..." hx-post="/search"
-    hx-trigger="input changed delay:50ms" hx-target="#library-table tbody"> 
-            <div class="htmx-indicator">Searching...</div>
+                    hx-trigger="input changed delay:50ms" hx-target="#library-table tbody" autocomplete="off"> 
+                <div class="htmx-indicator">Searching...</div>
             <table id="library-table">
                 <thead>
                     <tr>
@@ -185,13 +197,16 @@ async fn search_handler(
     match query.query.as_deref() {
         Some(search_term) => {
             let library = library.read().await;
-            let filtered_items: Vec<_> = library.items.values()
+            let mut filtered_items: Vec<_> = library.items.values()
                 .filter(|item| {
                     item.name.to_lowercase().contains(&search_term.to_lowercase()) ||
                     item.artist.to_lowercase().contains(&search_term.to_lowercase()) ||
                     item.album.to_lowercase().contains(&search_term.to_lowercase())
                 })
                 .collect();
+
+            // Sort filtered items by play count in descending order
+            filtered_items.sort_by(|a, b| b.play_count.cmp(&a.play_count));
 
             let mut html = String::new();
             for item in filtered_items {
