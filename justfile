@@ -23,3 +23,16 @@ publish:
 
 # upload: publish
 #     rsync -r publish/ SERVER_NAME:services/PROJECT_NAME_new
+
+# Rust commands
+rust-build:
+    cd reitunes-rs && cargo build --release
+
+rust-run:
+    cd reitunes-rs && cargo run
+
+rust-test:
+    cd reitunes-rs && cargo test
+
+rust-watch:
+    cd reitunes-rs && cargo watch -x run
