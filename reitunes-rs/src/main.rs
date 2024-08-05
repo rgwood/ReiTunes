@@ -21,8 +21,9 @@ async fn main() -> Result<()> {
 
     let app = Router::new()
         .route("/", get(index_handler))
-        .route("/search", post(search_handler))
         .route("/allevents", get(all_events_handler))
+        // HTMX UI endpoints
+        .route("/ui/search", post(search_handler))
         .with_state(shared_state);
 
     let listener = tokio::net::TcpListener::bind("127.0.0.1:3000")
@@ -137,7 +138,7 @@ async fn index_handler(State(library): State<Arc<RwLock<Library>>>) -> Html<Stri
         <body>
             <div id="now-playing"><span id="current-song">No song selected</span></div>
             <audio id="player" controls></audio>
-            <input type="text" id="search" name="query" placeholder="SEARCH..." hx-post="/search"
+            <input type="text" id="search" name="query" placeholder="SEARCH..." hx-post="/ui/search"
                 hx-trigger="input changed delay:50ms" hx-target="#library-table tbody" autocomplete="off">
             <div class="htmx-indicator">Searching...</div>
             <table id="library-table">
