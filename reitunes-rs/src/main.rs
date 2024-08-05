@@ -52,6 +52,9 @@ async fn main() -> Result<()> {
 
 async fn index_handler(State(library): State<Arc<RwLock<Library>>>) -> Html<String> {
     let library = library.read().await;
+    let mut items: Vec<_> = library.items.values().collect();
+    items.sort_by(|a, b| b.play_count.cmp(&a.play_count));
+
     let mut html = String::from(
         r#"
         <!DOCTYPE html>
@@ -79,7 +82,7 @@ async fn index_handler(State(library): State<Arc<RwLock<Library>>>) -> Html<Stri
         "#
     );
 
-    for item in library.items.values() {
+    for item in items {
         html.push_str(&format!(
             r#"
             <tr class="bg-white border-b hover:bg-gray-50 cursor-pointer" data-url="{}">
