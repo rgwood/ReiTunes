@@ -203,42 +203,34 @@ impl Library {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(tag = "$type")]
+#[serde(tag = "$type", rename_all_fields = "PascalCase")]
 pub enum Event {
     LibraryItemPlayedEvent,
-    #[serde(rename_all = "PascalCase")]
     LibraryItemCreatedEvent {
         name: String,
         file_path: String,
     },
     LibraryItemDeletedEvent,
-    #[serde(rename_all = "PascalCase")]
     LibraryItemNameChangedEvent {
         new_name: String,
     },
-    #[serde(rename_all = "PascalCase")]
     LibraryItemFilePathChangedEvent {
         new_file_path: String,
     },
-    #[serde(rename_all = "PascalCase")]
     LibraryItemArtistChangedEvent {
         new_artist: String,
     },
-    #[serde(rename_all = "PascalCase")]
     LibraryItemAlbumChangedEvent {
         new_album: String,
     },
-    #[serde(rename_all = "PascalCase")]
     LibraryItemBookmarkAddedEvent {
         bookmark_id: uuid::Uuid,
         #[serde(with = "duration_serde")]
         position: Duration,
     },
-    #[serde(rename_all = "PascalCase")]
     LibraryItemBookmarkDeletedEvent {
         bookmark_id: uuid::Uuid,
     },
-    #[serde(rename_all = "PascalCase")]
     LibraryItemBookmarkSetEmojiEvent {
         bookmark_id: uuid::Uuid,
         emoji: String,
