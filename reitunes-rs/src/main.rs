@@ -119,16 +119,24 @@ async fn index_handler(State(library): State<Arc<RwLock<Library>>>) -> Html<Stri
                     width: 100%;
                     border-collapse: separate;
                     border-spacing: 0 5px;
+                    table-layout: fixed;
                 }
                 th, td {
                     padding: 10px;
                     text-align: left;
                     border: none;
+                    overflow: hidden;
+                    text-overflow: ellipsis;
+                    white-space: nowrap;
                 }
                 th {
                     background-color: #030;
                     color: #0f0;
                 }
+                th:nth-child(1), td:nth-child(1) { width: 30%; }
+                th:nth-child(2), td:nth-child(2) { width: 25%; }
+                th:nth-child(3), td:nth-child(3) { width: 25%; }
+                th:nth-child(4), td:nth-child(4) { width: 20%; }
                 tr {
                     background-color: #010;
                 }
