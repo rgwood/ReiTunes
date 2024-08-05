@@ -177,40 +177,50 @@ async fn index_handler(State(library): State<Arc<RwLock<Library>>>) -> Html<Stri
     Html(html)
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 struct SearchQuery {
-    query: String,
+    query: Option<String>,
 }
 
 async fn search_handler(
     State(library): State<Arc<RwLock<Library>>>,
     Query(query): Query<SearchQuery>,
 ) -> impl IntoResponse {
-    let library = library.read().await;
-    let filtered_items: Vec<_> = library.items.values()
-        .filter(|item| {
-            item.name.to_lowercase().contains(&query.query.to_lowercase()) ||
-            item.artist.to_lowercase().contains(&query.query.to_lowercase()) ||
-            item.album.to_lowercase().contains(&query.query.to_lowercase())
-        })
-        .collect();
+    println!("Received search query: {:?}", query);
 
-    let mut html = String::new();
-    for item in filtered_items {
-        html.push_str(&format!(
-            r#"
-            <tr data-url="{}">
-                <td>{}</td>
-                <td>{}</td>
-                <td>{}</td>
-                <td>{}</td>
-            </tr>
-            "#,
-            item.url(), item.name, item.artist, item.album, item.play_count
-        ));
+    match query.query {
+        Some(search_term) => {
+            let library = library.read().await;
+            let filtered_items: Vec<_> = library.items.values()
+                .filter(|item| {
+                    item.name.to_lowercase().contains(&search_term.to_lowercase()) ||
+                    item.artist.to_lowercase().contains(&search_term.to_lowercase()) ||
+                    item.album.to_lowercase().contains(&search_term.to_lowercase())
+                })
+                .collect();
+
+            let mut html = String::new();
+            for item in filtered_items {
+                html.push_str(&format!(
+                    r#"
+                    <tr data-url="{}">
+                        <td>{}</td>
+                        <td>{}</td>
+                        <td>{}</td>
+                        <td>{}</td>
+                    </tr>
+                    "#,
+                    item.url(), item.name, item.artist, item.album, item.play_count
+                ));
+            }
+
+            Html(html)
+        },
+        None => {
+            println!("Error: No search query provided");
+            (StatusCode::BAD_REQUEST, "No search query provided").into_response()
+        }
     }
-
-    Html(html)
 }
 
 // Id                                  │AggregateId                         │AggregateType│CreatedTimeUtc             │MachineName│Serialized
