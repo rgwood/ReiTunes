@@ -1,20 +1,25 @@
-use std::{cell::{LazyCell, OnceCell}, collections::HashMap, sync::LazyLock, time::Duration, vec};
+use std::{collections::HashMap, sync::Arc, time::Duration};
 
 use anyhow::{Context, Result};
+use axum::{
+    extract::State,
+    response::Html,
+    routing::get,
+    Router,
+};
 use serde::{Deserialize, Serialize};
 use serde_rusqlite::*;
-// TODO: consider using jiff as a time library
-use time::{OffsetDateTime, PrimitiveDateTime};
+use time::PrimitiveDateTime;
+use tokio::sync::RwLock;
 
-fn main() -> Result<()> {
+#[tokio::main]
+async fn main() -> Result<()> {
     let conn = rusqlite::Connection::open("test-library.db")?;
     let mut stmt = conn.prepare_cached("SELECT * FROM events ORDER BY CreatedTimeUtc")?;
 
     let mut start = std::time::Instant::now();
 
     let rows = from_rows::<EventRow>(stmt.query([])?);
-
-    
 
     let mut events = Vec::new();
     for row in rows {
@@ -30,7 +35,73 @@ fn main() -> Result<()> {
     let library = Library::build_from_events(events);
     println!("Library built with {} items in {}ms", library.items.len(), start.elapsed().as_millis());
 
+    let shared_state = Arc::new(RwLock::new(library));
+
+    let app = Router::new()
+        .route("/", get(index_handler))
+        .with_state(shared_state);
+
+    println!("Server running on http://localhost:3000");
+    axum::Server::bind(&"0.0.0.0:3000".parse().unwrap())
+        .serve(app.into_make_service())
+        .await
+        .unwrap();
+
     Ok(())
+}
+
+async fn index_handler(State(library): State<Arc<RwLock<Library>>>) -> Html<String> {
+    let library = library.read().await;
+    let mut html = String::from(
+        r#"
+        <!DOCTYPE html>
+        <html lang="en">
+        <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <title>ReiTunes Library</title>
+            <style>
+                body { font-family: Arial, sans-serif; margin: 0; padding: 20px; }
+                table { width: 100%; border-collapse: collapse; }
+                th, td { text-align: left; padding: 8px; border-bottom: 1px solid #ddd; }
+                th { background-color: #f2f2f2; }
+            </style>
+        </head>
+        <body>
+            <h1>ReiTunes Library</h1>
+            <table>
+                <tr>
+                    <th>Name</th>
+                    <th>Artist</th>
+                    <th>Album</th>
+                    <th>Play Count</th>
+                </tr>
+        "#
+    );
+
+    for item in library.items.values() {
+        html.push_str(&format!(
+            r#"
+            <tr>
+                <td>{}</td>
+                <td>{}</td>
+                <td>{}</td>
+                <td>{}</td>
+            </tr>
+            "#,
+            item.name, item.artist, item.album, item.play_count
+        ));
+    }
+
+    html.push_str(
+        r#"
+            </table>
+        </body>
+        </html>
+        "#
+    );
+
+    Html(html)
 }
 
 // Id                                  │AggregateId                         │AggregateType│CreatedTimeUtc             │MachineName│Serialized
@@ -71,6 +142,7 @@ impl EventWithMetadata {
     }
 }
 
+#[derive(Clone, Default)]
 pub struct Library {
     pub items: HashMap<uuid::Uuid, LibraryItem>,
 }
