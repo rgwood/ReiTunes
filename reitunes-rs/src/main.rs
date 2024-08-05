@@ -65,6 +65,7 @@ async fn index_handler(State(library): State<Arc<RwLock<Library>>>) -> Html<Stri
                 table { width: 100%; border-collapse: collapse; }
                 th, td { text-align: left; padding: 8px; border-bottom: 1px solid #ddd; }
                 th { background-color: #f2f2f2; }
+                audio { width: 250px; }
             </style>
         </head>
         <body>
@@ -75,6 +76,7 @@ async fn index_handler(State(library): State<Arc<RwLock<Library>>>) -> Html<Stri
                     <th>Artist</th>
                     <th>Album</th>
                     <th>Play Count</th>
+                    <th>Play</th>
                 </tr>
         "#
     );
@@ -87,9 +89,10 @@ async fn index_handler(State(library): State<Arc<RwLock<Library>>>) -> Html<Stri
                 <td>{}</td>
                 <td>{}</td>
                 <td>{}</td>
+                <td><audio controls src="{}"></audio></td>
             </tr>
             "#,
-            item.name, item.artist, item.album, item.play_count
+            item.name, item.artist, item.album, item.play_count, item.url()
         ));
     }
 
