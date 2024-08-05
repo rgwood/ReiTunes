@@ -60,36 +60,32 @@ async fn index_handler(State(library): State<Arc<RwLock<Library>>>) -> Html<Stri
             <meta charset="UTF-8">
             <meta name="viewport" content="width=device-width, initial-scale=1.0">
             <title>ReiTunes Library</title>
-            <style>
-                body { font-family: Arial, sans-serif; margin: 0; padding: 20px; }
-                table { width: 100%; border-collapse: collapse; }
-                th, td { text-align: left; padding: 8px; border-bottom: 1px solid #ddd; }
-                th { background-color: #f2f2f2; }
-                tr:hover { background-color: #f5f5f5; cursor: pointer; }
-                #player { width: 100%; margin-bottom: 20px; }
-            </style>
+            <script src="https://cdn.tailwindcss.com"></script>
         </head>
-        <body>
-            <h1>ReiTunes Library</h1>
-            <audio id="player" controls></audio>
-            <table id="library-table">
-                <tr>
-                    <th>Name</th>
-                    <th>Artist</th>
-                    <th>Album</th>
-                    <th>Play Count</th>
-                </tr>
+        <body class="bg-gray-100 p-8">
+            <h1 class="text-3xl font-bold mb-6">ReiTunes Library</h1>
+            <audio id="player" controls class="w-full mb-6"></audio>
+            <table id="library-table" class="w-full bg-white shadow-md rounded-lg overflow-hidden">
+                <thead>
+                    <tr class="bg-gray-200 text-gray-600 uppercase text-sm leading-normal">
+                        <th class="py-3 px-6 text-left">Name</th>
+                        <th class="py-3 px-6 text-left">Artist</th>
+                        <th class="py-3 px-6 text-left">Album</th>
+                        <th class="py-3 px-6 text-left">Play Count</th>
+                    </tr>
+                </thead>
+                <tbody>
         "#
     );
 
     for item in library.items.values() {
         html.push_str(&format!(
             r#"
-            <tr data-url="{}">
-                <td>{}</td>
-                <td>{}</td>
-                <td>{}</td>
-                <td>{}</td>
+            <tr class="border-b border-gray-200 hover:bg-gray-100 cursor-pointer" data-url="{}">
+                <td class="py-3 px-6 text-left whitespace-nowrap">{}</td>
+                <td class="py-3 px-6 text-left">{}</td>
+                <td class="py-3 px-6 text-left">{}</td>
+                <td class="py-3 px-6 text-left">{}</td>
             </tr>
             "#,
             item.url(), item.name, item.artist, item.album, item.play_count
@@ -98,6 +94,7 @@ async fn index_handler(State(library): State<Arc<RwLock<Library>>>) -> Html<Stri
 
     html.push_str(
         r#"
+                </tbody>
             </table>
             <script>
                 const player = document.getElementById('player');
