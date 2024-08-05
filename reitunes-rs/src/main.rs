@@ -1,4 +1,5 @@
 use std::{collections::HashMap, sync::Arc, time::Duration};
+use serde::{Deserialize, Serialize};
 
 use anyhow::{Context, Result};
 use axum::{
@@ -271,6 +272,38 @@ async fn search_handler(
     }
 }
 
+mod duration_serde {
+    use serde::{self, Deserialize, Deserializer, Serializer};
+    use std::time::Duration;
+
+    pub fn serialize<S>(duration: &Duration, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let seconds = duration.as_secs();
+        let nanos = duration.subsec_nanos();
+        format!("{:02}:{:02}:{:02}.{:09}", seconds / 3600, (seconds % 3600) / 60, seconds % 60, nanos).serialize(serializer)
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<Duration, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+        let parts: Vec<&str> = s.split(|c| c == ':' || c == '.').collect();
+        if parts.len() != 4 {
+            return Err(serde::de::Error::custom("Invalid duration format"));
+        }
+        
+        let hours: u64 = parts[0].parse().map_err(serde::de::Error::custom)?;
+        let minutes: u64 = parts[1].parse().map_err(serde::de::Error::custom)?;
+        let seconds: u64 = parts[2].parse().map_err(serde::de::Error::custom)?;
+        let nanos: u32 = parts[3].parse().map_err(serde::de::Error::custom)?;
+
+        Ok(Duration::new(hours * 3600 + minutes * 60 + seconds, nanos))
+    }
+}
+
 // Id                                  │AggregateId                         │AggregateType│CreatedTimeUtc             │MachineName│Serialized
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase")]
@@ -374,9 +407,6 @@ impl Library {
             }
             Event::LibraryItemBookmarkAddedEvent { bookmark_id, position } => {
                 if let Some(item) = self.items.get_mut(&event.aggregate_id) {
-                    // TODO fix this, parse duration
-                    //  invalid type: string "00:36:16.8991596", expected struct Duration
-                    let position: Duration = Duration::from_secs(1);
                     item.bookmarks.insert(bookmark_id, Bookmark { position, emoji: String::new() });
                 }
             }
@@ -425,9 +455,8 @@ pub enum Event {
     #[serde(rename_all = "PascalCase")]
     LibraryItemBookmarkAddedEvent {
         bookmark_id: uuid::Uuid,
-        // TODO: make this a time type
-        // error:  invalid type: string "00:36:16.8991596", expected struct Duration
-        position: String,
+        #[serde(with = "duration_serde")]
+        position: Duration,
     },
     #[serde(rename_all = "PascalCase")]
     LibraryItemBookmarkDeletedEvent {
