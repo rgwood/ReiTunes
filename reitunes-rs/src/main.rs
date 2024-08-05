@@ -1,4 +1,4 @@
-use std::{cell::{LazyCell, OnceCell}, sync::LazyLock, vec};
+use std::{cell::{LazyCell, OnceCell}, sync::LazyLock, vec, collections::HashMap};
 
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
@@ -7,20 +7,20 @@ use serde_rusqlite::*;
 use time::{OffsetDateTime, PrimitiveDateTime};
 
 fn main() -> Result<()> {
-
-    let mut library: Vec<LibraryItem> = vec![];
-
     let conn = rusqlite::Connection::open("test-library.db")?;
-    let mut stmt = conn.prepare_cached("SELECT * FROM events ORDER BY CreatedTimeUtc LIMIT 2")?;
+    let mut stmt = conn.prepare_cached("SELECT * FROM events ORDER BY CreatedTimeUtc")?;
 
     let rows = from_rows::<EventRow>(stmt.query([])?);
 
+    let mut events = Vec::new();
     for row in rows {
         let row = row?;
-        println!("{:?}", row.serialized);
         let event = EventWithMetadata::from_row(row)?;
-        println!("{:?}", event);
+        events.push(event);
     }
+
+    let library = Library::build_from_events(events);
+    println!("Library built with {} items", library.items.len());
 
     Ok(())
 }
@@ -63,23 +63,41 @@ impl EventWithMetadata {
     }
 }
 
-
-pub fn apply(event: EventWithMetadata, library: &mut Vec<LibraryItem>) {
-    match event.event {
-        Event::LibraryItemCreatedEvent { name, file_path } => {
-            library.push(LibraryItem {
-                id: uuid::Uuid::new_v4(),
-                name,
-                file_path,
-            });
-        }
-        _ => {}
-    }
+pub struct Library {
+    pub items: HashMap<uuid::Uuid, LibraryItem>,
 }
 
-pub struct EventWithRow {
-    event: Event,
-    row: EventRow,
+impl Library {
+    pub fn new() -> Self {
+        Library {
+            items: HashMap::new(),
+        }
+    }
+
+    pub fn build_from_events(events: Vec<EventWithMetadata>) -> Self {
+        let mut library = Library::new();
+        for event in events {
+            library.apply(event);
+        }
+        library
+    }
+
+    pub fn apply(&mut self, event: EventWithMetadata) {
+        match event.event {
+            Event::LibraryItemCreatedEvent { name, file_path } => {
+                let item = LibraryItem {
+                    id: event.aggregate_id,
+                    name,
+                    file_path,
+                };
+                self.items.insert(item.id, item);
+            }
+            Event::LibraryItemPlayedEvent => {
+                // Update play count or last played time if needed
+            }
+            // TODO: Handle other event types
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
@@ -95,12 +113,11 @@ pub enum Event {
     // TODO: Add more events
 }
 
+#[derive(Debug, Clone)]
 pub struct LibraryItem {
     pub id: uuid::Uuid,
     pub name: String,
     pub file_path: String,
 }
-
-
 
 // {"$type":"LibraryItemPlayedEvent","Id":"ba6f6676-9c39-4262-b69a-1433b3b43255","AggregateId":"559146d5-4901-4e09-abd9-e732a23f8429","CreatedTimeUtc":"2020-08-15T22:52:09.8397077Z","LocalId":1,"MachineName":"SURFACESPUD"}
