@@ -2,10 +2,7 @@ use std::{collections::HashMap, sync::Arc, time::Duration};
 
 use anyhow::{Context, Result};
 use axum::{
-    extract::{State, Query},
-    response::{Html, IntoResponse},
-    routing::{get, post},
-    Router, Json,
+    extract::{Query, State}, http::StatusCode, response::{Html, Response, IntoResponse}, routing::{get, post}, Json, Router
 };
 use serde::{Deserialize, Serialize};
 use serde_rusqlite::*;
@@ -185,7 +182,7 @@ struct SearchQuery {
 async fn search_handler(
     State(library): State<Arc<RwLock<Library>>>,
     Query(query): Query<SearchQuery>,
-) -> impl IntoResponse {
+) -> Response {
     println!("Received search query: {:?}", query);
 
     match query.query {
@@ -214,7 +211,7 @@ async fn search_handler(
                 ));
             }
 
-            Html(html)
+            Html(html).into_response()
         },
         None => {
             println!("Error: No search query provided");
