@@ -6,26 +6,11 @@ use time::PrimitiveDateTime;
 use tracing::{info, instrument};
 use reqwest;
 
-#[derive(Debug, Serialize, Deserialize)]
-#[serde(tag = "$type")]
-pub enum EventWithMetadata {
-    #[serde(rename = "LibraryItemNameChangedEvent")]
-    LibraryItemNameChanged {
-        NewName: String,
-        Id: uuid::Uuid,
-        AggregateId: uuid::Uuid,
-        CreatedTimeUtc: String,
-        LocalId: i64,
-        MachineName: String,
-    },
-    // Add other event types here as needed
-}
-
 #[instrument]
 pub async fn fetch_all_events() -> Result<Vec<EventWithMetadata>> {
     let client = reqwest::Client::new();
     let response = client
-        .get("https://spudnik.reillywood.com/reitunes.allevents")
+        .get("https://spudnik.reillywood.com/reitunes/allevents")
         .send()
         .await?;
 
@@ -35,33 +20,6 @@ pub async fn fetch_all_events() -> Result<Vec<EventWithMetadata>> {
 
 #[instrument]
 pub fn load_all_events_from_db(db_path: &str) -> Result<Vec<EventWithMetadata>> {
-    let conn = rusqlite::Connection::open(db_path)?;
-    let mut stmt = conn.prepare_cached(
-        "SELECT * FROM events ORDER BY CreatedTimeUtc",
-    )?;
-
-    let start = std::time::Instant::now();
-
-    let rows = from_rows::<EventRow>(stmt.query([])?);
-
-    let mut events = Vec::new();
-    for row in rows {
-        let row = row?;
-        let event = EventWithMetadata::from_row(row)?;
-        events.push(event);
-    }
-
-    info!(
-        ms_elapsed = start.elapsed().as_millis(),
-        event_count = events.len(),
-        "Loaded all events from db"
-    );
-
-    Ok(events)
-}
-
-#[instrument]
-pub fn load_library_from_db(db_path: &str) -> Result<Library> {
     let conn = rusqlite::Connection::open(db_path)?;
     let mut stmt = conn.prepare_cached(
         "SELECT * FROM events e WHERE e.AggregateType == 'LibraryItem' ORDER BY CreatedTimeUtc",
@@ -82,9 +40,16 @@ pub fn load_library_from_db(db_path: &str) -> Result<Library> {
     info!(
         ms_elapsed = start.elapsed().as_millis(),
         event_count = events.len(),
-        "Loaded events from db"
+        "Loaded all events from db"
     );
 
+    Ok(events)
+}
+
+#[instrument]
+pub fn load_library_from_db(db_path: &str) -> Result<Library> {
+    let events = load_all_events_from_db(db_path)?;
+    
     let start = std::time::Instant::now();
     let library = Library::build_from_events(events);
     // takes about 0.3ms on 13th gen i7, 3000 events
