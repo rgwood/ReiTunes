@@ -5,9 +5,10 @@ Everything in here is extremely WIP.
 ## TODO
 
 - [x] Read a row from the DB into a struct w/ a string Serialized column
-- [ ] Make an event enum
-- [ ] Figure out how to map the events table rows to Rust idiomatically. Can't really do interfaces like in C#
-- [ ] Create LibraryItem and Bookmark structs
+- [x] Make an event enum
+- [x] Figure out how to map the events table rows to Rust idiomatically. Can't really do interfaces like in C#
+- [x] Create LibraryItem and Bookmark structs
+- [ ] Implement editing.
 - [ ] Write some tests for applying events to a single node
 - [ ] Port C# tests for multiple nodes / syncing
 
