@@ -7,7 +7,6 @@ use axum::{
     routing::{get, post},
     Router, Json,
 };
-use serde::Deserialize;
 use serde::{Deserialize, Serialize};
 use serde_rusqlite::*;
 use time::PrimitiveDateTime;
@@ -58,7 +57,7 @@ async fn index_handler(State(library): State<Arc<RwLock<Library>>>) -> Html<Stri
     items.sort_by(|a, b| b.play_count.cmp(&a.play_count));
 
     let mut html = String::from(
-        r#"
+        r###"
         <!DOCTYPE html>
         <html lang="en">
         <head>
@@ -129,7 +128,7 @@ async fn index_handler(State(library): State<Arc<RwLock<Library>>>) -> Html<Stri
                     </tr>
                 </thead>
                 <tbody>
-        "#
+        "###
     );
 
     for item in items {
