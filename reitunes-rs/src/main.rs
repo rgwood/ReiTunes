@@ -2,7 +2,7 @@ use std::{collections::HashMap, sync::Arc, time::Duration};
 
 use anyhow::{Context, Result};
 use axum::{
-    extract::{Query, State}, http::StatusCode, response::{Html, Response, IntoResponse}, routing::{get, post}, Json, Router
+    extract::{Form, State}, http::StatusCode, response::{Html, Response, IntoResponse}, routing::{get, post}, Json, Router
 };
 use serde::{Deserialize, Serialize};
 use serde_rusqlite::*;
@@ -109,11 +109,10 @@ async fn index_handler(State(library): State<Arc<RwLock<Library>>>) -> Html<Stri
         <body>
             <h1><span class="blink">🎵</span> ReiTunes Library <span class="blink">🎵</span></h1>
             <audio id="player" controls></audio>
-            <input type="text" id="search" name="query" placeholder="Search..." 
-                   hx-post="/search" 
-                   hx-trigger="keyup changed delay:500ms, search" 
-                   hx-target="#library-table tbody" 
-                   hx-indicator=".htmx-indicator">
+            <form hx-post="/search" hx-trigger="submit" hx-target="#library-table tbody">
+                <input type="text" id="search" name="query" placeholder="Search...">
+                <button type="submit">Search</button>
+            </form>
             <div class="htmx-indicator">Searching...</div>
             <table id="library-table">
                 <thead>
@@ -181,11 +180,11 @@ struct SearchQuery {
 
 async fn search_handler(
     State(library): State<Arc<RwLock<Library>>>,
-    Query(query): Query<SearchQuery>,
+    Form(query): Form<SearchQuery>,
 ) -> Response {
     println!("Received search query: {:?}", query);
 
-    match query.query {
+    match query.query.as_deref() {
         Some(search_term) => {
             let library = library.read().await;
             let filtered_items: Vec<_> = library.items.values()
