@@ -30,7 +30,7 @@ async fn main() -> Result<()> {
 
 fn load_library_from_db(db_path: &str) -> Result<Library> {
     let conn = rusqlite::Connection::open(db_path)?;
-    let mut stmt = conn.prepare_cached("SELECT * FROM events ORDER BY CreatedTimeUtc")?;
+    let mut stmt = conn.prepare_cached("SELECT * FROM events e WHERE e.AggregateType == 'LibraryItem' ORDER BY CreatedTimeUtc")?;
 
     let start = std::time::Instant::now();
 
@@ -271,6 +271,7 @@ async fn search_handler(
     }
 }
 
+// Durations are serialized like "00:36:16.8991596" for historical reasons (.NET stuff)
 mod duration_serde {
     use serde::{self, Deserialize, Deserializer, Serializer};
     use std::time::Duration;
@@ -316,6 +317,7 @@ pub struct EventRow {
 }
 
 #[derive(Debug)]
+#[allow(dead_code)]
 pub struct EventWithMetadata {
     id: uuid::Uuid,
     aggregate_id: uuid::Uuid,
@@ -503,10 +505,9 @@ mod tests {
     fn test_load_library_from_db() {
         let library = load_library_from_db("test-library.db").unwrap();
         
-        // Check that the library is not empty
-        assert!(!library.items.is_empty(), "Library should not be empty");
+        assert_eq!(library.items.len(), 271, "Library should contain 271 items");
 
-        // Check for a specific known item (you may need to adjust this based on your test data)
+        // Check for a specific known item
         let known_item_id = uuid::Uuid::parse_str("559146d5-4901-4e09-abd9-e732a23f8429").unwrap();
         assert!(library.items.contains_key(&known_item_id), "Library should contain a known item");
 
@@ -514,21 +515,5 @@ mod tests {
         if let Some(item) = library.items.get(&known_item_id) {
             assert!(item.play_count > 0, "Known item should have been played at least once");
         }
-
-        // Check for the presence of different event types
-        let event_types: Vec<_> = library.items.values()
-            .flat_map(|item| {
-                vec![
-                    !item.name.is_empty(),
-                    !item.file_path.is_empty(),
-                    item.play_count > 0,
-                    !item.artist.is_empty(),
-                    !item.album.is_empty(),
-                    !item.bookmarks.is_empty(),
-                ]
-            })
-            .collect();
-
-        assert!(event_types.iter().any(|&x| x), "Library should contain items affected by various event types");
     }
 }
