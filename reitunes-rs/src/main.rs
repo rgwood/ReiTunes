@@ -130,7 +130,6 @@ async fn index_handler(State(library): State<Arc<RwLock<Library>>>) -> Html<Stri
                 }
                 tr {
                     background-color: #010;
-                    transition: all 0.3s ease;
                 }
                 tr:hover {
                     background-color: #020;
