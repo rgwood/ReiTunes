@@ -23,11 +23,18 @@ pub fn load_library_from_db(db_path: &str) -> Result<Library> {
         events.push(event);
     }
 
-    info!(ms_elapsed = start.elapsed().as_millis(), event_count = events.len(), "Loaded events from db");
+    info!(
+        ms_elapsed = start.elapsed().as_millis(),
+        event_count = events.len(),
+        "Loaded events from db"
+    );
 
     let start = std::time::Instant::now();
     let library = Library::build_from_events(events);
-    info!(ms_elapsed = start.elapsed().as_millis(), "Built library from events");
+    info!(
+        ms_elapsed = start.elapsed().as_millis(),
+        "Built library from events"
+    );
 
     Ok(library)
 }
