@@ -70,7 +70,12 @@ async fn index_handler(State(library): State<Arc<RwLock<Library>>>) -> Html<Stri
                     font-family: 'VT323', monospace;
                     margin: 0;
                     padding: 20px;
-                    overflow: hidden;
+                    overflow-x: hidden;
+                    overflow-y: auto;
+                    box-sizing: border-box;
+                }
+                * {
+                    box-sizing: inherit;
                 }
                 body::before {
                     content: "";
@@ -94,9 +99,9 @@ async fn index_handler(State(library): State<Arc<RwLock<Library>>>) -> Html<Stri
                     text-shadow: 0 0 10px #0f0;
                 }
                 #search {
-                    width: 100%;
+                    width: calc(100% - 20px);
                     padding: 10px;
-                    margin-bottom: 10px;
+                    margin: 0 10px 10px 10px;
                     background-color: #000;
                     color: #0f0;
                     border: 1px solid #0f0;
