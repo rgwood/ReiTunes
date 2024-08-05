@@ -290,6 +290,14 @@ pub struct LibraryItem {
     pub bookmarks: HashMap<uuid::Uuid, Bookmark>,
 }
 
+const STORAGE_URL: &str = "https://reitunes.blob.core.windows.net/music/";
+
+impl LibraryItem {
+    pub fn url(&self) -> String {
+        format!("{}{}",STORAGE_URL, self.file_path)
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct Bookmark {
     pub position: std::time::Duration,
