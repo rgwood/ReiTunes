@@ -91,6 +91,7 @@ impl Library {
                     file_path,
                     artist: String::new(),
                     album: String::new(),
+                    play_count: 0,
                     bookmarks: HashMap::new(),
                 };
                 self.items.insert(item.id, item);
