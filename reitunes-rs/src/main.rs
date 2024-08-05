@@ -2,11 +2,12 @@ use std::{collections::HashMap, sync::Arc, time::Duration};
 
 use anyhow::{Context, Result};
 use axum::{
-    extract::State,
-    response::Html,
-    routing::get,
-    Router,
+    extract::{State, Query},
+    response::{Html, IntoResponse},
+    routing::{get, post},
+    Router, Json,
 };
+use serde::Deserialize;
 use serde::{Deserialize, Serialize};
 use serde_rusqlite::*;
 use time::PrimitiveDateTime;
@@ -39,6 +40,7 @@ async fn main() -> Result<()> {
 
     let app = Router::new()
         .route("/", get(index_handler))
+        .route("/search", post(search_handler))
         .with_state(shared_state);
 
     println!("Server running on http://localhost:3000");
@@ -63,6 +65,7 @@ async fn index_handler(State(library): State<Arc<RwLock<Library>>>) -> Html<Stri
             <meta charset="UTF-8">
             <meta name="viewport" content="width=device-width, initial-scale=1.0">
             <title>ReiTunes Library</title>
+            <script src="https://unpkg.com/htmx.org@1.9.4"></script>
             <style>
                 body {
                     background: #000000 url('https://web.archive.org/web/20090830064557im_/http://www.geocities.com/Area51/Corridor/5177/stars.gif');
@@ -110,6 +113,12 @@ async fn index_handler(State(library): State<Arc<RwLock<Library>>>) -> Html<Stri
         <body>
             <h1><span class="blink">🎵</span> ReiTunes Library <span class="blink">🎵</span></h1>
             <audio id="player" controls></audio>
+            <input type="text" id="search" name="query" placeholder="Search..." 
+                   hx-post="/search" 
+                   hx-trigger="keyup changed delay:500ms, search" 
+                   hx-target="#library-table tbody" 
+                   hx-indicator=".htmx-indicator">
+            <div class="htmx-indicator">Searching...</div>
             <table id="library-table">
                 <thead>
                     <tr>
@@ -144,6 +153,8 @@ async fn index_handler(State(library): State<Arc<RwLock<Library>>>) -> Html<Stri
             <script>
                 const player = document.getElementById('player');
                 const table = document.getElementById('library-table');
+                const searchInput = document.getElementById('search');
+
                 table.addEventListener('click', (e) => {
                     const row = e.target.closest('tr');
                     if (row && row.dataset.url) {
@@ -151,11 +162,54 @@ async fn index_handler(State(library): State<Arc<RwLock<Library>>>) -> Html<Stri
                         player.play();
                     }
                 });
+
+                document.addEventListener('keydown', (e) => {
+                    if (e.ctrlKey && e.key === 'f') {
+                        e.preventDefault();
+                        searchInput.focus();
+                    }
+                });
             </script>
         </body>
         </html>
         "#
     );
+
+    Html(html)
+}
+
+#[derive(Deserialize)]
+struct SearchQuery {
+    query: String,
+}
+
+async fn search_handler(
+    State(library): State<Arc<RwLock<Library>>>,
+    Query(query): Query<SearchQuery>,
+) -> impl IntoResponse {
+    let library = library.read().await;
+    let filtered_items: Vec<_> = library.items.values()
+        .filter(|item| {
+            item.name.to_lowercase().contains(&query.query.to_lowercase()) ||
+            item.artist.to_lowercase().contains(&query.query.to_lowercase()) ||
+            item.album.to_lowercase().contains(&query.query.to_lowercase())
+        })
+        .collect();
+
+    let mut html = String::new();
+    for item in filtered_items {
+        html.push_str(&format!(
+            r#"
+            <tr data-url="{}">
+                <td>{}</td>
+                <td>{}</td>
+                <td>{}</td>
+                <td>{}</td>
+            </tr>
+            "#,
+            item.url(), item.name, item.artist, item.album, item.play_count
+        ));
+    }
 
     Html(html)
 }
