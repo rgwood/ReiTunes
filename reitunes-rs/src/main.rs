@@ -86,14 +86,6 @@ async fn index_handler(State(library): State<Arc<RwLock<Library>>>) -> Html<Stri
                         linear-gradient(90deg, #0f0 1px, transparent 1px);
                     background-size: 20px 20px;
                 }
-                #header {
-                    position: fixed;
-                    top: 10px;
-                    left: 10px;
-                    font-size: 24px;
-                    color: #0f0;
-                    text-shadow: 0 0 5px #0f0;
-                }
                 #now-playing {
                     text-align: center;
                     font-size: 28px;
@@ -145,8 +137,7 @@ async fn index_handler(State(library): State<Arc<RwLock<Library>>>) -> Html<Stri
             </style>
         </head>
         <body>
-            <div id="header">ReiTunes</div>
-            <div id="now-playing">Now Playing: <span id="current-song">No song selected</span></div>
+            <div id="now-playing"><span id="current-song">No song selected</span></div>
             <audio id="player" controls></audio>
             <input type="text" id="search" name="query" placeholder="SEARCH..." hx-post="/search"
                 hx-trigger="input changed delay:50ms" hx-target="#library-table tbody" autocomplete="off">
