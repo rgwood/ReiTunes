@@ -63,78 +63,148 @@ async fn index_handler(State(library): State<Arc<RwLock<Library>>>) -> Html<Stri
             <title>ReiTunes Library</title>
             <script src="https://unpkg.com/htmx.org@1.9.4"></script>
             <style>
+                @import url('https://fonts.googleapis.com/css2?family=VT323&display=swap');
                 body {
-                    background: #000000 url('https://web.archive.org/web/20090830064557im_/http://www.geocities.com/Area51/Corridor/5177/stars.gif');
-                    color: #00ff00;
-                    font-family: 'Comic Sans MS', cursive;
+                    background-color: #000;
+                    color: #0f0;
+                    font-family: 'VT323', monospace;
                     margin: 0;
                     padding: 20px;
+                    overflow: hidden;
+                }
+                body::before {
+                    content: "";
+                    position: fixed;
+                    top: 0;
+                    left: 0;
+                    width: 100%;
+                    height: 100%;
+                    opacity: 0.1;
+                    z-index: -1;
+                    background: 
+                        linear-gradient(#0f0 1px, transparent 1px),
+                        linear-gradient(90deg, #0f0 1px, transparent 1px);
+                    background-size: 20px 20px;
                 }
                 #header {
-                    position: absolute;
+                    position: fixed;
                     top: 10px;
                     left: 10px;
-                    font-size: 18px;
-                    color: #ff00ff;
-                    text-shadow: 1px 1px #ffff00;
+                    font-size: 24px;
+                    color: #0f0;
+                    text-shadow: 0 0 5px #0f0;
                 }
                 #now-playing {
                     text-align: center;
-                    font-size: 24px;
-                    color: #00ffff;
+                    font-size: 28px;
+                    color: #0f0;
                     margin-bottom: 20px;
+                    text-shadow: 0 0 10px #0f0;
                 }
                 #search {
                     width: 100%;
                     padding: 10px;
                     margin-bottom: 10px;
-                    background-color: #000033;
-                    color: #00ff00;
-                    border: 2px solid #00ffff;
-                    font-family: 'Comic Sans MS', cursive;
+                    background-color: #000;
+                    color: #0f0;
+                    border: 1px solid #0f0;
+                    font-family: 'VT323', monospace;
+                    font-size: 18px;
                 }
                 #search::placeholder {
-                    color: #008800;
+                    color: #030;
                 }
                 table {
                     width: 100%;
-                    border-collapse: collapse;
+                    border-collapse: separate;
+                    border-spacing: 0 5px;
                 }
                 th, td {
-                    border: 2px solid #00ffff;
-                    padding: 8px;
+                    padding: 10px;
                     text-align: left;
+                    border: none;
                 }
                 th {
-                    background-color: #000080;
-                    color: #ffffff;
+                    background-color: #030;
+                    color: #0f0;
                 }
-                tr:nth-child(even) {
-                    background-color: #000033;
+                tr {
+                    background-color: #010;
+                    transition: all 0.3s ease;
                 }
                 tr:hover {
-                    background-color: #003300;
+                    background-color: #020;
+                    box-shadow: 0 0 10px #0f0;
                     cursor: pointer;
                 }
                 #player {
                     width: 100%;
                     margin-bottom: 20px;
+                    background-color: #000;
+                    border: 1px solid #0f0;
                 }
-                .blink {
-                    animation: blinker 1s linear infinite;
+                .glitch {
+                    animation: glitch 1s linear infinite;
+                    position: relative;
                 }
-                @keyframes blinker {
-                    50% { opacity: 0; }
+                @keyframes glitch {
+                    2%, 64% {
+                        transform: translate(2px,0) skew(0deg);
+                    }
+                    4%, 60% {
+                        transform: translate(-2px,0) skew(0deg);
+                    }
+                    62% {
+                        transform: translate(0,0) skew(5deg); 
+                    }
+                }
+                .glitch:before,
+                .glitch:after {
+                    content: attr(title);
+                    position: absolute;
+                    left: 0;
+                }
+                .glitch:before {
+                    animation: glitchTop 1s linear infinite;
+                    clip-path: polygon(0 0, 100% 0, 100% 33%, 0 33%);
+                    -webkit-clip-path: polygon(0 0, 100% 0, 100% 33%, 0 33%);
+                }
+                @keyframes glitchTop {
+                    2%, 64% {
+                        transform: translate(2px,-2px);
+                    }
+                    4%, 60% {
+                        transform: translate(-2px,2px);
+                    }
+                    62% {
+                        transform: translate(13px,-1px) skew(-13deg); 
+                    }
+                }
+                .glitch:after {
+                    animation: glitchBotom 1.5s linear infinite;
+                    clip-path: polygon(0 67%, 100% 67%, 100% 100%, 0 100%);
+                    -webkit-clip-path: polygon(0 67%, 100% 67%, 100% 100%, 0 100%);
+                }
+                @keyframes glitchBotom {
+                    2%, 64% {
+                        transform: translate(-2px,0);
+                    }
+                    4%, 60% {
+                        transform: translate(-2px,0);
+                    }
+                    62% {
+                        transform: translate(-22px,5px) skew(21deg); 
+                    }
                 }
             </style>
         </head>
         <body>
-            <div id="header"><span class="blink">🎵</span> ReiTunes Library <span class="blink">🎵</span></div>
-            <div id="now-playing">Now Playing: <span id="current-song">No song selected</span></div>
+            <div id="header" class="glitch" title="ReiTunes">ReiTunes</div>
+            <div id="now-playing" class="glitch" title="Now Playing:">Now Playing: <span id="current-song">No song selected</span></div>
             <audio id="player" controls></audio>
-                <input type="text" id="search" name="query" placeholder="Search..." hx-post="/search"
-                    hx-trigger="input changed delay:50ms" hx-target="#library-table tbody" autocomplete="off"> 
-                <div class="htmx-indicator">Searching...</div>
+            <input type="text" id="search" name="query" placeholder="SEARCH..." hx-post="/search"
+                hx-trigger="input changed delay:50ms" hx-target="#library-table tbody" autocomplete="off">
+            <div class="htmx-indicator">Searching...</div>
             <table id="library-table">
                 <thead>
                     <tr>
