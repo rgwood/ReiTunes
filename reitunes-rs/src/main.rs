@@ -60,41 +60,33 @@ async fn index_handler(State(library): State<Arc<RwLock<Library>>>) -> Html<Stri
             <meta charset="UTF-8">
             <meta name="viewport" content="width=device-width, initial-scale=1.0">
             <title>ReiTunes Library</title>
-            <style>
-                body { font-family: Arial, sans-serif; margin: 0; padding: 20px; background-color: #f0f0f0; }
-                h1 { color: #333; margin-bottom: 20px; }
-                #player { width: 100%; margin-bottom: 20px; }
-                table { width: 100%; border-collapse: collapse; background-color: white; box-shadow: 0 1px 3px rgba(0,0,0,0.2); }
-                th, td { padding: 10px; text-align: left; border-bottom: 1px solid #ddd; }
-                th { background-color: #4a5568; color: white; }
-                tr:nth-child(even) { background-color: #f8f8f8; }
-                tr:hover { background-color: #e8e8e8; cursor: pointer; }
-            </style>
+            <script src="https://cdn.tailwindcss.com"></script>
         </head>
-        <body>
-            <h1>ReiTunes Library</h1>
-            <audio id="player" controls></audio>
-            <table id="library-table">
-                <thead>
-                    <tr>
-                        <th>Name</th>
-                        <th>Artist</th>
-                        <th>Album</th>
-                        <th>Play Count</th>
-                    </tr>
-                </thead>
-                <tbody>
+        <body class="bg-gray-100 p-4">
+            <h1 class="text-2xl font-bold mb-4">ReiTunes Library</h1>
+            <audio id="player" controls class="w-full mb-4"></audio>
+            <div class="overflow-x-auto">
+                <table id="library-table" class="w-full text-sm text-left text-gray-500">
+                    <thead class="text-xs text-gray-700 uppercase bg-gray-200">
+                        <tr>
+                            <th class="px-4 py-2">Name</th>
+                            <th class="px-4 py-2">Artist</th>
+                            <th class="px-4 py-2">Album</th>
+                            <th class="px-4 py-2">Play Count</th>
+                        </tr>
+                    </thead>
+                    <tbody>
         "#
     );
 
     for item in library.items.values() {
         html.push_str(&format!(
             r#"
-            <tr data-url="{}">
-                <td>{}</td>
-                <td>{}</td>
-                <td>{}</td>
-                <td>{}</td>
+            <tr class="bg-white border-b hover:bg-gray-50 cursor-pointer" data-url="{}">
+                <td class="px-4 py-2">{}</td>
+                <td class="px-4 py-2">{}</td>
+                <td class="px-4 py-2">{}</td>
+                <td class="px-4 py-2">{}</td>
             </tr>
             "#,
             item.url(), item.name, item.artist, item.album, item.play_count
@@ -103,8 +95,9 @@ async fn index_handler(State(library): State<Arc<RwLock<Library>>>) -> Html<Stri
 
     html.push_str(
         r#"
-                </tbody>
-            </table>
+                    </tbody>
+                </table>
+            </div>
             <script>
                 const player = document.getElementById('player');
                 const table = document.getElementById('library-table');
