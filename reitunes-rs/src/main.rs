@@ -1,12 +1,13 @@
-use std::{collections::HashMap, sync::Arc, time::Duration};
-use serde::{Deserialize, Serialize};
-
-use anyhow::{Context, Result};
+use reitunes_rs::*;
+use std::sync::Arc;
+use anyhow::Result;
 use axum::{
-    extract::{Form, State}, http::StatusCode, response::{Html, Response, IntoResponse}, routing::{get, post}, Router
+    extract::{Form, State},
+    http::StatusCode,
+    response::{Html, Response, IntoResponse},
+    routing::{get, post},
+    Router,
 };
-use serde_rusqlite::*;
-use time::PrimitiveDateTime;
 use tokio::sync::RwLock;
 
 #[tokio::main]
@@ -26,31 +27,6 @@ async fn main() -> Result<()> {
         .unwrap();
 
     Ok(())
-}
-
-fn load_library_from_db(db_path: &str) -> Result<Library> {
-    let conn = rusqlite::Connection::open(db_path)?;
-    let mut stmt = conn.prepare_cached("SELECT * FROM events e WHERE e.AggregateType == 'LibraryItem' ORDER BY CreatedTimeUtc")?;
-
-    let start = std::time::Instant::now();
-
-    let rows = from_rows::<EventRow>(stmt.query([])?);
-
-    let mut events = Vec::new();
-    for row in rows {
-        let row = row?;
-        let event = EventWithMetadata::from_row(row)?;
-        events.push(event);
-    }
-
-    let ms_to_load_events = start.elapsed().as_millis();
-    println!("Loaded {} events in {}ms", events.len(), ms_to_load_events);
-
-    let start = std::time::Instant::now();
-    let library = Library::build_from_events(events);
-    println!("Library built with {} items in {}ms", library.items.len(), start.elapsed().as_millis());
-
-    Ok(library)
 }
 
 async fn index_handler(State(library): State<Arc<RwLock<Library>>>) -> Html<String> {
