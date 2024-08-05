@@ -281,7 +281,7 @@ mod duration_serde {
     {
         let seconds = duration.as_secs();
         let nanos = duration.subsec_nanos();
-        format!("{:02}:{:02}:{:02}.{:09}", seconds / 3600, (seconds % 3600) / 60, seconds % 60, nanos).serialize(serializer)
+        serializer.serialize_str(&format!("{:02}:{:02}:{:02}.{:09}", seconds / 3600, (seconds % 3600) / 60, seconds % 60, nanos))
     }
 
     pub fn deserialize<'de, D>(deserializer: D) -> Result<Duration, D::Error>
