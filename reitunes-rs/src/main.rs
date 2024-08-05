@@ -60,18 +60,27 @@ async fn index_handler(State(library): State<Arc<RwLock<Library>>>) -> Html<Stri
             <meta charset="UTF-8">
             <meta name="viewport" content="width=device-width, initial-scale=1.0">
             <title>ReiTunes Library</title>
-            <script src="https://cdn.tailwindcss.com"></script>
+            <style>
+                body { font-family: Arial, sans-serif; margin: 0; padding: 20px; background-color: #f0f0f0; }
+                h1 { color: #333; margin-bottom: 20px; }
+                #player { width: 100%; margin-bottom: 20px; }
+                table { width: 100%; border-collapse: collapse; background-color: white; box-shadow: 0 1px 3px rgba(0,0,0,0.2); }
+                th, td { padding: 10px; text-align: left; border-bottom: 1px solid #ddd; }
+                th { background-color: #4a5568; color: white; }
+                tr:nth-child(even) { background-color: #f8f8f8; }
+                tr:hover { background-color: #e8e8e8; cursor: pointer; }
+            </style>
         </head>
-        <body class="bg-gray-100 p-8">
-            <h1 class="text-3xl font-bold mb-6">ReiTunes Library</h1>
-            <audio id="player" controls class="w-full mb-6"></audio>
-            <table id="library-table" class="w-full bg-white shadow-md rounded-lg overflow-hidden">
+        <body>
+            <h1>ReiTunes Library</h1>
+            <audio id="player" controls></audio>
+            <table id="library-table">
                 <thead>
-                    <tr class="bg-gray-200 text-gray-600 uppercase text-sm leading-normal">
-                        <th class="py-3 px-6 text-left">Name</th>
-                        <th class="py-3 px-6 text-left">Artist</th>
-                        <th class="py-3 px-6 text-left">Album</th>
-                        <th class="py-3 px-6 text-left">Play Count</th>
+                    <tr>
+                        <th>Name</th>
+                        <th>Artist</th>
+                        <th>Album</th>
+                        <th>Play Count</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -81,11 +90,11 @@ async fn index_handler(State(library): State<Arc<RwLock<Library>>>) -> Html<Stri
     for item in library.items.values() {
         html.push_str(&format!(
             r#"
-            <tr class="border-b border-gray-200 hover:bg-gray-100 cursor-pointer" data-url="{}">
-                <td class="py-3 px-6 text-left whitespace-nowrap">{}</td>
-                <td class="py-3 px-6 text-left">{}</td>
-                <td class="py-3 px-6 text-left">{}</td>
-                <td class="py-3 px-6 text-left">{}</td>
+            <tr data-url="{}">
+                <td>{}</td>
+                <td>{}</td>
+                <td>{}</td>
+                <td>{}</td>
             </tr>
             "#,
             item.url(), item.name, item.artist, item.album, item.play_count
