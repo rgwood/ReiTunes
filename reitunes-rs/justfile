@@ -10,10 +10,10 @@ run:
     cargo run
 
 test:
-    cargo test
+    cargo nextest run
 
 watch-tests:
-    watchexec --exts=rs -- cargo test
+    watchexec --exts=rs -- cargo nextest run
 
 expected_filename := if os_family() == "windows" { "reitunes-rs.exe" } else { "reitunes-rs" }
 
