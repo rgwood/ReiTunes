@@ -99,9 +99,8 @@ async fn index_handler(State(library): State<Arc<RwLock<Library>>>) -> Html<Stri
                     text-shadow: 0 0 10px #0f0;
                 }
                 #search {
-                    width: calc(100% - 20px);
+                    width: calc(100%);
                     padding: 10px;
-                    margin: 0 10px 10px 10px;
                     background-color: #000;
                     color: #0f0;
                     border: 1px solid #0f0;
