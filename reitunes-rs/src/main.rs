@@ -65,18 +65,19 @@ async fn index_handler(State(library): State<Arc<RwLock<Library>>>) -> Html<Stri
                 table { width: 100%; border-collapse: collapse; }
                 th, td { text-align: left; padding: 8px; border-bottom: 1px solid #ddd; }
                 th { background-color: #f2f2f2; }
-                audio { width: 250px; }
+                tr:hover { background-color: #f5f5f5; cursor: pointer; }
+                #player { width: 100%; margin-bottom: 20px; }
             </style>
         </head>
         <body>
             <h1>ReiTunes Library</h1>
-            <table>
+            <audio id="player" controls></audio>
+            <table id="library-table">
                 <tr>
                     <th>Name</th>
                     <th>Artist</th>
                     <th>Album</th>
                     <th>Play Count</th>
-                    <th>Play</th>
                 </tr>
         "#
     );
@@ -84,21 +85,31 @@ async fn index_handler(State(library): State<Arc<RwLock<Library>>>) -> Html<Stri
     for item in library.items.values() {
         html.push_str(&format!(
             r#"
-            <tr>
+            <tr data-url="{}">
                 <td>{}</td>
                 <td>{}</td>
                 <td>{}</td>
                 <td>{}</td>
-                <td><audio controls src="{}"></audio></td>
             </tr>
             "#,
-            item.name, item.artist, item.album, item.play_count, item.url()
+            item.url(), item.name, item.artist, item.album, item.play_count
         ));
     }
 
     html.push_str(
         r#"
             </table>
+            <script>
+                const player = document.getElementById('player');
+                const table = document.getElementById('library-table');
+                table.addEventListener('click', (e) => {
+                    const row = e.target.closest('tr');
+                    if (row && row.dataset.url) {
+                        player.src = row.dataset.url;
+                        player.play();
+                    }
+                });
+            </script>
         </body>
         </html>
         "#
