@@ -143,64 +143,11 @@ async fn index_handler(State(library): State<Arc<RwLock<Library>>>) -> Html<Stri
                     background-color: #000;
                     border: 1px solid #0f0;
                 }
-                .glitch {
-                    animation: glitch 1s linear infinite;
-                    position: relative;
-                }
-                @keyframes glitch {
-                    2%, 64% {
-                        transform: translate(2px,0) skew(0deg);
-                    }
-                    4%, 60% {
-                        transform: translate(-2px,0) skew(0deg);
-                    }
-                    62% {
-                        transform: translate(0,0) skew(5deg); 
-                    }
-                }
-                .glitch:before,
-                .glitch:after {
-                    content: attr(title);
-                    position: absolute;
-                    left: 0;
-                }
-                .glitch:before {
-                    animation: glitchTop 1s linear infinite;
-                    clip-path: polygon(0 0, 100% 0, 100% 33%, 0 33%);
-                    -webkit-clip-path: polygon(0 0, 100% 0, 100% 33%, 0 33%);
-                }
-                @keyframes glitchTop {
-                    2%, 64% {
-                        transform: translate(2px,-2px);
-                    }
-                    4%, 60% {
-                        transform: translate(-2px,2px);
-                    }
-                    62% {
-                        transform: translate(13px,-1px) skew(-13deg); 
-                    }
-                }
-                .glitch:after {
-                    animation: glitchBotom 1.5s linear infinite;
-                    clip-path: polygon(0 67%, 100% 67%, 100% 100%, 0 100%);
-                    -webkit-clip-path: polygon(0 67%, 100% 67%, 100% 100%, 0 100%);
-                }
-                @keyframes glitchBotom {
-                    2%, 64% {
-                        transform: translate(-2px,0);
-                    }
-                    4%, 60% {
-                        transform: translate(-2px,0);
-                    }
-                    62% {
-                        transform: translate(-22px,5px) skew(21deg); 
-                    }
-                }
             </style>
         </head>
         <body>
-            <div id="header" class="glitch" title="ReiTunes">ReiTunes</div>
-            <div id="now-playing" class="glitch" title="Now Playing:">Now Playing: <span id="current-song">No song selected</span></div>
+            <div id="header">ReiTunes</div>
+            <div id="now-playing">Now Playing: <span id="current-song">No song selected</span></div>
             <audio id="player" controls></audio>
             <input type="text" id="search" name="query" placeholder="SEARCH..." hx-post="/search"
                 hx-trigger="input changed delay:50ms" hx-target="#library-table tbody" autocomplete="off">
