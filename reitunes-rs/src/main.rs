@@ -2,7 +2,7 @@ use std::{collections::HashMap, sync::Arc, time::Duration};
 
 use anyhow::{Context, Result};
 use axum::{
-    extract::{Form, State}, http::StatusCode, response::{Html, Response, IntoResponse}, routing::{get, post}, Json, Router
+    extract::{Form, State}, http::StatusCode, response::{Html, Response, IntoResponse}, routing::{get, post}, Router
 };
 use serde::{Deserialize, Serialize};
 use serde_rusqlite::*;
@@ -430,12 +430,6 @@ pub enum Event {
         bookmark_id: uuid::Uuid,
         emoji: String,
     },
-}
-
-impl Default for Event {
-    fn default() -> Self {
-        Event::LibraryItemPlayedEvent
-    }
 }
 
 #[derive(Debug, Clone)]
