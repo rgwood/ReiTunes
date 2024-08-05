@@ -23,6 +23,7 @@ pub fn load_library_from_db(db_path: &str) -> Result<Library> {
         events.push(event);
     }
 
+    // takes about 10ms on 13th gen i7, 3000 events
     info!(
         ms_elapsed = start.elapsed().as_millis(),
         event_count = events.len(),
@@ -31,6 +32,7 @@ pub fn load_library_from_db(db_path: &str) -> Result<Library> {
 
     let start = std::time::Instant::now();
     let library = Library::build_from_events(events);
+    // takes about 0.3ms on 13th gen i7, 3000 events
     info!(
         ms_elapsed = start.elapsed().as_millis(),
         "Built library from events"
