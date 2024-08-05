@@ -67,6 +67,22 @@ async fn index_handler(State(library): State<Arc<RwLock<Library>>>) -> Html<Stri
                     background: #000000 url('https://web.archive.org/web/20090830064557im_/http://www.geocities.com/Area51/Corridor/5177/stars.gif');
                     color: #00ff00;
                     font-family: 'Comic Sans MS', cursive;
+                    margin: 0;
+                    padding: 20px;
+                }
+                #header {
+                    position: absolute;
+                    top: 10px;
+                    left: 10px;
+                    font-size: 18px;
+                    color: #ff00ff;
+                    text-shadow: 1px 1px #ffff00;
+                }
+                #now-playing {
+                    text-align: center;
+                    font-size: 24px;
+                    color: #00ffff;
+                    margin-bottom: 20px;
                 }
                 #search {
                     width: 100%;
@@ -79,12 +95,6 @@ async fn index_handler(State(library): State<Arc<RwLock<Library>>>) -> Html<Stri
                 }
                 #search::placeholder {
                     color: #008800;
-                }
-                h1 {
-                    text-align: center;
-                    font-size: 36px;
-                    color: #ff00ff;
-                    text-shadow: 2px 2px #ffff00;
                 }
                 table {
                     width: 100%;
@@ -119,7 +129,8 @@ async fn index_handler(State(library): State<Arc<RwLock<Library>>>) -> Html<Stri
             </style>
         </head>
         <body>
-            <h1><span class="blink">🎵</span> ReiTunes Library <span class="blink">🎵</span></h1>
+            <div id="header"><span class="blink">🎵</span> ReiTunes Library <span class="blink">🎵</span></div>
+            <div id="now-playing">Now Playing: <span id="current-song">No song selected</span></div>
             <audio id="player" controls></audio>
                 <input type="text" id="search" name="query" placeholder="Search..." hx-post="/search"
                     hx-trigger="input changed delay:50ms" hx-target="#library-table tbody" autocomplete="off"> 
@@ -159,12 +170,16 @@ async fn index_handler(State(library): State<Arc<RwLock<Library>>>) -> Html<Stri
                 const player = document.getElementById('player');
                 const table = document.getElementById('library-table');
                 const searchInput = document.getElementById('search');
+                const currentSong = document.getElementById('current-song');
 
                 table.addEventListener('click', (e) => {
                     const row = e.target.closest('tr');
                     if (row && row.dataset.url) {
                         player.src = row.dataset.url;
                         player.play();
+                        const name = row.cells[0].textContent;
+                        const artist = row.cells[1].textContent;
+                        currentSong.textContent = `${name} - ${artist}`;
                     }
                 });
 
