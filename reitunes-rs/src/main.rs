@@ -109,9 +109,8 @@ async fn index_handler(State(library): State<Arc<RwLock<Library>>>) -> Html<Stri
         <body>
             <h1><span class="blink">🎵</span> ReiTunes Library <span class="blink">🎵</span></h1>
             <audio id="player" controls></audio>
-            <form hx-post="/search" hx-trigger="submit" hx-target="#library-table tbody">
+            <form hx-post="/search" hx-trigger="input changed delay:500ms" hx-target="#library-table tbody">
                 <input type="text" id="search" name="query" placeholder="Search...">
-                <button type="submit">Search</button>
             </form>
             <div class="htmx-indicator">Searching...</div>
             <table id="library-table">
