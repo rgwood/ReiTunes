@@ -115,11 +115,15 @@ async fn index_handler(State(library): State<Arc<RwLock<Library>>>) -> Html<Stri
                     background-color: #030;
                     color: #0f0;
                 }
-                th:nth-child(1), td:nth-child(1) { width: 25%; }
+                th:nth-child(1), td:nth-child(1) { width: 30%; }
                 th:nth-child(2), td:nth-child(2) { width: 20%; }
                 th:nth-child(3), td:nth-child(3) { width: 20%; }
                 th:nth-child(4), td:nth-child(4) { width: 15%; }
-                th:nth-child(5), td:nth-child(5) { width: 20%; }
+                th:nth-child(5), td:nth-child(5) { width: 15%; }
+                .bookmark-emoji {
+                    cursor: pointer;
+                    margin-right: 5px;
+                }
                 tr {
                     background-color: #010;
                 }
@@ -157,6 +161,14 @@ async fn index_handler(State(library): State<Arc<RwLock<Library>>>) -> Html<Stri
     );
 
     for item in items {
+        let bookmarks_html = item.bookmarks.iter().map(|(_, bookmark)| {
+            format!(
+                r#"<span class="bookmark-emoji" data-position="{}">{}</span>"#,
+                bookmark.position.as_secs(),
+                bookmark.emoji.chars().next().unwrap_or('🔖')
+            )
+        }).collect::<Vec<_>>().join("");
+
         html.push_str(&format!(
             r#"
             <tr data-url="{}">
@@ -172,7 +184,7 @@ async fn index_handler(State(library): State<Arc<RwLock<Library>>>) -> Html<Stri
             item.artist,
             item.album,
             item.play_count,
-            item.bookmarks.len()
+            bookmarks_html
         ));
     }
 
@@ -189,8 +201,22 @@ async fn index_handler(State(library): State<Arc<RwLock<Library>>>) -> Html<Stri
                 table.addEventListener('click', (e) => {
                     const row = e.target.closest('tr');
                     if (row && row.dataset.url) {
-                        player.src = row.dataset.url;
-                        player.play();
+                        if (e.target.classList.contains('bookmark-emoji')) {
+                            const position = parseFloat(e.target.dataset.position);
+                            if (player.src !== row.dataset.url) {
+                                player.src = row.dataset.url;
+                                player.addEventListener('loadedmetadata', () => {
+                                    player.currentTime = position;
+                                    player.play();
+                                }, { once: true });
+                            } else {
+                                player.currentTime = position;
+                                player.play();
+                            }
+                        } else {
+                            player.src = row.dataset.url;
+                            player.play();
+                        }
                         const name = row.cells[0].textContent;
                         const artist = row.cells[1].textContent;
                         currentSong.textContent = `${name} - ${artist}`;
@@ -202,6 +228,20 @@ async fn index_handler(State(library): State<Arc<RwLock<Library>>>) -> Html<Stri
                         e.preventDefault();
                         searchInput.focus();
                     }
+                });
+
+                // Function to format time as mm:ss
+                function formatTime(seconds) {
+                    const minutes = Math.floor(seconds / 60);
+                    const remainingSeconds = Math.floor(seconds % 60);
+                    return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
+                }
+
+                // Update current time display
+                player.addEventListener('timeupdate', () => {
+                    const currentTime = formatTime(player.currentTime);
+                    const duration = formatTime(player.duration);
+                    currentSong.textContent = `${currentSong.textContent.split(' - ')[0]} - ${currentTime} / ${duration}`;
                 });
             </script>
         </body>
@@ -249,6 +289,14 @@ async fn search_handler(
 
             let mut html = String::new();
             for item in filtered_items {
+                let bookmarks_html = item.bookmarks.iter().map(|(_, bookmark)| {
+                    format!(
+                        r#"<span class="bookmark-emoji" data-position="{}">{}</span>"#,
+                        bookmark.position.as_secs(),
+                        bookmark.emoji.chars().next().unwrap_or('🔖')
+                    )
+                }).collect::<Vec<_>>().join("");
+
                 html.push_str(&format!(
                     r#"
                     <tr data-url="{}">
@@ -264,7 +312,7 @@ async fn search_handler(
                     item.artist,
                     item.album,
                     item.play_count,
-                    item.bookmarks.len()
+                    bookmarks_html
                 ));
             }
 
