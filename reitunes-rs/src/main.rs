@@ -89,13 +89,58 @@ impl Library {
                     id: event.aggregate_id,
                     name,
                     file_path,
+                    artist: String::new(),
+                    album: String::new(),
+                    bookmarks: HashMap::new(),
                 };
                 self.items.insert(item.id, item);
             }
             Event::LibraryItemPlayedEvent => {
                 // Update play count or last played time if needed
+                if let Some(item) = self.items.get_mut(&event.aggregate_id) {
+                    item.play_count += 1;
+                }
             }
-            // TODO: Handle other event types
+            Event::LibraryItemDeletedEvent => {
+                self.items.remove(&event.aggregate_id);
+            }
+            Event::LibraryItemNameChangedEvent { new_name } => {
+                if let Some(item) = self.items.get_mut(&event.aggregate_id) {
+                    item.name = new_name;
+                }
+            }
+            Event::LibraryItemFilePathChangedEvent { new_file_path } => {
+                if let Some(item) = self.items.get_mut(&event.aggregate_id) {
+                    item.file_path = new_file_path;
+                }
+            }
+            Event::LibraryItemArtistChangedEvent { new_artist } => {
+                if let Some(item) = self.items.get_mut(&event.aggregate_id) {
+                    item.artist = new_artist;
+                }
+            }
+            Event::LibraryItemAlbumChangedEvent { new_album } => {
+                if let Some(item) = self.items.get_mut(&event.aggregate_id) {
+                    item.album = new_album;
+                }
+            }
+            Event::LibraryItemBookmarkAddedEvent { bookmark_id, position } => {
+                if let Some(item) = self.items.get_mut(&event.aggregate_id) {
+                    item.bookmarks.insert(bookmark_id, Bookmark { position, emoji: String::new() });
+                }
+            }
+            Event::LibraryItemBookmarkDeletedEvent { bookmark_id } => {
+                if let Some(item) = self.items.get_mut(&event.aggregate_id) {
+                    item.bookmarks.remove(&bookmark_id);
+                }
+            }
+            Event::LibraryItemBookmarkSetEmojiEvent { bookmark_id, emoji } => {
+                if let Some(item) = self.items.get_mut(&event.aggregate_id) {
+                    if let Some(bookmark) = item.bookmarks.get_mut(&bookmark_id) {
+                        bookmark.emoji = emoji;
+                    }
+                }
+            }
         }
     }
 }
@@ -153,6 +198,16 @@ pub struct LibraryItem {
     pub id: uuid::Uuid,
     pub name: String,
     pub file_path: String,
+    pub artist: String,
+    pub album: String,
+    pub play_count: u32,
+    pub bookmarks: HashMap<uuid::Uuid, Bookmark>,
+}
+
+#[derive(Debug, Clone)]
+pub struct Bookmark {
+    pub position: std::time::Duration,
+    pub emoji: String,
 }
 
 // {"$type":"LibraryItemPlayedEvent","Id":"ba6f6676-9c39-4262-b69a-1433b3b43255","AggregateId":"559146d5-4901-4e09-abd9-e732a23f8429","CreatedTimeUtc":"2020-08-15T22:52:09.8397077Z","LocalId":1,"MachineName":"SURFACESPUD"}
