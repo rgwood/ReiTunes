@@ -10,9 +10,12 @@ use reitunes_rs::*;
 use serde::Deserialize;
 use std::sync::Arc;
 use tokio::sync::RwLock;
+use tracing::info;
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    // Initialize tracing
+    tracing_subscriber::fmt::init();
     let library = load_library_from_db("test-library.db")?;
     let shared_state = Arc::new(RwLock::new(library));
 
@@ -24,7 +27,7 @@ async fn main() -> Result<()> {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:3000")
         .await
         .unwrap();
-    println!("Server running on http://localhost:3000");
+    info!("Server running on http://localhost:3000");
     axum::serve(listener, app).await.unwrap();
 
     Ok(())
@@ -212,7 +215,7 @@ async fn search_handler(
     State(library): State<Arc<RwLock<Library>>>,
     Form(query): Form<SearchQuery>,
 ) -> Response {
-    println!("Received search query: {:?}", query);
+    info!("Received search query: {:?}", query);
 
     match query.query.as_deref() {
         Some(search_term) => {
@@ -260,7 +263,7 @@ async fn search_handler(
             Html(html).into_response()
         }
         None => {
-            println!("Error: No search query provided");
+            tracing::error!("No search query provided");
             (StatusCode::BAD_REQUEST, "No search query provided").into_response()
         }
     }

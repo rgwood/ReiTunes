@@ -3,7 +3,9 @@ use serde::{Deserialize, Serialize};
 use serde_rusqlite::*;
 use std::{collections::HashMap, time::Duration};
 use time::PrimitiveDateTime;
+use tracing::{info, instrument};
 
+#[instrument]
 pub fn load_library_from_db(db_path: &str) -> Result<Library> {
     let conn = rusqlite::Connection::open(db_path)?;
     let mut stmt = conn.prepare_cached(
@@ -21,16 +23,11 @@ pub fn load_library_from_db(db_path: &str) -> Result<Library> {
         events.push(event);
     }
 
-    let ms_to_load_events = start.elapsed().as_millis();
-    println!("Loaded {} events in {}ms", events.len(), ms_to_load_events);
+    info!(ms_elapsed = start.elapsed().as_millis(), event_count = events.len(), "Loaded events from db");
 
     let start = std::time::Instant::now();
     let library = Library::build_from_events(events);
-    println!(
-        "Library built with {} items in {}ms",
-        library.items.len(),
-        start.elapsed().as_millis()
-    );
+    info!(ms_elapsed = start.elapsed().as_millis(), "Built library from events");
 
     Ok(library)
 }
