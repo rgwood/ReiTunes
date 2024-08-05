@@ -115,10 +115,11 @@ async fn index_handler(State(library): State<Arc<RwLock<Library>>>) -> Html<Stri
                     background-color: #030;
                     color: #0f0;
                 }
-                th:nth-child(1), td:nth-child(1) { width: 30%; }
-                th:nth-child(2), td:nth-child(2) { width: 25%; }
-                th:nth-child(3), td:nth-child(3) { width: 25%; }
-                th:nth-child(4), td:nth-child(4) { width: 20%; }
+                th:nth-child(1), td:nth-child(1) { width: 25%; }
+                th:nth-child(2), td:nth-child(2) { width: 20%; }
+                th:nth-child(3), td:nth-child(3) { width: 20%; }
+                th:nth-child(4), td:nth-child(4) { width: 15%; }
+                th:nth-child(5), td:nth-child(5) { width: 20%; }
                 tr {
                     background-color: #010;
                 }
@@ -148,6 +149,7 @@ async fn index_handler(State(library): State<Arc<RwLock<Library>>>) -> Html<Stri
                         <th>Artist</th>
                         <th>Album</th>
                         <th>Play Count</th>
+                        <th>Bookmarks</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -162,13 +164,15 @@ async fn index_handler(State(library): State<Arc<RwLock<Library>>>) -> Html<Stri
                 <td>{}</td>
                 <td>{}</td>
                 <td>{}</td>
+                <td>{}</td>
             </tr>
             "#,
             item.url(),
             item.name,
             item.artist,
             item.album,
-            item.play_count
+            item.play_count,
+            item.bookmarks.len()
         ));
     }
 
@@ -252,13 +256,15 @@ async fn search_handler(
                         <td>{}</td>
                         <td>{}</td>
                         <td>{}</td>
+                        <td>{}</td>
                     </tr>
                     "#,
                     item.url(),
                     item.name,
                     item.artist,
                     item.album,
-                    item.play_count
+                    item.play_count,
+                    item.bookmarks.len()
                 ));
             }
 
