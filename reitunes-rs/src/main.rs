@@ -1,4 +1,4 @@
-use std::{cell::{LazyCell, OnceCell}, sync::LazyLock, vec, collections::HashMap};
+use std::{cell::{LazyCell, OnceCell}, collections::HashMap, sync::LazyLock, time::Duration, vec};
 
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
@@ -10,7 +10,11 @@ fn main() -> Result<()> {
     let conn = rusqlite::Connection::open("test-library.db")?;
     let mut stmt = conn.prepare_cached("SELECT * FROM events ORDER BY CreatedTimeUtc")?;
 
+    let mut start = std::time::Instant::now();
+
     let rows = from_rows::<EventRow>(stmt.query([])?);
+
+    
 
     let mut events = Vec::new();
     for row in rows {
@@ -19,8 +23,12 @@ fn main() -> Result<()> {
         events.push(event);
     }
 
+    let ms_to_load_events = start.elapsed().as_millis();
+    println!("Loaded {} events in {}ms", events.len(), ms_to_load_events);
+
+    start = std::time::Instant::now();
     let library = Library::build_from_events(events);
-    println!("Library built with {} items", library.items.len());
+    println!("Library built with {} items in {}ms", library.items.len(), start.elapsed().as_millis());
 
     Ok(())
 }
@@ -127,6 +135,9 @@ impl Library {
             }
             Event::LibraryItemBookmarkAddedEvent { bookmark_id, position } => {
                 if let Some(item) = self.items.get_mut(&event.aggregate_id) {
+                    // TODO fix this, parse duration
+                    //  invalid type: string "00:36:16.8991596", expected struct Duration
+                    let position: Duration = Duration::from_secs(1);
                     item.bookmarks.insert(bookmark_id, Bookmark { position, emoji: String::new() });
                 }
             }
@@ -175,7 +186,9 @@ pub enum Event {
     #[serde(rename_all = "PascalCase")]
     LibraryItemBookmarkAddedEvent {
         bookmark_id: uuid::Uuid,
-        position: std::time::Duration,
+        // TODO: make this a time type
+        // error:  invalid type: string "00:36:16.8991596", expected struct Duration
+        position: String,
     },
     #[serde(rename_all = "PascalCase")]
     LibraryItemBookmarkDeletedEvent {
