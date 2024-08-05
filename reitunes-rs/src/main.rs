@@ -63,33 +63,74 @@ async fn index_handler(State(library): State<Arc<RwLock<Library>>>) -> Html<Stri
             <meta charset="UTF-8">
             <meta name="viewport" content="width=device-width, initial-scale=1.0">
             <title>ReiTunes Library</title>
-            <script src="https://cdn.tailwindcss.com"></script>
+            <style>
+                body {
+                    background: #000000 url('https://web.archive.org/web/20090830064557im_/http://www.geocities.com/Area51/Corridor/5177/stars.gif');
+                    color: #00ff00;
+                    font-family: 'Comic Sans MS', cursive;
+                }
+                h1 {
+                    text-align: center;
+                    font-size: 36px;
+                    color: #ff00ff;
+                    text-shadow: 2px 2px #ffff00;
+                }
+                table {
+                    width: 100%;
+                    border-collapse: collapse;
+                }
+                th, td {
+                    border: 2px solid #00ffff;
+                    padding: 8px;
+                    text-align: left;
+                }
+                th {
+                    background-color: #000080;
+                    color: #ffffff;
+                }
+                tr:nth-child(even) {
+                    background-color: #000033;
+                }
+                tr:hover {
+                    background-color: #003300;
+                    cursor: pointer;
+                }
+                #player {
+                    width: 100%;
+                    margin-bottom: 20px;
+                }
+                .blink {
+                    animation: blinker 1s linear infinite;
+                }
+                @keyframes blinker {
+                    50% { opacity: 0; }
+                }
+            </style>
         </head>
-        <body class="bg-gray-100 p-4">
-            <h1 class="text-2xl font-bold mb-4">ReiTunes Library</h1>
-            <audio id="player" controls class="w-full mb-4"></audio>
-            <div class="overflow-x-auto">
-                <table id="library-table" class="w-full text-sm text-left text-gray-500">
-                    <thead class="text-xs text-gray-700 uppercase bg-gray-200">
-                        <tr>
-                            <th class="px-4 py-2">Name</th>
-                            <th class="px-4 py-2">Artist</th>
-                            <th class="px-4 py-2">Album</th>
-                            <th class="px-4 py-2">Play Count</th>
-                        </tr>
-                    </thead>
-                    <tbody>
+        <body>
+            <h1><span class="blink">🎵</span> ReiTunes Library <span class="blink">🎵</span></h1>
+            <audio id="player" controls></audio>
+            <table id="library-table">
+                <thead>
+                    <tr>
+                        <th>Name</th>
+                        <th>Artist</th>
+                        <th>Album</th>
+                        <th>Play Count</th>
+                    </tr>
+                </thead>
+                <tbody>
         "#
     );
 
     for item in items {
         html.push_str(&format!(
             r#"
-            <tr class="bg-white border-b hover:bg-gray-50 cursor-pointer" data-url="{}">
-                <td class="px-4 py-2">{}</td>
-                <td class="px-4 py-2">{}</td>
-                <td class="px-4 py-2">{}</td>
-                <td class="px-4 py-2">{}</td>
+            <tr data-url="{}">
+                <td>{}</td>
+                <td>{}</td>
+                <td>{}</td>
+                <td>{}</td>
             </tr>
             "#,
             item.url(), item.name, item.artist, item.album, item.play_count
@@ -98,9 +139,8 @@ async fn index_handler(State(library): State<Arc<RwLock<Library>>>) -> Html<Stri
 
     html.push_str(
         r#"
-                    </tbody>
-                </table>
-            </div>
+                </tbody>
+            </table>
             <script>
                 const player = document.getElementById('player');
                 const table = document.getElementById('library-table');
