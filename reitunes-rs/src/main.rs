@@ -2,7 +2,7 @@ use anyhow::Result;
 use axum::{
     extract::{Form, State},
     http::StatusCode,
-    response::{Html, IntoResponse, Response},
+    response::{Html, IntoResponse, Response, Json},
     routing::{get, post},
     Router,
 };
@@ -22,6 +22,7 @@ async fn main() -> Result<()> {
     let app = Router::new()
         .route("/", get(index_handler))
         .route("/search", post(search_handler))
+        .route("/allevents", get(all_events_handler))
         .with_state(shared_state);
 
     let listener = tokio::net::TcpListener::bind("127.0.0.1:3000")
@@ -265,6 +266,16 @@ async fn search_handler(
         None => {
             tracing::error!("No search query provided");
             (StatusCode::BAD_REQUEST, "No search query provided").into_response()
+        }
+    }
+}
+
+async fn all_events_handler() -> Result<Json<Vec<EventWithMetadata>>, StatusCode> {
+    match load_all_events_from_db("test-library.db") {
+        Ok(events) => Ok(Json(events)),
+        Err(e) => {
+            tracing::error!("Failed to load events: {:?}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
         }
     }
 }
