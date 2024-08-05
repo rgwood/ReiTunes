@@ -18,7 +18,7 @@ fn main() -> Result<()> {
     for row in rows {
         let row = row?;
         println!("{:?}", row.serialized);
-        let event = row.event()?;
+        let event = EventWithMetadata::from_row(row)?;
         println!("{:?}", event);
     }
 
@@ -35,25 +35,37 @@ pub struct EventRow {
     created_time_utc: PrimitiveDateTime,
     machine_name: String,
     serialized: String,
-    #[serde(skip)]
-    event: LazyLock<Event>
 }
 
-impl EventRow {
-    pub fn event(&mut self) -> Result<Event> {
-        if let Some(event) = self.event.get() {
-            return Ok(event.clone());
-        }
-        let event: Event = serde_json::from_str(&self.serialized)
+#[derive(Debug)]
+pub struct EventWithMetadata {
+    id: uuid::Uuid,
+    aggregate_id: uuid::Uuid,
+    aggregate_type: String,
+    created_time_utc: PrimitiveDateTime,
+    machine_name: String,
+    event: Event,
+}
+
+impl EventWithMetadata {
+    pub fn from_row(row: EventRow) -> Result<Self> {
+        let event = serde_json::from_str(&row.serialized)
             .context("Failed to deserialize event")?;
-        Ok(event)
+
+        Ok(EventWithMetadata {
+            id: row.id,
+            aggregate_id: row.aggregate_id,
+            aggregate_type: row.aggregate_type,
+            created_time_utc: row.created_time_utc,
+            machine_name: row.machine_name,
+            event,
+        })
     }
 }
 
 
-
-pub fn apply(row: EventRow, library: &mut Vec<LibraryItem>) {
-    match event {
+pub fn apply(event: EventWithMetadata, library: &mut Vec<LibraryItem>) {
+    match event.event {
         Event::LibraryItemCreatedEvent { name, file_path } => {
             library.push(LibraryItem {
                 id: uuid::Uuid::new_v4(),
