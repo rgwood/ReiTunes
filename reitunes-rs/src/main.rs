@@ -208,18 +208,26 @@ async fn index_handler(State(library): State<Arc<RwLock<Library>>>) -> Html<Stri
                     if (row && row.dataset.url) {
                         if (e.target.classList.contains('bookmark-emoji')) {
                             const position = parseFloat(e.target.dataset.position);
-                            if (player.src !== row.dataset.url) {
+                            if (player.src === row.dataset.url) {
+                                // If the same song is already playing, just jump to the position
+                                player.currentTime = position;
+                                if (player.paused) {
+                                    player.play();
+                                }
+                            } else {
+                                // If it's a different song, load it and set the position
                                 player.src = row.dataset.url;
                                 player.addEventListener('loadedmetadata', () => {
                                     player.currentTime = position;
                                     player.play();
                                 }, { once: true });
-                            } else {
-                                player.currentTime = position;
-                                player.play();
                             }
                         } else {
-                            player.src = row.dataset.url;
+                            // If clicking on the row (not a bookmark), play from the beginning
+                            if (player.src !== row.dataset.url) {
+                                player.src = row.dataset.url;
+                            }
+                            player.currentTime = 0;
                             player.play();
                         }
                         const name = row.cells[0].textContent;
