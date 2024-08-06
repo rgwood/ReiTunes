@@ -242,20 +242,6 @@ async fn index_handler(State(library): State<Arc<RwLock<Library>>>) -> Html<Stri
                         searchInput.focus();
                     }
                 });
-
-                // Function to format time as mm:ss
-                function formatTime(seconds) {
-                    const minutes = Math.floor(seconds / 60);
-                    const remainingSeconds = Math.floor(seconds % 60);
-                    return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
-                }
-
-                // Update current time display
-                player.addEventListener('timeupdate', () => {
-                    const currentTime = formatTime(player.currentTime);
-                    const duration = formatTime(player.duration);
-                    currentSong.textContent = `${currentSong.textContent.split(' - ')[0]} - ${currentTime} / ${duration}`;
-                });
             </script>
         </body>
         </html>
