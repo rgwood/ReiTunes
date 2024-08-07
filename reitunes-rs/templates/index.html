@@ -155,54 +155,66 @@
         </tbody>
     </table>
     <script>
-        const player = document.getElementById('player');
-        const table = document.getElementById('library-table');
-        const searchInput = document.getElementById('search');
-        const currentSong = document.getElementById('current-song');
+        document.addEventListener('DOMContentLoaded', () => {
+            const player = document.getElementById('player');
+            const table = document.getElementById('library-table');
+            const searchInput = document.getElementById('search');
+            const currentSong = document.getElementById('current-song');
 
-        table.addEventListener('click', (e) => {
-            const row = e.target.closest('tr');
-            if (row && row.dataset.url) {
+            table.addEventListener('click', handleTableClick);
+            document.addEventListener('keydown', handleKeyDown);
+            table.addEventListener('dblclick', handleEditableFields);
+
+            function handleTableClick(e) {
+                const row = e.target.closest('tr');
+                if (!row || !row.dataset.url) return;
+
                 if (e.target.classList.contains('bookmark-emoji')) {
-                    const position = parseFloat(e.target.dataset.position);
-                    if (player.src === row.dataset.url) {
-                        // If the same song is already playing, just jump to the position
-                        player.currentTime = position;
-                        if (player.paused) {
-                            player.play();
-                        }
-                    } else {
-                        // If it's a different song, load it and set the position
-                        player.src = row.dataset.url;
-                        player.addEventListener('loadedmetadata', () => {
-                            player.currentTime = position;
-                            player.play();
-                        }, { once: true });
-                    }
+                    playBookmark(row, e.target);
                 } else if (!e.target.classList.contains('editable')) {
-                    // If clicking on the row (not a bookmark or editable field), play from the beginning
-                    if (player.src !== row.dataset.url) {
-                        player.src = row.dataset.url;
-                    }
-                    player.currentTime = 0;
-                    player.play();
+                    playSong(row);
                 }
+                updateCurrentSong(row);
+            }
+
+            function playBookmark(row, bookmark) {
+                const position = parseFloat(bookmark.dataset.position);
+                if (player.src === row.dataset.url) {
+                    player.currentTime = position;
+                    if (player.paused) player.play();
+                } else {
+                    player.src = row.dataset.url;
+                    player.addEventListener('loadedmetadata', () => {
+                        player.currentTime = position;
+                        player.play();
+                    }, { once: true });
+                }
+            }
+
+            function playSong(row) {
+                if (player.src !== row.dataset.url) {
+                    player.src = row.dataset.url;
+                }
+                player.currentTime = 0;
+                player.play();
+            }
+
+            function updateCurrentSong(row) {
                 const name = row.cells[0].textContent;
                 const artist = row.cells[1].textContent;
                 currentSong.textContent = `${name} - ${artist}`;
             }
-        });
 
-        document.addEventListener('keydown', (e) => {
-            if (e.ctrlKey && e.key === 'f') {
-                e.preventDefault();
-                searchInput.focus();
+            function handleKeyDown(e) {
+                if (e.ctrlKey && e.key === 'f') {
+                    e.preventDefault();
+                    searchInput.focus();
+                }
             }
-        });
 
-        // Handle editable fields
-        table.addEventListener('dblclick', (e) => {
-            if (e.target.classList.contains('editable')) {
+            function handleEditableFields(e) {
+                if (!e.target.classList.contains('editable')) return;
+
                 const span = e.target;
                 const input = document.createElement('input');
                 const oldValue = span.textContent;
@@ -211,49 +223,41 @@
                 span.appendChild(input);
                 input.focus();
 
-                input.addEventListener('blur', () => {
-                    updateField(span, input.value, oldValue);
-                });
-
+                input.addEventListener('blur', () => updateField(span, input.value, oldValue));
                 input.addEventListener('keydown', (e) => {
-                    if (e.key === 'Enter') {
-                        updateField(span, input.value, oldValue);
-                    }
+                    if (e.key === 'Enter') updateField(span, input.value, oldValue);
                 });
             }
-        });
 
-        function updateField(span, newValue, oldValue) {
-            const row = span.closest('tr');
-            const itemId = row.dataset.id;
-            const field = span.dataset.field;
+            function updateField(span, newValue, oldValue) {
+                const row = span.closest('tr');
+                const itemId = row.dataset.id;
+                const field = span.dataset.field;
 
-            fetch('/ui/update', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                    id: itemId,
-                    field: field,
-                    value: newValue,
-                }),
-            })
-            .then(response => response.json())
-            .then(data => {
-                if (data.success) {
-                    span.textContent = newValue;
-                } else {
-                    alert('Failed to update field!');
-                    span.textContent = oldValue;
-                }
-            })
-            .catch(error => {
-                console.error('Error:', error);
-                alert('Failed to update field');
+                fetch('/ui/update', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ id: itemId, field: field, value: newValue }),
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        span.textContent = newValue;
+                    } else {
+                        handleUpdateError(span, oldValue, 'Failed to update field!');
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    handleUpdateError(span, oldValue, 'Failed to update field');
+                });
+            }
+
+            function handleUpdateError(span, oldValue, message) {
+                alert(message);
                 span.textContent = oldValue;
-            });
-        }
+            }
+        });
     </script>
 </body>
 
