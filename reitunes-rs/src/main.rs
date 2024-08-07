@@ -76,10 +76,13 @@ async fn index_handler(State(library): State<Arc<RwLock<Library>>>) -> impl Into
     let mut items: Vec<_> = library.items.values().cloned().collect();
     items.sort_by(|a, b| b.play_count.cmp(&a.play_count));
 
-    // TODO: sort out error handling
-    let rendered = IndexTemplate { items: items }.render().unwrap();
-
-    Html(rendered)
+    match IndexTemplate { items: items }.render() {
+        Ok(rendered) => Html(rendered).into_response(),
+        Err(err) => {
+            tracing::error!("Failed to render index template: {:?}", err);
+            (StatusCode::INTERNAL_SERVER_ERROR, "Internal Server Error").into_response()
+        }
+    }
 }
 
 #[derive(Debug, Deserialize)]
