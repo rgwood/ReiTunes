@@ -8,7 +8,7 @@ pub fn install() -> Result<()> {
     let service_name = "reitunes.service";
     let service_content = format!(
         r#"[Unit]
-Description=ReITunes Music Player
+Description=ReiTunes Music Player
 
 [Service]
 ExecStart={}
