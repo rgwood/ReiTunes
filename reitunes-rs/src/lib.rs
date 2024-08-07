@@ -1,6 +1,7 @@
 use anyhow::{Context, Result};
 use indexmap::IndexMap;
 use reqwest;
+use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
 use serde_rusqlite::*;
 use std::{collections::HashMap, time::Duration};
@@ -20,8 +21,7 @@ pub async fn fetch_all_events() -> Result<Vec<EventWithMetadata>> {
 }
 
 #[instrument]
-pub fn load_all_events_from_db(db_path: &str) -> Result<Vec<EventWithMetadata>> {
-    let conn = rusqlite::Connection::open(db_path)?;
+pub fn load_all_events_from_db(conn: &Connection) -> Result<Vec<EventWithMetadata>> {
     let mut stmt = conn.prepare_cached(
         "SELECT * FROM events e WHERE e.AggregateType == 'LibraryItem' ORDER BY CreatedTimeUtc",
     )?;
@@ -48,8 +48,8 @@ pub fn load_all_events_from_db(db_path: &str) -> Result<Vec<EventWithMetadata>> 
 }
 
 #[instrument]
-pub fn load_library_from_db(db_path: &str) -> Result<Library> {
-    let events = load_all_events_from_db(db_path)?;
+pub fn load_library_from_db(conn: &Connection) -> Result<Library> {
+    let events = load_all_events_from_db(conn)?;
 
     let start = std::time::Instant::now();
     let library = Library::build_from_events(events);
