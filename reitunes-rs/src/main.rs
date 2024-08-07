@@ -151,7 +151,10 @@ async fn update_handler(
     State(library): State<Arc<RwLock<Library>>>,
     JsonExtractor(request): JsonExtractor<UpdateRequest>,
 ) -> impl IntoResponse {
+
+    info!("Received update request: {:?}", request);
     let mut library = library.write().await;
     let success = library.update_item(&request.id, &request.field, &request.value);
+
     Json(UpdateResponse { success })
 }

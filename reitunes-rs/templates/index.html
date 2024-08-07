@@ -205,28 +205,28 @@
             if (e.target.classList.contains('editable')) {
                 const span = e.target;
                 const input = document.createElement('input');
-                input.value = span.textContent;
+                const oldValue = span.textContent;
+                input.value = oldValue;
                 span.textContent = '';
                 span.appendChild(input);
                 input.focus();
 
                 input.addEventListener('blur', () => {
-                    updateField(span, input.value);
+                    updateField(span, input.value, oldValue);
                 });
 
                 input.addEventListener('keydown', (e) => {
                     if (e.key === 'Enter') {
-                        updateField(span, input.value);
+                        updateField(span, input.value, oldValue);
                     }
                 });
             }
         });
 
-        function updateField(span, newValue) {
+        function updateField(span, newValue, oldValue) {
             const row = span.closest('tr');
             const itemId = row.dataset.id;
             const field = span.dataset.field;
-            const originalValue = span.textContent;
 
             fetch('/ui/update', {
                 method: 'POST',
@@ -244,14 +244,14 @@
                 if (data.success) {
                     span.textContent = newValue;
                 } else {
-                    alert('Failed to update field');
-                    span.textContent = originalValue;
+                    alert('Failed to update field!');
+                    span.textContent = oldValue;
                 }
             })
             .catch(error => {
                 console.error('Error:', error);
                 alert('Failed to update field');
-                span.textContent = originalValue;
+                span.textContent = oldValue;
             });
         }
     </script>
