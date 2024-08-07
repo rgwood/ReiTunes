@@ -1,7 +1,7 @@
 use anyhow::Result;
 use askama::Template;
 use axum::{
-    extract::{Form, Json as JsonExtractor},
+    extract::{Form, Json as JsonExtractor, State},
     http::StatusCode,
     response::{Html, IntoResponse, Json, Response},
     routing::{get, post},
@@ -11,15 +11,29 @@ use clap::{Parser, Subcommand};
 use reitunes_rs::*;
 use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
+use r2d2::{Pool, PooledConnection};
+use r2d2_sqlite::SqliteConnectionManager;
 use tokio::sync::RwLock;
 use tracing::info;
-use once_cell::sync::Lazy;
 
 mod systemd;
 
-static DB: Lazy<Connection> = Lazy::new(|| {
-    Connection::open("test-library.db").expect("Failed to open database")
+const DB_PATH: &str = "test-library.db";
+
+static DB: LazyLock<Pool<SqliteConnectionManager>> = LazyLock::new(|| {
+    let manager = SqliteConnectionManager::file(DB_PATH).with_init(|c| {
+        // pragma synchronous=normal dramatically improves performance at the cost of durability,
+        // by not fsyncing after every transaction. There's a chance that committed transactions can be rolled back
+        // if the system crashes before buffers are flushed (application crashes are fine). I think this is an acceptable tradeoff
+        c.execute_batch("PRAGMA journal_mode=WAL; PRAGMA synchronous=normal;")?;
+        Ok(())
+        // initialize tables if needed
+        // c.execute_batch(include_str!("../schema.sql"))
+    });
+
+    let pool = r2d2::Pool::new(manager).expect("Failed to create connection pool");
+    pool
 });
 
 #[derive(Parser)]
@@ -49,7 +63,8 @@ async fn main() -> Result<()> {
         }
         None => {
             // Start the web server
-            let library = load_library_from_db(&DB)?;
+            let conn = DB.get()?;
+            let library = load_library_from_db(&conn)?;
             let shared_state = Arc::new(RwLock::new(library));
 
             let app = Router::new()
