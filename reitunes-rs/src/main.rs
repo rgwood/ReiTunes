@@ -1,4 +1,4 @@
-use anyhow::Result;
+use anyhow::{Result, Context};
 use askama::Template;
 use axum::{
     extract::{Form, Json as JsonExtractor, State},
@@ -7,6 +7,7 @@ use axum::{
     routing::{get, post},
     Router,
 };
+use std::fmt;
 use clap::{Parser, Subcommand};
 use reitunes_rs::*;
 use rusqlite::Connection;
@@ -18,6 +19,33 @@ use tokio::sync::RwLock;
 use tracing::info;
 
 mod systemd;
+
+struct AppError(anyhow::Error);
+
+impl IntoResponse for AppError {
+    fn into_response(self) -> Response {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Something went wrong: {}", self.0),
+        )
+            .into_response()
+    }
+}
+
+impl<E> From<E> for AppError
+where
+    E: Into<anyhow::Error>,
+{
+    fn from(err: E) -> Self {
+        Self(err.into())
+    }
+}
+
+impl fmt::Debug for AppError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Debug::fmt(&self.0, f)
+    }
+}
 
 const DB_PATH: &str = "test-library.db";
 
@@ -92,20 +120,13 @@ struct IndexTemplate {
     items: Vec<LibraryItem>,
 }
 
-async fn index_handler(State(library): State<Arc<RwLock<Library>>>) -> impl IntoResponse {
+async fn index_handler(State(library): State<Arc<RwLock<Library>>>) -> Result<impl IntoResponse, AppError> {
     let library = library.read().await;
     let mut items: Vec<_> = library.items.values().cloned().collect();
     items.sort_by(|a, b| b.play_count.cmp(&a.play_count));
 
-    let rendered = IndexTemplate { items }.render();
-
-    match rendered {
-        Ok(rendered) => Html(rendered).into_response(),
-        Err(err) => {
-            tracing::error!("Failed to render index template: {:?}", err);
-            (StatusCode::INTERNAL_SERVER_ERROR, "Internal Server Error").into_response()
-        }
-    }
+    let rendered = IndexTemplate { items }.render()?;
+    Ok(Html(rendered))
 }
 
 #[derive(Debug, Deserialize)]
@@ -122,60 +143,45 @@ struct LibraryItemTemplate<'a> {
 async fn search_handler(
     State(library): State<Arc<RwLock<Library>>>,
     Form(query): Form<SearchQuery>,
-) -> Response {
+) -> Result<impl IntoResponse, AppError> {
     info!("Received search query: {:?}", query);
 
-    match query.query.as_deref() {
-        Some(search_term) => {
-            let library = library.read().await;
-            let mut filtered_items: Vec<_> = library
-                .items
-                .values()
-                .filter(|item| {
-                    item.name
-                        .to_lowercase()
-                        .contains(&search_term.to_lowercase())
-                        || item
-                            .artist
-                            .to_lowercase()
-                            .contains(&search_term.to_lowercase())
-                        || item
-                            .album
-                            .to_lowercase()
-                            .contains(&search_term.to_lowercase())
-                })
-                .collect();
+    let search_term = query.query.as_deref().context("No search query provided")?;
+    
+    let library = library.read().await;
+    let mut filtered_items: Vec<_> = library
+        .items
+        .values()
+        .filter(|item| {
+            item.name
+                .to_lowercase()
+                .contains(&search_term.to_lowercase())
+                || item
+                    .artist
+                    .to_lowercase()
+                    .contains(&search_term.to_lowercase())
+                || item
+                    .album
+                    .to_lowercase()
+                    .contains(&search_term.to_lowercase())
+        })
+        .collect();
 
-            // Sort filtered items by play count in descending order
-            filtered_items.sort_by(|a, b| b.play_count.cmp(&a.play_count));
+    // Sort filtered items by play count in descending order
+    filtered_items.sort_by(|a, b| b.play_count.cmp(&a.play_count));
 
-            let html = filtered_items
-                .iter()
-                .map(|item| {
-                    LibraryItemTemplate { item }
-                        .render()
-                        .unwrap_or_else(|_| String::new())
-                })
-                .collect::<Vec<_>>()
-                .join("\n");
+    let html = filtered_items
+        .iter()
+        .map(|item| LibraryItemTemplate { item }.render())
+        .collect::<Result<Vec<_>, _>>()?
+        .join("\n");
 
-            Html(html).into_response()
-        }
-        None => {
-            tracing::error!("No search query provided");
-            (StatusCode::BAD_REQUEST, "No search query provided").into_response()
-        }
-    }
+    Ok(Html(html))
 }
 
-async fn all_events_handler() -> Result<Json<Vec<EventWithMetadata>>, StatusCode> {
-    match load_all_events_from_db(&DB) {
-        Ok(events) => Ok(Json(events)),
-        Err(e) => {
-            tracing::error!("Failed to load events: {:?}", e);
-            Err(StatusCode::INTERNAL_SERVER_ERROR)
-        }
-    }
+async fn all_events_handler() -> Result<impl IntoResponse, AppError> {
+    let events = load_all_events_from_db(&DB)?;
+    Ok(Json(events))
 }
 
 #[allow(dead_code)]
@@ -213,10 +219,10 @@ struct UpdateResponse {
 async fn update_handler(
     State(library): State<Arc<RwLock<Library>>>,
     JsonExtractor(request): JsonExtractor<UpdateRequest>,
-) -> impl IntoResponse {
+) -> Result<impl IntoResponse, AppError> {
     info!("Received update request: {:?}", request);
     let mut library = library.write().await;
     let success = library.update_item(&request.id, &request.field, &request.value);
 
-    Json(UpdateResponse { success })
+    Ok(Json(UpdateResponse { success }))
 }
