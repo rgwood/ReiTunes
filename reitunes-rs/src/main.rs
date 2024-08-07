@@ -135,3 +135,25 @@ async fn all_events_handler() -> Result<Json<Vec<EventWithMetadata>>, StatusCode
         }
     }
 }
+
+
+#[allow(dead_code)]
+mod filters {
+    pub fn if_empty(s: &str, default: &str) -> ::askama::Result<String> {
+        let ret = if s.is_empty() { default } else { s };
+        Ok(ret.to_string())
+    }
+
+    pub fn or(s: &Option<String>, default: &str) -> ::askama::Result<String> {
+        let ret = s.clone().unwrap_or(default.to_string());
+        Ok(ret)
+    }
+
+    pub fn or_err(num: &Option<i64>) -> ::askama::Result<i64> {
+        if let Some(num) = num {
+            Ok(*num)
+        } else {
+            Err(::askama::Error::Custom("Missing value".into()))
+        }
+    }
+}

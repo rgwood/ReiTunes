@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ReiTunes Library</title>
+    <script src="https://unpkg.com/htmx.org@1.9.4"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=VT323&display=swap');
+
+        body {
+            background-color: #000;
+            color: #0f0;
+            font-family: 'VT323', monospace;
+            margin: 0;
+            padding: 20px;
+            overflow-x: hidden;
+            overflow-y: auto;
+            box-sizing: border-box;
+        }
+
+        * {
+            box-sizing: inherit;
+        }
+
+        body::before {
+            content: "";
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            opacity: 0.1;
+            z-index: -1;
+            background:
+                linear-gradient(#0f0 1px, transparent 1px),
+                linear-gradient(90deg, #0f0 1px, transparent 1px);
+            background-size: 20px 20px;
+        }
+
+        #now-playing {
+            text-align: center;
+            font-size: 28px;
+            color: #0f0;
+            margin-bottom: 20px;
+            text-shadow: 0 0 10px #0f0;
+        }
+
+        #search {
+            width: calc(100%);
+            padding: 10px;
+            background-color: #000;
+            color: #0f0;
+            border: 1px solid #0f0;
+            font-family: 'VT323', monospace;
+            font-size: 18px;
+        }
+
+        #search::placeholder {
+            color: #030;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: separate;
+            border-spacing: 0 5px;
+            table-layout: fixed;
+        }
+
+        th,
+        td {
+            padding: 10px;
+            text-align: left;
+            border: none;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        th {
+            background-color: #030;
+            color: #0f0;
+        }
+
+        th:nth-child(1),
+        td:nth-child(1) {
+            width: 30%;
+        }
+
+        th:nth-child(2),
+        td:nth-child(2) {
+            width: 20%;
+        }
+
+        th:nth-child(3),
+        td:nth-child(3) {
+            width: 20%;
+        }
+
+        th:nth-child(4),
+        td:nth-child(4) {
+            width: 15%;
+        }
+
+        th:nth-child(5),
+        td:nth-child(5) {
+            width: 15%;
+        }
+
+        .bookmark-emoji {
+            cursor: pointer;
+            margin-right: 5px;
+        }
+
+        tr {
+            background-color: #010;
+        }
+
+        tr:hover {
+            background-color: #020;
+            box-shadow: 0 0 10px #0f0;
+            cursor: pointer;
+        }
+
+        #player {
+            width: 100%;
+            margin-bottom: 20px;
+            background-color: #000;
+            border: 1px solid #0f0;
+        }
+    </style>
+</head>
+
+<body>
+    <div id="now-playing"><span id="current-song">No song selected</span></div>
+    <audio id="player" controls></audio>
+    <input type="text" id="search" name="query" placeholder="SEARCH..." hx-post="/ui/search"
+        hx-trigger="input changed delay:50ms" hx-target="#library-table tbody" autocomplete="off">
+    <div class="htmx-indicator">Searching...</div>
+    <table id="library-table">
+        <thead>
+            <tr>
+                <th>Name</th>
+                <th>Artist</th>
+                <th>Album</th>
+                <th>Play Count</th>
+                <th>Bookmarks</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for item in items %}
+            <tr data-url="{{ item.url() }}">
+                <td>{{ item.name }}</td>
+                <td>{{ item.artist }}</td>
+                <td>{{ item.album }}</td>
+                <td>{{ item.play_count }}</td>
+                <td>
+                    {% for bookmark in item.bookmarks.values() %}
+                    <span class="bookmark-emoji" data-position="{{ bookmark.position.as_secs() }}">
+                        {{ bookmark.emoji|if_empty("🔖") }}
+                    </span>
+                    {% endfor %}
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    <script>
+        const player = document.getElementById('player');
+        const table = document.getElementById('library-table');
+        const searchInput = document.getElementById('search');
+        const currentSong = document.getElementById('current-song');
+
+        table.addEventListener('click', (e) => {
+            const row = e.target.closest('tr');
+            if (row && row.dataset.url) {
+                if (e.target.classList.contains('bookmark-emoji')) {
+                    const position = parseFloat(e.target.dataset.position);
+                    if (player.src === row.dataset.url) {
+                        // If the same song is already playing, just jump to the position
+                        player.currentTime = position;
+                        if (player.paused) {
+                            player.play();
+                        }
+                    } else {
+                        // If it's a different song, load it and set the position
+                        player.src = row.dataset.url;
+                        player.addEventListener('loadedmetadata', () => {
+                            player.currentTime = position;
+                            player.play();
+                        }, { once: true });
+                    }
+                } else {
+                    // If clicking on the row (not a bookmark), play from the beginning
+                    if (player.src !== row.dataset.url) {
+                        player.src = row.dataset.url;
+                    }
+                    player.currentTime = 0;
+                    player.play();
+                }
+                const name = row.cells[0].textContent;
+                const artist = row.cells[1].textContent;
+                currentSong.textContent = `${name} - ${artist}`;
+            }
+        });
+
+        document.addEventListener('keydown', (e) => {
+            if (e.ctrlKey && e.key === 'f') {
+                e.preventDefault();
+                searchInput.focus();
+            }
+        });
+    </script>
+</body>
+
+</html>
