@@ -9,6 +9,7 @@ use axum::{
 };
 use clap::{Parser, Subcommand};
 use reitunes_rs::*;
+use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tokio::sync::RwLock;
@@ -43,8 +44,9 @@ async fn main() -> Result<()> {
         }
         None => {
             // Start the web server
-            let library = load_library_from_db("test-library.db")?;
-            let shared_state = Arc::new(RwLock::new(library));
+            let conn = Connection::open("test-library.db")?;
+            let library = load_library_from_db(&conn)?;
+            let shared_state = Arc::new(RwLock::new((library, conn)));
 
             let app = Router::new()
                 .route("/", get(index_handler))
@@ -147,8 +149,11 @@ async fn search_handler(
     }
 }
 
-async fn all_events_handler() -> Result<Json<Vec<EventWithMetadata>>, StatusCode> {
-    match load_all_events_from_db("test-library.db") {
+async fn all_events_handler(
+    State(state): State<Arc<RwLock<(Library, Connection)>>>,
+) -> Result<Json<Vec<EventWithMetadata>>, StatusCode> {
+    let state = state.read().await;
+    match load_all_events_from_db(&state.1) {
         Ok(events) => Ok(Json(events)),
         Err(e) => {
             tracing::error!("Failed to load events: {:?}", e);
