@@ -1,7 +1,7 @@
 use anyhow::Result;
 use askama::Template;
 use axum::{
-    extract::{Form, Json as JsonExtractor, State},
+    extract::{Form, Json as JsonExtractor},
     http::StatusCode,
     response::{Html, IntoResponse, Json, Response},
     routing::{get, post},
@@ -14,8 +14,13 @@ use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use tracing::info;
+use once_cell::sync::Lazy;
 
 mod systemd;
+
+static DB: Lazy<Connection> = Lazy::new(|| {
+    Connection::open("test-library.db").expect("Failed to open database")
+});
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
@@ -44,9 +49,8 @@ async fn main() -> Result<()> {
         }
         None => {
             // Start the web server
-            let conn = Connection::open("test-library.db")?;
-            let library = load_library_from_db(&conn)?;
-            let shared_state = Arc::new(RwLock::new((library, conn)));
+            let library = load_library_from_db(&DB)?;
+            let shared_state = Arc::new(RwLock::new(library));
 
             let app = Router::new()
                 .route("/", get(index_handler))
@@ -149,11 +153,8 @@ async fn search_handler(
     }
 }
 
-async fn all_events_handler(
-    State(state): State<Arc<RwLock<(Library, Connection)>>>,
-) -> Result<Json<Vec<EventWithMetadata>>, StatusCode> {
-    let state = state.read().await;
-    match load_all_events_from_db(&state.1) {
+async fn all_events_handler() -> Result<Json<Vec<EventWithMetadata>>, StatusCode> {
+    match load_all_events_from_db(&DB) {
         Ok(events) => Ok(Json(events)),
         Err(e) => {
             tracing::error!("Failed to load events: {:?}", e);
