@@ -1,11 +1,11 @@
 use anyhow::{Context, Result};
 use indexmap::IndexMap;
+use reqwest;
 use serde::{Deserialize, Serialize};
 use serde_rusqlite::*;
 use std::{collections::HashMap, time::Duration};
 use time::PrimitiveDateTime;
 use tracing::{info, instrument};
-use reqwest;
 
 #[instrument]
 pub async fn fetch_all_events() -> Result<Vec<EventWithMetadata>> {
@@ -50,7 +50,7 @@ pub fn load_all_events_from_db(db_path: &str) -> Result<Vec<EventWithMetadata>> 
 #[instrument]
 pub fn load_library_from_db(db_path: &str) -> Result<Library> {
     let events = load_all_events_from_db(db_path)?;
-    
+
     let start = std::time::Instant::now();
     let library = Library::build_from_events(events);
     // takes about 0.3ms on 13th gen i7, 3000 events
@@ -228,7 +228,8 @@ impl Library {
                             emoji: String::new(),
                         },
                     );
-                    item.bookmarks.sort_by(|_, v1, _, v2| Ord::cmp(&v1.position, &v2.position));
+                    item.bookmarks
+                        .sort_by(|_, v1, _, v2| Ord::cmp(&v1.position, &v2.position));
                 }
             }
             Event::LibraryItemBookmarkDeletedEvent { bookmark_id } => {

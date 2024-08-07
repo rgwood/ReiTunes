@@ -1,12 +1,12 @@
 use anyhow::Result;
+use askama::Template;
 use axum::{
-    extract::{Form, State, Json as JsonExtractor},
+    extract::{Form, Json as JsonExtractor, State},
     http::StatusCode,
-    response::{Html, IntoResponse, Response, Json},
+    response::{Html, IntoResponse, Json, Response},
     routing::{get, post},
     Router,
 };
-use askama::Template;
 use clap::{Parser, Subcommand};
 use reitunes_rs::*;
 use serde::{Deserialize, Serialize};
@@ -67,7 +67,7 @@ async fn main() -> Result<()> {
 
 #[derive(Template)]
 #[template(path = "index.html")]
-struct IndexTemplate{
+struct IndexTemplate {
     items: Vec<LibraryItem>,
 }
 
@@ -76,7 +76,9 @@ async fn index_handler(State(library): State<Arc<RwLock<Library>>>) -> impl Into
     let mut items: Vec<_> = library.items.values().cloned().collect();
     items.sort_by(|a, b| b.play_count.cmp(&a.play_count));
 
-    match IndexTemplate { items: items }.render() {
+    let rendered = IndexTemplate { items }.render();
+
+    match rendered {
         Ok(rendered) => Html(rendered).into_response(),
         Err(err) => {
             tracing::error!("Failed to render index template: {:?}", err);
@@ -109,9 +111,17 @@ async fn search_handler(
                 .items
                 .values()
                 .filter(|item| {
-                    item.name.to_lowercase().contains(&search_term.to_lowercase())
-                        || item.artist.to_lowercase().contains(&search_term.to_lowercase())
-                        || item.album.to_lowercase().contains(&search_term.to_lowercase())
+                    item.name
+                        .to_lowercase()
+                        .contains(&search_term.to_lowercase())
+                        || item
+                            .artist
+                            .to_lowercase()
+                            .contains(&search_term.to_lowercase())
+                        || item
+                            .album
+                            .to_lowercase()
+                            .contains(&search_term.to_lowercase())
                 })
                 .collect();
 
@@ -121,7 +131,9 @@ async fn search_handler(
             let html = filtered_items
                 .iter()
                 .map(|item| {
-                    LibraryItemTemplate { item }.render().unwrap_or_else(|_| String::new())
+                    LibraryItemTemplate { item }
+                        .render()
+                        .unwrap_or_else(|_| String::new())
                 })
                 .collect::<Vec<_>>()
                 .join("\n");
@@ -144,7 +156,6 @@ async fn all_events_handler() -> Result<Json<Vec<EventWithMetadata>>, StatusCode
         }
     }
 }
-
 
 #[allow(dead_code)]
 mod filters {
@@ -182,7 +193,6 @@ async fn update_handler(
     State(library): State<Arc<RwLock<Library>>>,
     JsonExtractor(request): JsonExtractor<UpdateRequest>,
 ) -> impl IntoResponse {
-
     info!("Received update request: {:?}", request);
     let mut library = library.write().await;
     let success = library.update_item(&request.id, &request.field, &request.value);

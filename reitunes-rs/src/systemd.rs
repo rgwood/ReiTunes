@@ -30,9 +30,18 @@ WantedBy=default.target
     let service_path: PathBuf = config_dir.join(service_name);
     fs::write(&service_path, service_content).context("Failed to write service file")?;
 
-    println!("Systemd user service installed at: {}", service_path.display());
-    println!("To start the service, run: systemctl --user start {}", service_name);
-    println!("To enable the service to start on boot, run: systemctl --user enable {}", service_name);
+    println!(
+        "Systemd user service installed at: {}",
+        service_path.display()
+    );
+    println!(
+        "To start the service, run: systemctl --user start {}",
+        service_name
+    );
+    println!(
+        "To enable the service to start on boot, run: systemctl --user enable {}",
+        service_name
+    );
 
     Ok(())
 }
