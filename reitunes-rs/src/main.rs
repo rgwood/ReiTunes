@@ -38,18 +38,19 @@ async fn main() -> Result<()> {
 
 #[derive(Template)]
 #[template(path = "index.html")]
-struct IndexTemplate<'a> {
-    items: Vec<&'a LibraryItem>,
+struct IndexTemplate{
+    items: Vec<LibraryItem>,
 }
 
 async fn index_handler(State(library): State<Arc<RwLock<Library>>>) -> impl IntoResponse {
     let library = library.read().await;
-    let mut items: Vec<_> = library.items.values().collect();
+    let mut items: Vec<_> = library.items.values().cloned().collect();
     items.sort_by(|a, b| b.play_count.cmp(&a.play_count));
 
+    // TODO: sort out error handling
     let rendered = IndexTemplate { items: items }.render().unwrap();
 
-    Ok(Html(rendered))
+    Html(rendered)
 }
 
 #[derive(Debug, Deserialize)]
