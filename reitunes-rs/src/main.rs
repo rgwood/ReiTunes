@@ -25,6 +25,7 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
+    /// Install this executable as a (user) systemd service
     Install,
 }
 
