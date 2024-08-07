@@ -179,8 +179,8 @@
                             player.play();
                         }, { once: true });
                     }
-                } else {
-                    // If clicking on the row (not a bookmark), play from the beginning
+                } else if (!e.target.classList.contains('editable')) {
+                    // If clicking on the row (not a bookmark or editable field), play from the beginning
                     if (player.src !== row.dataset.url) {
                         player.src = row.dataset.url;
                     }
@@ -199,6 +199,61 @@
                 searchInput.focus();
             }
         });
+
+        // Handle editable fields
+        table.addEventListener('dblclick', (e) => {
+            if (e.target.classList.contains('editable')) {
+                const span = e.target;
+                const input = document.createElement('input');
+                input.value = span.textContent;
+                span.textContent = '';
+                span.appendChild(input);
+                input.focus();
+
+                input.addEventListener('blur', () => {
+                    updateField(span, input.value);
+                });
+
+                input.addEventListener('keydown', (e) => {
+                    if (e.key === 'Enter') {
+                        updateField(span, input.value);
+                    }
+                });
+            }
+        });
+
+        function updateField(span, newValue) {
+            const row = span.closest('tr');
+            const itemId = row.dataset.id;
+            const field = span.dataset.field;
+            const originalValue = span.textContent;
+
+            fetch('/ui/update', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    id: itemId,
+                    field: field,
+                    value: newValue,
+                }),
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    span.textContent = newValue;
+                } else {
+                    alert('Failed to update field');
+                    span.textContent = originalValue;
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                alert('Failed to update field');
+                span.textContent = originalValue;
+            });
+        }
     </script>
 </body>
 

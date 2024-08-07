@@ -159,6 +159,20 @@ impl Library {
         library
     }
 
+    pub fn update_item(&mut self, id: &uuid::Uuid, field: &str, value: &str) -> bool {
+        if let Some(item) = self.items.get_mut(id) {
+            match field {
+                "name" => item.name = value.to_string(),
+                "artist" => item.artist = value.to_string(),
+                "album" => item.album = value.to_string(),
+                _ => return false,
+            }
+            true
+        } else {
+            false
+        }
+    }
+
     pub fn apply(&mut self, event: EventWithMetadata) {
         match event.event {
             Event::LibraryItemCreatedEvent { name, file_path } => {

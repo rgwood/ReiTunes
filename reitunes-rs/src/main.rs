@@ -1,6 +1,6 @@
 use anyhow::Result;
 use axum::{
-    extract::{Form, State},
+    extract::{Form, State, Json as JsonExtractor},
     http::StatusCode,
     response::{Html, IntoResponse, Response, Json},
     routing::{get, post},
@@ -8,7 +8,7 @@ use axum::{
 };
 use askama::Template;
 use reitunes_rs::*;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use tracing::info;
@@ -25,6 +25,7 @@ async fn main() -> Result<()> {
         .route("/allevents", get(all_events_handler))
         // HTMX UI endpoints
         .route("/ui/search", post(search_handler))
+        .route("/ui/update", post(update_handler))
         .with_state(shared_state);
 
     let listener = tokio::net::TcpListener::bind("127.0.0.1:3000")
@@ -133,4 +134,24 @@ mod filters {
             Err(::askama::Error::Custom("Missing value".into()))
         }
     }
+}
+#[derive(Debug, Deserialize)]
+struct UpdateRequest {
+    id: uuid::Uuid,
+    field: String,
+    value: String,
+}
+
+#[derive(Debug, Serialize)]
+struct UpdateResponse {
+    success: bool,
+}
+
+async fn update_handler(
+    State(library): State<Arc<RwLock<Library>>>,
+    JsonExtractor(request): JsonExtractor<UpdateRequest>,
+) -> impl IntoResponse {
+    let mut library = library.write().await;
+    let success = library.update_item(&request.id, &request.field, &request.value);
+    Json(UpdateResponse { success })
 }
