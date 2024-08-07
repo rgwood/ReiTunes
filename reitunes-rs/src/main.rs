@@ -58,6 +58,12 @@ struct SearchQuery {
     query: Option<String>,
 }
 
+#[derive(Template)]
+#[template(path = "library_item.html")]
+struct LibraryItemTemplate<'a> {
+    item: &'a LibraryItem,
+}
+
 async fn search_handler(
     State(library): State<Arc<RwLock<Library>>>,
     Form(query): Form<SearchQuery>,
@@ -71,51 +77,22 @@ async fn search_handler(
                 .items
                 .values()
                 .filter(|item| {
-                    item.name
-                        .to_lowercase()
-                        .contains(&search_term.to_lowercase())
-                        || item
-                            .artist
-                            .to_lowercase()
-                            .contains(&search_term.to_lowercase())
-                        || item
-                            .album
-                            .to_lowercase()
-                            .contains(&search_term.to_lowercase())
+                    item.name.to_lowercase().contains(&search_term.to_lowercase())
+                        || item.artist.to_lowercase().contains(&search_term.to_lowercase())
+                        || item.album.to_lowercase().contains(&search_term.to_lowercase())
                 })
                 .collect();
 
             // Sort filtered items by play count in descending order
             filtered_items.sort_by(|a, b| b.play_count.cmp(&a.play_count));
 
-            let mut html = String::new();
-            for item in filtered_items {
-                let bookmarks_html = item.bookmarks.iter().map(|(_, bookmark)| {
-                    format!(
-                        r#"<span class="bookmark-emoji" data-position="{}">{}</span>"#,
-                        bookmark.position.as_secs(),
-                        bookmark.emoji.chars().next().unwrap_or('🔖')
-                    )
-                }).collect::<Vec<_>>().join("");
-
-                html.push_str(&format!(
-                    r#"
-                    <tr data-url="{}">
-                        <td>{}</td>
-                        <td>{}</td>
-                        <td>{}</td>
-                        <td>{}</td>
-                        <td>{}</td>
-                    </tr>
-                    "#,
-                    item.url(),
-                    item.name,
-                    item.artist,
-                    item.album,
-                    item.play_count,
-                    bookmarks_html
-                ));
-            }
+            let html = filtered_items
+                .iter()
+                .map(|item| {
+                    LibraryItemTemplate { item }.render().unwrap_or_else(|_| String::new())
+                })
+                .collect::<Vec<_>>()
+                .join("\n");
 
             Html(html).into_response()
         }

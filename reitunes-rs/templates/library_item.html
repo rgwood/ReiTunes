@@ -1,0 +1,13 @@
+<tr data-url="{{ item.url() }}">
+    <td>{{ item.name }}</td>
+    <td>{{ item.artist }}</td>
+    <td>{{ item.album }}</td>
+    <td>{{ item.play_count }}</td>
+    <td>
+        {% for bookmark in item.bookmarks.values() %}
+        <span class="bookmark-emoji" data-position="{{ bookmark.position.as_secs() }}">
+            {{ bookmark.emoji|if_empty("🔖") }}
+        </span>
+        {% endfor %}
+    </td>
+</tr>
