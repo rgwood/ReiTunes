@@ -7,32 +7,59 @@ use axum::{
     Router,
 };
 use askama::Template;
+use clap::{Parser, Subcommand};
 use reitunes_rs::*;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use tracing::info;
 
+mod systemd;
+
+#[derive(Parser)]
+#[command(author, version, about, long_about = None)]
+struct Cli {
+    #[command(subcommand)]
+    command: Option<Commands>,
+}
+
+#[derive(Subcommand)]
+enum Commands {
+    Install,
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     // Initialize tracing
     tracing_subscriber::fmt::init();
-    let library = load_library_from_db("test-library.db")?;
-    let shared_state = Arc::new(RwLock::new(library));
 
-    let app = Router::new()
-        .route("/", get(index_handler))
-        .route("/allevents", get(all_events_handler))
-        // HTMX UI endpoints
-        .route("/ui/search", post(search_handler))
-        .route("/ui/update", post(update_handler))
-        .with_state(shared_state);
+    let cli = Cli::parse();
 
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:3000")
-        .await
-        .unwrap();
-    info!("Server running on http://localhost:3000");
-    axum::serve(listener, app).await.unwrap();
+    match cli.command {
+        Some(Commands::Install) => {
+            systemd::install()?;
+            println!("Systemd service installed successfully.");
+        }
+        None => {
+            // Start the web server
+            let library = load_library_from_db("test-library.db")?;
+            let shared_state = Arc::new(RwLock::new(library));
+
+            let app = Router::new()
+                .route("/", get(index_handler))
+                .route("/allevents", get(all_events_handler))
+                // HTMX UI endpoints
+                .route("/ui/search", post(search_handler))
+                .route("/ui/update", post(update_handler))
+                .with_state(shared_state);
+
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:3000")
+                .await
+                .unwrap();
+            info!("Server running on http://localhost:3000");
+            axum::serve(listener, app).await.unwrap();
+        }
+    }
 
     Ok(())
 }
