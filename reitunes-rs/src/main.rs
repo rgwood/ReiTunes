@@ -202,6 +202,7 @@ struct UpdateRequest {
 
 #[derive(Debug, Serialize)]
 struct UpdateResponse {
+    // TODO: does it make sense to return a bool here? shouldn't we just use HTTP status codes?
     success: bool,
 }
 
@@ -210,8 +211,15 @@ async fn update_handler(
     JsonExtractor(request): JsonExtractor<UpdateRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     info!("Received update request: {:?}", request);
-    let mut library = library.write().await;
-    let success = library.update_item(&request.id, &request.field, &request.value);
 
-    Ok(Json(UpdateResponse { success }))
+    let event = Event::create_update_event(&request.field, &request.value);
+
+    let event_with_metadata = EventWithMetadata {
+        // TODO fill this in
+    };
+
+    let mut library = library.write().await;
+    library.apply(event_with_metadata);
+
+    Ok(Json(UpdateResponse { success: true }))
 }
