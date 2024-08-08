@@ -1,13 +1,14 @@
 use anyhow::{Context, Result};
 use indexmap::IndexMap;
+use jiff::civil::DateTime;
 use r2d2::Pool;
 use r2d2_sqlite::SqliteConnectionManager;
 use reqwest;
 use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
 use serde_rusqlite::*;
+use uuid::Uuid;
 use std::{collections::HashMap, time::Duration};
-use time::PrimitiveDateTime;
 use tracing::{info, instrument};
 
 pub fn open_connection_pool(db_path: &str) -> Result<Pool<SqliteConnectionManager>> {
@@ -124,10 +125,10 @@ pub mod duration_serde {
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 pub struct EventRow {
-    id: uuid::Uuid,
-    aggregate_id: uuid::Uuid,
+    id: Uuid,
+    aggregate_id: Uuid,
     aggregate_type: String,
-    created_time_utc: PrimitiveDateTime,
+    created_time_utc: DateTime, // if starting this over again I'd probably use Zoned instead of DateTime
     machine_name: String,
     serialized: String,
 }
@@ -135,10 +136,10 @@ pub struct EventRow {
 #[derive(Debug, Serialize, Deserialize)]
 #[allow(dead_code)]
 pub struct EventWithMetadata {
-    id: uuid::Uuid,
-    aggregate_id: uuid::Uuid,
+    id: Uuid,
+    aggregate_id: Uuid,
     aggregate_type: String,
-    created_time_utc: PrimitiveDateTime,
+    created_time_utc: DateTime,
     machine_name: String,
     event: Event,
 }
@@ -160,7 +161,7 @@ impl EventWithMetadata {
 
 #[derive(Clone, Default)]
 pub struct Library {
-    pub items: HashMap<uuid::Uuid, LibraryItem>,
+    pub items: HashMap<Uuid, LibraryItem>,
 }
 
 impl Library {
@@ -178,7 +179,7 @@ impl Library {
         library
     }
 
-    pub fn update_item(&mut self, id: &uuid::Uuid, field: &str, value: &str) -> bool {
+    pub fn update_item(&mut self, id: &Uuid, field: &str, value: &str) -> bool {
         if let Some(item) = self.items.get_mut(id) {
             match field {
                 "name" => item.name = value.to_string(),
@@ -289,28 +290,28 @@ pub enum Event {
         new_album: String,
     },
     LibraryItemBookmarkAddedEvent {
-        bookmark_id: uuid::Uuid,
+        bookmark_id: Uuid,
         #[serde(with = "duration_serde")]
-        position: Duration,
+        position: Duration, // in theory we could use jiff::Span but just getting seconds out of it is a bit difficult!
     },
     LibraryItemBookmarkDeletedEvent {
-        bookmark_id: uuid::Uuid,
+        bookmark_id: Uuid,
     },
     LibraryItemBookmarkSetEmojiEvent {
-        bookmark_id: uuid::Uuid,
+        bookmark_id: Uuid,
         emoji: String,
     },
 }
 
 #[derive(Debug, Clone)]
 pub struct LibraryItem {
-    pub id: uuid::Uuid,
+    pub id: Uuid,
     pub name: String,
     pub file_path: String,
     pub artist: String,
     pub album: String,
     pub play_count: u32,
-    pub bookmarks: IndexMap<uuid::Uuid, Bookmark>,
+    pub bookmarks: IndexMap<Uuid, Bookmark>,
 }
 
 const STORAGE_URL: &str = "https://reitunes.blob.core.windows.net/music/";
@@ -339,7 +340,7 @@ mod tests {
         assert_eq!(library.items.len(), 271, "Library should contain 271 items");
 
         // Check for a specific known item
-        let known_item_id = uuid::Uuid::parse_str("559146d5-4901-4e09-abd9-e732a23f8429").unwrap();
+        let known_item_id = Uuid::parse_str("559146d5-4901-4e09-abd9-e732a23f8429").unwrap();
         assert!(
             library.items.contains_key(&known_item_id),
             "Library should contain a known item"
