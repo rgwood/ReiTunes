@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
 use indexmap::IndexMap;
-use jiff::civil::DateTime;
+use jiff::{civil::DateTime, tz::TimeZone, Zoned};
 use r2d2::Pool;
 use r2d2_sqlite::SqliteConnectionManager;
 use reqwest;
@@ -136,15 +136,29 @@ pub struct EventRow {
 #[derive(Debug, Serialize, Deserialize)]
 #[allow(dead_code)]
 pub struct EventWithMetadata {
-    id: Uuid,
-    aggregate_id: Uuid,
-    aggregate_type: String,
-    created_time_utc: DateTime,
-    machine_name: String,
-    event: Event,
+    pub id: Uuid,
+    pub aggregate_id: Uuid,
+    pub aggregate_type: String,
+    pub created_time_utc: DateTime,
+    pub machine_name: String,
+    pub event: Event,
 }
 
 impl EventWithMetadata {
+    pub fn new(library_item_id: Uuid, event: Event) -> Result<EventWithMetadata> {
+        let created_time_utc = Zoned::now().with_time_zone(TimeZone::UTC).datetime();
+        info!("Creating event, time: {:?}", created_time_utc);
+        let event_with_metadata = EventWithMetadata {
+            id: Uuid::new_v4(),
+            aggregate_id: library_item_id,
+            aggregate_type: "LibraryItem".to_string(),
+            created_time_utc,
+            machine_name: hostname::get()?.to_string_lossy().into(),
+            event,
+        };
+        Ok(event_with_metadata)
+    }
+
     pub fn from_row(row: EventRow) -> Result<Self> {
         let event = serde_json::from_str(&row.serialized).context("Failed to deserialize event")?;
 
@@ -177,41 +191,6 @@ impl Library {
             library.apply(event);
         }
         library
-    }
-
-    pub fn create_update_event(id: &Uuid, field: &str, value: &str) -> Result<Event> {
-        match field {
-            "name" => Ok(Event::LibraryItemNameChangedEvent {
-                new_name: value.to_string(),
-            }),
-            "artist" => Ok(Event::LibraryItemArtistChangedEvent {
-                new_artist: value.to_string(),
-            }),
-            "album" => Ok(Event::LibraryItemAlbumChangedEvent {
-                new_album: value.to_string(),
-            }),
-            _ => Err(anyhow::anyhow!("Invalid field: {}", field)),
-        }
-    }
-
-    pub fn apply_update(&mut self, id: &Uuid, event: Event) -> bool {
-        if let Some(item) = self.items.get_mut(id) {
-            match event {
-                Event::LibraryItemNameChangedEvent { new_name } => {
-                    item.name = new_name;
-                }
-                Event::LibraryItemArtistChangedEvent { new_artist } => {
-                    item.artist = new_artist;
-                }
-                Event::LibraryItemAlbumChangedEvent { new_album } => {
-                    item.album = new_album;
-                }
-                _ => return false,
-            }
-            true
-        } else {
-            false
-        }
     }
 
     pub fn apply(&mut self, event: EventWithMetadata) {
@@ -322,6 +301,26 @@ pub enum Event {
         bookmark_id: Uuid,
         emoji: String,
     },
+}
+
+impl Event {
+    pub fn create_update_event(field: &str, value: &str) -> Result<Event> {
+        match field {
+            "name" => Ok(Event::LibraryItemNameChangedEvent {
+                new_name: value.to_string(),
+            }),
+            "file_path" => Ok(Event::LibraryItemFilePathChangedEvent {
+                new_file_path: value.to_string(),
+            }),
+            "artist" => Ok(Event::LibraryItemArtistChangedEvent {
+                new_artist: value.to_string(),
+            }),
+            "album" => Ok(Event::LibraryItemAlbumChangedEvent {
+                new_album: value.to_string(),
+            }),
+            _ => Err(anyhow::anyhow!("Invalid field: {}", field)),
+        }
+    }
 }
 
 #[derive(Debug, Clone)]

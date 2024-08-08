@@ -239,23 +239,18 @@
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ id: itemId, field: field, value: newValue }),
                 })
-                .then(response => response.json())
-                .then(data => {
-                    if (data.success) {
+                .then(response => {
+                    if (response.ok) {
                         span.textContent = newValue;
                     } else {
-                        handleUpdateError(span, oldValue, 'Failed to update field!');
+                        throw new Error(`Response status: ${response.status}`);
                     }
                 })
                 .catch(error => {
                     console.error('Error:', error);
-                    handleUpdateError(span, oldValue, 'Failed to update field');
+                    alert('Failed to update field');
+                    span.textContent = oldValue;
                 });
-            }
-
-            function handleUpdateError(span, oldValue, message) {
-                alert(message);
-                span.textContent = oldValue;
             }
         });
     </script>

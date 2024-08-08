@@ -7,6 +7,7 @@ use axum::{
     routing::{get, post},
     Router,
 };
+use jiff::{tz::TimeZone, Zoned};
 use std::fmt;
 use clap::{Parser, Subcommand};
 use reitunes_rs::*;
@@ -16,6 +17,8 @@ use r2d2::Pool;
 use r2d2_sqlite::SqliteConnectionManager;
 use tokio::sync::RwLock;
 use tracing::info;
+use uuid::Uuid;
+use rusqlite::params;
 
 mod systemd;
 
@@ -212,14 +215,15 @@ async fn update_handler(
 ) -> Result<impl IntoResponse, AppError> {
     info!("Received update request: {:?}", request);
 
-    let event = Event::create_update_event(&request.field, &request.value);
+    let event = Event::create_update_event(&request.field, &request.value)?;
+    let event_with_metadata = EventWithMetadata::new(request.id, event)?;
 
-    let event_with_metadata = EventWithMetadata {
-        // TODO fill this in
-    };
+    // TODO: save the event to the database
 
+    // Apply the event to the library
     let mut library = library.write().await;
     library.apply(event_with_metadata);
 
     Ok(Json(UpdateResponse { success: true }))
 }
+
