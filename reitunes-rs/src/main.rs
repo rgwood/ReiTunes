@@ -10,10 +10,9 @@ use axum::{
 use std::fmt;
 use clap::{Parser, Subcommand};
 use reitunes_rs::*;
-use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
 use std::sync::{Arc, LazyLock};
-use r2d2::{Pool, PooledConnection};
+use r2d2::Pool;
 use r2d2_sqlite::SqliteConnectionManager;
 use tokio::sync::RwLock;
 use tracing::info;
@@ -50,18 +49,7 @@ impl fmt::Debug for AppError {
 const DB_PATH: &str = "test-library.db";
 
 static DB: LazyLock<Pool<SqliteConnectionManager>> = LazyLock::new(|| {
-    let manager = SqliteConnectionManager::file(DB_PATH).with_init(|c| {
-        // pragma synchronous=normal dramatically improves performance at the cost of durability,
-        // by not fsyncing after every transaction. There's a chance that committed transactions can be rolled back
-        // if the system crashes before buffers are flushed (application crashes are fine). I think this is an acceptable tradeoff
-        c.execute_batch("PRAGMA journal_mode=WAL; PRAGMA synchronous=normal;")?;
-        Ok(())
-        // initialize tables if needed
-        // c.execute_batch(include_str!("../schema.sql"))
-    });
-
-    let pool = r2d2::Pool::new(manager).expect("Failed to create connection pool");
-    pool
+    open_connection_pool(DB_PATH).expect("Failed to create connection pool")
 });
 
 #[derive(Parser)]
@@ -180,7 +168,8 @@ async fn search_handler(
 }
 
 async fn all_events_handler() -> Result<impl IntoResponse, AppError> {
-    let events = load_all_events_from_db(&DB)?;
+    let conn = DB.get()?;
+    let events = load_all_events_from_db(&conn)?;
     Ok(Json(events))
 }
 

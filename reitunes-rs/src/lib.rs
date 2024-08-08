@@ -1,5 +1,7 @@
 use anyhow::{Context, Result};
 use indexmap::IndexMap;
+use r2d2::Pool;
+use r2d2_sqlite::SqliteConnectionManager;
 use reqwest;
 use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
@@ -7,6 +9,23 @@ use serde_rusqlite::*;
 use std::{collections::HashMap, time::Duration};
 use time::PrimitiveDateTime;
 use tracing::{info, instrument};
+
+pub fn open_connection_pool(db_path: &str) -> Result<Pool<SqliteConnectionManager>> {
+    let manager = SqliteConnectionManager::file(db_path).with_init(|_c| {
+        // pragma synchronous=normal dramatically improves performance at the cost of durability,
+        // by not fsyncing after every transaction. There's a chance that committed transactions can be rolled back
+        // if the system crashes before buffers are flushed (application crashes are fine). I think this is an acceptable tradeoff
+        // TODO: reenable this when we're further out of development
+        // c.execute_batch("PRAGMA journal_mode=WAL; PRAGMA synchronous=normal;")?;
+
+        // TODO: add schema initialization from .NET version
+        // c.execute_batch(include_str!("../schema.sql"))
+        // initialize tables if needed
+        Ok(())
+    });
+
+    Ok(Pool::new(manager)?)
+}
 
 #[instrument]
 pub async fn fetch_all_events() -> Result<Vec<EventWithMetadata>> {
@@ -314,7 +333,8 @@ mod tests {
 
     #[test]
     fn test_load_library_from_db() {
-        let library = load_library_from_db("test-library.db").unwrap();
+        let conn = Connection::open("test-library.db").unwrap();
+        let library = load_library_from_db(&conn).unwrap();
 
         assert_eq!(library.items.len(), 271, "Library should contain 271 items");
 
