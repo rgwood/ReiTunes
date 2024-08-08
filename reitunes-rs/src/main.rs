@@ -203,12 +203,6 @@ struct UpdateRequest {
     value: String,
 }
 
-#[derive(Debug, Serialize)]
-struct UpdateResponse {
-    // TODO: does it make sense to return a bool here? shouldn't we just use HTTP status codes?
-    success: bool,
-}
-
 async fn update_handler(
     State(library): State<Arc<RwLock<Library>>>,
     JsonExtractor(request): JsonExtractor<UpdateRequest>,
@@ -224,6 +218,6 @@ async fn update_handler(
     let mut library = library.write().await;
     library.apply(event_with_metadata);
 
-    Ok(Json(UpdateResponse { success: true }))
+    Ok(StatusCode::OK)
 }
 
