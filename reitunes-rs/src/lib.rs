@@ -179,12 +179,33 @@ impl Library {
         library
     }
 
-    pub fn update_item(&mut self, id: &Uuid, field: &str, value: &str) -> bool {
+    pub fn create_update_event(id: &Uuid, field: &str, value: &str) -> Result<Event> {
+        match field {
+            "name" => Ok(Event::LibraryItemNameChangedEvent {
+                new_name: value.to_string(),
+            }),
+            "artist" => Ok(Event::LibraryItemArtistChangedEvent {
+                new_artist: value.to_string(),
+            }),
+            "album" => Ok(Event::LibraryItemAlbumChangedEvent {
+                new_album: value.to_string(),
+            }),
+            _ => Err(anyhow::anyhow!("Invalid field: {}", field)),
+        }
+    }
+
+    pub fn apply_update(&mut self, id: &Uuid, event: Event) -> bool {
         if let Some(item) = self.items.get_mut(id) {
-            match field {
-                "name" => item.name = value.to_string(),
-                "artist" => item.artist = value.to_string(),
-                "album" => item.album = value.to_string(),
+            match event {
+                Event::LibraryItemNameChangedEvent { new_name } => {
+                    item.name = new_name;
+                }
+                Event::LibraryItemArtistChangedEvent { new_artist } => {
+                    item.artist = new_artist;
+                }
+                Event::LibraryItemAlbumChangedEvent { new_album } => {
+                    item.album = new_album;
+                }
                 _ => return false,
             }
             true
