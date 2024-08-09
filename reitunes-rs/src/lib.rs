@@ -7,25 +7,25 @@ use reqwest;
 use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
 use serde_rusqlite::*;
-use uuid::Uuid;
 use std::{collections::HashMap, time::Duration};
 use tracing::{info, instrument};
+use uuid::Uuid;
 
 pub fn open_connection_pool(db_path: &str) -> Result<Pool<SqliteConnectionManager>> {
-    let manager = SqliteConnectionManager::file(db_path).with_init(|_c| {
-        // pragma synchronous=normal dramatically improves performance at the cost of durability,
-        // by not fsyncing after every transaction. There's a chance that committed transactions can be rolled back
-        // if the system crashes before buffers are flushed (application crashes are fine). I think this is an acceptable tradeoff
-        // TODO: reenable this when we're further out of development
-        // c.execute_batch("PRAGMA journal_mode=WAL; PRAGMA synchronous=normal;")?;
+    let manager = SqliteConnectionManager::file(db_path);
+    let pool = Pool::new(manager)?;
+    let conn = pool.get()?;
 
-        // TODO: add schema initialization from .NET version
-        // c.execute_batch(include_str!("../schema.sql"))
-        // initialize tables if needed
-        Ok(())
-    });
+    // pragma synchronous=normal dramatically improves performance at the cost of durability,
+    // by not fsyncing after every transaction. There's a chance that committed transactions can be rolled back
+    // if the system crashes before buffers are flushed (application crashes are fine). I think this is an acceptable tradeoff
+    // TODO: reenable this when we're further out of development
+    // c.execute_batch("PRAGMA journal_mode=WAL; PRAGMA synchronous=normal;")?;
 
-    Ok(Pool::new(manager)?)
+    // initialize tables if needed
+    conn.execute_batch(include_str!("../schema.sql"))?;
+
+    Ok(pool)
 }
 
 #[instrument]
@@ -303,26 +303,6 @@ pub enum Event {
     },
 }
 
-impl Event {
-    pub fn create_update_event(field: &str, value: &str) -> Result<Event> {
-        match field {
-            "name" => Ok(Event::LibraryItemNameChangedEvent {
-                new_name: value.to_string(),
-            }),
-            "file_path" => Ok(Event::LibraryItemFilePathChangedEvent {
-                new_file_path: value.to_string(),
-            }),
-            "artist" => Ok(Event::LibraryItemArtistChangedEvent {
-                new_artist: value.to_string(),
-            }),
-            "album" => Ok(Event::LibraryItemAlbumChangedEvent {
-                new_album: value.to_string(),
-            }),
-            _ => Err(anyhow::anyhow!("Invalid field: {}", field)),
-        }
-    }
-}
-
 #[derive(Debug, Clone)]
 pub struct LibraryItem {
     pub id: Uuid,
@@ -354,7 +334,8 @@ mod tests {
 
     #[test]
     fn test_load_library_from_db() {
-        let conn = Connection::open("test-library.db").unwrap();
+        let pool = open_connection_pool("test-library.db").unwrap();
+        let conn = pool.get().unwrap();
         let library = load_library_from_db(&conn).unwrap();
 
         assert_eq!(library.items.len(), 271, "Library should contain 271 items");

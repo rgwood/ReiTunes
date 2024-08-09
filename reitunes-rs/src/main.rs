@@ -1,4 +1,4 @@
-use anyhow::{Result, Context};
+use anyhow::{Context, Result};
 use askama::Template;
 use axum::{
     extract::{Form, Json as JsonExtractor, State},
@@ -7,18 +7,15 @@ use axum::{
     routing::{get, post},
     Router,
 };
-use jiff::{tz::TimeZone, Zoned};
-use std::fmt;
 use clap::{Parser, Subcommand};
-use reitunes_rs::*;
-use serde::{Deserialize, Serialize};
-use std::sync::{Arc, LazyLock};
 use r2d2::Pool;
 use r2d2_sqlite::SqliteConnectionManager;
+use reitunes_rs::*;
+use serde::Deserialize;
+use std::fmt;
+use std::sync::{Arc, LazyLock};
 use tokio::sync::RwLock;
 use tracing::info;
-use uuid::Uuid;
-use rusqlite::params;
 
 mod systemd;
 
@@ -51,9 +48,8 @@ impl fmt::Debug for AppError {
 
 const DB_PATH: &str = "test-library.db";
 
-static DB: LazyLock<Pool<SqliteConnectionManager>> = LazyLock::new(|| {
-    open_connection_pool(DB_PATH).expect("Failed to create connection pool")
-});
+static DB: LazyLock<Pool<SqliteConnectionManager>> =
+    LazyLock::new(|| open_connection_pool(DB_PATH).expect("Failed to create connection pool"));
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
@@ -111,7 +107,9 @@ struct IndexTemplate {
     items: Vec<LibraryItem>,
 }
 
-async fn index_handler(State(library): State<Arc<RwLock<Library>>>) -> Result<impl IntoResponse, AppError> {
+async fn index_handler(
+    State(library): State<Arc<RwLock<Library>>>,
+) -> Result<impl IntoResponse, AppError> {
     let library = library.read().await;
     let mut items: Vec<_> = library.items.values().cloned().collect();
     items.sort_by(|a, b| b.play_count.cmp(&a.play_count));
@@ -138,7 +136,7 @@ async fn search_handler(
     info!("Received search query: {:?}", query);
 
     let search_term = query.query.as_deref().context("No search query provided")?;
-    
+
     let library = library.read().await;
     let mut filtered_items: Vec<_> = library
         .items
@@ -209,7 +207,7 @@ async fn update_handler(
 ) -> Result<impl IntoResponse, AppError> {
     info!("Received update request: {:?}", request);
 
-    let event = Event::create_update_event(&request.field, &request.value)?;
+    let event = create_update_event(&request.field, &request.value)?;
     let event_with_metadata = EventWithMetadata::new(request.id, event)?;
 
     // TODO: save the event to the database
@@ -221,3 +219,20 @@ async fn update_handler(
     Ok(StatusCode::OK)
 }
 
+fn create_update_event(field: &str, value: &str) -> Result<Event> {
+    match field {
+        "name" => Ok(Event::LibraryItemNameChangedEvent {
+            new_name: value.to_string(),
+        }),
+        "file_path" => Ok(Event::LibraryItemFilePathChangedEvent {
+            new_file_path: value.to_string(),
+        }),
+        "artist" => Ok(Event::LibraryItemArtistChangedEvent {
+            new_artist: value.to_string(),
+        }),
+        "album" => Ok(Event::LibraryItemAlbumChangedEvent {
+            new_album: value.to_string(),
+        }),
+        _ => Err(anyhow::anyhow!("Invalid field: {}", field)),
+    }
+}

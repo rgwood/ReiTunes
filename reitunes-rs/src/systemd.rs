@@ -5,7 +5,9 @@ use std::path::PathBuf;
 
 pub fn install() -> Result<()> {
     let executable_path = env::current_exe().context("Failed to get current executable path")?;
-    let working_directory = executable_path.parent().context("Failed to get parent directory of executable")?;
+    let working_directory = executable_path
+        .parent()
+        .context("Failed to get parent directory of executable")?;
     let service_name = "reitunes.service";
     let service_content = format!(
         r#"[Unit]
