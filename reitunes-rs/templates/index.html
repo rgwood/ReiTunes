@@ -54,25 +54,25 @@
     </style>
 </head>
 
-<body class="bg-solarized-base03 text-solarized-base1 font-vt323 p-5 overflow-x-hidden overflow-y-auto box-border relative">
-    <div class="fixed inset-0 opacity-20 pointer-events-none z-[-1]" style="background-image: linear-gradient(#93a1a1 1px, transparent 1px), linear-gradient(90deg, #93a1a1 1px, transparent 1px); background-size: 20px 20px;"></div>
+<body class="bg-solarized-base02 text-solarized-base1 font-vt323 p-5 overflow-x-hidden overflow-y-auto box-border relative">
+    <div class="fixed inset-0 opacity-20 pointer-events-none z-[-1]" style="background-image: linear-gradient(#93a1a1 1px, transparent 1px), linear-gradient(90deg, #93a1a1 1px, transparent 1px); background-size: 10px 10px;"></div>
     
     <div id="now-playing" class="text-center text-2xl mb-3"><span id="current-song" class="text-solarized-blue text-shadow-solarized">No song selected</span></div>
     <audio id="player" controls class="w-full mb-3 bg-solarized-base02 border border-solarized-blue"></audio>
     <div class="relative mb-3">
         <input type="text" id="search" name="query" placeholder="SEARCH..." hx-indicator="#indicator"
-               class="w-full p-2 bg-solarized-base02 text-solarized-base1 border border-solarized-blue font-vt323 text-lg placeholder-solarized-base00"
+               class="w-full px-2 py-1 bg-solarized-base03 text-solarized-base1 border border-solarized-blue font-vt323 text-lg placeholder-solarized-base00"
                hx-post="/ui/search" hx-trigger="input changed delay:50ms" hx-target="#library-table tbody" autocomplete="off">
         <div id="indicator" class="htmx-indicator absolute right-2 top-1/2 transform -translate-y-1/2 text-solarized-blue">Searching...</div>
     </div>
     <table id="library-table" class="w-full border-separate border-spacing-y-1">
         <thead>
             <tr>
-                <th class="bg-solarized-base02 text-solarized-yellow px-2 text-left w-3/10">Name</th>
-                <th class="bg-solarized-base02 text-solarized-yellow px-2 text-left w-2/10">Artist</th>
-                <th class="bg-solarized-base02 text-solarized-yellow px-2 text-left w-2/10">Album</th>
-                <th class="bg-solarized-base02 text-solarized-yellow px-2 text-left w-1.5/10 whitespace-nowrap">Play Count</th>
-                <th class="bg-solarized-base02 text-solarized-yellow px-2 text-left w-1.5/10">Bookmarks</th>
+                <th class="bg-solarized-base03 text-solarized-yellow px-2 text-left w-3/10">Name</th>
+                <th class="bg-solarized-base03 text-solarized-yellow px-2 text-left w-2/10">Artist</th>
+                <th class="bg-solarized-base03 text-solarized-yellow px-2 text-left w-2/10">Album</th>
+                <th class="bg-solarized-base03 text-solarized-yellow px-2 text-left w-1.5/10 whitespace-nowrap">Play Count</th>
+                <th class="bg-solarized-base03 text-solarized-yellow px-2 text-left w-1.5/10">Bookmarks</th>
             </tr>
         </thead>
         <tbody>
