@@ -90,10 +90,10 @@ async fn main() -> Result<()> {
                 .route("/ui/update", post(update_handler))
                 .with_state(shared_state);
 
-            let listener = tokio::net::TcpListener::bind("127.0.0.1:3000")
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:5000")
                 .await
                 .unwrap();
-            info!("Server running on http://localhost:3000");
+            info!("Server running on http://localhost:5000");
             axum::serve(listener, app).await.unwrap();
         }
     }
