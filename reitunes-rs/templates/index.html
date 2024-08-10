@@ -33,7 +33,7 @@
     </script>
     <style>
         @layer utilities {
-            .shadow-neon {
+            .text-shadow-neon {
                 text-shadow: 0 0 5px #0f0, 0 0 10px #0f0;
             }
         }
@@ -43,7 +43,7 @@
 <body class="bg-black text-neon-green font-vt323 p-5 overflow-x-hidden overflow-y-auto box-border relative">
     <div class="fixed inset-0 opacity-10 pointer-events-none z-[-1]" style="background-image: linear-gradient(#0f0 1px, transparent 1px), linear-gradient(90deg, #0f0 1px, transparent 1px); background-size: 20px 20px;"></div>
     
-    <div id="now-playing" class="text-center text-2xl mb-3 text-neon-green shadow-neon"><span id="current-song">No song selected</span></div>
+    <div id="now-playing" class="text-center text-2xl mb-3"><span id="current-song" class="text-neon-green text-shadow-neon">No song selected</span></div>
     <audio id="player" controls class="w-full mb-3 bg-black border border-neon-green"></audio>
     <input type="text" id="search" name="query" placeholder="SEARCH..." 
            class="w-full p-2 bg-black text-neon-green border border-neon-green font-vt323 text-lg mb-3 placeholder-dark-green"
