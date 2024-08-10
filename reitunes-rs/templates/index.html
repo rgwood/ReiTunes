@@ -46,10 +46,10 @@
     <div id="now-playing" class="text-center text-2xl mb-3"><span id="current-song" class="text-neon-green text-shadow-neon">No song selected</span></div>
     <audio id="player" controls class="w-full mb-3 bg-black border border-neon-green"></audio>
     <div class="relative mb-3">
-        <input type="text" id="search" name="query" placeholder="SEARCH..." 
+        <input type="text" id="search" name="query" placeholder="SEARCH..." hx-indicator="#indicator"
                class="w-full p-2 bg-black text-neon-green border border-neon-green font-vt323 text-lg placeholder-dark-green"
                hx-post="/ui/search" hx-trigger="input changed delay:50ms" hx-target="#library-table tbody" autocomplete="off">
-        <div class="htmx-indicator absolute right-2 top-1/2 transform -translate-y-1/2 text-neon-green">Searching...</div>
+        <div id="indicator" class="htmx-indicator absolute right-2 top-1/2 transform -translate-y-1/2 text-neon-green">Searching...</div>
     </div>
     <table id="library-table" class="w-full border-separate border-spacing-y-1">
         <thead>
