@@ -1,11 +1,11 @@
-<tr data-url="{{ item.url() }}" data-id="{{ item.id }}">
-    <td><span class="editable" data-field="name">{{ item.name }}</span></td>
-    <td><span class="editable" data-field="artist">{{ item.artist }}</span></td>
-    <td><span class="editable" data-field="album">{{ item.album }}</span></td>
-    <td>{{ item.play_count }}</td>
-    <td>
+<tr data-url="{{ item.url() }}" data-id="{{ item.id }}" class="bg-[#010] hover:bg-[#020] hover:shadow-neon cursor-pointer">
+    <td class="p-2 overflow-hidden text-ellipsis whitespace-nowrap"><span class="editable" data-field="name">{{ item.name }}</span></td>
+    <td class="p-2 overflow-hidden text-ellipsis whitespace-nowrap"><span class="editable" data-field="artist">{{ item.artist }}</span></td>
+    <td class="p-2 overflow-hidden text-ellipsis whitespace-nowrap"><span class="editable" data-field="album">{{ item.album }}</span></td>
+    <td class="p-2 overflow-hidden text-ellipsis whitespace-nowrap">{{ item.play_count }}</td>
+    <td class="p-2 overflow-hidden text-ellipsis whitespace-nowrap">
         {% for bookmark in item.bookmarks.values() %}
-        <span class="bookmark-emoji" data-position="{{ bookmark.position.as_secs() }}">
+        <span class="bookmark-emoji cursor-pointer mr-1" data-position="{{ bookmark.position.as_secs() }}">
             {{ bookmark.emoji|if_empty("🔖") }}
         </span>
         {% endfor %}
