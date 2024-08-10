@@ -16,8 +16,22 @@
                         'vt323': ['VT323', 'monospace'],
                     },
                     colors: {
-                        'neon-green': '#0f0',
-                        'dark-green': '#030',
+                        'solarized-base03': '#002b36',
+                        'solarized-base02': '#073642',
+                        'solarized-base01': '#586e75',
+                        'solarized-base00': '#657b83',
+                        'solarized-base0': '#839496',
+                        'solarized-base1': '#93a1a1',
+                        'solarized-base2': '#eee8d5',
+                        'solarized-base3': '#fdf6e3',
+                        'solarized-yellow': '#b58900',
+                        'solarized-orange': '#cb4b16',
+                        'solarized-red': '#dc322f',
+                        'solarized-magenta': '#d33682',
+                        'solarized-violet': '#6c71c4',
+                        'solarized-blue': '#268bd2',
+                        'solarized-cyan': '#2aa198',
+                        'solarized-green': '#859900',
                     },
                     width: {
                         '3/10': '30%',
@@ -25,7 +39,7 @@
                         '1.5/10': '15%',
                     },
                     boxShadow: {
-                        'neon': '0 0 10px #0f0',
+                        'solarized': '0 0 10px #268bd2',
                     },
                 },
             },
@@ -33,32 +47,32 @@
     </script>
     <style>
         @layer utilities {
-            .text-shadow-neon {
-                text-shadow: 0 0 5px rgba(0, 255, 0, 0.75), 0 0 10px rgba(0, 255, 0, 0.75);
+            .text-shadow-solarized {
+                text-shadow: 0 0 5px rgba(38, 139, 210, 0.75), 0 0 10px rgba(38, 139, 210, 0.75);
             }
         }
     </style>
 </head>
 
-<body class="bg-black text-neon-green font-vt323 p-5 overflow-x-hidden overflow-y-auto box-border relative">
-    <div class="fixed inset-0 opacity-10 pointer-events-none z-[-1]" style="background-image: linear-gradient(#0f0 1px, transparent 1px), linear-gradient(90deg, #0f0 1px, transparent 1px); background-size: 20px 20px;"></div>
+<body class="bg-solarized-base03 text-solarized-base1 font-vt323 p-5 overflow-x-hidden overflow-y-auto box-border relative">
+    <div class="fixed inset-0 opacity-20 pointer-events-none z-[-1]" style="background-image: linear-gradient(#93a1a1 1px, transparent 1px), linear-gradient(90deg, #93a1a1 1px, transparent 1px); background-size: 20px 20px;"></div>
     
-    <div id="now-playing" class="text-center text-2xl mb-3"><span id="current-song" class="text-neon-green text-shadow-neon">No song selected</span></div>
-    <audio id="player" controls class="w-full mb-3 bg-black border border-neon-green"></audio>
+    <div id="now-playing" class="text-center text-2xl mb-3"><span id="current-song" class="text-solarized-blue text-shadow-solarized">No song selected</span></div>
+    <audio id="player" controls class="w-full mb-3 bg-solarized-base02 border border-solarized-blue"></audio>
     <div class="relative mb-3">
         <input type="text" id="search" name="query" placeholder="SEARCH..." hx-indicator="#indicator"
-               class="w-full p-2 bg-black text-neon-green border border-neon-green font-vt323 text-lg placeholder-dark-green"
+               class="w-full p-2 bg-solarized-base02 text-solarized-base1 border border-solarized-blue font-vt323 text-lg placeholder-solarized-base00"
                hx-post="/ui/search" hx-trigger="input changed delay:50ms" hx-target="#library-table tbody" autocomplete="off">
-        <div id="indicator" class="htmx-indicator absolute right-2 top-1/2 transform -translate-y-1/2 text-neon-green">Searching...</div>
+        <div id="indicator" class="htmx-indicator absolute right-2 top-1/2 transform -translate-y-1/2 text-solarized-blue">Searching...</div>
     </div>
     <table id="library-table" class="w-full border-separate border-spacing-y-1">
         <thead>
             <tr>
-                <th class="bg-dark-green text-neon-green px-2 text-left w-3/10">Name</th>
-                <th class="bg-dark-green text-neon-green px-2 text-left w-2/10">Artist</th>
-                <th class="bg-dark-green text-neon-green px-2 text-left w-2/10">Album</th>
-                <th class="bg-dark-green text-neon-green px-2 text-left w-1.5/10 whitespace-nowrap">Play Count</th>
-                <th class="bg-dark-green text-neon-green px-2 text-left w-1.5/10">Bookmarks</th>
+                <th class="bg-solarized-base02 text-solarized-yellow px-2 text-left w-3/10">Name</th>
+                <th class="bg-solarized-base02 text-solarized-yellow px-2 text-left w-2/10">Artist</th>
+                <th class="bg-solarized-base02 text-solarized-yellow px-2 text-left w-2/10">Album</th>
+                <th class="bg-solarized-base02 text-solarized-yellow px-2 text-left w-1.5/10 whitespace-nowrap">Play Count</th>
+                <th class="bg-solarized-base02 text-solarized-yellow px-2 text-left w-1.5/10">Bookmarks</th>
             </tr>
         </thead>
         <tbody>
