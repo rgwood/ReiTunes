@@ -34,7 +34,7 @@
     <style>
         @layer utilities {
             .shadow-neon {
-                text-shadow: 0 0 10px #0f0;
+                text-shadow: 0 0 5px #0f0, 0 0 10px #0f0;
             }
         }
     </style>
@@ -43,19 +43,19 @@
 <body class="bg-black text-neon-green font-vt323 p-5 overflow-x-hidden overflow-y-auto box-border relative">
     <div class="fixed inset-0 opacity-10 pointer-events-none z-[-1]" style="background-image: linear-gradient(#0f0 1px, transparent 1px), linear-gradient(90deg, #0f0 1px, transparent 1px); background-size: 20px 20px;"></div>
     
-    <div id="now-playing" class="text-center text-2xl mb-5 text-neon-green shadow-neon"><span id="current-song">No song selected</span></div>
-    <audio id="player" controls class="w-full mb-5 bg-black border border-neon-green"></audio>
+    <div id="now-playing" class="text-center text-2xl mb-3 text-neon-green shadow-neon"><span id="current-song">No song selected</span></div>
+    <audio id="player" controls class="w-full mb-3 bg-black border border-neon-green"></audio>
     <input type="text" id="search" name="query" placeholder="SEARCH..." 
-           class="w-full p-2 bg-black text-neon-green border border-neon-green font-vt323 text-lg mb-5 placeholder-dark-green"
+           class="w-full p-2 bg-black text-neon-green border border-neon-green font-vt323 text-lg mb-3 placeholder-dark-green"
            hx-post="/ui/search" hx-trigger="input changed delay:50ms" hx-target="#library-table tbody" autocomplete="off">
-    <div class="htmx-indicator">Searching...</div>
+    <div class="htmx-indicator mb-3">Searching...</div>
     <table id="library-table" class="w-full border-separate border-spacing-y-1">
         <thead>
             <tr>
                 <th class="bg-dark-green text-neon-green p-2 text-left w-3/10">Name</th>
                 <th class="bg-dark-green text-neon-green p-2 text-left w-2/10">Artist</th>
                 <th class="bg-dark-green text-neon-green p-2 text-left w-2/10">Album</th>
-                <th class="bg-dark-green text-neon-green p-2 text-left w-1.5/10">Play Count</th>
+                <th class="bg-dark-green text-neon-green p-2 text-left w-1.5/10 whitespace-nowrap">Play Count</th>
                 <th class="bg-dark-green text-neon-green p-2 text-left w-1.5/10">Bookmarks</th>
             </tr>
         </thead>
