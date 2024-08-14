@@ -303,7 +303,7 @@ pub enum Event {
     },
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct LibraryItem {
     pub id: Uuid,
     pub name: String,
@@ -322,7 +322,7 @@ impl LibraryItem {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct Bookmark {
     pub position: std::time::Duration,
     pub emoji: String,
