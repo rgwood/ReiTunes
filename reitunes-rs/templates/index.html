@@ -76,6 +76,7 @@
 
             let table = new Tabulator("#library-table", {
                 data: {{ items|tojson|safe }},
+                autoResize: true,
                 layout: "fitColumns",
                 columns: [
                     {title: "Name", field: "name", editor: "input", width: "30%"},
@@ -84,12 +85,18 @@
                     {title: "Play Count", field: "play_count", width: "15%"},
                     {title: "Bookmarks", field: "bookmarks", formatter: bookmarkFormatter, width: "15%"}
                 ],
-                rowClick: function(e, row) {
-                    playSong(row.getData());
-                },
-                cellEdited: function(cell) {
-                    updateField(cell);
-                },
+                initialSort: [
+                    {column: "play_count", dir: "desc"}
+                ],
+            });
+
+            table.on("rowClick", function(e, row) {
+                let rowData = row.getData();
+                playSong(rowData);
+            });
+
+            table.on("cellEdited", function(cell) {
+                updateField(cell);
             });
 
             function bookmarkFormatter(cell) {
@@ -100,7 +107,9 @@
             }
 
             function playSong(rowData) {
-                player.src = rowData.url;
+                let url = encodeURI(`https://reitunes.blob.core.windows.net/music/${rowData.file_path}`);
+                console.log(`playing song`, url);
+                player.src = url;
                 player.play();
                 updateCurrentSong(rowData);
             }
