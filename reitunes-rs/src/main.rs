@@ -1,7 +1,7 @@
-use anyhow::{Context, Result};
+use anyhow::Result;
 use askama::Template;
 use axum::{
-    extract::{Form, Json as JsonExtractor, State},
+    extract::{Json as JsonExtractor, State},
     http::StatusCode,
     response::{Html, IntoResponse, Json, Response},
     routing::{get, post},
@@ -85,8 +85,6 @@ async fn main() -> Result<()> {
             let app = Router::new()
                 .route("/", get(index_handler))
                 .route("/allevents", get(all_events_handler))
-                // HTMX UI endpoints
-                .route("/ui/search", post(search_handler))
                 .route("/ui/update", post(update_handler))
                 .with_state(shared_state);
 
@@ -116,56 +114,6 @@ async fn index_handler(
 
     let rendered = IndexTemplate { items }.render()?;
     Ok(Html(rendered))
-}
-
-#[derive(Debug, Deserialize)]
-struct SearchQuery {
-    query: Option<String>,
-}
-
-#[derive(Template)]
-#[template(path = "library_item.html")]
-struct LibraryItemTemplate<'a> {
-    item: &'a LibraryItem,
-}
-
-async fn search_handler(
-    State(library): State<Arc<RwLock<Library>>>,
-    Form(query): Form<SearchQuery>,
-) -> Result<impl IntoResponse, AppError> {
-    info!("Received search query: {:?}", query);
-
-    let search_term = query.query.as_deref().context("No search query provided")?;
-
-    let library = library.read().await;
-    let mut filtered_items: Vec<_> = library
-        .items
-        .values()
-        .filter(|item| {
-            item.name
-                .to_lowercase()
-                .contains(&search_term.to_lowercase())
-                || item
-                    .artist
-                    .to_lowercase()
-                    .contains(&search_term.to_lowercase())
-                || item
-                    .album
-                    .to_lowercase()
-                    .contains(&search_term.to_lowercase())
-        })
-        .collect();
-
-    // Sort filtered items by play count in descending order
-    filtered_items.sort_by(|a, b| b.play_count.cmp(&a.play_count));
-
-    let html = filtered_items
-        .iter()
-        .map(|item| LibraryItemTemplate { item }.render())
-        .collect::<Result<Vec<_>, _>>()?
-        .join("\n");
-
-    Ok(Html(html))
 }
 
 async fn all_events_handler() -> Result<impl IntoResponse, AppError> {
