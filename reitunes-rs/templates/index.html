@@ -149,15 +149,18 @@
 
             document.addEventListener('keydown', handleKeyDown);
 
+            let debounceTimer;
             searchInput.addEventListener('input', function(e) {
-                // double array for OR condition (magic Tabulator syntax)
-                table.setFilter(
-                [[
-                    {field: "name", type: "like", value: e.target.value},
-                    {field: "artist", type: "like", value: e.target.value},
-                    {field: "album", type: "like", value: e.target.value},
-                ]]);
-                
+                clearTimeout(debounceTimer);
+                debounceTimer = setTimeout(() => {
+                    // double array for OR condition (magic Tabulator syntax)
+                    table.setFilter(
+                    [[
+                        {field: "name", type: "like", value: e.target.value},
+                        {field: "artist", type: "like", value: e.target.value},
+                        {field: "album", type: "like", value: e.target.value},
+                    ]]);
+                }, 300); // 300ms delay
             });
         });
     </script>
