@@ -8,6 +8,8 @@
     <script src="https://unpkg.com/htmx.org@1.9.4"></script>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=VT323&display=swap" rel="stylesheet">
+    <link href="https://unpkg.com/tabulator-tables@5.5.0/dist/css/tabulator.min.css" rel="stylesheet">
+    <script type="text/javascript" src="https://unpkg.com/tabulator-tables@5.5.0/dist/js/tabulator.min.js"></script>
     <script>
         tailwind.config = {
             theme: {
@@ -65,71 +67,46 @@
                hx-post="/ui/search" hx-trigger="input changed delay:50ms" hx-target="#library-table tbody" autocomplete="off">
         <div id="indicator" class="htmx-indicator absolute right-2 top-1/2 transform -translate-y-1/2 text-solarized-blue">Searching...</div>
     </div>
-    <table id="library-table" class="w-full border-separate border-spacing-y-1">
-        <thead>
-            <tr>
-                <th class="bg-solarized-base03 text-solarized-yellow px-2 text-left w-3/10">Name</th>
-                <th class="bg-solarized-base03 text-solarized-yellow px-2 text-left w-2/10">Artist</th>
-                <th class="bg-solarized-base03 text-solarized-yellow px-2 text-left w-2/10">Album</th>
-                <th class="bg-solarized-base03 text-solarized-yellow px-2 text-left w-1.5/10 whitespace-nowrap">Play Count</th>
-                <th class="bg-solarized-base03 text-solarized-yellow px-2 text-left w-1.5/10">Bookmarks</th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for item in items %}
-                {% include "library_item.html" %}
-            {% endfor %}
-        </tbody>
-    </table>
+    <div id="library-table"></div>
     <script>
         document.addEventListener('DOMContentLoaded', () => {
             const player = document.getElementById('player');
-            const table = document.getElementById('library-table');
             const searchInput = document.getElementById('search');
             const currentSong = document.getElementById('current-song');
 
-            table.addEventListener('click', handleTableClick);
-            document.addEventListener('keydown', handleKeyDown);
-            table.addEventListener('dblclick', handleEditableFields);
+            let table = new Tabulator("#library-table", {
+                data: {{ items|tojson|safe }},
+                layout: "fitColumns",
+                columns: [
+                    {title: "Name", field: "name", editor: "input", width: "30%"},
+                    {title: "Artist", field: "artist", editor: "input", width: "20%"},
+                    {title: "Album", field: "album", editor: "input", width: "20%"},
+                    {title: "Play Count", field: "play_count", width: "15%"},
+                    {title: "Bookmarks", field: "bookmarks", formatter: bookmarkFormatter, width: "15%"}
+                ],
+                rowClick: function(e, row) {
+                    playSong(row.getData());
+                },
+                cellEdited: function(cell) {
+                    updateField(cell);
+                },
+            });
 
-            function handleTableClick(e) {
-                const row = e.target.closest('tr');
-                if (!row || !row.dataset.url) return;
-
-                if (e.target.classList.contains('bookmark-emoji')) {
-                    playBookmark(row, e.target);
-                } else if (!e.target.classList.contains('editable')) {
-                    playSong(row);
-                }
-                updateCurrentSong(row);
+            function bookmarkFormatter(cell) {
+                let bookmarks = cell.getValue();
+                return Object.values(bookmarks).map(bookmark => 
+                    `<span class="bookmark-emoji cursor-pointer mr-1 text-solarized-orange" data-position="${bookmark.position}">${bookmark.emoji || '🔖'}</span>`
+                ).join('');
             }
 
-            function playBookmark(row, bookmark) {
-                const position = parseFloat(bookmark.dataset.position);
-                if (player.src === row.dataset.url) {
-                    player.currentTime = position;
-                    if (player.paused) player.play();
-                } else {
-                    player.src = row.dataset.url;
-                    player.addEventListener('loadedmetadata', () => {
-                        player.currentTime = position;
-                        player.play();
-                    }, { once: true });
-                }
-            }
-
-            function playSong(row) {
-                if (player.src !== row.dataset.url) {
-                    player.src = row.dataset.url;
-                }
-                player.currentTime = 0;
+            function playSong(rowData) {
+                player.src = rowData.url;
                 player.play();
+                updateCurrentSong(rowData);
             }
 
-            function updateCurrentSong(row) {
-                const name = row.cells[0].textContent;
-                const artist = row.cells[1].textContent;
-                currentSong.textContent = `${name} - ${artist}`;
+            function updateCurrentSong(rowData) {
+                currentSong.textContent = `${rowData.name} - ${rowData.artist}`;
             }
 
             function handleKeyDown(e) {
@@ -139,46 +116,33 @@
                 }
             }
 
-            function handleEditableFields(e) {
-                if (!e.target.classList.contains('editable')) return;
-
-                const span = e.target;
-                const input = document.createElement('input');
-                const oldValue = span.textContent;
-                input.value = oldValue;
-                span.textContent = '';
-                span.appendChild(input);
-                input.focus();
-
-                input.addEventListener('blur', () => updateField(span, input.value, oldValue));
-                input.addEventListener('keydown', (e) => {
-                    if (e.key === 'Enter') updateField(span, input.value, oldValue);
-                });
-            }
-
-            function updateField(span, newValue, oldValue) {
-                const row = span.closest('tr');
-                const itemId = row.dataset.id;
-                const field = span.dataset.field;
+            function updateField(cell) {
+                const rowData = cell.getRow().getData();
+                const field = cell.getColumn().getField();
+                const newValue = cell.getValue();
 
                 fetch('/ui/update', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ id: itemId, field: field, value: newValue }),
+                    body: JSON.stringify({ id: rowData.id, field: field, value: newValue }),
                 })
                 .then(response => {
-                    if (response.ok) {
-                        span.textContent = newValue;
-                    } else {
+                    if (!response.ok) {
                         throw new Error(`Response status: ${response.status}`);
                     }
                 })
                 .catch(error => {
                     console.error('Error:', error);
                     alert('Failed to update field');
-                    span.textContent = oldValue;
+                    cell.restoreOldValue();
                 });
             }
+
+            document.addEventListener('keydown', handleKeyDown);
+
+            searchInput.addEventListener('input', function(e) {
+                table.setFilter("name", "like", e.target.value);
+            });
         });
     </script>
 </body>
