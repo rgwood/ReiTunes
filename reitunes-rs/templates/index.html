@@ -62,9 +62,9 @@
     <div id="now-playing" class="text-center text-2xl mb-3"><span id="current-song" class="text-solarized-blue text-shadow-solarized">No song selected</span></div>
     <audio id="player" controls class="w-full mb-3 bg-solarized-base02 border border-solarized-blue"></audio>
     <div class="relative mb-3">
-        <input type="text" id="search" name="query" placeholder="SEARCH..." hx-indicator="#indicator"
+        <input type="text" id="search" name="query" placeholder="SEARCH..." 
                class="w-full px-2 py-1 bg-solarized-base03 text-solarized-base1 border border-solarized-blue font-vt323 text-lg placeholder-solarized-base00"
-               hx-post="/ui/search" hx-trigger="input changed delay:50ms" hx-target="#library-table tbody" autocomplete="off">
+               autocomplete="off">
         <div id="indicator" class="htmx-indicator absolute right-2 top-1/2 transform -translate-y-1/2 text-solarized-blue">Searching...</div>
     </div>
     <div id="library-table"></div>
@@ -77,12 +77,12 @@
             let table = new Tabulator("#library-table", {
                 data: {{ items|tojson|safe }},
                 autoResize: true,
-                layout: "fitColumns",
+                layout: "fitDataFill",
                 columns: [
                     {title: "Name", field: "name", editor: "input", width: "30%"},
                     {title: "Artist", field: "artist", editor: "input", width: "20%"},
                     {title: "Album", field: "album", editor: "input", width: "20%"},
-                    {title: "Play Count", field: "play_count", width: "15%"},
+                    {title: "Play Count", field: "play_count", width: "15%", sorter: "number"},
                     {title: "Bookmarks", field: "bookmarks", formatter: bookmarkFormatter, width: "15%"}
                 ],
                 initialSort: [
@@ -150,12 +150,14 @@
             document.addEventListener('keydown', handleKeyDown);
 
             searchInput.addEventListener('input', function(e) {
-                table.setFilter("name", "like", e.target.value);
-            });
-
-            // Add window resize event listener
-            window.addEventListener('resize', function() {
-                table.redraw(true);
+                // double array for OR condition (magic Tabulator syntax)
+                table.setFilter(
+                [[
+                    {field: "name", type: "like", value: e.target.value},
+                    {field: "artist", type: "like", value: e.target.value},
+                    {field: "album", type: "like", value: e.target.value},
+                ]]);
+                
             });
         });
     </script>
