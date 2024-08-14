@@ -152,6 +152,11 @@
             searchInput.addEventListener('input', function(e) {
                 table.setFilter("name", "like", e.target.value);
             });
+
+            // Add window resize event listener
+            window.addEventListener('resize', function() {
+                table.redraw(true);
+            });
         });
     </script>
 </body>
