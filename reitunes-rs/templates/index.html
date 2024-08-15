@@ -91,9 +91,18 @@
                 ],
             });
 
-            table.on("rowClick", function(e, row) {
-                let rowData = row.getData();
-                playSong(rowData);
+            table.on("cellClick", function(e, cell) {
+                if (cell.getColumn().getField() !== "bookmarks") {
+                    let rowData = cell.getRow().getData();
+                    let currentSrc = player.src;
+                    let currentTime = player.currentTime;
+                    let newSrc = encodeURI(`https://reitunes.blob.core.windows.net/music/${rowData.file_path}`);
+                    
+                    // Only play the song if it's not already playing
+                    if (currentSrc !== newSrc) {
+                        playSong(rowData);
+                    }
+                }
             });
 
             table.on("cellEdited", function(cell) {
