@@ -41,6 +41,24 @@ pub async fn fetch_all_events() -> Result<Vec<EventWithMetadata>> {
 }
 
 #[instrument]
+pub fn save_event_to_db(conn: &Connection, event: &EventWithMetadata) -> Result<()> {
+    let serialized = serde_json::to_string(&event.event)?;
+    conn.execute(
+        "INSERT INTO events (Id, AggregateId, AggregateType, CreatedTimeUtc, MachineName, Serialized) 
+         VALUES (?, ?, ?, ?, ?, ?)",
+        params![
+            event.id,
+            event.aggregate_id,
+            event.aggregate_type,
+            event.created_time_utc,
+            event.machine_name,
+            serialized,
+        ],
+    )?;
+    Ok(())
+}
+
+#[instrument]
 pub fn load_all_events_from_db(conn: &Connection) -> Result<Vec<EventWithMetadata>> {
     let mut stmt = conn.prepare_cached(
         "SELECT * FROM events e WHERE e.AggregateType == 'LibraryItem' ORDER BY CreatedTimeUtc",

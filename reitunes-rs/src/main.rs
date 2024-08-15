@@ -158,7 +158,9 @@ async fn update_handler(
     let event = create_update_event(&request.field, &request.value)?;
     let event_with_metadata = EventWithMetadata::new(request.id, event)?;
 
-    // TODO: save the event to the database
+    // Save the event to the database
+    let conn = DB.get()?;
+    save_event_to_db(&conn, &event_with_metadata)?;
 
     // Apply the event to the library
     let mut library = library.write().await;
