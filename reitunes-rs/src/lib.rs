@@ -42,16 +42,7 @@ pub async fn fetch_all_events() -> Result<Vec<EventWithMetadata>> {
 
 #[instrument]
 pub fn save_event_to_db(conn: &Connection, event: &EventWithMetadata) -> Result<()> {
-    let mut stmt = conn.prepare_cached(
-        "INSERT INTO events (Id, AggregateId, AggregateType, CreatedTimeUtc, MachineName, Serialized) 
-         VALUES (:id, :aggregate_id, :aggregate_type, :created_time_utc, :machine_name, :serialized)"
-    )?;
-
-    let serialized = serde_json::to_string(&event.event)?;
-    let params = to_params_named(event)?
-        .with("serialized", &serialized)?;
-
-    stmt.execute_named(&params)?;
+    // TODO: implement
     Ok(())
 }
 
@@ -184,6 +175,7 @@ pub struct EventWithMetadata {
     pub event: Event,
 }
 
+
 impl EventWithMetadata {
     pub fn new(library_item_id: Uuid, event: Event) -> Result<EventWithMetadata> {
         let created_time_utc = Zoned::now().with_time_zone(TimeZone::UTC).datetime();
@@ -209,6 +201,18 @@ impl EventWithMetadata {
             created_time_utc: row.created_time_utc,
             machine_name: row.machine_name,
             event,
+        })
+    }
+
+    pub fn to_row(&self) -> Result<EventRow> {
+        let serialized = serde_json::to_string(&self.event).context("Failed to serialize event")?;
+        Ok(EventRow {
+            id: self.id,
+            aggregate_id: self.aggregate_id,
+            aggregate_type: self.aggregate_type.clone(),
+            created_time_utc: self.created_time_utc,
+            machine_name: self.machine_name.clone(),
+            serialized,
         })
     }
 }
