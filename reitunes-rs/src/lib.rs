@@ -83,7 +83,8 @@ pub fn load_library_from_db(conn: &Connection) -> Result<Library> {
 }
 
 // Durations are serialized like "00:36:16.8991596" for historical reasons (.NET stuff)
-pub mod duration_serde {
+// basically we serialized them this way when saving to the database from .NET and now we're stuck with it
+pub mod duration_serde_dotnet {
     use serde::{self, Deserialize, Deserializer, Serializer};
     use std::time::Duration;
 
@@ -118,6 +119,30 @@ pub mod duration_serde {
         let nanos: u32 = parts[3].parse().map_err(serde::de::Error::custom)?;
 
         Ok(Duration::new(hours * 3600 + minutes * 60 + seconds, nanos))
+    }
+}
+
+// When sending durations to the frontend, we want to serialize them as (floating point) seconds
+pub mod duration_serde_seconds {
+    use serde::{self, Deserialize, Deserializer, Serializer};
+    use std::time::Duration;
+
+    pub fn serialize<S>(duration: &Duration, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let seconds = duration.as_secs() as f64 + f64::from(duration.subsec_nanos()) / 1_000_000_000.0;
+        serializer.serialize_f64(seconds)
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<Duration, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let seconds = f64::deserialize(deserializer)?;
+        let whole_seconds = seconds.trunc() as u64;
+        let nanos = ((seconds.fract() * 1_000_000_000.0) as u32).min(999_999_999);
+        Ok(Duration::new(whole_seconds, nanos))
     }
 }
 
@@ -291,7 +316,7 @@ pub enum Event {
     },
     LibraryItemBookmarkAddedEvent {
         bookmark_id: Uuid,
-        #[serde(with = "duration_serde")]
+        #[serde(with = "duration_serde_dotnet")]
         position: Duration, // in theory we could use jiff::Span but just getting seconds out of it is a bit difficult!
     },
     LibraryItemBookmarkDeletedEvent {
@@ -324,6 +349,7 @@ impl LibraryItem {
 
 #[derive(Debug, Clone, Serialize)]
 pub struct Bookmark {
+    #[serde(with = "duration_serde_seconds")]
     pub position: std::time::Duration,
     pub emoji: String,
 }
