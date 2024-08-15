@@ -109,7 +109,7 @@
 
             function playSong(rowData, startPosition = 0) {
                 let url = encodeURI(`https://reitunes.blob.core.windows.net/music/${rowData.file_path}`);
-                console.log(`playing song`, url);
+                console.log(`playing song`, url, startPosition);
                 player.src = url;
                 player.currentTime = startPosition;
                 player.play();
