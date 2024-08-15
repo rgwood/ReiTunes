@@ -103,17 +103,28 @@
             function bookmarkFormatter(cell) {
                 let bookmarks = cell.getValue();
                 return Object.values(bookmarks).map(bookmark => 
-                    `<span class="bookmark-emoji cursor-pointer mr-1 text-solarized-orange" data-position="${bookmark.position}">${bookmark.emoji || '🔖'}</span>`
+                    `<span class="bookmark-emoji cursor-pointer mr-1 text-solarized-orange" data-position="${bookmark.position}" data-row-id="${cell.getRow().getData().id}">${bookmark.emoji || '🔖'}</span>`
                 ).join('');
             }
 
-            function playSong(rowData) {
+            function playSong(rowData, startPosition = 0) {
                 let url = encodeURI(`https://reitunes.blob.core.windows.net/music/${rowData.file_path}`);
                 console.log(`playing song`, url);
                 player.src = url;
+                player.currentTime = startPosition;
                 player.play();
                 updateCurrentSong(rowData);
             }
+
+            // Add event delegation for bookmark clicks
+            document.getElementById('library-table').addEventListener('click', function(e) {
+                if (e.target.classList.contains('bookmark-emoji')) {
+                    const rowId = e.target.getAttribute('data-row-id');
+                    const position = parseFloat(e.target.getAttribute('data-position'));
+                    const rowData = table.getRow(rowId).getData();
+                    playSong(rowData, position);
+                }
+            });
 
             function updateCurrentSong(rowData) {
                 currentSong.textContent = `${rowData.name} - ${rowData.artist}`;
