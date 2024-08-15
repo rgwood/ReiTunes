@@ -4,7 +4,7 @@ use jiff::{civil::DateTime, tz::TimeZone, Zoned};
 use r2d2::Pool;
 use r2d2_sqlite::SqliteConnectionManager;
 use reqwest;
-use rusqlite::Connection;
+use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
 use serde_rusqlite::*;
 use std::{collections::HashMap, time::Duration};
