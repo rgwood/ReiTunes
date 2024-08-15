@@ -42,19 +42,16 @@ pub async fn fetch_all_events() -> Result<Vec<EventWithMetadata>> {
 
 #[instrument]
 pub fn save_event_to_db(conn: &Connection, event: &EventWithMetadata) -> Result<()> {
-    let serialized = serde_json::to_string(&event.event)?;
-    conn.execute(
+    let mut stmt = conn.prepare_cached(
         "INSERT INTO events (Id, AggregateId, AggregateType, CreatedTimeUtc, MachineName, Serialized) 
-         VALUES (?, ?, ?, ?, ?, ?)",
-        params![
-            event.id,
-            event.aggregate_id,
-            event.aggregate_type,
-            event.created_time_utc,
-            event.machine_name,
-            serialized,
-        ],
+         VALUES (:id, :aggregate_id, :aggregate_type, :created_time_utc, :machine_name, :serialized)"
     )?;
+
+    let serialized = serde_json::to_string(&event.event)?;
+    let params = to_params_named(event)?
+        .with("serialized", &serialized)?;
+
+    stmt.execute_named(&params)?;
     Ok(())
 }
 
