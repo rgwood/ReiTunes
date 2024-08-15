@@ -78,6 +78,7 @@
                 data: {{ items|tojson|safe }},
                 autoResize: true,
                 layout: "fitDataFill",
+                editTriggerEvent:"dblclick",
                 columns: [
                     {title: "Name", field: "name", editor: "input", width: "30%"},
                     {title: "Artist", field: "artist", editor: "input", width: "20%"},
@@ -160,7 +161,7 @@
                         {field: "artist", type: "like", value: e.target.value},
                         {field: "album", type: "like", value: e.target.value},
                     ]]);
-                }, 300); // 300ms delay
+                }, 150); // 150ms delay
             });
         });
     </script>
