@@ -1,9 +1,7 @@
 set shell := ["nu", "-c"]
 
-watch:
-    watchexec --exts=rs,sql,html -- cargo run
 
-watch-serve:
+watch:
     watchexec --exts=rs,sql,html --on-busy-update=restart -- cargo run
 
 run:
