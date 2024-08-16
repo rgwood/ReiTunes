@@ -47,7 +47,15 @@ pub fn save_event_to_db(conn: &Connection, event: &EventWithMetadata) -> Result<
          VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
     )?;
 
-    // TODO
+    let row = event.to_row()?;
+    stmt.execute(params![
+        row.id,
+        row.aggregate_id,
+        row.aggregate_type,
+        row.created_time_utc,
+        row.machine_name,
+        row.serialized,
+    ])?;
 
     Ok(())
 }
