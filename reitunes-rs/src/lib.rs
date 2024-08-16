@@ -19,8 +19,11 @@ pub fn open_connection_pool(db_path: &str) -> Result<Pool<SqliteConnectionManage
     // pragma synchronous=normal dramatically improves performance at the cost of durability,
     // by not fsyncing after every transaction. There's a chance that committed transactions can be rolled back
     // if the system crashes before buffers are flushed (application crashes are fine). I think this is an acceptable tradeoff
+    conn.execute_batch("PRAGMA synchronous=normal;")?;
+
+    // WAL mode is good but dealing with multiple DB files is a bit annoying
     // TODO: reenable this when we're further out of development
-    // c.execute_batch("PRAGMA journal_mode=WAL; PRAGMA synchronous=normal;")?;
+    // conn.execute_batch("PRAGMA journal_mode=WAL;")?;
 
     // initialize tables if needed
     conn.execute_batch(include_str!("../schema.sql"))?;
@@ -42,37 +45,28 @@ pub async fn fetch_all_events() -> Result<Vec<EventWithMetadata>> {
 
 #[instrument]
 pub fn save_event_to_db(conn: &Connection, event: &EventWithMetadata) -> Result<()> {
-    let start = std::time::Instant::now();
     let mut stmt = conn.prepare_cached(
         "INSERT INTO events (Id, AggregateId, AggregateType, CreatedTimeUtc, MachineName, Serialized) 
          VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
     )?;
 
-    let row = event.to_row()?;
     stmt.execute(params![
-        row.id.to_string(),
-        row.aggregate_id.to_string(),
-        row.aggregate_type,
-        row.created_time_utc.to_string(),
-        row.machine_name,
-        row.serialized,
+        event.id.to_string(),
+        event.aggregate_id.to_string(),
+        event.aggregate_type,
+        event.created_time_utc.to_string(),
+        event.machine_name,
+        serde_json::to_string(&event.event)?,
     ])?;
-
-    info!(
-        ms_elapsed = start.elapsed().as_millis(),
-        "Saved event to db"
-    );
 
     Ok(())
 }
 
 #[instrument]
 pub fn load_all_events_from_db(conn: &Connection) -> Result<Vec<EventWithMetadata>> {
-    let start = std::time::Instant::now();
     let mut stmt = conn.prepare_cached(
         "SELECT * FROM events e WHERE e.AggregateType == 'LibraryItem' ORDER BY CreatedTimeUtc",
     )?;
-
 
     let rows = from_rows::<EventRow>(stmt.query([])?);
 
@@ -83,9 +77,7 @@ pub fn load_all_events_from_db(conn: &Connection) -> Result<Vec<EventWithMetadat
         events.push(event);
     }
 
-    // takes about 10ms on 13th gen i7, 3000 events
     info!(
-        ms_elapsed = start.elapsed().as_millis(),
         event_count = events.len(),
         "Loaded all events from db"
     );
@@ -96,15 +88,7 @@ pub fn load_all_events_from_db(conn: &Connection) -> Result<Vec<EventWithMetadat
 #[instrument]
 pub fn load_library_from_db(conn: &Connection) -> Result<Library> {
     let events = load_all_events_from_db(conn)?;
-
-    let start = std::time::Instant::now();
     let library = Library::build_from_events(events);
-    // takes about 0.3ms on 13th gen i7, 3000 events
-    info!(
-        ms_elapsed = start.elapsed().as_millis(),
-        "Built library from events"
-    );
-
     Ok(library)
 }
 
@@ -199,7 +183,6 @@ pub struct EventWithMetadata {
 impl EventWithMetadata {
     pub fn new(library_item_id: Uuid, event: Event) -> Result<EventWithMetadata> {
         let created_time_utc = Zoned::now().with_time_zone(TimeZone::UTC).datetime();
-        info!("Creating event, time: {:?}", created_time_utc);
         let event_with_metadata = EventWithMetadata {
             id: Uuid::new_v4(),
             aggregate_id: library_item_id,
@@ -224,17 +207,7 @@ impl EventWithMetadata {
         })
     }
 
-    pub fn to_row(&self) -> Result<EventRow> {
-        let serialized = serde_json::to_string(&self.event).context("Failed to serialize event")?;
-        Ok(EventRow {
-            id: self.id,
-            aggregate_id: self.aggregate_id,
-            aggregate_type: self.aggregate_type.clone(),
-            created_time_utc: self.created_time_utc,
-            machine_name: self.machine_name.clone(),
-            serialized,
-        })
-    }
+    
 }
 
 #[derive(Clone, Default)]

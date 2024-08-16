@@ -80,6 +80,9 @@ async fn main() -> Result<()> {
             // Start the web server
             let conn = DB.get()?;
             let library = load_library_from_db(&conn)?;
+            // important to drop after using to return the connection to the pool
+            // leaving this connection open slows writes down ~100x (from 0.2 ms to 20 ms)
+            drop(conn);
             let shared_state = Arc::new(RwLock::new(library));
 
             let app = Router::new()
@@ -153,7 +156,6 @@ async fn update_handler(
     State(library): State<Arc<RwLock<Library>>>,
     JsonExtractor(request): JsonExtractor<UpdateRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    info!("Received update request: {:?}", request);
 
     let event = create_update_event(&request.field, &request.value)?;
     let event_with_metadata = EventWithMetadata::new(request.id, event)?;
