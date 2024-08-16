@@ -49,10 +49,10 @@ pub fn save_event_to_db(conn: &Connection, event: &EventWithMetadata) -> Result<
 
     let row = event.to_row()?;
     stmt.execute(params![
-        row.id,
-        row.aggregate_id,
+        row.id.to_string(),
+        row.aggregate_id.to_string(),
         row.aggregate_type,
-        row.created_time_utc,
+        row.created_time_utc.to_string(),
         row.machine_name,
         row.serialized,
     ])?;
