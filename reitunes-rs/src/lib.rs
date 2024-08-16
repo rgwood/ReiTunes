@@ -42,6 +42,7 @@ pub async fn fetch_all_events() -> Result<Vec<EventWithMetadata>> {
 
 #[instrument]
 pub fn save_event_to_db(conn: &Connection, event: &EventWithMetadata) -> Result<()> {
+    let start = std::time::Instant::now();
     let mut stmt = conn.prepare_cached(
         "INSERT INTO events (Id, AggregateId, AggregateType, CreatedTimeUtc, MachineName, Serialized) 
          VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
@@ -57,16 +58,21 @@ pub fn save_event_to_db(conn: &Connection, event: &EventWithMetadata) -> Result<
         row.serialized,
     ])?;
 
+    info!(
+        ms_elapsed = start.elapsed().as_millis(),
+        "Saved event to db"
+    );
+
     Ok(())
 }
 
 #[instrument]
 pub fn load_all_events_from_db(conn: &Connection) -> Result<Vec<EventWithMetadata>> {
+    let start = std::time::Instant::now();
     let mut stmt = conn.prepare_cached(
         "SELECT * FROM events e WHERE e.AggregateType == 'LibraryItem' ORDER BY CreatedTimeUtc",
     )?;
 
-    let start = std::time::Instant::now();
 
     let rows = from_rows::<EventRow>(stmt.query([])?);
 
@@ -246,18 +252,18 @@ impl Library {
     pub fn build_from_events(events: Vec<EventWithMetadata>) -> Self {
         let mut library = Library::new();
         for event in events {
-            library.apply(event);
+            library.apply(&event);
         }
         library
     }
 
-    pub fn apply(&mut self, event: EventWithMetadata) {
-        match event.event {
+    pub fn apply(&mut self, event: &EventWithMetadata) {
+        match &event.event {
             Event::LibraryItemCreatedEvent { name, file_path } => {
                 let item = LibraryItem {
                     id: event.aggregate_id,
-                    name,
-                    file_path,
+                    name: name.clone(),
+                    file_path: file_path.clone(),
                     artist: String::new(),
                     album: String::new(),
                     play_count: 0,
@@ -276,22 +282,22 @@ impl Library {
             }
             Event::LibraryItemNameChangedEvent { new_name } => {
                 if let Some(item) = self.items.get_mut(&event.aggregate_id) {
-                    item.name = new_name;
+                    item.name = new_name.clone();
                 }
             }
             Event::LibraryItemFilePathChangedEvent { new_file_path } => {
                 if let Some(item) = self.items.get_mut(&event.aggregate_id) {
-                    item.file_path = new_file_path;
+                    item.file_path = new_file_path.clone();
                 }
             }
             Event::LibraryItemArtistChangedEvent { new_artist } => {
                 if let Some(item) = self.items.get_mut(&event.aggregate_id) {
-                    item.artist = new_artist;
+                    item.artist = new_artist.clone();
                 }
             }
             Event::LibraryItemAlbumChangedEvent { new_album } => {
                 if let Some(item) = self.items.get_mut(&event.aggregate_id) {
-                    item.album = new_album;
+                    item.album = new_album.clone();
                 }
             }
             Event::LibraryItemBookmarkAddedEvent {
@@ -300,9 +306,9 @@ impl Library {
             } => {
                 if let Some(item) = self.items.get_mut(&event.aggregate_id) {
                     item.bookmarks.insert(
-                        bookmark_id,
+                        bookmark_id.clone(),
                         Bookmark {
-                            position,
+                            position: position.clone(),
                             emoji: String::new(),
                         },
                     );
@@ -312,13 +318,13 @@ impl Library {
             }
             Event::LibraryItemBookmarkDeletedEvent { bookmark_id } => {
                 if let Some(item) = self.items.get_mut(&event.aggregate_id) {
-                    item.bookmarks.shift_remove(&bookmark_id);
+                    item.bookmarks.shift_remove(bookmark_id);
                 }
             }
             Event::LibraryItemBookmarkSetEmojiEvent { bookmark_id, emoji } => {
                 if let Some(item) = self.items.get_mut(&event.aggregate_id) {
-                    if let Some(bookmark) = item.bookmarks.get_mut(&bookmark_id) {
-                        bookmark.emoji = emoji;
+                    if let Some(bookmark) = item.bookmarks.get_mut(bookmark_id) {
+                        bookmark.emoji = emoji.clone();
                     }
                 }
             }
@@ -361,7 +367,7 @@ pub enum Event {
     },
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct LibraryItem {
     pub id: Uuid,
     pub name: String,
@@ -380,7 +386,7 @@ impl LibraryItem {
     }
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct Bookmark {
     #[serde(with = "duration_serde_seconds")]
     pub position: std::time::Duration,
@@ -391,7 +397,6 @@ pub struct Bookmark {
 mod tests {
     use super::*;
     use rusqlite::Connection;
-    use tempfile::NamedTempFile;
 
     #[test]
     fn test_load_library_from_db() {
@@ -419,12 +424,9 @@ mod tests {
 
     #[test]
     fn test_save_and_load_events() -> Result<()> {
-        // Create a temporary database file
-        let temp_file = NamedTempFile::new()?;
-        let db_path = temp_file.path().to_str().unwrap();
-
+        tracing_subscriber::fmt::init();
         // Open a connection to the temporary database
-        let conn = Connection::open(db_path)?;
+        let conn = Connection::open(":memory:")?;
         conn.execute_batch(include_str!("../schema.sql"))?;
 
         // Create a new library item event
@@ -448,7 +450,8 @@ mod tests {
 
         // Apply the same event to an in-memory library
         let mut in_memory_library = Library::new();
-        in_memory_library.apply(create_event.clone());
+        assert_ne!(in_memory_library.items, loaded_library.items);
+        in_memory_library.apply(&create_event);
 
         // Compare the in-memory library with the loaded library
         assert_eq!(in_memory_library.items, loaded_library.items);
@@ -467,7 +470,7 @@ mod tests {
         save_event_to_db(&conn, &bookmark_event)?;
 
         // Apply the bookmark event to the in-memory library
-        in_memory_library.apply(bookmark_event.clone());
+        in_memory_library.apply(&bookmark_event);
 
         // Reload the library from the database
         let reloaded_library = load_library_from_db(&conn)?;

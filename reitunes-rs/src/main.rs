@@ -164,7 +164,7 @@ async fn update_handler(
 
     // Apply the event to the library
     let mut library = library.write().await;
-    library.apply(event_with_metadata);
+    library.apply(&event_with_metadata);
 
     Ok(StatusCode::OK)
 }
