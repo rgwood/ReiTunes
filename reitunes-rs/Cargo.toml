@@ -30,7 +30,7 @@ hostname = "0.4.0"
 
 
 [profile.release]
-lto = true      # Enable Link Time Optimization
+# lto = true      # Enable Link Time Optimization
 opt-level = 'z' # Optimize for size.
 panic = 'abort' # Abort on panic
 # codegen-units = 1 # Set low to increase optimizations. Kills compile time though
