@@ -390,6 +390,8 @@ pub struct Bookmark {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rusqlite::Connection;
+    use tempfile::NamedTempFile;
 
     #[test]
     fn test_load_library_from_db() {
@@ -413,5 +415,66 @@ mod tests {
                 "Known item should have been played at least once"
             );
         }
+    }
+
+    #[test]
+    fn test_save_and_load_events() -> Result<()> {
+        // Create a temporary database file
+        let temp_file = NamedTempFile::new()?;
+        let db_path = temp_file.path().to_str().unwrap();
+
+        // Open a connection to the temporary database
+        let conn = Connection::open(db_path)?;
+        conn.execute_batch(include_str!("../schema.sql"))?;
+
+        // Create a new library item event
+        let item_id = Uuid::new_v4();
+        let create_event = EventWithMetadata::new(
+            item_id,
+            Event::LibraryItemCreatedEvent {
+                name: "Test Item".to_string(),
+                file_path: "test/path.mp3".to_string(),
+            },
+        )?;
+
+        // Save the event to the database
+        save_event_to_db(&conn, &create_event)?;
+
+        // Load the library from the database
+        let loaded_library = load_library_from_db(&conn)?;
+
+        // Check if the item exists in the loaded library
+        assert!(loaded_library.items.contains_key(&item_id));
+
+        // Apply the same event to an in-memory library
+        let mut in_memory_library = Library::new();
+        in_memory_library.apply(create_event.clone());
+
+        // Compare the in-memory library with the loaded library
+        assert_eq!(in_memory_library.items, loaded_library.items);
+
+        // Add a bookmark event
+        let bookmark_id = Uuid::new_v4();
+        let bookmark_event = EventWithMetadata::new(
+            item_id,
+            Event::LibraryItemBookmarkAddedEvent {
+                bookmark_id,
+                position: Duration::from_secs(60),
+            },
+        )?;
+
+        // Save the bookmark event to the database
+        save_event_to_db(&conn, &bookmark_event)?;
+
+        // Apply the bookmark event to the in-memory library
+        in_memory_library.apply(bookmark_event.clone());
+
+        // Reload the library from the database
+        let reloaded_library = load_library_from_db(&conn)?;
+
+        // Compare the in-memory library with the reloaded library
+        assert_eq!(in_memory_library.items, reloaded_library.items);
+
+        Ok(())
     }
 }
