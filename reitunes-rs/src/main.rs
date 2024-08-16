@@ -67,7 +67,9 @@ enum Commands {
 #[tokio::main]
 async fn main() -> Result<()> {
     // Initialize tracing
-    tracing_subscriber::fmt::init();
+    tracing_subscriber::fmt()
+    .with_span_events(tracing_subscriber::fmt::format::FmtSpan::CLOSE)
+    .init();
 
     let cli = Cli::parse();
 
