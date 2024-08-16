@@ -44,13 +44,11 @@ pub async fn fetch_all_events() -> Result<Vec<EventWithMetadata>> {
 pub fn save_event_to_db(conn: &Connection, event: &EventWithMetadata) -> Result<()> {
     let mut stmt = conn.prepare_cached(
         "INSERT INTO events (Id, AggregateId, AggregateType, CreatedTimeUtc, MachineName, Serialized) 
-         VALUES (:id, :aggregate_id, :aggregate_type, :created_time_utc, :machine_name, :serialized)"
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
     )?;
 
-    let row = event.to_row()?;
-    let params = to_params_named(&row)?;
+    // TODO
 
-    stmt.execute_named(&params)?;
     Ok(())
 }
 
