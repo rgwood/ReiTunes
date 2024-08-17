@@ -126,6 +126,27 @@
                 player.currentTime = startPosition;
                 player.play();
                 updateCurrentSong(rowData);
+                
+                // Send request to update play count
+                fetch('/ui/play', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ id: rowData.id }),
+                })
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error(`Response status: ${response.status}`);
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    // Update the play count in the table
+                    let row = table.getRow(rowData.id);
+                    row.update({ play_count: data.new_play_count });
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                });
             }
 
             // Add event delegation for bookmark clicks

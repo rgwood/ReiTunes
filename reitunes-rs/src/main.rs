@@ -12,6 +12,7 @@ use r2d2::Pool;
 use r2d2_sqlite::SqliteConnectionManager;
 use reitunes_rs::*;
 use serde::Deserialize;
+use serde_json::json;
 use std::fmt;
 use std::sync::{Arc, LazyLock};
 use tokio::sync::RwLock;
@@ -91,6 +92,7 @@ async fn main() -> Result<()> {
                 .route("/", get(index_handler))
                 .route("/allevents", get(all_events_handler))
                 .route("/ui/update", post(update_handler))
+                .route("/ui/play", post(play_handler))
                 .with_state(shared_state);
 
             let listener = tokio::net::TcpListener::bind("127.0.0.1:5000")
@@ -158,7 +160,6 @@ async fn update_handler(
     State(library): State<Arc<RwLock<Library>>>,
     JsonExtractor(request): JsonExtractor<UpdateRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-
     let event = create_update_event(&request.field, &request.value)?;
     let event_with_metadata = EventWithMetadata::new(request.id, event)?;
 
@@ -171,6 +172,34 @@ async fn update_handler(
     library.apply(&event_with_metadata);
 
     Ok(StatusCode::OK)
+}
+
+#[derive(Debug, Deserialize)]
+struct PlayRequest {
+    id: uuid::Uuid,
+}
+
+async fn play_handler(
+    State(library): State<Arc<RwLock<Library>>>,
+    JsonExtractor(request): JsonExtractor<PlayRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    let event = Event::LibraryItemPlayedEvent;
+    let event_with_metadata = EventWithMetadata::new(request.id, event)?;
+
+    // Save the event to the database
+    let conn = DB.get()?;
+    save_event_to_db(&conn, &event_with_metadata)?;
+
+    // Apply the event to the library
+    let mut library = library.write().await;
+    library.apply(&event_with_metadata);
+
+    // Get the updated play count
+    let new_play_count = library.items.get(&request.id)
+        .map(|item| item.play_count)
+        .unwrap_or(0);
+
+    Ok(Json(json!({ "new_play_count": new_play_count })))
 }
 
 fn create_update_event(field: &str, value: &str) -> Result<Event> {
