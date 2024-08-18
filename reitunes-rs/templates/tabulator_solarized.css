@@ -217,7 +217,7 @@ After building I semi-manually replaced hex colours with CSS variables to make i
   }
   
   .tabulator .tabulator-header .tabulator-col.tabulator-sortable[aria-sort="none"] .tabulator-col-content .tabulator-col-sorter {
-    color: var(--color-base0);
+    color: var(--color-base2);
   }
   
   @media (hover: hover) and (pointer: fine) {
@@ -374,7 +374,7 @@ After building I semi-manually replaced hex colours with CSS variables to make i
     background-color: var(--color-base02);
     white-space: nowrap;
     overflow: visible;
-    color: var(--color-base0);
+    color: var(--color-base2);
   }
   
   .tabulator .tabulator-tableholder .tabulator-table .tabulator-row.tabulator-calcs {
