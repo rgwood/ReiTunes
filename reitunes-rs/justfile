@@ -2,7 +2,7 @@ set shell := ["nu", "-c"]
 
 
 watch:
-    watchexec --exts=rs,sql,html --on-busy-update=restart -- cargo run
+    watchexec --exts=rs,sql,html,css --on-busy-update=restart -- cargo run
 
 run:
     cargo run
