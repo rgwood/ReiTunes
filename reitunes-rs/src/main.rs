@@ -1,16 +1,13 @@
 use anyhow::Result;
 use askama::Template;
 use axum::{
-    extract::{Json as JsonExtractor, State},
-    http::StatusCode,
-    response::{Html, IntoResponse, Json, Response},
-    routing::{get, post},
-    Router,
+    body::Body, extract::{Json as JsonExtractor, State}, http::{header, StatusCode, Uri}, response::{Html, IntoResponse, Json, Response}, routing::{get, post}, Router
 };
-use clap::{Parser, Subcommand};
+use clap::{builder::Styles, Parser, Subcommand};
 use r2d2::Pool;
 use r2d2_sqlite::SqliteConnectionManager;
 use reitunes_rs::*;
+use rust_embed::RustEmbed;
 use serde::Deserialize;
 use serde_json::json;
 use std::fmt;
@@ -93,6 +90,7 @@ async fn main() -> Result<()> {
                 .route("/allevents", get(all_events_handler))
                 .route("/ui/update", post(update_handler))
                 .route("/ui/play", post(play_handler))
+                .route("/*file", get(static_handler))
                 .with_state(shared_state);
 
             let listener = tokio::net::TcpListener::bind("127.0.0.1:5000")
@@ -219,3 +217,41 @@ fn create_update_event(field: &str, value: &str) -> Result<Event> {
         _ => Err(anyhow::anyhow!("Invalid field: {}", field)),
     }
 }
+
+async fn static_handler(uri: Uri) -> impl IntoResponse {
+    let path = uri.path().trim_start_matches('/').to_string();
+    StaticFile(path)
+}
+
+
+#[derive(RustEmbed)]
+#[folder = "embed/"]
+struct Asset;
+
+pub struct StaticFile<T>(pub T);
+
+
+impl<T> IntoResponse for StaticFile<T>
+where
+    T: Into<String>,
+{
+    fn into_response(self) -> Response<Body> {
+        let path = self.0.into();
+
+        match Asset::get(path.as_str()) {
+            Some(content) => {
+                let body = Body::from(content.data);
+                let mime = mime_guess::from_path(path).first_or_octet_stream();
+                Response::builder()
+                    .header(header::CONTENT_TYPE, mime.as_ref())
+                    .body(body)
+                    .unwrap()
+            }
+            None => Response::builder()
+                .status(StatusCode::NOT_FOUND)
+                .body(Body::from("404"))
+                .unwrap(),
+        }
+    }
+}
+

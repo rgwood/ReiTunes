@@ -4,11 +4,21 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ReiTunes Library</title>
+    <title>ReiTunes</title>
+    <link rel="icon" href="favicon.svg" />
     <script src="https://unpkg.com/htmx.org@1.9.4"></script>
     <script src="https://cdn.tailwindcss.com"></script>
-    <link href="https://fonts.googleapis.com/css2?family=VT323&display=swap" rel="stylesheet">
+    <!-- <link href="https://fonts.googleapis.com/css2?family=Inconsolata&display=swap" rel="stylesheet"> -->
     <!-- <link href="https://unpkg.com/tabulator-tables@6.2.0/dist/css/tabulator_midnight.min.css" rel="stylesheet"> -->
+    <link rel="preload" href="/ConsolasNerdFont.woff2" as="font" type="font/woff2" crossorigin>
+    <style>
+      @font-face {
+        font-family: 'Consolas NF';
+        src: url('/ConsolasNerdFont.woff2') format('woff2');
+        font-weight: normal;
+        font-style: normal;
+      }
+    </style>
     <style>
         {% include "tabulator_solarized.css" %}
     </style>
@@ -17,9 +27,6 @@
         tailwind.config = {
             theme: {
                 extend: {
-                    fontFamily: {
-                        'vt323': ['VT323', 'monospace'],
-                    },
                     colors: {
                         'solarized-base03': '#002b36',
                         'solarized-base02': '#073642',
@@ -59,18 +66,18 @@
     </style>
 </head>
 
-<body class="bg-solarized-base02 text-solarized-base1 font-vt323 p-5 overflow-x-hidden overflow-y-auto box-border relative">
+<body class="bg-solarized-base03 text-solarized-base1 font-['Consolas_NF'] p-5 overflow-x-hidden overflow-y-auto box-border relative">
     <div class="fixed inset-0 opacity-20 pointer-events-none z-[-1]" style="background-image: linear-gradient(#93a1a1 1px, transparent 1px), linear-gradient(90deg, #93a1a1 1px, transparent 1px); background-size: 10px 10px;"></div>
     
     <div id="now-playing" class="text-center text-2xl mb-3"><span id="current-song" class="text-solarized-blue text-shadow-solarized">No song selected</span></div>
     <audio id="player" controls class="w-full mb-3 bg-solarized-base02 border border-solarized-blue"></audio>
     <div class="relative mb-3">
         <input type="text" id="search" name="query" placeholder="SEARCH..." 
-               class="w-full px-2 py-1 bg-solarized-base03 text-solarized-base1 border border-solarized-blue font-vt323 text-lg placeholder-solarized-base00"
+               class="w-full px-2 py-1 bg-solarized-base03 text-solarized-base1 border border-solarized-blue text-lg placeholder-solarized-base00"
                autocomplete="off">
         <div id="indicator" class="htmx-indicator absolute right-2 top-1/2 transform -translate-y-1/2 text-solarized-blue">Searching...</div>
     </div>
-    <div id="library-table"></div>
+    <div id="library-table" class="border-solarized-base01"></div>
     <script>
         document.addEventListener('DOMContentLoaded', () => {
             const player = document.getElementById('player');
@@ -123,6 +130,7 @@
             }
 
             function playSong(rowData, startPosition = 0) {
+                let prevSrc = player.src;
                 let url = encodeURI(`https://reitunes.blob.core.windows.net/music/${rowData.file_path}`);
                 console.log(`playing song`, url, startPosition);
                 player.src = url;
@@ -130,30 +138,32 @@
                 player.play();
                 updateCurrentSong(rowData);
                 
-                // Send request to update play count
-                fetch('/ui/play', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ id: rowData.id }),
-                })
-                .then(response => {
-                    if (!response.ok) {
-                        throw new Error(`Response status: ${response.status}`);
-                    }
-                    return response.json();
-                })
-                .then(data => {
-                    // Update the play count in the table
-                    let row = table.getRow(rowData.id);
-                    row.update({ play_count: data.new_play_count });
-
-                    // re-sort table (might be sorted by play count and it doesn't update automatically)
-                    let sorters = table.getSorters();
-                    table.setSort(sorters);
-                })
-                .catch(error => {
-                    console.error('Error:', error);
-                });
+                if (prevSrc !== player.src) {
+                    // Send request to update play count
+                    fetch('/ui/play', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ id: rowData.id }),
+                    })
+                    .then(response => {
+                        if (!response.ok) {
+                            throw new Error(`Response status: ${response.status}`);
+                        }
+                        return response.json();
+                    })
+                    .then(data => {
+                        // Update the play count in the table
+                        let row = table.getRow(rowData.id);
+                        row.update({ play_count: data.new_play_count });
+    
+                        // re-sort table (might be sorted by play count and it doesn't update automatically)
+                        let sorters = table.getSorters();
+                        table.setSort(sorters);
+                    })
+                    .catch(error => {
+                        console.error('Error:', error);
+                    });
+                }
             }
 
             // Add event delegation for bookmark clicks

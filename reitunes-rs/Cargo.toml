@@ -27,6 +27,8 @@ r2d2 = "0.8.10"
 r2d2_sqlite = "0.24.0"
 jiff = { version = "0.1.4", features = ["serde"] }
 hostname = "0.4.0"
+rust-embed = { version = "8.2.0", features = ["axum-ex"] }
+mime_guess = "2.0.4"
 
 
 [profile.release]
