@@ -50,7 +50,7 @@ static DB: LazyLock<Pool<SqliteConnectionManager>> =
     LazyLock::new(|| open_connection_pool(DB_PATH).expect("Failed to create connection pool"));
 
 #[derive(Parser)]
-#[command(author, version, about, long_about = None)]
+#[command(author, version, about, long_about = None, styles = clap_v3_style())]
 struct Cli {
     #[command(subcommand)]
     command: Option<Commands>,
@@ -255,3 +255,12 @@ where
     }
 }
 
+// IMO the v3 style was nice and it's dumb that clap removed colour in v4
+pub fn clap_v3_style() -> Styles {
+    use clap::builder::styling::AnsiColor;
+    Styles::styled()
+        .header(AnsiColor::Yellow.on_default())
+        .usage(AnsiColor::Green.on_default())
+        .literal(AnsiColor::Green.on_default())
+        .placeholder(AnsiColor::Green.on_default())
+}

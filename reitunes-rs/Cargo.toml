@@ -1,5 +1,6 @@
 [package]
 name = "reitunes-rs"
+description = "Reilly Wood's personal music library, Rust edition"
 version = "0.1.0"
 edition = "2021"
 
