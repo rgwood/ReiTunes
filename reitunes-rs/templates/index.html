@@ -155,10 +155,6 @@
                         // Update the play count in the table
                         let row = table.getRow(rowData.id);
                         row.update({ play_count: data.new_play_count });
-    
-                        // re-sort table (might be sorted by play count and it doesn't update automatically)
-                        let sorters = table.getSorters();
-                        table.setSort(sorters);
                     })
                     .catch(error => {
                         console.error('Error:', error);
