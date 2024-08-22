@@ -66,12 +66,16 @@
     </style>
 </head>
 
-<body class="bg-solarized-base03 text-solarized-base1 font-['Consolas_NF'] p-5 overflow-x-hidden overflow-y-auto box-border relative">
+<body class="bg-solarized-base03 text-solarized-base1 font-['Consolas_NF'] overflow-x-hidden overflow-y-auto box-border relative">
     <div class="fixed inset-0 opacity-20 pointer-events-none z-[-1]" style="background-image: linear-gradient(#93a1a1 1px, transparent 1px), linear-gradient(90deg, #93a1a1 1px, transparent 1px); background-size: 10px 10px;"></div>
     
-    <div id="now-playing" class="text-center text-2xl mb-3"><span id="current-song" class="text-solarized-blue text-shadow-solarized">No song selected</span></div>
-    <audio id="player" controls class="w-full mb-3 bg-solarized-base02 border border-solarized-blue"></audio>
-    <div class="relative mb-3">
+    <div class="sticky top-0 bg-solarized-base03 pt-5 pb-3 z-10">
+        <div id="now-playing" class="text-center text-2xl mb-3"><span id="current-song" class="text-solarized-blue text-shadow-solarized">No song selected</span></div>
+        <audio id="player" controls class="w-full mb-3 bg-solarized-base02 border border-solarized-blue"></audio>
+    </div>
+    
+    <div class="px-5">
+        <div class="relative mb-3">
         <input type="text" id="search" name="query" placeholder="SEARCH..." 
                class="w-full px-2 py-1 bg-solarized-base03 text-solarized-base1 border border-solarized-blue text-lg placeholder-solarized-base00"
                autocomplete="off">
