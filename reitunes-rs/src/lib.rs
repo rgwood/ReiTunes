@@ -62,12 +62,15 @@ pub fn save_event_to_db(conn: &Connection, event: &EventWithMetadata) -> Result<
     Ok(())
 }
 
-#[instrument]
+#[instrument(skip(conn))]
 pub fn load_all_events_from_db(conn: &Connection) -> Result<Vec<EventWithMetadata>> {
     let mut stmt = conn.prepare_cached(
         "SELECT * FROM events e WHERE e.AggregateType == 'LibraryItem' ORDER BY CreatedTimeUtc",
     )?;
 
+    // do the easy thing and load each row into a struct
+    // can get some performance wins by only getting the columns we care about, but
+    // this thing runs in sub-10ms with 3000 rows so it's not a big deal.
     let rows = from_rows::<EventRow>(stmt.query([])?);
 
     let mut events = Vec::new();
@@ -85,7 +88,6 @@ pub fn load_all_events_from_db(conn: &Connection) -> Result<Vec<EventWithMetadat
     Ok(events)
 }
 
-#[instrument]
 pub fn load_library_from_db(conn: &Connection) -> Result<Library> {
     let events = load_all_events_from_db(conn)?;
     let library = Library::build_from_events(events);
@@ -179,7 +181,6 @@ pub struct EventWithMetadata {
     pub event: Event,
 }
 
-
 impl EventWithMetadata {
     pub fn new(library_item_id: Uuid, event: Event) -> Result<EventWithMetadata> {
         let created_time_utc = Zoned::now().with_time_zone(TimeZone::UTC).datetime();
@@ -222,6 +223,7 @@ impl Library {
         }
     }
 
+    #[instrument(skip(events))]
     pub fn build_from_events(events: Vec<EventWithMetadata>) -> Self {
         let mut library = Library::new();
         for event in events {
