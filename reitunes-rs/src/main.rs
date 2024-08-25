@@ -44,7 +44,7 @@ impl fmt::Debug for AppError {
     }
 }
 
-const DB_PATH: &str = "test-library.db";
+const DB_PATH: &str = "reitunes-library.db";
 
 static DB: LazyLock<Pool<SqliteConnectionManager>> =
     LazyLock::new(|| open_connection_pool(DB_PATH).expect("Failed to create connection pool"));
