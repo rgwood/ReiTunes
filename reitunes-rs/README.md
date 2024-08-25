@@ -16,4 +16,8 @@ This is entirely single-node right now. I'm not sure whether to forge ahead with
 2. A web UI makes it especially tempting to just have a single central server
    1. If I'm already paying the complexity tax (HTTP requests, split brain thing) for web... maybe I should take advantage of that instead of treating this like a normal desktop app?
 
-Still need to implement better bookmark functionality (adding bookmarks, at least), and get it deployed to a server.
+Still need to:
+- implement better bookmark functionality (adding bookmarks, at least)
+- get it deployed to a server
+- auth?
+- figure out a workflow for adding songs (another API that gets called from the Azure Function, probably)
