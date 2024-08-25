@@ -179,6 +179,9 @@ async fn update_handler(
     let mut library = library.write().await;
     library.apply(&event_with_metadata);
 
+    let updated_item = library.items.get(&request.id).cloned();
+    // TODO: send the update item to all clients over a websocket
+
     Ok(StatusCode::OK)
 }
 
