@@ -97,6 +97,7 @@
             const player = document.getElementById('player');
             const searchInput = document.getElementById('search');
             const currentSong = document.getElementById('current-song');
+            const randomButton = document.getElementById('random-button');
 
             let table = new Tabulator("#library-table", {
                 data: {{ items|tojson|safe }},
@@ -235,6 +236,36 @@
                     ]]);
                 }, 150); // 150ms delay
             });
+
+            // Function to get all bookmarks from the table data
+            function getAllBookmarks() {
+                let allBookmarks = [];
+                table.getData().forEach(row => {
+                    Object.values(row.bookmarks).forEach(bookmark => {
+                        allBookmarks.push({
+                            rowId: row.id,
+                            position: bookmark.position,
+                            emoji: bookmark.emoji || '🔖'
+                        });
+                    });
+                });
+                return allBookmarks;
+            }
+
+            // Function to play a random bookmark
+            function playRandomBookmark() {
+                const bookmarks = getAllBookmarks();
+                if (bookmarks.length === 0) {
+                    alert("No bookmarks found in the library.");
+                    return;
+                }
+                const randomBookmark = bookmarks[Math.floor(Math.random() * bookmarks.length)];
+                const rowData = table.getRow(randomBookmark.rowId).getData();
+                playSong(rowData, randomBookmark.position);
+            }
+
+            // Add event listener for the random button
+            randomButton.addEventListener('click', playRandomBookmark);
         });
     </script>
 </body>
