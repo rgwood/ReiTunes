@@ -154,6 +154,14 @@
                 player.play();
                 updateCurrentSong(rowData);
                 
+                // Select the row in the table
+                table.deselectRow();
+                table.selectRow(rowData.id);
+                
+                // Scroll to the selected row
+                let row = table.getRow(rowData.id);
+                row.scrollTo();
+                
                 if (prevSrc !== player.src) {
                     // Send request to update play count
                     fetch('/ui/play', {
