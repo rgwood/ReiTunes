@@ -55,6 +55,10 @@ static DB: LazyLock<Pool<SqliteConnectionManager>> =
 struct Cli {
     #[command(subcommand)]
     command: Option<Commands>,
+
+    /// Enable live reload for development
+    #[arg(long)]
+    live_reload: bool,
 }
 
 #[derive(Subcommand)]
@@ -86,14 +90,18 @@ async fn main() -> Result<()> {
             drop(conn);
             let shared_state = Arc::new(RwLock::new(library));
 
-            let app = Router::new()
+            let mut app = Router::new()
                 .route("/", get(index_handler))
                 .route("/allevents", get(all_events_handler))
                 .route("/ui/update", post(update_handler))
                 .route("/ui/play", post(play_handler))
                 .route("/*file", get(static_handler))
-                .with_state(shared_state)
-                .layer(LiveReloadLayer::new());
+                .with_state(shared_state);
+
+            if cli.live_reload {
+                app = app.layer(LiveReloadLayer::new());
+                info!("Live reload enabled");
+            }
 
             let listener = tokio::net::TcpListener::bind("127.0.0.1:5000")
                 .await
