@@ -1,28 +1,19 @@
-I've been trying to tidy up ReiTunes.Blazor and I am not particularly enjoying it. Maybe I can rewrite the core event sourcing functionality in Rust and keep it backwards-compatible with the existing database format?
+This is a Rust + web UI port of ReiTunes. It can view+edit+play back audio using a local library database and audio files in cloud storage.
 
-Everything in here is extremely WIP.
+## Motivation/background
 
-## TODO
+I'm giving up on ReiTunes.Blazor; I'm not particularly enjoying working in .NET these days.
 
-- [x] Read a row from the DB into a struct w/ a string Serialized column
-- [x] Make an event enum
-- [x] Figure out how to map the events table rows to Rust idiomatically. Can't really do interfaces like in C#
-- [x] Create LibraryItem and Bookmark structs
-- [ ] Implement editing.
-- [ ] Write some tests for applying events to a single node
-- [ ] Port C# tests for multiple nodes / syncing
+I want to be in Rust, and the easiest way to do that is with web UI. The web platform already has a ton of useful stuff like an <audio> player that can handle seeking etc. 
 
-## Thoughts
+Someday it might be fun to explore something like Iced for the GUI but that will involve a lot of work. Would need to roll my own player widget and a lot of code for audio, files, network access etc.
 
-There's a ton of super redundant data in the Serialized column... how far do I want to go to maintain backwards compatibility?
-If I redesign things I will need to replace *everything* in C#. Server and serverless function. But maybe that's OK.
-Leaning toward redesigning and simplifying. Ignore unused fields in the serialized column.
+## Future work
 
+This is entirely single-node right now. I'm not sure whether to forge ahead with the original multi-node offline-first vision. It still appeals to me, but:
 
-# Sunday plan of attack
+1. I'm not 100% offline very often
+2. A web UI makes it especially tempting to just have a single central server
+   1. If I'm already paying the complexity tax (HTTP requests, split brain thing) for web... maybe I should take advantage of that instead of treating this like a normal desktop app?
 
-- Implement LibraryItemCreated and LibraryItemPlayed
-    - Add an apply() fn
-    - Add a struct for LibraryItem
-- Get Aider to implement the rest
-- Get Aider to write a bunch of tests
+Still need to implement better bookmark functionality (adding bookmarks, at least), and get it deployed to a server.
