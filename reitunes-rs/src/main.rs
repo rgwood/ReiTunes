@@ -1,15 +1,23 @@
 use anyhow::Result;
 use askama::Template;
 use axum::{
-    body::Body, extract::{Json as JsonExtractor, State}, http::{header, StatusCode, Uri}, response::{Html, IntoResponse, Json, Response}, routing::{get, post}, Router
+    body::Body,
+    extract::{Json as JsonExtractor, State, WebSocketUpgrade},
+    http::{header, StatusCode, Uri},
+    response::{Html, IntoResponse, Json, Response},
+    routing::{get, post},
+    Router,
 };
+use axum_extra::TypedHeader;
 use clap::{builder::Styles, Parser, Subcommand};
+use futures::{SinkExt, StreamExt};
 use r2d2::Pool;
 use r2d2_sqlite::SqliteConnectionManager;
 use reitunes_rs::*;
 use rust_embed::RustEmbed;
 use serde::Deserialize;
 use serde_json::json;
+use tokio::sync::broadcast;
 use tower_livereload::LiveReloadLayer;
 use std::fmt;
 use std::sync::{Arc, LazyLock};
@@ -90,13 +98,17 @@ async fn main() -> Result<()> {
             drop(conn);
             let shared_state = Arc::new(RwLock::new(library));
 
+            // Create a broadcast channel for library updates
+            let (tx, _rx) = broadcast::channel(100);
+
             let mut app = Router::new()
                 .route("/", get(index_handler))
                 .route("/allevents", get(all_events_handler))
                 .route("/ui/update", post(update_handler))
                 .route("/ui/play", post(play_handler))
+                .route("/updates", get(updates_handler))
                 .route("/*file", get(static_handler))
-                .with_state(shared_state);
+                .with_state((shared_state, tx));
 
             if cli.live_reload {
                 app = app.layer(LiveReloadLayer::new());
@@ -112,6 +124,39 @@ async fn main() -> Result<()> {
     }
 
     Ok(())
+}
+
+async fn updates_handler(
+    ws: WebSocketUpgrade,
+    State((_, tx)): State<(Arc<RwLock<Library>>, broadcast::Sender<LibraryItem>)>,
+) -> impl IntoResponse {
+    ws.on_upgrade(|socket| handle_socket(socket, tx))
+}
+
+async fn handle_socket(socket: axum::extract::ws::WebSocket, tx: broadcast::Sender<LibraryItem>) {
+    let mut rx = tx.subscribe();
+
+    let (mut sender, mut receiver) = socket.split();
+
+    let mut send_task = tokio::spawn(async move {
+        while let Ok(item) = rx.recv().await {
+            let msg = serde_json::to_string(&item).unwrap();
+            if sender.send(axum::extract::ws::Message::Text(msg)).await.is_err() {
+                break;
+            }
+        }
+    });
+
+    let mut recv_task = tokio::spawn(async move {
+        while let Some(Ok(_)) = receiver.next().await {
+            // Here you can handle incoming messages if needed
+        }
+    });
+
+    tokio::select! {
+        _ = (&mut send_task) => recv_task.abort(),
+        _ = (&mut recv_task) => send_task.abort(),
+    };
 }
 
 #[derive(Template)]
@@ -165,7 +210,7 @@ struct UpdateRequest {
 }
 
 async fn update_handler(
-    State(library): State<Arc<RwLock<Library>>>,
+    State((library, tx)): State<(Arc<RwLock<Library>>, broadcast::Sender<LibraryItem>)>,
     JsonExtractor(request): JsonExtractor<UpdateRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let event = create_update_event(&request.field, &request.value)?;
@@ -179,8 +224,10 @@ async fn update_handler(
     let mut library = library.write().await;
     library.apply(&event_with_metadata);
 
-    let updated_item = library.items.get(&request.id).cloned();
-    // TODO: send the update item to all clients over a websocket
+    if let Some(updated_item) = library.items.get(&request.id).cloned() {
+        // Broadcast the updated item to all connected clients
+        let _ = tx.send(updated_item);
+    }
 
     Ok(StatusCode::OK)
 }

@@ -113,6 +113,13 @@
                 ],
             });
 
+            // Connect to WebSocket for real-time updates
+            const socket = new WebSocket(`ws://${window.location.host}/updates`);
+            socket.onmessage = function(event) {
+                const updatedItem = JSON.parse(event.data);
+                table.updateOrAddData([updatedItem]);
+            };
+
             table.on("cellClick", function(e, cell) {
                 if (cell.getColumn().getField() !== "bookmarks") {
                     let rowData = cell.getRow().getData();
