@@ -10,6 +10,7 @@ use reitunes_rs::*;
 use rust_embed::RustEmbed;
 use serde::Deserialize;
 use serde_json::json;
+use tower_livereload::LiveReloadLayer;
 use std::fmt;
 use std::sync::{Arc, LazyLock};
 use tokio::sync::RwLock;
@@ -91,7 +92,8 @@ async fn main() -> Result<()> {
                 .route("/ui/update", post(update_handler))
                 .route("/ui/play", post(play_handler))
                 .route("/*file", get(static_handler))
-                .with_state(shared_state);
+                .with_state(shared_state)
+                .layer(LiveReloadLayer::new());
 
             let listener = tokio::net::TcpListener::bind("127.0.0.1:5000")
                 .await
