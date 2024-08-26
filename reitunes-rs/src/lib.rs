@@ -3,7 +3,6 @@ use indexmap::IndexMap;
 use jiff::{civil::DateTime, tz::TimeZone, Zoned};
 use r2d2::Pool;
 use r2d2_sqlite::SqliteConnectionManager;
-use reqwest;
 use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
 use serde_rusqlite::*;
@@ -80,10 +79,7 @@ pub fn load_all_events_from_db(conn: &Connection) -> Result<Vec<EventWithMetadat
         events.push(event);
     }
 
-    info!(
-        event_count = events.len(),
-        "Loaded all events from db"
-    );
+    info!(event_count = events.len(), "Loaded all events from db");
 
     Ok(events)
 }
@@ -143,7 +139,8 @@ pub mod duration_serde_seconds {
     where
         S: Serializer,
     {
-        let seconds = duration.as_secs() as f64 + f64::from(duration.subsec_nanos()) / 1_000_000_000.0;
+        let seconds =
+            duration.as_secs() as f64 + f64::from(duration.subsec_nanos()) / 1_000_000_000.0;
         serializer.serialize_f64(seconds)
     }
 
@@ -207,8 +204,6 @@ impl EventWithMetadata {
             event,
         })
     }
-
-    
 }
 
 #[derive(Clone, Default)]
@@ -281,9 +276,9 @@ impl Library {
             } => {
                 if let Some(item) = self.items.get_mut(&event.aggregate_id) {
                     item.bookmarks.insert(
-                        bookmark_id.clone(),
+                        *bookmark_id,
                         Bookmark {
-                            position: position.clone(),
+                            position: *position,
                             emoji: String::new(),
                         },
                     );

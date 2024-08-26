@@ -14,13 +14,12 @@ use r2d2_sqlite::SqliteConnectionManager;
 use reitunes_rs::*;
 use rust_embed::RustEmbed;
 use serde::Deserialize;
-use serde_json::json;
 use std::sync::{Arc, LazyLock};
 use std::{fmt, net::SocketAddr};
+use tokio::sync::broadcast;
 use tokio::sync::RwLock;
-use tokio::sync::{broadcast, Mutex};
 use tower_livereload::LiveReloadLayer;
-use tracing::info;
+use tracing::{info, warn};
 
 mod systemd;
 
@@ -253,16 +252,14 @@ async fn play_handler(
     let mut library = app_state.library.write().await;
     library.apply(&event_with_metadata);
 
-    // TODO: send the updated item over the websocket instead of this
+    if let Some(updated_item) = library.items.get(&request.id).cloned() {
+        // Broadcast the updated item to all connected clients
+        let _ = app_state.update_tx.send(updated_item);
+    } else {
+        warn!(id=?request.id, "Received play event for unknown item");
+    }
 
-    // Get the updated play count
-    let new_play_count = library
-        .items
-        .get(&request.id)
-        .map(|item| item.play_count)
-        .unwrap_or(0);
-
-    Ok(Json(json!({ "new_play_count": new_play_count })))
+    Ok(StatusCode::OK)
 }
 
 fn create_update_event(field: &str, value: &str) -> Result<Event> {
