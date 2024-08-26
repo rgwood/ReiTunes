@@ -11,12 +11,12 @@
     <!-- <link href="https://unpkg.com/tabulator-tables@6.2.0/dist/css/tabulator_midnight.min.css" rel="stylesheet"> -->
     <link rel="preload" href="/ConsolasNerdFont.woff2" as="font" type="font/woff2" crossorigin>
     <style>
-      @font-face {
-        font-family: 'Consolas NF';
-        src: url('/ConsolasNerdFont.woff2') format('woff2');
-        font-weight: normal;
-        font-style: normal;
-      }
+        @font-face {
+            font-family: 'Consolas NF';
+            src: url('/ConsolasNerdFont.woff2') format('woff2');
+            font-weight: normal;
+            font-style: normal;
+        }
     </style>
     <style>
         {% include "tabulator_solarized.css" %}
@@ -65,52 +65,56 @@
     </style>
 </head>
 
-<body class="bg-solarized-base03 text-solarized-base1 font-['Consolas_NF'] overflow-x-hidden overflow-y-auto box-border relative">
+<body
+    class="bg-solarized-base03 text-solarized-base1 font-['Consolas_NF'] overflow-x-hidden overflow-y-auto box-border relative">
     <div class="sticky top-0 bg-solarized-base03 pt-5 px-5 pb-3 z-10">
         <div class="flex justify-between items-center mb-3">
-            <div id="now-playing" class="text-2xl flex-grow"><span id="current-song" class="text-solarized-blue text-shadow-solarized">No song selected</span></div>
+            <div id="now-playing" class="text-2xl flex-grow"><span id="current-song"
+                    class="text-solarized-blue text-shadow-solarized">No song selected</span></div>
             <div class="flex items-center space-x-2">
                 <div class="relative w-48">
-                    <input type="text" id="search" name="query" placeholder="Search..." 
-                           class="w-full px-2 py-1 bg-solarized-base03 text-solarized-base1 border border-solarized-blue text-lg placeholder-solarized-base00"
-                           autocomplete="off">
+                    <input type="text" id="search" name="query" placeholder="Search..."
+                        class="w-full px-2 py-1 bg-solarized-base03 text-solarized-base1 border border-solarized-blue text-lg placeholder-solarized-base00"
+                        autocomplete="off">
                 </div>
-                <button id="bookmark-button" class="px-3 py-1 bg-solarized-blue text-solarized-base03 rounded hover:bg-solarized-cyan transition-colors duration-300">
+                <button id="bookmark-button"
+                    class="px-3 py-1 bg-solarized-blue text-solarized-base03 rounded hover:bg-solarized-cyan transition-colors duration-300">
                     🔖
                 </button>
-                <button id="random-button" class="px-3 py-1 bg-solarized-blue text-solarized-base03 rounded hover:bg-solarized-cyan transition-colors duration-300">
+                <button id="random-button"
+                    class="px-3 py-1 bg-solarized-blue text-solarized-base03 rounded hover:bg-solarized-cyan transition-colors duration-300">
                     🎲
                 </button>
             </div>
         </div>
         <audio id="player" controls class="w-full mb-3 bg-solarized-base02 border border-solarized-blue"></audio>
     </div>
-    
+
     <div class="px-5">
         <div id="library-table" class="border-solarized-base01"></div>
-    <script>
-        document.addEventListener('DOMContentLoaded', () => {
-            const player = document.getElementById('player');
-            const searchInput = document.getElementById('search');
-            const currentSong = document.getElementById('current-song');
-            const randomButton = document.getElementById('random-button');
+        <script>
+            document.addEventListener('DOMContentLoaded', () => {
+                const player = document.getElementById('player');
+                const searchInput = document.getElementById('search');
+                const currentSong = document.getElementById('current-song');
+                const randomButton = document.getElementById('random-button');
 
-            let table = new Tabulator("#library-table", {
-                data: {{ items|tojson|safe }},
+                let table = new Tabulator("#library-table", {
+                    data: {{ items| tojson | safe }},
                 autoResize: true,
                 layout: "fitDataFill",
-                editTriggerEvent:"dblclick",
+                editTriggerEvent: "dblclick",
                 selectableRows: 1,
                 columns: [
-                    {title: "Name", field: "name", editor: "input", width: "30%"},
-                    {title: "Artist", field: "artist", editor: "input", width: "20%"},
-                    {title: "Album", field: "album", editor: "input", width: "20%"},
-                    {title: "Play Count", field: "play_count", width: "15%", sorter: "number"},
-                    {title: "Bookmarks", field: "bookmarks", formatter: bookmarkFormatter, width: "15%"}
-                ],
+                { title: "Name", field: "name", editor: "input", width: "30%" },
+                { title: "Artist", field: "artist", editor: "input", width: "20%" },
+                { title: "Album", field: "album", editor: "input", width: "20%" },
+                { title: "Play Count", field: "play_count", width: "15%", sorter: "number" },
+                { title: "Bookmarks", field: "bookmarks", formatter: bookmarkFormatter, width: "15%" }
+            ],
                 initialSort: [
-                    {column: "play_count", dir: "desc"}
-                ],
+                { column: "play_count", dir: "desc" }
+            ],
             });
 
             // Connect to WebSocket for real-time updates
@@ -119,18 +123,18 @@
             // https => wss
             url.protocol = url.protocol.replace("http", "ws");
             const socket = new WebSocket(url.href);
-            socket.onmessage = function(event) {
+            socket.onmessage = function (event) {
                 const updatedItem = JSON.parse(event.data);
                 table.updateOrAddData([updatedItem]);
             };
 
-            table.on("cellClick", function(e, cell) {
+            table.on("cellClick", function (e, cell) {
                 if (cell.getColumn().getField() !== "bookmarks") {
                     let rowData = cell.getRow().getData();
                     let currentSrc = player.src;
                     let currentTime = player.currentTime;
                     let newSrc = encodeURI(`https://reitunes.blob.core.windows.net/music/${rowData.file_path}`);
-                    
+
                     // Only play the song if it's not already playing
                     if (currentSrc !== newSrc) {
                         playSong(rowData);
@@ -138,7 +142,7 @@
                 }
             });
 
-            table.on("cellEdited", function(cell) {
+            table.on("cellEdited", function (cell) {
                 updateField(cell);
             });
 
@@ -160,11 +164,11 @@
                 player.currentTime = startPosition;
                 player.play();
                 updateCurrentSong(rowData);
-                
+
                 // Select the row in the table
                 table.deselectRow();
                 table.selectRow(rowData.id);
-                
+
                 if (prevSrc !== player.src) {
                     // Send request to update play count
                     fetch('/ui/play', {
@@ -172,25 +176,19 @@
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ id: rowData.id }),
                     })
-                    .then(response => {
-                        if (!response.ok) {
-                            throw new Error(`Response status: ${response.status}`);
-                        }
-                        return response.json();
-                    })
-                    .then(data => {
-                        // Update the play count in the table
-                        let row = table.getRow(rowData.id);
-                        row.update({ play_count: data.new_play_count });
-                    })
-                    .catch(error => {
-                        console.error('Error:', error);
-                    });
+                        .then(response => {
+                            if (!response.ok) {
+                                throw new Error(`Response status: ${response.status}`);
+                            }
+                        })
+                        .catch(error => {
+                            console.error('Error:', error);
+                        });
                 }
             }
 
             // Add event delegation for bookmark clicks
-            document.getElementById('library-table').addEventListener('click', function(e) {
+            document.getElementById('library-table').addEventListener('click', function (e) {
                 if (e.target.classList.contains('bookmark-emoji')) {
                     const rowId = e.target.getAttribute('data-row-id');
                     const position = parseFloat(e.target.getAttribute('data-position'));
@@ -220,31 +218,31 @@
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ id: rowData.id, field: field, value: newValue }),
                 })
-                .then(response => {
-                    if (!response.ok) {
-                        throw new Error(`Response status: ${response.status}`);
-                    }
-                })
-                .catch(error => {
-                    console.error('Error:', error);
-                    alert('Failed to update field');
-                    cell.restoreOldValue();
-                });
+                    .then(response => {
+                        if (!response.ok) {
+                            throw new Error(`Response status: ${response.status}`);
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Error:', error);
+                        alert('Failed to update field');
+                        cell.restoreOldValue();
+                    });
             }
 
             document.addEventListener('keydown', handleKeyDown);
 
             let debounceTimer;
-            searchInput.addEventListener('input', function(e) {
+            searchInput.addEventListener('input', function (e) {
                 clearTimeout(debounceTimer);
                 debounceTimer = setTimeout(() => {
                     // double array for OR condition (magic Tabulator syntax)
                     table.setFilter(
-                    [[
-                        {field: "name", type: "like", value: e.target.value},
-                        {field: "artist", type: "like", value: e.target.value},
-                        {field: "album", type: "like", value: e.target.value},
-                    ]]);
+                        [[
+                            { field: "name", type: "like", value: e.target.value },
+                            { field: "artist", type: "like", value: e.target.value },
+                            { field: "album", type: "like", value: e.target.value },
+                        ]]);
                 }, 150); // 150ms delay
             });
 
@@ -278,7 +276,7 @@
             // Add event listener for the random button
             randomButton.addEventListener('click', playRandomBookmark);
         });
-    </script>
+        </script>
 </body>
 
 </html>
