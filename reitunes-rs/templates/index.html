@@ -114,7 +114,11 @@
             });
 
             // Connect to WebSocket for real-time updates
-            const socket = new WebSocket(`ws://${window.location.host}/updates`);
+            let url = new URL("/updates", window.location.href);
+            // http => ws
+            // https => wss
+            url.protocol = url.protocol.replace("http", "ws");
+            const socket = new WebSocket(url.href);
             socket.onmessage = function(event) {
                 const updatedItem = JSON.parse(event.data);
                 table.updateOrAddData([updatedItem]);

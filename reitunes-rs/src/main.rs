@@ -2,26 +2,24 @@ use anyhow::Result;
 use askama::Template;
 use axum::{
     body::Body,
-    extract::{Json as JsonExtractor, State, WebSocketUpgrade},
+    extract::{ConnectInfo, Json as JsonExtractor, State, WebSocketUpgrade},
     http::{header, StatusCode, Uri},
     response::{Html, IntoResponse, Json, Response},
     routing::{get, post},
     Router,
 };
-use axum_extra::TypedHeader;
 use clap::{builder::Styles, Parser, Subcommand};
-use futures::{SinkExt, StreamExt};
 use r2d2::Pool;
 use r2d2_sqlite::SqliteConnectionManager;
 use reitunes_rs::*;
 use rust_embed::RustEmbed;
 use serde::Deserialize;
 use serde_json::json;
-use tokio::sync::broadcast;
-use tower_livereload::LiveReloadLayer;
-use std::fmt;
 use std::sync::{Arc, LazyLock};
+use std::{fmt, net::SocketAddr};
 use tokio::sync::RwLock;
+use tokio::sync::{broadcast, Mutex};
+use tower_livereload::LiveReloadLayer;
 use tracing::info;
 
 mod systemd;
@@ -75,12 +73,18 @@ enum Commands {
     Install,
 }
 
+#[derive(Clone)]
+struct AppState {
+    library: Arc<RwLock<Library>>,
+    // used to broadcast updates to all connected clients
+    update_tx: broadcast::Sender<LibraryItem>,
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
-    // Initialize tracing
     tracing_subscriber::fmt()
-    .with_span_events(tracing_subscriber::fmt::format::FmtSpan::CLOSE)
-    .init();
+        .with_span_events(tracing_subscriber::fmt::format::FmtSpan::CLOSE)
+        .init();
 
     let cli = Cli::parse();
 
@@ -96,10 +100,12 @@ async fn main() -> Result<()> {
             // important to drop after using to return the connection to the pool
             // leaving this connection open slows writes down ~100x (from 0.2 ms to 20 ms)
             drop(conn);
-            let shared_state = Arc::new(RwLock::new(library));
+            // let shared_state = Arc::new(RwLock::new(library));
 
-            // Create a broadcast channel for library updates
-            let (tx, _rx) = broadcast::channel(100);
+            let app_state = AppState {
+                library: Arc::new(RwLock::new(library)),
+                update_tx: broadcast::channel(100).0,
+            };
 
             let mut app = Router::new()
                 .route("/", get(index_handler))
@@ -108,7 +114,7 @@ async fn main() -> Result<()> {
                 .route("/ui/play", post(play_handler))
                 .route("/updates", get(updates_handler))
                 .route("/*file", get(static_handler))
-                .with_state((shared_state, tx));
+                .with_state(app_state);
 
             if cli.live_reload {
                 app = app.layer(LiveReloadLayer::new());
@@ -119,7 +125,9 @@ async fn main() -> Result<()> {
                 .await
                 .unwrap();
             info!("Server running on http://localhost:5000");
-            axum::serve(listener, app).await.unwrap();
+            // this is needed to make SocketAddr available to handlers
+            let make_service = app.into_make_service_with_connect_info::<SocketAddr>();
+            axum::serve(listener, make_service).await.unwrap();
         }
     }
 
@@ -128,35 +136,30 @@ async fn main() -> Result<()> {
 
 async fn updates_handler(
     ws: WebSocketUpgrade,
-    State((_, tx)): State<(Arc<RwLock<Library>>, broadcast::Sender<LibraryItem>)>,
+    State(app_state): State<AppState>,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
 ) -> impl IntoResponse {
-    ws.on_upgrade(|socket| handle_socket(socket, tx))
+    info!(addr = ?addr, "WebSocket upgrade request");
+    ws.on_upgrade(move |socket| handle_websocket(socket, app_state.update_tx, addr))
 }
 
-async fn handle_socket(socket: axum::extract::ws::WebSocket, tx: broadcast::Sender<LibraryItem>) {
+async fn handle_websocket(
+    mut socket: axum::extract::ws::WebSocket,
+    tx: broadcast::Sender<LibraryItem>,
+    addr: SocketAddr,
+) {
+    info!(addr = ?addr, "WebSocket connected");
     let mut rx = tx.subscribe();
-
-    let (mut sender, mut receiver) = socket.split();
-
-    let mut send_task = tokio::spawn(async move {
-        while let Ok(item) = rx.recv().await {
-            let msg = serde_json::to_string(&item).unwrap();
-            if sender.send(axum::extract::ws::Message::Text(msg)).await.is_err() {
-                break;
-            }
+    while let Ok(item) = rx.recv().await {
+        let msg = serde_json::to_string(&item).unwrap();
+        if socket
+            .send(axum::extract::ws::Message::Text(msg))
+            .await
+            .is_err()
+        {
+            break;
         }
-    });
-
-    let mut recv_task = tokio::spawn(async move {
-        while let Some(Ok(_)) = receiver.next().await {
-            // Here you can handle incoming messages if needed
-        }
-    });
-
-    tokio::select! {
-        _ = (&mut send_task) => recv_task.abort(),
-        _ = (&mut recv_task) => send_task.abort(),
-    };
+    }
 }
 
 #[derive(Template)]
@@ -165,10 +168,8 @@ struct IndexTemplate {
     items: Vec<LibraryItem>,
 }
 
-async fn index_handler(
-    State(library): State<Arc<RwLock<Library>>>,
-) -> Result<impl IntoResponse, AppError> {
-    let library = library.read().await;
+async fn index_handler(State(app_state): State<AppState>) -> Result<impl IntoResponse, AppError> {
+    let library = app_state.library.read().await;
     let mut items: Vec<_> = library.items.values().cloned().collect();
     items.sort_by(|a, b| b.play_count.cmp(&a.play_count));
 
@@ -210,7 +211,7 @@ struct UpdateRequest {
 }
 
 async fn update_handler(
-    State((library, tx)): State<(Arc<RwLock<Library>>, broadcast::Sender<LibraryItem>)>,
+    State(app_state): State<AppState>,
     JsonExtractor(request): JsonExtractor<UpdateRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let event = create_update_event(&request.field, &request.value)?;
@@ -221,12 +222,12 @@ async fn update_handler(
     save_event_to_db(&conn, &event_with_metadata)?;
 
     // Apply the event to the library
-    let mut library = library.write().await;
+    let mut library = app_state.library.write().await;
     library.apply(&event_with_metadata);
 
     if let Some(updated_item) = library.items.get(&request.id).cloned() {
         // Broadcast the updated item to all connected clients
-        let _ = tx.send(updated_item);
+        let _ = app_state.update_tx.send(updated_item);
     }
 
     Ok(StatusCode::OK)
@@ -238,7 +239,7 @@ struct PlayRequest {
 }
 
 async fn play_handler(
-    State(library): State<Arc<RwLock<Library>>>,
+    State(app_state): State<AppState>,
     JsonExtractor(request): JsonExtractor<PlayRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let event = Event::LibraryItemPlayedEvent;
@@ -249,11 +250,15 @@ async fn play_handler(
     save_event_to_db(&conn, &event_with_metadata)?;
 
     // Apply the event to the library
-    let mut library = library.write().await;
+    let mut library = app_state.library.write().await;
     library.apply(&event_with_metadata);
 
+    // TODO: send the updated item over the websocket instead of this
+
     // Get the updated play count
-    let new_play_count = library.items.get(&request.id)
+    let new_play_count = library
+        .items
+        .get(&request.id)
         .map(|item| item.play_count)
         .unwrap_or(0);
 
@@ -283,13 +288,11 @@ async fn static_handler(uri: Uri) -> impl IntoResponse {
     StaticFile(path)
 }
 
-
 #[derive(RustEmbed)]
 #[folder = "embed/"]
 struct Asset;
 
 pub struct StaticFile<T>(pub T);
-
 
 impl<T> IntoResponse for StaticFile<T>
 where
