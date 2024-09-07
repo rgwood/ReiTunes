@@ -17,6 +17,7 @@ use r2d2_sqlite::SqliteConnectionManager;
 use reitunes_rs::*;
 use rust_embed::RustEmbed;
 use serde::Deserialize;
+use sha2::{Sha256, Digest};
 use std::sync::{Arc, LazyLock};
 use std::{fmt, net::SocketAddr};
 use tokio::sync::broadcast;
@@ -58,6 +59,13 @@ const PASSWORD: &str = match option_env!("REITUNES_PASSWORD") {
     Some(password) => password,
     None => "password",
 };
+
+static PASSWORD_HASH: LazyLock<String> = LazyLock::new(|| {
+    let mut hasher = Sha256::new();
+            hasher.update(PASSWORD);
+            let result = hasher.finalize();
+            format!("{:x}", result)
+});
 
 // "your_secure_password_here"; // Replace with your desired password
 const SESSION_COOKIE_NAME: &str = "reitunes_session";
@@ -275,6 +283,8 @@ async fn play_handler(
     Ok(StatusCode::OK)
 }
 
+// Check that the user has a valid session cookie... which is just the hashed password
+// Pretty weak authentication but this is a music library for one, not a bank
 async fn auth(
     cookies: Cookies,
     req: Request<Body>,
@@ -285,7 +295,7 @@ async fn auth(
     }
 
     if let Some(cookie) = cookies.get(SESSION_COOKIE_NAME) {
-        if cookie.value() == "authenticated" {
+        if cookie.value() == *PASSWORD_HASH {
             return Ok(next.run(req).await);
         }
     }
@@ -371,7 +381,7 @@ async fn login_post_handler(
 ) -> impl IntoResponse {
     if let Some(password) = params.get("password") {
         if password == PASSWORD {
-            let mut cookie = Cookie::new(SESSION_COOKIE_NAME, "authenticated");
+            let mut cookie = Cookie::new(SESSION_COOKIE_NAME, PASSWORD_HASH.as_str());
             cookie.set_http_only(true);
             cookie.set_path("/");
             cookies.add(cookie);

@@ -33,6 +33,7 @@ rust-embed = { version = "8.2.0", features = ["axum-ex"] }
 mime_guess = "2.0.4"
 tower-cookies = "0.10.0"
 axum-macros = "0.4.1"
+sha2 = "0.10.8"
 
 
 [profile.release]
