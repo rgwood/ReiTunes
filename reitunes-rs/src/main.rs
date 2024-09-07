@@ -2,12 +2,14 @@ use anyhow::Result;
 use askama::Template;
 use axum::{
     body::Body,
-    extract::{ConnectInfo, Json as JsonExtractor, State, WebSocketUpgrade},
-    http::{header, StatusCode, Uri},
-    response::{Html, IntoResponse, Json, Response},
+    extract::{ConnectInfo, Json as JsonExtractor, State, WebSocketUpgrade, Form},
+    http::{header, Request, StatusCode, Uri},
+    middleware::{self, Next},
+    response::{Html, IntoResponse, Json, Response, Redirect},
     routing::{get, post},
     Router,
 };
+use tower_cookies::{Cookie, CookieManagerLayer, Cookies};
 use clap::{builder::Styles, Parser, Subcommand};
 use r2d2::Pool;
 use r2d2_sqlite::SqliteConnectionManager;
@@ -51,6 +53,8 @@ impl fmt::Debug for AppError {
 }
 
 const DB_PATH: &str = "reitunes-library.db";
+const PASSWORD: &str = "your_secure_password_here"; // Replace with your desired password
+const SESSION_COOKIE_NAME: &str = "reitunes_session";
 
 static DB: LazyLock<Pool<SqliteConnectionManager>> =
     LazyLock::new(|| open_connection_pool(DB_PATH).expect("Failed to create connection pool"));
@@ -108,11 +112,14 @@ async fn main() -> Result<()> {
 
             let mut app = Router::new()
                 .route("/", get(index_handler))
+                .route("/login", get(login_handler).post(login_post_handler))
                 .route("/allevents", get(all_events_handler))
                 .route("/ui/update", post(update_handler))
                 .route("/ui/play", post(play_handler))
                 .route("/updates", get(updates_handler))
                 .route("/*file", get(static_handler))
+                .route_layer(middleware::from_fn(auth))
+                .layer(CookieManagerLayer::new())
                 .with_state(app_state);
 
             if cli.live_reload {
@@ -262,6 +269,24 @@ async fn play_handler(
     Ok(StatusCode::OK)
 }
 
+async fn auth(
+    cookies: Cookies,
+    req: Request<Body>,
+    next: Next,
+) -> Result<Response, StatusCode> {
+    if req.uri().path() == "/login" {
+        return Ok(next.run(req).await);
+    }
+
+    if let Some(cookie) = cookies.get(SESSION_COOKIE_NAME) {
+        if cookie.value() == "authenticated" {
+            return Ok(next.run(req).await);
+        }
+    }
+
+    Ok(Redirect::to("/login").into_response())
+}
+
 fn create_update_event(field: &str, value: &str) -> Result<Event> {
     match field {
         "name" => Ok(Event::LibraryItemNameChangedEvent {
@@ -323,4 +348,31 @@ pub fn clap_v3_style() -> Styles {
         .usage(AnsiColor::Green.on_default())
         .literal(AnsiColor::Green.on_default())
         .placeholder(AnsiColor::Green.on_default())
+}
+#[derive(Template)]
+#[template(path = "login.html")]
+struct LoginTemplate;
+
+async fn login_handler() -> impl IntoResponse {
+    let rendered = LoginTemplate.render().unwrap();
+    Html(rendered)
+}
+
+async fn login_post_handler(
+    Form(params): Form<std::collections::HashMap<String, String>>,
+    cookies: Cookies,
+) -> Response {
+    if let Some(password) = params.get("password") {
+        if password == PASSWORD {
+            let mut cookie = Cookie::new(SESSION_COOKIE_NAME, "authenticated");
+            cookie.set_http_only(true);
+            cookie.set_path("/");
+            cookies.add(cookie);
+            Redirect::to("/").into_response()
+        } else {
+            Redirect::to("/login").into_response()
+        }
+    } else {
+        Redirect::to("/login").into_response()
+    }
 }
