@@ -9,6 +9,7 @@ use axum::{
     routing::{get, post},
     Router,
 };
+use axum_macros::debug_handler;
 use tower_cookies::{Cookie, CookieManagerLayer, Cookies};
 use clap::{builder::Styles, Parser, Subcommand};
 use r2d2::Pool;
@@ -53,7 +54,12 @@ impl fmt::Debug for AppError {
 }
 
 const DB_PATH: &str = "reitunes-library.db";
-const PASSWORD: &str = "your_secure_password_here"; // Replace with your desired password
+const PASSWORD: &str = match option_env!("REITUNES_PASSWORD") {
+    Some(password) => password,
+    None => "password",
+};
+
+// "your_secure_password_here"; // Replace with your desired password
 const SESSION_COOKIE_NAME: &str = "reitunes_session";
 
 static DB: LazyLock<Pool<SqliteConnectionManager>> =
@@ -358,21 +364,19 @@ async fn login_handler() -> impl IntoResponse {
     Html(rendered)
 }
 
+#[debug_handler]
 async fn login_post_handler(
-    Form(params): Form<std::collections::HashMap<String, String>>,
     cookies: Cookies,
-) -> Response {
+    Form(params): Form<std::collections::HashMap<String, String>>,
+) -> impl IntoResponse {
     if let Some(password) = params.get("password") {
         if password == PASSWORD {
             let mut cookie = Cookie::new(SESSION_COOKIE_NAME, "authenticated");
             cookie.set_http_only(true);
             cookie.set_path("/");
             cookies.add(cookie);
-            Redirect::to("/").into_response()
-        } else {
-            Redirect::to("/login").into_response()
+            return Redirect::to("/").into_response()
         }
-    } else {
-        Redirect::to("/login").into_response()
-    }
+    } 
+    Redirect::to("/login").into_response()
 }
