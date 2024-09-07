@@ -7,27 +7,27 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-anyhow = "1.0.86"
-rusqlite = { version = "0.31.0", features = ["bundled"] }
-serde_rusqlite = "0.35.0"
+anyhow = "1.0.87"
+rusqlite = { version = "0.32.1", features = ["bundled"] }
+serde_rusqlite = "0.36.0"
 uuid = {version = "1.10.0", features = ["serde"]}
-serde = { version = "1.0.159", features = ["derive", "rc"] }
-serde_json = "1.0.95"
+serde = { version = "1.0.210", features = ["derive", "rc"] }
+serde_json = "1.0.128"
 time = { version = "0.3", features = ["macros", "serde-well-known"] }
 axum = { version = "0.7.5", features = ["ws"] }
-reqwest = { version = "0.12", features = ["json"] }
-tokio = { version = "1.32.0", features = ["full"] }
+reqwest = { version = "0.12.7", features = ["json"] }
+tokio = { version = "1.40.0", features = ["full"] }
 tower-http = { version = "0.5.2", features = ["fs"] }
 tower-livereload = "0.9.3"
 tracing = "0.1"
 tracing-subscriber = "0.3"
-indexmap = { version = "2.3.0", features = ["serde"] }
+indexmap = { version = "2.5.0", features = ["serde"] }
 askama = {version = "0.12.1" , features = ["serde-json"] }
-clap = { version = "4.5.1", features = ["derive"] }
+clap = { version = "4.5.17", features = ["derive"] }
 dirs = "5.0.1"
 r2d2 = "0.8.10"
-r2d2_sqlite = "0.24.0"
-jiff = { version = "0.1.4", features = ["serde"] }
+r2d2_sqlite = "0.25.0"
+jiff = { version = "0.1.12", features = ["serde"] }
 hostname = "0.4.0"
 rust-embed = { version = "8.2.0", features = ["axum-ex"] }
 mime_guess = "2.0.4"
