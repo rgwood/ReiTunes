@@ -283,26 +283,6 @@ async fn play_handler(
     Ok(StatusCode::OK)
 }
 
-// Check that the user has a valid session cookie... which is just the hashed password
-// Pretty weak authentication but this is a music library for one, not a bank
-async fn auth(
-    cookies: Cookies,
-    req: Request<Body>,
-    next: Next,
-) -> Result<Response, StatusCode> {
-    if req.uri().path() == "/login" {
-        return Ok(next.run(req).await);
-    }
-
-    if let Some(cookie) = cookies.get(SESSION_COOKIE_NAME) {
-        if cookie.value() == *PASSWORD_HASH {
-            return Ok(next.run(req).await);
-        }
-    }
-
-    Ok(Redirect::to("/login").into_response())
-}
-
 fn create_update_event(field: &str, value: &str) -> Result<Event> {
     match field {
         "name" => Ok(Event::LibraryItemNameChangedEvent {
@@ -372,6 +352,26 @@ struct LoginTemplate;
 async fn login_handler() -> impl IntoResponse {
     let rendered = LoginTemplate.render().unwrap();
     Html(rendered)
+}
+
+// Check that the user has a valid session cookie... which is just the hashed password
+// Pretty weak authentication but this is a music library for one, not a bank
+async fn auth(
+    cookies: Cookies,
+    req: Request<Body>,
+    next: Next,
+) -> Result<Response, StatusCode> {
+    if req.uri().path() == "/login" {
+        return Ok(next.run(req).await);
+    }
+
+    if let Some(cookie) = cookies.get(SESSION_COOKIE_NAME) {
+        if cookie.value() == *PASSWORD_HASH {
+            return Ok(next.run(req).await);
+        }
+    }
+
+    Ok(Redirect::to("/login").into_response())
 }
 
 #[debug_handler]
