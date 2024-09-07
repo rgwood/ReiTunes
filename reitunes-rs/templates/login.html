@@ -1,49 +1,69 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Login - ReiTunes</title>
+    <link rel="icon" href="favicon.svg" />
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preload" href="/ConsolasNerdFont.woff2" as="font" type="font/woff2" crossorigin>
     <style>
-        body {
-            font-family: Arial, sans-serif;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            height: 100vh;
-            margin: 0;
-            background-color: #f0f0f0;
+        @font-face {
+            font-family: 'Consolas NF';
+            src: url('/ConsolasNerdFont.woff2') format('woff2');
+            font-weight: normal;
+            font-style: normal;
         }
-        form {
-            background-color: white;
-            padding: 20px;
-            border-radius: 5px;
-            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+    </style>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        'solarized-base03': '#002b36',
+                        'solarized-base02': '#073642',
+                        'solarized-base01': '#586e75',
+                        'solarized-base00': '#657b83',
+                        'solarized-base0': '#839496',
+                        'solarized-base1': '#93a1a1',
+                        'solarized-base2': '#eee8d5',
+                        'solarized-base3': '#fdf6e3',
+                        'solarized-yellow': '#b58900',
+                        'solarized-orange': '#cb4b16',
+                        'solarized-red': '#dc322f',
+                        'solarized-magenta': '#d33682',
+                        'solarized-violet': '#6c71c4',
+                        'solarized-blue': '#268bd2',
+                        'solarized-cyan': '#2aa198',
+                        'solarized-green': '#859900',
+                    },
+                    boxShadow: {
+                        'solarized': '0 0 10px #268bd2',
+                    },
+                },
+            },
         }
-        input {
-            display: block;
-            margin: 10px 0;
-            padding: 5px;
-            width: 200px;
-        }
-        button {
-            background-color: #4CAF50;
-            color: white;
-            padding: 10px 15px;
-            border: none;
-            border-radius: 4px;
-            cursor: pointer;
-        }
-        button:hover {
-            background-color: #45a049;
+    </script>
+    <style>
+        @layer utilities {
+            .text-shadow-solarized {
+                text-shadow: 0 0 4px rgba(38, 139, 210, 0.5), 0 0 8px rgba(38, 139, 210, 0.5);
+            }
         }
     </style>
 </head>
-<body>
-    <form action="/login" method="POST">
-        <h2>Login to ReiTunes</h2>
-        <input type="password" name="password" placeholder="Password" required>
-        <button type="submit">Login</button>
+
+<body class="bg-solarized-base03 text-solarized-base1 font-['Consolas_NF'] flex justify-center items-center h-screen">
+    <form action="/login" method="POST" class="bg-solarized-base02 p-8 rounded-lg shadow-solarized">
+        <h2 class="text-2xl mb-6 text-solarized-blue text-shadow-solarized">Login to ReiTunes</h2>
+        <input type="password" name="password" placeholder="Password" required
+            class="w-full px-3 py-2 mb-4 bg-solarized-base03 text-solarized-base1 border border-solarized-blue rounded placeholder-solarized-base00">
+        <button type="submit"
+            class="w-full px-4 py-2 bg-solarized-blue text-solarized-base03 rounded hover:bg-solarized-cyan transition-colors duration-300">
+            Login
+        </button>
     </form>
 </body>
+
 </html>
