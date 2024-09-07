@@ -337,7 +337,7 @@ pub enum Event {
     },
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct LibraryItem {
     pub id: Uuid,
     pub name: String,

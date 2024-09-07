@@ -15,12 +15,13 @@ use r2d2::Pool;
 use r2d2_sqlite::SqliteConnectionManager;
 use reitunes_rs::*;
 use rust_embed::RustEmbed;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::sync::{Arc, LazyLock};
 use std::{fmt, net::SocketAddr};
 use tokio::sync::broadcast;
 use tokio::sync::RwLock;
+use uuid::Uuid;
 use tower_cookies::{Cookie, CookieManagerLayer, Cookies};
 use tower_livereload::LiveReloadLayer;
 use tracing::{info, warn};
@@ -144,6 +145,7 @@ async fn main() -> Result<()> {
                 .route("/allevents", get(all_events_handler))
                 .route("/ui/update", post(update_handler))
                 .route("/ui/play", post(play_handler))
+                .route("/ui/add", post(add_item_handler))
                 .route("/updates", get(updates_handler))
                 .route("/*file", get(static_handler))
                 .route_layer(middleware::from_fn(auth))
@@ -265,6 +267,62 @@ async fn update_handler(
     }
 
     Ok(StatusCode::OK)
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+struct AddItemRequest {
+    name: String,
+    file_path: String,
+    artist: String,
+    album: String,
+}
+
+#[debug_handler]
+async fn add_item_handler(
+    State(app_state): State<AppState>,
+    JsonExtractor(request): JsonExtractor<AddItemRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    let item_id = Uuid::new_v4();
+    let event = Event::LibraryItemCreatedEvent {
+        name: request.name,
+        file_path: request.file_path,
+    };
+    let event_with_metadata = EventWithMetadata::new(item_id, event)?;
+
+    // Save the event to the database
+    let conn = DB.get()?;
+    save_event_to_db(&conn, &event_with_metadata)?;
+
+    // Apply the event to the library
+    let mut library = app_state.library.write().await;
+    library.apply(&event_with_metadata);
+
+    if let Some(new_item) = library.items.get(&item_id).cloned() {
+        // Update the artist and album
+        let artist_event = Event::LibraryItemArtistChangedEvent {
+            new_artist: request.artist,
+        };
+        let artist_event_with_metadata = EventWithMetadata::new(item_id, artist_event)?;
+        save_event_to_db(&conn, &artist_event_with_metadata)?;
+        library.apply(&artist_event_with_metadata);
+
+        let album_event = Event::LibraryItemAlbumChangedEvent {
+            new_album: request.album,
+        };
+        let album_event_with_metadata = EventWithMetadata::new(item_id, album_event)?;
+        save_event_to_db(&conn, &album_event_with_metadata)?;
+        library.apply(&album_event_with_metadata);
+
+        // Get the updated item
+        let updated_item = library.items.get(&item_id).cloned().unwrap();
+
+        // Broadcast the new item to all connected clients
+        let _ = app_state.update_tx.send(updated_item);
+
+        Ok(Json(new_item).into_response())
+    } else {
+        Err(AppError(anyhow::anyhow!("Failed to create new item")))
+    }
 }
 
 #[derive(Debug, Deserialize)]
