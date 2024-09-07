@@ -2,26 +2,26 @@ use anyhow::Result;
 use askama::Template;
 use axum::{
     body::Body,
-    extract::{ConnectInfo, Json as JsonExtractor, State, WebSocketUpgrade, Form},
+    extract::{ConnectInfo, Form, Json as JsonExtractor, State, WebSocketUpgrade},
     http::{header, Request, StatusCode, Uri},
     middleware::{self, Next},
-    response::{Html, IntoResponse, Json, Response, Redirect},
+    response::{Html, IntoResponse, Json, Redirect, Response},
     routing::{get, post},
     Router,
 };
 use axum_macros::debug_handler;
-use tower_cookies::{Cookie, CookieManagerLayer, Cookies};
 use clap::{builder::Styles, Parser, Subcommand};
 use r2d2::Pool;
 use r2d2_sqlite::SqliteConnectionManager;
 use reitunes_rs::*;
 use rust_embed::RustEmbed;
 use serde::Deserialize;
-use sha2::{Sha256, Digest};
+use sha2::{Digest, Sha256};
 use std::sync::{Arc, LazyLock};
 use std::{fmt, net::SocketAddr};
 use tokio::sync::broadcast;
 use tokio::sync::RwLock;
+use tower_cookies::{Cookie, CookieManagerLayer, Cookies};
 use tower_livereload::LiveReloadLayer;
 use tracing::{info, warn};
 
@@ -60,14 +60,28 @@ const PASSWORD: &str = match option_env!("REITUNES_PASSWORD") {
     None => "password",
 };
 
+/// Hash the password with a salt that changes every quarter. Forces users to re-login every quarter.
+/// The nice thing about personal projects is that I don't have to gaf about best practices 😎
 static PASSWORD_HASH: LazyLock<String> = LazyLock::new(|| {
+    let now = jiff::Zoned::now();
+    let quarter = match now.month() / 4 {
+        0 => "Q1",
+        1 => "Q2",
+        2 => "Q3",
+        3 => "Q4",
+        _ => "Error",
+    };
+
+    // e.g. 2024-Q1
+    let year_quarter_salt = format!("{}-{}", now.year(), quarter);
+
     let mut hasher = Sha256::new();
-            hasher.update(PASSWORD);
-            let result = hasher.finalize();
-            format!("{:x}", result)
+    hasher.update(PASSWORD);
+    hasher.update(year_quarter_salt);
+    let result = hasher.finalize();
+    format!("{:x}", result)
 });
 
-// "your_secure_password_here"; // Replace with your desired password
 const SESSION_COOKIE_NAME: &str = "reitunes_session";
 
 static DB: LazyLock<Pool<SqliteConnectionManager>> =
@@ -356,11 +370,7 @@ async fn login_handler() -> impl IntoResponse {
 
 // Check that the user has a valid session cookie... which is just the hashed password
 // Pretty weak authentication but this is a music library for one, not a bank
-async fn auth(
-    cookies: Cookies,
-    req: Request<Body>,
-    next: Next,
-) -> Result<Response, StatusCode> {
+async fn auth(cookies: Cookies, req: Request<Body>, next: Next) -> Result<Response, StatusCode> {
     if req.uri().path() == "/login" {
         return Ok(next.run(req).await);
     }
@@ -385,8 +395,8 @@ async fn login_post_handler(
             cookie.set_http_only(true);
             cookie.set_path("/");
             cookies.add(cookie);
-            return Redirect::to("/").into_response()
+            return Redirect::to("/").into_response();
         }
-    } 
+    }
     Redirect::to("/login").into_response()
 }
