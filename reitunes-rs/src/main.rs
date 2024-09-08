@@ -1,5 +1,6 @@
-use anyhow::Result;
+use anyhow::{bail, Result};
 use askama::Template;
+use axum::http::HeaderMap;
 use axum::{
     body::Body,
     extract::{ConnectInfo, Form, Json as JsonExtractor, State, WebSocketUpgrade},
@@ -9,15 +10,13 @@ use axum::{
     routing::{get, post},
     Router,
 };
-use axum::http::HeaderMap;
 use axum_macros::debug_handler;
-use clap::{builder::Styles, Parser, Subcommand};
+use clap::{Parser, Subcommand};
 use r2d2::Pool;
 use r2d2_sqlite::SqliteConnectionManager;
 use reitunes_rs::*;
 use rust_embed::RustEmbed;
 use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
 use std::sync::{Arc, LazyLock};
 use std::{fmt, net::SocketAddr};
 use tokio::sync::broadcast;
@@ -25,36 +24,10 @@ use tokio::sync::RwLock;
 use tower_cookies::{Cookie, CookieManagerLayer, Cookies};
 use tower_livereload::LiveReloadLayer;
 use tracing::{info, warn};
+use utils::*;
 use uuid::Uuid;
 
 mod systemd;
-
-struct AppError(anyhow::Error);
-
-impl IntoResponse for AppError {
-    fn into_response(self) -> Response {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            format!("Something went wrong: {}", self.0),
-        )
-            .into_response()
-    }
-}
-
-impl<E> From<E> for AppError
-where
-    E: Into<anyhow::Error>,
-{
-    fn from(err: E) -> Self {
-        Self(err.into())
-    }
-}
-
-impl fmt::Debug for AppError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        fmt::Debug::fmt(&self.0, f)
-    }
-}
 
 const DB_PATH: &str = "reitunes-library.db";
 const PASSWORD: &str = match option_env!("REITUNES_PASSWORD") {
@@ -67,27 +40,7 @@ const API_KEY: &str = match option_env!("REITUNES_API_KEY") {
     None => "apikey",
 };
 
-/// Hash the password with a salt that changes every quarter. Forces users to re-login every quarter.
-/// The nice thing about personal projects is that I don't have to gaf about best practices 😎
-static PASSWORD_HASH: LazyLock<String> = LazyLock::new(|| {
-    let now = jiff::Zoned::now();
-    let quarter = match now.month() / 4 {
-        0 => "Q1",
-        1 => "Q2",
-        2 => "Q3",
-        3 => "Q4",
-        _ => "Error",
-    };
-
-    // e.g. 2024-Q1
-    let year_quarter_salt = format!("{}-{}", now.year(), quarter);
-
-    let mut hasher = Sha256::new();
-    hasher.update(PASSWORD);
-    hasher.update(year_quarter_salt);
-    let result = hasher.finalize();
-    format!("{:x}", result)
-});
+static PASSWORD_HASH: LazyLock<String> = LazyLock::new(|| hash_with_rotating_salt(PASSWORD));
 
 const SESSION_COOKIE_NAME: &str = "reitunes_session";
 
@@ -95,7 +48,7 @@ static DB: LazyLock<Pool<SqliteConnectionManager>> =
     LazyLock::new(|| open_connection_pool(DB_PATH).expect("Failed to create connection pool"));
 
 #[derive(Parser)]
-#[command(author, version, about, long_about = None, styles = clap_v3_style())]
+#[command(author, version, about, long_about = None, styles = utils::clap_v3_style())]
 struct Cli {
     #[command(subcommand)]
     command: Option<Commands>,
@@ -362,7 +315,7 @@ fn create_update_event(field: &str, value: &str) -> Result<Event> {
         "album" => Ok(Event::LibraryItemAlbumChangedEvent {
             new_album: value.to_string(),
         }),
-        _ => Err(anyhow::anyhow!("Invalid field: {}", field)),
+        _ => bail!("Invalid field: {}", field),
     }
 }
 
@@ -401,15 +354,8 @@ where
     }
 }
 
-// IMO the v3 style was nice and it's dumb that clap removed colour in v4
-pub fn clap_v3_style() -> Styles {
-    use clap::builder::styling::AnsiColor;
-    Styles::styled()
-        .header(AnsiColor::Yellow.on_default())
-        .usage(AnsiColor::Green.on_default())
-        .literal(AnsiColor::Green.on_default())
-        .placeholder(AnsiColor::Green.on_default())
-}
+mod utils;
+
 #[derive(Template)]
 #[template(path = "login.html")]
 struct LoginTemplate;
@@ -435,7 +381,11 @@ async fn auth(cookies: Cookies, req: Request<Body>, next: Next) -> Result<Respon
     Ok(Redirect::to("/login").into_response())
 }
 
-async fn api_key_auth(headers: HeaderMap, req: Request<Body>, next: Next) -> Result<Response, StatusCode> {
+async fn api_key_auth(
+    headers: HeaderMap,
+    req: Request<Body>,
+    next: Next,
+) -> Result<Response, StatusCode> {
     if let Some(api_key) = headers.get("X-API-Key") {
         if api_key == API_KEY {
             return Ok(next.run(req).await);
@@ -459,4 +409,31 @@ async fn login_post_handler(
         }
     }
     Redirect::to("/login").into_response()
+}
+
+struct AppError(anyhow::Error);
+
+impl IntoResponse for AppError {
+    fn into_response(self) -> Response {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Something went wrong: {}", self.0),
+        )
+            .into_response()
+    }
+}
+
+impl<E> From<E> for AppError
+where
+    E: Into<anyhow::Error>,
+{
+    fn from(err: E) -> Self {
+        Self(err.into())
+    }
+}
+
+impl fmt::Debug for AppError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Debug::fmt(&self.0, f)
+    }
 }
