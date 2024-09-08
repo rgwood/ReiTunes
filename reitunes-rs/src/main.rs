@@ -9,6 +9,7 @@ use axum::{
     routing::{get, post},
     Router,
 };
+use axum::http::HeaderMap;
 use axum_macros::debug_handler;
 use clap::{builder::Styles, Parser, Subcommand};
 use r2d2::Pool;
@@ -144,18 +145,21 @@ async fn main() -> Result<()> {
                 update_tx: broadcast::channel(100).0,
             };
 
+            let api_router = Router::new()
+                .route("/add", post(add_item_handler))
+                .route_layer(middleware::from_fn(api_key_auth));
+
             let mut app = Router::new()
                 .route("/", get(index_handler))
                 .route("/login", get(login_handler).post(login_post_handler))
                 .route("/allevents", get(all_events_handler))
                 .route("/ui/update", post(update_handler))
                 .route("/ui/play", post(play_handler))
-                // TODO: figure out how to make this work with auth. Server-server calls won't have cookies
-                .route("/api/add", post(add_item_handler))
                 .route("/updates", get(updates_handler))
                 .route("/*file", get(static_handler))
                 .route_layer(middleware::from_fn(auth))
                 .layer(CookieManagerLayer::new())
+                .nest("/api", api_router)
                 .with_state(app_state);
 
             if cli.live_reload {
@@ -429,6 +433,15 @@ async fn auth(cookies: Cookies, req: Request<Body>, next: Next) -> Result<Respon
     }
 
     Ok(Redirect::to("/login").into_response())
+}
+
+async fn api_key_auth(headers: HeaderMap, req: Request<Body>, next: Next) -> Result<Response, StatusCode> {
+    if let Some(api_key) = headers.get("X-API-Key") {
+        if api_key == API_KEY {
+            return Ok(next.run(req).await);
+        }
+    }
+    Err(StatusCode::UNAUTHORIZED)
 }
 
 #[debug_handler]
