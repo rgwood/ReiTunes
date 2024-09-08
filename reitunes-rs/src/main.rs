@@ -61,6 +61,11 @@ const PASSWORD: &str = match option_env!("REITUNES_PASSWORD") {
     None => "password",
 };
 
+const API_KEY: &str = match option_env!("REITUNES_API_KEY") {
+    Some(password) => password,
+    None => "apikey",
+};
+
 /// Hash the password with a salt that changes every quarter. Forces users to re-login every quarter.
 /// The nice thing about personal projects is that I don't have to gaf about best practices 😎
 static PASSWORD_HASH: LazyLock<String> = LazyLock::new(|| {
@@ -146,7 +151,7 @@ async fn main() -> Result<()> {
                 .route("/ui/update", post(update_handler))
                 .route("/ui/play", post(play_handler))
                 // TODO: figure out how to make this work with auth. Server-server calls won't have cookies
-                .route("/add", post(add_item_handler))
+                .route("/api/add", post(add_item_handler))
                 .route("/updates", get(updates_handler))
                 .route("/*file", get(static_handler))
                 .route_layer(middleware::from_fn(auth))
