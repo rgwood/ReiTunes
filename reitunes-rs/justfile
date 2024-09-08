@@ -10,6 +10,9 @@ deploy-local:
     systemctl --user daemon-reload
     systemctl --user restart reitunes
 
+build-with-secrets:
+     op run --env-file="./prod.env" -- cargo build --release
+
 run:
     cargo run
 
