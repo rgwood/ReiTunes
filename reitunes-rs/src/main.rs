@@ -234,7 +234,6 @@ async fn update_handler(
 
 #[derive(Debug, Deserialize, Serialize)]
 struct AddItemRequest {
-    name: String,
     file_path: String,
 }
 
@@ -243,14 +242,10 @@ async fn add_item_handler(
     State(app_state): State<AppState>,
     JsonExtractor(request): JsonExtractor<AddItemRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    info!(
-        name = &request.name,
-        file_path = &request.file_path,
-        "Adding new item"
-    );
+    info!(file_path = &request.file_path, "Adding new item");
     let item_id = Uuid::new_v4();
     let event = Event::LibraryItemCreatedEvent {
-        name: request.name,
+        name: request.file_path.clone(),
         file_path: request.file_path,
     };
     let event_with_metadata = EventWithMetadata::new(item_id, event)?;
