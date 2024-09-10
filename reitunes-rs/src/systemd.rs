@@ -19,7 +19,7 @@ WorkingDirectory={}
 Restart=on-failure
 
 [Install]
-WantedBy=default.target
+WantedBy=multi-user.target
 "#,
         executable_path.display(),
         working_directory.display()
