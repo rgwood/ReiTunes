@@ -14,7 +14,7 @@ use axum_macros::debug_handler;
 use clap::{Parser, Subcommand};
 use r2d2::Pool;
 use r2d2_sqlite::SqliteConnectionManager;
-use reitunes_rs::*;
+use reitunes::*;
 use rust_embed::RustEmbed;
 use serde::{Deserialize, Serialize};
 use std::sync::{Arc, LazyLock};
@@ -338,6 +338,7 @@ where
                 let mime = mime_guess::from_path(path).first_or_octet_stream();
                 Response::builder()
                     .header(header::CONTENT_TYPE, mime.as_ref())
+                    .header(header::CACHE_CONTROL, "public, max-age=31536000") // 1 year
                     .body(body)
                     .unwrap()
             }
