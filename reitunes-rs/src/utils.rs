@@ -1,6 +1,15 @@
 use clap::builder::Styles;
 use sha2::{Digest, Sha256};
 
+pub fn init_tracing() {
+    // enable ansi escape codes in debug mode only, bit of a hack to disable 'em in Datadog logs
+    let enable_ansi_colours = cfg!(debug_assertions);
+        tracing_subscriber::fmt()
+        .with_span_events(tracing_subscriber::fmt::format::FmtSpan::CLOSE)
+        .with_ansi(enable_ansi_colours)
+        .init();
+}
+
 // IMO the v3 style was nice and it's dumb that clap removed colour in v4
 pub fn clap_v3_style() -> Styles {
     use clap::builder::styling::AnsiColor;
