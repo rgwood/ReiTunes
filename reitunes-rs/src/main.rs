@@ -23,7 +23,7 @@ use tokio::sync::broadcast;
 use tokio::sync::RwLock;
 use tower_cookies::{Cookie, CookieManagerLayer, Cookies};
 use tower_livereload::LiveReloadLayer;
-use tracing::{info, warn};
+use tracing::{info, instrument, warn};
 use utils::*;
 use uuid::Uuid;
 
@@ -165,6 +165,7 @@ struct IndexTemplate {
     items: Vec<LibraryItem>,
 }
 
+#[instrument(skip(app_state))]
 async fn index_handler(State(app_state): State<AppState>) -> Result<impl IntoResponse, AppError> {
     let library = app_state.library.read().await;
     let mut items: Vec<_> = library.items.values().cloned().collect();
