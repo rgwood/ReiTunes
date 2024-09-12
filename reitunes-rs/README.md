@@ -18,6 +18,4 @@ This is entirely single-node right now. I'm not sure whether to forge ahead with
 
 Still need to:
 - implement better bookmark functionality (adding bookmarks, at least)
-- get it deployed to a server
-- auth?
 - figure out a workflow for adding songs (another API that gets called from the Azure Function, probably)
