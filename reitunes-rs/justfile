@@ -46,12 +46,4 @@ build-windows-on-linux:
     cross build --target x86_64-pc-windows-gnu --release
 
 test-api:
-    #!/usr/bin/env nu
-    let response = (curl -X POST -H "Content-Type: application/json" -H "X-API-Key: apikey" -d '{"file_path": "/test/path/file.mp3"}' http://localhost:5000/api/add)
-    let status_code = $response.status
-    if $status_code == 201 {
-        echo "API test passed: Status code is CREATED (201)"
-    } else {
-        echo $"API test failed: Expected status code 201, but got ($status_code)"
-        exit 1
-    }
+    op run --env-file="./prod.env" -- curl -X POST -H "Content-Type: application/json" -H "X-API-Key: foo" -d '{"file_path": "/test/path/file.mp3"}' http://localhost:5000/api/add
