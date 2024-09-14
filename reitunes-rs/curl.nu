@@ -1,0 +1,2 @@
+
+curl -s -o /dev/null -w "%{http_code}" -X POST -H "Content-Type: application/json" -H $"X-API-Key: ($env.REITUNES_API_KEY)" -d '{"file_path": "/test/path/file.mp3"}' http://($env.REITUNES_HOSTNAME)/api/add

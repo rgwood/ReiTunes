@@ -51,3 +51,6 @@ test-api:
 
 test-api-prod:
     op run --env-file="./prod.env" -- curl -s -o /dev/null -w "%{http_code}" -X POST -H "Content-Type: application/json" -H "X-API-Key: \${REITUNES_API_KEY}" -d '{"file_path": "/test/path/file.mp3"}' http://\${REITUNES_HOSTNAME}/api/add
+
+test-api-nu:
+    op run --env-file="./prod.env" -- nu curl.nu
