@@ -46,4 +46,8 @@ build-windows-on-linux:
     cross build --target x86_64-pc-windows-gnu --release
 
 test-api:
-    op run --env-file="./prod.env" -- curl -X POST -H "Content-Type: application/json" -H $"X-API-Key: ($env.REITUNES_API_KEY)" -d '{"file_path": "/test/path/file.mp3"}' http://localhost:5000/api/add
+    op run --env-file="./prod.env" -- curl -X POST -H "Content-Type: application/json" -H "X-API-Key: \${REITUNES_API_KEY}" -d '{"file_path": "/test/path/file.mp3"}' http://localhost:5000/api/add
+
+
+test-api-prod::
+    op run --env-file="./prod.env" -- curl -X POST -H "Content-Type: application/json" -H "X-API-Key: \${REITUNES_API_KEY}" -d '{"file_path": "/test/path/file.mp3"}' http://localhost:5000/api/add
