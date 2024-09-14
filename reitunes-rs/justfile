@@ -1,4 +1,5 @@
-set shell := ["nu", "-c"]
+# switching back to bash for now
+# set shell := ["nu", "-c"]
 
 watch:
     watchexec --exts=rs,sql,html,css,js --on-busy-update=restart -- cargo run -- --live-reload
@@ -49,5 +50,6 @@ test-api:
     op run --env-file="./prod.env" -- curl -X POST -H "Content-Type: application/json" -H "X-API-Key: \${REITUNES_API_KEY}" -d '{"file_path": "/test/path/file.mp3"}' http://localhost:5000/api/add
 
 
-test-api-prod::
-    op run --env-file="./prod.env" -- curl -X POST -H "Content-Type: application/json" -H "X-API-Key: \${REITUNES_API_KEY}" -d '{"file_path": "/test/path/file.mp3"}' http://\${REITUNES_HOSTNAME}/api/add
+test-api-prod:
+    # TODO: make this use $REITUNES_HOSTNAME instead of hardcoding localhost:5000
+    op run --env-file="./prod.env" -- curl -v -X POST -H "Content-Type: application/json" -H "X-API-Key: \${REITUNES_API_KEY}" -d '{"file_path": "/test/path/file.mp3"}' http://localhost:5000/api/add
