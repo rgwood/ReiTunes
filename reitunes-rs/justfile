@@ -47,9 +47,7 @@ build-windows-on-linux:
     cross build --target x86_64-pc-windows-gnu --release
 
 test-api:
-    op run --env-file="./prod.env" -- curl -X POST -H "Content-Type: application/json" -H "X-API-Key: \${REITUNES_API_KEY}" -d '{"file_path": "/test/path/file.mp3"}' http://localhost:5000/api/add
-
+    op run --env-file="./prod.env" -- curl -s -o /dev/null -w "%{http_code}" -X POST -H "Content-Type: application/json" -H "X-API-Key: \${REITUNES_API_KEY}" -d '{"file_path": "/test/path/file.mp3"}' http://localhost:5000/api/add
 
 test-api-prod:
-    # TODO: make this use $REITUNES_HOSTNAME instead of hardcoding localhost:5000
-    op run --env-file="./prod.env" -- curl -v -X POST -H "Content-Type: application/json" -H "X-API-Key: \${REITUNES_API_KEY}" -d '{"file_path": "/test/path/file.mp3"}' http://localhost:5000/api/add
+    op run --env-file="./prod.env" -- curl -s -o /dev/null -w "%{http_code}" -X POST -H "Content-Type: application/json" -H "X-API-Key: \${REITUNES_API_KEY}" -d '{"file_path": "/test/path/file.mp3"}' http://\${REITUNES_HOSTNAME}/api/add
