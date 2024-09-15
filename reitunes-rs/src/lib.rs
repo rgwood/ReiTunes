@@ -279,14 +279,15 @@ impl Library {
                         "🎵", "🎶", "🎼", "🎧", "🎤", "🎹", "🎷", "🎺", "🎸", "🥁", "🪕", "🎻",
                     ];
                     
-                    // TODO: hash the library item id and the bookmark id to get a consistent emoji
-                    let emoji_index = 0;
+                    // Hash the library item id and the bookmark id to get a consistent emoji
+                    let hash = event.aggregate_id.as_u128() ^ bookmark_id.as_u128();
+                    let emoji_index = (hash % music_emoji.len() as u128) as usize;
 
                     item.bookmarks.insert(
                         *bookmark_id,
                         Bookmark {
                             position: *position,
-                            emoji: music_emoji[emoji_index as usize].to_string(),
+                            emoji: music_emoji[emoji_index].to_string(),
                         },
                     );
                     item.bookmarks
