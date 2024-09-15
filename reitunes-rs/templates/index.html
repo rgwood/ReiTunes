@@ -166,7 +166,7 @@
                     let minutes = Math.floor(bookmark.position / 60);
                     let seconds = Math.floor(bookmark.position % 60);
                     let timeString = `${minutes}:${seconds.toString().padStart(2, '0')}`;
-                    return `<span class="bookmark-emoji cursor-pointer mr-2 text-lg" data-position="${bookmark.position}" data-row-id="${cell.getRow().getData().id}" title="${timeString}">${bookmark.emoji || '🔖'}</span>`;
+                    return `<span class="bookmark-emoji cursor-pointer mr-2 text-lg hover:text-solarized-base03 hover:bg-solarized-blue rounded px-1 transition-all duration-300" data-position="${bookmark.position}" data-row-id="${cell.getRow().getData().id}" title="${timeString}">${bookmark.emoji || '🔖'}</span>`;
                 }).join('');
             }
 
