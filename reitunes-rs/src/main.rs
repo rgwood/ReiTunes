@@ -21,12 +21,12 @@ use std::sync::{Arc, LazyLock};
 use std::time::Duration;
 use std::{fmt, net::SocketAddr};
 use tokio::sync::broadcast;
-use uuid::Uuid;
 use tokio::sync::RwLock;
 use tower_cookies::{Cookie, CookieManagerLayer, Cookies};
 use tower_livereload::LiveReloadLayer;
 use tracing::{info, instrument, warn};
 use utils::*;
+use uuid::Uuid;
 
 mod systemd;
 
@@ -231,7 +231,8 @@ async fn save_and_broadcast_event(event: EventWithMetadata, app_state: AppState)
     let mut library = app_state.library.write().await;
     library.apply(&event);
 
-    if let Some(updated_item) = library.items.get(&event.id).cloned() {
+    if let Some(updated_item) = library.items.get(&event.aggregate_id).cloned() {
+        info!(id = ?event.id, "Broadcasting updated item, event type: {:?}", event.event);
         // Broadcast the updated item to all connected clients
         let _ = app_state.update_tx.send(updated_item);
     }

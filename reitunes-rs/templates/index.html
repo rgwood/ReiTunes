@@ -124,6 +124,7 @@
             url.protocol = url.protocol.replace("http", "ws");
             const socket = new WebSocket(url.href);
             socket.onmessage = function (event) {
+                console.log('Received websocket message:', event.data);
                 const updatedItem = JSON.parse(event.data);
                 table.updateOrAddData([updatedItem]);
             };

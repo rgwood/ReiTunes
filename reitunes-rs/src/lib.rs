@@ -7,7 +7,7 @@ use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
 use serde_rusqlite::*;
 use std::{collections::HashMap, time::Duration};
-use tracing::{info, instrument};
+use tracing::{info, instrument, warn};
 use uuid::Uuid;
 
 pub fn open_connection_pool(db_path: &str) -> Result<Pool<SqliteConnectionManager>> {
@@ -42,7 +42,7 @@ pub async fn fetch_all_events() -> Result<Vec<EventWithMetadata>> {
     Ok(events)
 }
 
-#[instrument]
+// #[instrument]
 pub fn save_event_to_db(conn: &Connection, event: &EventWithMetadata) -> Result<()> {
     let mut stmt = conn.prepare_cached(
         "INSERT INTO events (Id, AggregateId, AggregateType, CreatedTimeUtc, MachineName, Serialized) 
@@ -284,6 +284,11 @@ impl Library {
                     );
                     item.bookmarks
                         .sort_by(|_, v1, _, v2| Ord::cmp(&v1.position, &v2.position));
+                } else {
+                    warn!(
+                        "Attempted to add bookmark to non-existent item: {}",
+                        event.aggregate_id
+                    );
                 }
             }
             Event::LibraryItemBookmarkDeletedEvent { bookmark_id } => {
