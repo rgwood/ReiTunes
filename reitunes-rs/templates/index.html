@@ -87,13 +87,12 @@
                 </button>
             </div>
         </div>
-        <div class="flex items-center space-x-4 mb-3">
-
-            <button id="back-button" onclick="document.getElementById('player').currentTime -= 10;" class="px-3 py-1 bg-solarized-blue text-solarized-base03 rounded hover:bg-solarized-cyan transition-colors duration-300">
-                ⏪ 10s
+        <div class="flex items-center space-x-2 mb-3">
+            <button id="back-button" onclick="document.getElementById('player').currentTime -= 30;" class="px-2 py-1 bg-solarized-base02 text-solarized-base1 border border-solarized-blue rounded hover:bg-solarized-base01 transition-colors duration-300">
+                ⏪ 30s
             </button>
-            <button id="forward-button" onclick="document.getElementById('player').currentTime += 10;" class="px-3 py-1 bg-solarized-blue text-solarized-base03 rounded hover:bg-solarized-cyan transition-colors duration-300">
-                10s ⏩
+            <button id="forward-button" onclick="document.getElementById('player').currentTime += 30;" class="px-2 py-1 bg-solarized-base02 text-solarized-base1 border border-solarized-blue rounded hover:bg-solarized-base01 transition-colors duration-300">
+                30s ⏩
             </button>
             <audio id="player" controls class="flex-grow bg-solarized-base02 border border-solarized-blue">
                 <source src="" type="audio/mpeg">
