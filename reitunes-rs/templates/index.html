@@ -88,10 +88,11 @@
             </div>
         </div>
         <div class="flex items-center space-x-4 mb-3">
-            <button onclick="document.getElementById('player').currentTime -= 10;" class="px-3 py-1 bg-solarized-blue text-solarized-base03 rounded hover:bg-solarized-cyan transition-colors duration-300">
+
+            <button id="back-button" onclick="document.getElementById('player').currentTime -= 10;" class="px-3 py-1 bg-solarized-blue text-solarized-base03 rounded hover:bg-solarized-cyan transition-colors duration-300">
                 ⏪ 10s
             </button>
-            <button onclick="document.getElementById('player').currentTime += 10;" class="px-3 py-1 bg-solarized-blue text-solarized-base03 rounded hover:bg-solarized-cyan transition-colors duration-300">
+            <button id="forward-button" onclick="document.getElementById('player').currentTime += 10;" class="px-3 py-1 bg-solarized-blue text-solarized-base03 rounded hover:bg-solarized-cyan transition-colors duration-300">
                 10s ⏩
             </button>
             <audio id="player" controls class="flex-grow bg-solarized-base02 border border-solarized-blue">
