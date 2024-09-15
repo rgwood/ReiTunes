@@ -215,20 +215,25 @@ async fn update_handler(
     let event = create_update_event(&request.field, &request.value)?;
     let event_with_metadata = EventWithMetadata::new(request.id, event)?;
 
+    save_and_broadcast_event(event_with_metadata, app_state).await?;
+
+    Ok(StatusCode::OK)
+}
+
+async fn save_and_broadcast_event(event: EventWithMetadata, app_state: AppState) -> Result<()> {
     // Save the event to the database
     let conn = DB.get()?;
-    save_event_to_db(&conn, &event_with_metadata)?;
+    save_event_to_db(&conn, &event)?;
 
     // Apply the event to the library
     let mut library = app_state.library.write().await;
-    library.apply(&event_with_metadata);
+    library.apply(&event);
 
-    if let Some(updated_item) = library.items.get(&request.id).cloned() {
+    if let Some(updated_item) = library.items.get(&event.id).cloned() {
         // Broadcast the updated item to all connected clients
         let _ = app_state.update_tx.send(updated_item);
     }
-
-    Ok(StatusCode::OK)
+    Ok(())
 }
 
 #[derive(Debug, Deserialize, Serialize)]
