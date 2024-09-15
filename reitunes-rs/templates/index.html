@@ -219,18 +219,8 @@
                     searchInput.focus();
                 } else if (e.ctrlKey && e.key === 'r') {
                     e.preventDefault();
-                    playRandomSong();
+                    playRandomBookmark();
                 }
-            }
-
-            function playRandomSong() {
-                const allRows = table.getData();
-                if (allRows.length === 0) {
-                    alert("No songs in the library.");
-                    return;
-                }
-                const randomRow = allRows[Math.floor(Math.random() * allRows.length)];
-                playSong(randomRow);
             }
 
             function updateField(cell) {
