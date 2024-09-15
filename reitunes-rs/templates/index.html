@@ -88,13 +88,15 @@
             </div>
         </div>
         <div class="flex items-center space-x-2 mb-3">
-            <button id="back-button" onclick="document.getElementById('player').currentTime -= 30;" class="px-3 py-2 bg-solarized-base03 text-solarized-base2 border border-solarized-blue rounded-sm hover:bg-solarized-blue hover:bg-opacity-30 ">
+            <button id="back-button" onclick="document.getElementById('player').currentTime -= 30;"
+                class="px-3 py-2 bg-solarized-base03 text-solarized-base2 border border-solarized-blue rounded-sm hover:bg-solarized-blue hover:bg-opacity-30 ">
                 ⏪
             </button>
-            <button id="forward-button" onclick="document.getElementById('player').currentTime += 30;" class="px-3 py-2 bg-solarized-base03 text-solarized-base3 border border-solarized-blue rounded-sm hover:bg-solarized-blue hover:bg-opacity-30">
+            <button id="forward-button" onclick="document.getElementById('player').currentTime += 30;"
+                class="px-3 py-2 bg-solarized-base03 text-solarized-base3 border border-solarized-blue rounded-sm hover:bg-solarized-blue hover:bg-opacity-30">
                 ⏩
             </button>
-            <audio id="player" controls class="flex-grow bg-solarized-base02 border border-solarized-blue">
+            <audio autoplay id="player" controls class="flex-grow bg-solarized-base02 border border-solarized-blue">
                 <source src="" type="audio/mpeg">
                 Your browser does not support the audio element.
             </audio>
@@ -306,25 +308,25 @@
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ position: currentTime }),
                 })
-                .then(response => {
-                    if (!response.ok) {
-                        throw new Error(`Response status: ${response.status}`);
-                    }
-                    return response.text();
-                })
-                .then(text => {
-                    let data;
-                    try {
-                        data = JSON.parse(text);
-                        console.log('Bookmark added successfully:', data);
-                    } catch (e) {
-                        console.log('Bookmark added successfully, non-JSON response:', text);
-                    }
-                })
-                .catch(error => {
-                    console.error('Error adding bookmark:', error);
-                    alert('Failed to add bookmark');
-                });
+                    .then(response => {
+                        if (!response.ok) {
+                            throw new Error(`Response status: ${response.status}`);
+                        }
+                        return response.text();
+                    })
+                    .then(text => {
+                        let data;
+                        try {
+                            data = JSON.parse(text);
+                            console.log('Bookmark added successfully:', data);
+                        } catch (e) {
+                            console.log('Bookmark added successfully, non-JSON response:', text);
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Error adding bookmark:', error);
+                        alert('Failed to add bookmark');
+                    });
             }
 
             // Add event listener for the bookmark button
