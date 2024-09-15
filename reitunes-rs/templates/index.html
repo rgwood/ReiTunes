@@ -275,6 +275,39 @@
 
             // Add event listener for the random button
             randomButton.addEventListener('click', playRandomBookmark);
+
+            // Function to add a bookmark
+            function addBookmark() {
+                const currentRow = table.getSelectedRows()[0];
+                if (!currentRow) {
+                    alert("Please select a song first.");
+                    return;
+                }
+                const rowData = currentRow.getData();
+                const currentTime = player.currentTime;
+
+                fetch(`/ui/${rowData.id}/bookmarks`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ position: currentTime }),
+                })
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error(`Response status: ${response.status}`);
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    console.log('Bookmark added successfully:', data);
+                })
+                .catch(error => {
+                    console.error('Error adding bookmark:', error);
+                    alert('Failed to add bookmark');
+                });
+            }
+
+            // Add event listener for the bookmark button
+            document.getElementById('bookmark-button').addEventListener('click', addBookmark);
         });
         </script>
 </body>
