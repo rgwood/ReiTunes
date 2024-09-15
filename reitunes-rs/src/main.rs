@@ -20,6 +20,7 @@ use serde::{Deserialize, Serialize};
 use std::sync::{Arc, LazyLock};
 use std::{fmt, net::SocketAddr};
 use tokio::sync::broadcast;
+use uuid::Uuid;
 use tokio::sync::RwLock;
 use tower_cookies::{Cookie, CookieManagerLayer, Cookies};
 use tower_livereload::LiveReloadLayer;
@@ -106,6 +107,7 @@ async fn main() -> Result<()> {
                 .route("/allevents", get(all_events_handler))
                 .route("/ui/update", post(update_handler))
                 .route("/ui/play", post(play_handler))
+                .route("/ui/:id/bookmarks", post(add_bookmark_handler))
                 .route("/updates", get(updates_handler))
                 .route("/*file", get(static_handler))
                 .route_layer(middleware::from_fn(auth))
@@ -298,6 +300,30 @@ async fn play_handler(
     }
 
     Ok(StatusCode::OK)
+}
+
+#[derive(Debug, Deserialize)]
+struct AddBookmarkRequest {
+    name: String,
+    position: f64,
+}
+
+#[instrument(skip(app_state))]
+async fn add_bookmark_handler(
+    State(app_state): State<AppState>,
+    axum::extract::Path(id): axum::extract::Path<Uuid>,
+    JsonExtractor(request): JsonExtractor<AddBookmarkRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    let event = Event::BookmarkAddedEvent {
+        bookmark_id: Uuid::new_v4(),
+        name: request.name,
+        position: request.position,
+    };
+    let event_with_metadata = EventWithMetadata::new(id, event)?;
+
+    save_and_broadcast_event(event_with_metadata, app_state).await?;
+
+    Ok(StatusCode::CREATED)
 }
 
 fn create_update_event(field: &str, value: &str) -> Result<Event> {
