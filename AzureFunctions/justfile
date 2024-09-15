@@ -1,0 +1,5 @@
+build:
+    dotnet build
+
+deploy:
+    func azure functionapp publish reitunes
