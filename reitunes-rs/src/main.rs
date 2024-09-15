@@ -304,7 +304,6 @@ async fn play_handler(
 
 #[derive(Debug, Deserialize)]
 struct AddBookmarkRequest {
-    name: String,
     position: f64,
 }
 
@@ -314,10 +313,9 @@ async fn add_bookmark_handler(
     axum::extract::Path(id): axum::extract::Path<Uuid>,
     JsonExtractor(request): JsonExtractor<AddBookmarkRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let event = Event::BookmarkAddedEvent {
+    let event = Event::LibraryItemBookmarkAddedEvent {
         bookmark_id: Uuid::new_v4(),
-        name: request.name,
-        position: request.position,
+        position: Duration::from_secs_f64(request.position),
     };
     let event_with_metadata = EventWithMetadata::new(id, event)?;
 

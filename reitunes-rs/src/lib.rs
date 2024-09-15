@@ -326,7 +326,7 @@ pub enum Event {
     LibraryItemBookmarkAddedEvent {
         bookmark_id: Uuid,
         #[serde(with = "duration_serde_dotnet")]
-        position: Duration, // in theory we could use jiff::Span but just getting seconds out of it is a bit difficult!
+        position: Duration,
     },
     LibraryItemBookmarkDeletedEvent {
         bookmark_id: Uuid,
