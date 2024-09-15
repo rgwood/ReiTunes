@@ -1,6 +1,9 @@
 # switching back to bash for now
 # set shell := ["nu", "-c"]
 
+install-deps:
+    cargo install xh --locked
+
 watch:
     watchexec --exts=rs,sql,html,css,js --on-busy-update=restart -- cargo run -- --live-reload
 
@@ -47,10 +50,7 @@ build-windows-on-linux:
     cross build --target x86_64-pc-windows-gnu --release
 
 test-api:
-    op run --env-file="./prod.env" -- curl -s -o /dev/null -w "%{http_code}" -X POST -H "Content-Type: application/json" -H "X-API-Key: \${REITUNES_API_KEY}" -d '{"file_path": "/test/path/file.mp3"}' http://localhost:5000/api/add
+    op run --env-file="./local.env" -- nu curl.nu
 
 test-api-prod:
-    op run --env-file="./prod.env" -- curl -s -o /dev/null -w "%{http_code}" -X POST -H "Content-Type: application/json" -H "X-API-Key: \${REITUNES_API_KEY}" -d '{"file_path": "/test/path/file.mp3"}' http://\${REITUNES_HOSTNAME}/api/add
-
-test-api-nu:
-    op run --env-file="./prod.env" -- nu curl.nu
+    op run --no-masking --env-file="./prod.env" -- nu curl.nu
