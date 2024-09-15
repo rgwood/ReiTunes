@@ -87,17 +87,17 @@
                 </button>
             </div>
         </div>
-        <audio id="player" controls class="w-full mb-3 bg-solarized-base02 border border-solarized-blue">
-            <source src="" type="audio/mpeg">
-            Your browser does not support the audio element.
-        </audio>
-        <div class="flex justify-center items-center space-x-4 mb-3">
+        <div class="flex items-center space-x-4 mb-3">
             <button onclick="document.getElementById('player').currentTime -= 10;" class="px-3 py-1 bg-solarized-blue text-solarized-base03 rounded hover:bg-solarized-cyan transition-colors duration-300">
                 ⏪ 10s
             </button>
             <button onclick="document.getElementById('player').currentTime += 10;" class="px-3 py-1 bg-solarized-blue text-solarized-base03 rounded hover:bg-solarized-cyan transition-colors duration-300">
                 10s ⏩
             </button>
+            <audio id="player" controls class="flex-grow bg-solarized-base02 border border-solarized-blue">
+                <source src="" type="audio/mpeg">
+                Your browser does not support the audio element.
+            </audio>
         </div>
     </div>
 
