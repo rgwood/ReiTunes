@@ -275,11 +275,18 @@ impl Library {
                 position,
             } => {
                 if let Some(item) = self.items.get_mut(&event.aggregate_id) {
+                    let music_emoji = vec![
+                        "🎵", "🎶", "🎼", "🎧", "🎤", "🎹", "🎷", "🎺", "🎸", "🥁", "🪕", "🎻",
+                    ];
+                    
+                    // TODO: hash the library item id and the bookmark id to get a consistent emoji
+                    let emoji_index = 0;
+
                     item.bookmarks.insert(
                         *bookmark_id,
                         Bookmark {
                             position: *position,
-                            emoji: String::new(),
+                            emoji: music_emoji[emoji_index as usize].to_string(),
                         },
                     );
                     item.bookmarks
