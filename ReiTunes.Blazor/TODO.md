@@ -1,7 +1,0 @@
-- [ ] Consider rewriting w/ htmx.
-- [ ] Use Tailwind Play in dev at least
-- [ ] get systemd working properly
-- [ ] get `dotnet watch` working with tailwind
-- [x] Turn icon into favicon
-- [x] Add systemd installer fr
-- [x] Add Solarized colors to Tailwind

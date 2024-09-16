@@ -8,7 +8,6 @@
       "ReiTunes.Core\\ReiTunes.Core.csproj",
       "ReiTunes.Server.Tests\\ReiTunes.Server.Tests.csproj",
       "ReiTunes.Server\\ReiTunes.Server.csproj",
-      "ReiTunes.Blazor\\ReiTunes.Blazor.csproj"
     ]
   }
 }
