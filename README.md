@@ -1,9 +1,9 @@
 # ReiTunes
 
-My personal music library system, with clients and a server.
+My personal music library system. It's gone through a few iterations.
 
 ![Dark UI](https://res.cloudinary.com/reilly-wood/image/upload/v1608417001/reitunes/dark.jpg)
-![Light UI](https://res.cloudinary.com/reilly-wood/image/upload/v1608417001/reitunes/light.jpg)
+![Light UI](https://res.cloudinary.com/reilly-wood/image/upload/v1608417001/reitunes/light.jpg?foo=bar)
 
 ## Why?
 
@@ -13,21 +13,25 @@ When I started, I had 3 priorities for my music collection:
 2. It should integrate well with music podcasts and online series
 3. It should have a good native Windows app that can sync across multiple devices and operate offline (this is less of a priority these days)
 
-Those aren't really met by any existing music services. I don't know if any given streaming service will be around next year, let alone 40 years from now. iTunes Match is OK as a service but the Windows client is not.
-
-So I decided to write my own app+service. How hard could it be? Well, hundreds of commits later... 😬
+Those weren't really met by any existing music services. I don't know if any given streaming service will be around next year, let alone 40 years from now. iTunes Match is OK as a service but the Windows client is not.
 
 ## What?
 
-The Windows client is a UWP application. It can stream or download music from my personal collection, and it has a fast fuzzy-find search. It's quite polished but probably won't receive much investment going forward because I'm on Windows less often now.
+These days I spend most of my time working on a Rust+web UI version of ReiTunes (in `reitunes-rs`).
 
-I've taken a few stabs at a web UI, first in Blazor Server and more recently by porting the backend to Rust with a vanilla JS UI. The Rust version is getting most of my attention these days.
+The Windows client is a UWP application. It's quite polished but probably won't receive much investment going forward because I'm on Windows less these days.
+
+Once upon a time I also had a Blazor client but that's been retired.
+
+## Architecture
+
+I spent a lot of effort making ReiTunes work well offline and with multiple clients.
 
 On the server side, a web API acts as a central sync point for library metadata. Music files are stored in cloud object storage and accessible over HTTPS.
 
 Library metadata changes are treated as events; they are serialized to JSON and stored in SQLite locally immediately, then pushed to the server asynchronously later. You can think of the events like Git commits.
 
-The entire library is rebuilt from events on launch (more than fast enough; currently sub-10ms in the Rust version).
+The entire library is rebuilt from events on launch (more than fast enough; sub-10ms in the Rust version).
 
 ## Acknowledgments
 
