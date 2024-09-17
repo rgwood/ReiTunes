@@ -196,7 +196,7 @@
                 }).join('');
             }
 
-            function playSong(rowData, startPosition = 0) {
+            function playSong(rowData, startPosition = 0, incrementPlayCount = true) {
                 let prevSrc = player.src;
                 let url = encodeURI(`https://reitunes.blob.core.windows.net/music/${rowData.file_path}`);
                 console.log(`playing song`, url, startPosition);
@@ -209,7 +209,7 @@
                 table.deselectRow();
                 table.selectRow(rowData.id);
 
-                if (prevSrc !== player.src) {
+                if (prevSrc !== player.src && incrementPlayCount) {
                     // Send request to update play count
                     fetch('/ui/play', {
                         method: 'POST',
@@ -245,7 +245,7 @@
                 if (e.ctrlKey && e.key === 'f') {
                     e.preventDefault();
                     searchInput.focus();
-                } else if (e.ctrlKey && e.key === 'r') {
+                } else if (e.ctrlKey && e.key === 'e') {
                     e.preventDefault();
                     playRandomBookmark();
                 }
@@ -313,7 +313,7 @@
                 }
                 const randomBookmark = bookmarks[Math.floor(Math.random() * bookmarks.length)];
                 const rowData = table.getRow(randomBookmark.rowId).getData();
-                playSong(rowData, randomBookmark.position);
+                playSong(rowData, randomBookmark.position, false);
             }
 
             // Add event listener for the random button
