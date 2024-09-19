@@ -429,6 +429,8 @@ async fn login_post_handler(
             let mut cookie = Cookie::new(SESSION_COOKIE_NAME, PASSWORD_HASH.as_str());
             cookie.set_http_only(true);
             cookie.set_path("/");
+            let one_year = tower_cookies::cookie::time::Duration::seconds(60 * 60 * 24 * 365);
+            cookie.set_max_age(Some(one_year));
             cookies.add(cookie);
             return Redirect::to("/").into_response();
         }
