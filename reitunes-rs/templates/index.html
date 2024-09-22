@@ -124,7 +124,14 @@
                 { title: "Album", field: "album", editor: "input", width: "10%" },
                 { title: "Play Count", field: "play_count", sorter: "number" },
                 { title: "Bookmarks", field: "bookmarks", formatter: bookmarkFormatter, width: "15%" },
-                { title: "Created At (UTC)", field: "created_time_utc" },
+                { 
+                    title: "Created At (UTC)", 
+                    field: "created_time_utc", 
+                    formatter: function(cell, formatterParams, onRendered) {
+                        // strip off the milliseconds+nanoseconds
+                        return cell.getValue().split('.')[0];
+                    }
+                },
 
             ],
                 initialSort: [
