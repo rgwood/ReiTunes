@@ -62,30 +62,6 @@
                 text-shadow: 0 0 4px rgba(38, 139, 210, 0.5), 0 0 8px rgba(38, 139, 210, 0.5);
             }
         }
-        .bookmark-emoji {
-            position: relative;
-            z-index: 1;
-        }
-        .bookmark-emoji::before {
-            content: '';
-            position: absolute;
-            width: 2rem;
-            height: 2rem;
-            border: 2px solid #dc322f;
-            border-radius: 50%;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            opacity: 0;
-            z-index: -1;
-            pointer-events: none;
-        }
-        .bookmark-emoji:hover::before {
-            opacity: 1;
-        }
-        .tabulator-cell {
-            overflow: visible !important;
-        }
     </style>
 </head>
 
@@ -190,7 +166,7 @@
                     let minutes = Math.floor(bookmark.position / 60);
                     let seconds = Math.floor(bookmark.position % 60);
                     let timeString = `${minutes}:${seconds.toString().padStart(2, '0')}`;
-                    return `<span class="bookmark-emoji cursor-pointer mr-1 hover:text-solarized-base03 rounded" data-position="${bookmark.position}" data-row-id="${cell.getRow().getData().id}" title="${timeString}">
+                    return `<span class="bookmark-emoji cursor-pointer mr-1 rounded" data-position="${bookmark.position}" data-row-id="${cell.getRow().getData().id}" title="${timeString}">
                         ${bookmark.emoji || '🔖'}
                     </span>`;
                 }).join('');
