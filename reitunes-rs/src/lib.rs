@@ -233,6 +233,7 @@ impl Library {
                 let item = LibraryItem {
                     id: event.aggregate_id,
                     name: name.clone(),
+                    created_time_utc: event.created_time_utc,
                     file_path: file_path.clone(),
                     artist: String::new(),
                     album: String::new(),
@@ -354,6 +355,7 @@ pub enum Event {
 pub struct LibraryItem {
     pub id: Uuid,
     pub name: String,
+    pub created_time_utc: DateTime,
     pub file_path: String,
     pub artist: String,
     pub album: String,

@@ -121,12 +121,14 @@
                 columns: [
                 { title: "Name", field: "name", editor: "input", width: "30%" },
                 { title: "Artist", field: "artist", editor: "input", width: "20%" },
-                { title: "Album", field: "album", editor: "input", width: "20%" },
-                { title: "Play Count", field: "play_count", width: "15%", sorter: "number" },
-                { title: "Bookmarks", field: "bookmarks", formatter: bookmarkFormatter, width: "15%" }
+                { title: "Album", field: "album", editor: "input", width: "10%" },
+                { title: "Play Count", field: "play_count", sorter: "number" },
+                { title: "Bookmarks", field: "bookmarks", formatter: bookmarkFormatter, width: "15%" },
+                { title: "Created At (UTC)", field: "created_time_utc" },
+
             ],
                 initialSort: [
-                { column: "play_count", dir: "desc" }
+                { column: "created_time_utc", dir: "desc" }
             ],
             });
 
