@@ -279,7 +279,7 @@ impl Library {
                     let music_emoji = vec![
                         "🎵", "🎶", "🎼", "🎧", "🎤", "🎹", "🎷", "🎺", "🎸", "🥁", "🪕", "🎻",
                     ];
-                    
+
                     // Hash the library item id and the bookmark id to get a consistent emoji
                     let hash = event.aggregate_id.as_u128() ^ bookmark_id.as_u128();
                     let emoji_index = (hash % music_emoji.len() as u128) as usize;

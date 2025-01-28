@@ -99,12 +99,12 @@ async fn main() -> Result<()> {
 
             let api_router = Router::new()
                 .route("/add", post(add_item_handler))
+                .route("/allevents", get(all_events_handler))
                 .route_layer(middleware::from_fn(api_key_auth));
 
             let mut app = Router::new()
                 .route("/", get(index_handler))
                 .route("/login", get(login_handler).post(login_post_handler))
-                .route("/allevents", get(all_events_handler))
                 .route("/ui/update", post(update_handler))
                 .route("/ui/play", post(play_handler))
                 .route("/ui/:id/bookmarks", post(add_bookmark_handler))
