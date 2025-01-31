@@ -1,0 +1,50 @@
+# switching back to bash for now
+# set shell := ["nu", "-c"]
+
+install-deps:
+    cargo install xh --locked
+
+watch:
+    watchexec --exts=rs,sql,html,css,js --on-busy-update=restart -- cargo run
+
+deploy-local:
+    cargo build --release
+    mv -f target/release/reitunes-rs ~/bin/reitunes-rs
+    reitunes-rs install
+    systemctl --user daemon-reload
+    systemctl --user restart reitunes
+
+build-with-secrets:
+    op run --env-file="./prod.env" -- cargo build
+
+run:
+    cargo run
+
+test:
+    cargo nextest run
+
+watch-tests:
+    watchexec --exts=rs,sql,html -- cargo nextest run
+
+expected_filename := if os_family() == "windows" { "sonos-player.exe" } else { "sonos-player" }
+
+build-release:
+    cargo build --release
+
+publish-to-local-bin: build-release
+    cp target/release/{{expected_filename}} ~/bin/
+
+build-linux-x64:
+    cross build --target x86_64-unknown-linux-gnu --release
+
+build-linux-arm64:
+    cross build --target aarch64-unknown-linux-gnu --release
+
+build-windows-on-linux:
+    cross build --target x86_64-pc-windows-gnu --release
+
+test-api:
+    op run --env-file="./local.env" -- nu curl.nu
+
+test-api-prod:
+    op run --no-masking --env-file="./prod.env" -- nu curl.nu

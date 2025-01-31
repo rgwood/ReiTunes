@@ -1,2 +1,21 @@
+[package]
+authors = ["Reilly Wood"]
+edition = "2021"
+name = "reitunes"
+
 [workspace]
-members = ["reitunes"]
+members = ["reitunes", "sonos-player"]
+
+[profile.release]
+# lto = true      # Enable Link Time Optimization
+opt-level = 'z' # Optimize for size.
+panic = 'abort' # Abort on panic
+# codegen-units = 1 # Set low to increase optimizations. Kills compile time though
+# strip = true        # Strip symbols from binary. Big gains but idk if it's worth bad stack traces
+
+# build with `cargo build --profile profiling`
+# to analyze performance with tooling like linux perf
+[profile.profiling]
+inherits = "release"
+strip = false
+debug = true
