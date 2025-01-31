@@ -1814,6 +1814,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "reitunes-workspace"
+version = "0.0.0"
+
+[[package]]
 name = "reqwest"
 version = "0.11.27"
 source = "registry+https://github.com/rust-lang/crates.io-index"

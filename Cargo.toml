@@ -1,7 +1,10 @@
 [package]
 authors = ["Reilly Wood"]
 edition = "2021"
-name = "reitunes"
+name = "reitunes-workspace"
+
+[lib]
+path = "src/lib.rs"
 
 [workspace]
 members = ["reitunes", "sonos-player"]
