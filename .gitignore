@@ -5,7 +5,7 @@
 ## Get latest from https://github.com/github/gitignore/blob/master/VisualStudio.gitignore
 
 # ReiTunes secret file
-ReiTunes.Core/Secrets.cs
+ReiTunesDotnet/ReiTunes.Core/Secrets.cs
 
 # ApprovalTests snapshot test files
 *.received.txt
