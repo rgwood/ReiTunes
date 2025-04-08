@@ -16,7 +16,7 @@ serde_json = "1.0.128"
 time = { version = "0.3", features = ["macros", "serde-well-known"] }
 axum = { version = "0.7.5", features = ["ws"] }
 reqwest = { version = "0.12.7", features = ["json"] }
-tokio = { version = "1.40.0", features = ["full"] }
+tokio = { version = "1.44.2", features = ["full"] }
 tower-http = { version = "0.5.2", features = ["fs"] }
 tower-livereload = "0.9.3"
 tracing = "0.1"
@@ -34,4 +34,4 @@ mime_guess = "2.0.4"
 tower-cookies = "0.10.0"
 axum-macros = "0.4.1"
 sha2 = "0.10.8"
-openssl = { version = "0.10", features = ["vendored"] }
+openssl = { version = "0.10.72", features = ["vendored"] }
