@@ -1,5 +1,6 @@
 use anyhow::{bail, Result};
 use askama::Template;
+use axum::extract::ws::Utf8Bytes;
 use axum::http::HeaderMap;
 use axum::{
     body::Body,
@@ -107,9 +108,9 @@ async fn main() -> Result<()> {
                 .route("/login", get(login_handler).post(login_post_handler))
                 .route("/ui/update", post(update_handler))
                 .route("/ui/play", post(play_handler))
-                .route("/ui/:id/bookmarks", post(add_bookmark_handler))
+                .route("/ui/{id}/bookmarks", post(add_bookmark_handler))
                 .route("/updates", get(updates_handler))
-                .route("/*file", get(static_handler))
+                .route("/{*file}", get(static_handler))
                 .route_layer(middleware::from_fn(auth))
                 .layer(CookieManagerLayer::new())
                 .nest("/api", api_router)
@@ -152,7 +153,7 @@ async fn handle_websocket(
     while let Ok(item) = rx.recv().await {
         let msg = serde_json::to_string(&item).unwrap();
         if socket
-            .send(axum::extract::ws::Message::Text(msg))
+            .send(axum::extract::ws::Message::Text(Utf8Bytes::from(msg)))
             .await
             .is_err()
         {
