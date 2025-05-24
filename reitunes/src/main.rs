@@ -77,6 +77,8 @@ struct AppState {
 async fn main() -> Result<()> {
     init_tracing();
 
+    info!("Starting reitunes v{}", env!("CARGO_PKG_VERSION"));
+
     let cli = Cli::parse();
 
     match cli.command {

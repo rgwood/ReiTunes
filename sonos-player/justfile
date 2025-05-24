@@ -12,7 +12,7 @@ deploy-local:
     systemctl --user restart reitunes
 
 build-with-secrets:
-    op run --env-file="./prod.env" -- cargo build
+    op run --env-file="./prod.env" -- cargo build --release
 
 run:
     cargo run
@@ -28,7 +28,7 @@ expected_filename := if os_family() == "windows" { "sonos-player.exe" } else { "
 build-release:
     cargo build --release
 
-publish-to-local-bin: build-release
+publish-to-local-bin: build-with-secrets
     cp ../target/release/{{expected_filename}} ~/bin/
 
 build-linux-x64:

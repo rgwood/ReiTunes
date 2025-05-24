@@ -71,11 +71,14 @@ pub fn load_all_events_from_db(conn: &Connection) -> Result<Vec<EventWithMetadat
 }
 
 pub async fn download_and_save_events(conn: &mut Connection) -> Result<()> {
+    info!("Downloading events");
     let mut headers = HeaderMap::new();
-    headers.insert(
-        "X-API-Key",
-        HeaderValue::from_static("2a3e22ce-022a-41d7-be54-e1e55cb646db"),
-    );
+    let api_key: &str = match option_env!("REITUNES_API_KEY") {
+        Some(password) => password,
+        None => "apikey",
+    };
+
+    headers.insert("X-API-Key", HeaderValue::from_static(api_key));
 
     let client = reqwest::Client::new();
     let events: Vec<EventWithMetadata> = client
@@ -86,6 +89,8 @@ pub async fn download_and_save_events(conn: &mut Connection) -> Result<()> {
         .error_for_status()?
         .json()
         .await?;
+
+    info!(event_count = events.len(), "Downloaded events");
 
     // Start a transaction
     let mut tx = conn.transaction()?;
@@ -117,6 +122,7 @@ pub async fn download_and_save_events(conn: &mut Connection) -> Result<()> {
         }
     }
 
+    info!("Saved events");
     Ok(())
 }
 
