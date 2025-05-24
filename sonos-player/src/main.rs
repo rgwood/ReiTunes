@@ -28,7 +28,7 @@ async fn main() -> Result<()> {
     let db = open_connection(db_path.to_str().unwrap())?;
     let library = load_library_from_db(&db)?;
 
-    let devices = vec!["Living Room", "Kitchen",  "Office"];
+    let devices = vec!["Living Room", "Kitchen", "Office"];
     run_tui(library, db, devices).await?;
 
     Ok(())

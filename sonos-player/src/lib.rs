@@ -2,10 +2,10 @@ use anyhow::{Context, Result};
 use indexmap::IndexMap;
 use jiff::{civil::DateTime, tz::TimeZone, Zoned};
 use reqwest::header::{HeaderMap, HeaderValue};
-use std::collections::HashSet;
 use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
 use serde_rusqlite::*;
+use std::collections::HashSet;
 use std::{collections::HashMap, time::Duration};
 use tracing::{info, instrument, warn};
 use uuid::Uuid;
@@ -72,8 +72,10 @@ pub fn load_all_events_from_db(conn: &Connection) -> Result<Vec<EventWithMetadat
 
 pub async fn download_and_save_events(conn: &mut Connection) -> Result<()> {
     let mut headers = HeaderMap::new();
-    headers.insert("X-API-Key", HeaderValue::from_static("2a3e22ce-022a-41d7-be54-e1e55cb646db"));
-    
+    headers.insert(
+        "X-API-Key",
+        HeaderValue::from_static("2a3e22ce-022a-41d7-be54-e1e55cb646db"),
+    );
 
     let client = reqwest::Client::new();
     let events: Vec<EventWithMetadata> = client
@@ -88,13 +90,13 @@ pub async fn download_and_save_events(conn: &mut Connection) -> Result<()> {
     // Start a transaction
     let mut tx = conn.transaction()?;
     tx.set_drop_behavior(rusqlite::DropBehavior::Commit);
-    
+
     // Get existing event IDs to avoid duplicates
     let mut stmt = tx.prepare_cached("SELECT Id FROM events")?;
     let existing_ids: HashSet<String> = stmt
-    .query_map([], |row| row.get(0))?
-    .filter_map(Result::ok)
-    .collect();
+        .query_map([], |row| row.get(0))?
+        .filter_map(Result::ok)
+        .collect();
 
     let mut stmt = tx.prepare_cached(
         "INSERT INTO events (Id, AggregateId, AggregateType, CreatedTimeUtc, MachineName, Serialized) 
@@ -255,9 +257,15 @@ impl Library {
     }
 
     pub fn random_bookmark(&self) -> Option<(Uuid, Uuid)> {
-        let all_bookmarks: Vec<(Uuid, Uuid)> = self.items.iter().flat_map(|(item_id, item)| {
-            item.bookmarks.iter().map(move |(bookmark_id, _)| (*item_id, *bookmark_id))
-        }).collect();
+        let all_bookmarks: Vec<(Uuid, Uuid)> = self
+            .items
+            .iter()
+            .flat_map(|(item_id, item)| {
+                item.bookmarks
+                    .iter()
+                    .map(move |(bookmark_id, _)| (*item_id, *bookmark_id))
+            })
+            .collect();
 
         let random_index = rand::random::<usize>() % all_bookmarks.len();
 

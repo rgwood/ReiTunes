@@ -15,7 +15,10 @@ where
             Ok(result) => return Ok(result),
             Err(e) if retries < MAX_RETRIES => {
                 retries += 1;
-                error!("Operation failed, retrying ({}/{}): {:?}", retries, MAX_RETRIES, e);
+                error!(
+                    "Operation failed, retrying ({}/{}): {:?}",
+                    retries, MAX_RETRIES, e
+                );
             }
             Err(e) => {
                 error!("Operation failed after {} retries: {:?}", MAX_RETRIES, e);
@@ -37,10 +40,17 @@ pub async fn stop_with_retry(device: &SonosDevice) -> Result<()> {
     retry_operation(|| device.stop()).await
 }
 
-pub async fn seek_with_retry(device: &SonosDevice, request: sonos::av_transport::SeekRequest) -> Result<()> {
+pub async fn seek_with_retry(
+    device: &SonosDevice,
+    request: sonos::av_transport::SeekRequest,
+) -> Result<()> {
     retry_operation(|| device.seek(request.clone())).await
 }
 
-pub async fn set_av_transport_uri_with_retry(device: &SonosDevice, uri: &str, metadata: Option<TrackMetaData>) -> Result<()> {
+pub async fn set_av_transport_uri_with_retry(
+    device: &SonosDevice,
+    uri: &str,
+    metadata: Option<TrackMetaData>,
+) -> Result<()> {
     retry_operation(|| device.set_av_transport_uri(uri, metadata.clone())).await
 }
