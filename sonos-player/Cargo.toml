@@ -7,30 +7,18 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+reitunes-workspace = { path = ".." }
 anyhow.workspace = true
-rusqlite.workspace = true
-serde_rusqlite.workspace = true
-uuid.workspace = true
-serde.workspace = true
-serde_json.workspace = true
-time.workspace = true
 tokio.workspace = true
 tracing.workspace = true
-tracing-subscriber = { workspace = true, features = ["env-filter"] }
-tracing-error = "0.2"
-indexmap.workspace = true
 clap.workspace = true
-dirs.workspace = true
-jiff.workspace = true
-hostname.workspace = true
-mime_guess.workspace = true
-sha2.workspace = true
+rusqlite.workspace = true
+tracing-subscriber = { workspace = true, features = ["env-filter"] }
 wez-sonos = "0.1.0"
-rand = "0.8.5"
 urlencoding = "2.1.3"
 ratatui = "0.24.0"
 crossterm = {version = "0.27.0", features = ["event-stream"]}
 directories = "5.0"
 lazy_static = "1.4"
 futures = "0.3.30"
-reqwest.workspace = true
+tracing-error = "0.2"

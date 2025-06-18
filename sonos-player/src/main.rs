@@ -1,18 +1,17 @@
 use anyhow::Result;
 use clap::Parser;
 use logging::initialize_logging;
-use sonos_player::*;
+use reitunes_workspace::*;
 use std::path::PathBuf;
 
 mod logging;
 mod retry;
 mod tui;
-mod utils;
 
 use tui::run_tui;
 
 #[derive(Parser)]
-#[command(author, version, about, long_about = None, styles = utils::clap_v3_style())]
+#[command(author, version, about, long_about = None, styles = clap_v3_style())]
 struct Cli {}
 
 #[tokio::main]

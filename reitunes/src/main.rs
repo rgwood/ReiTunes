@@ -13,9 +13,7 @@ use axum::{
 };
 use axum_macros::debug_handler;
 use clap::{Parser, Subcommand};
-use r2d2::Pool;
-use r2d2_sqlite::SqliteConnectionManager;
-use reitunes::*;
+use reitunes_workspace::*;
 use rust_embed::RustEmbed;
 use serde::{Deserialize, Serialize};
 use std::sync::{Arc, LazyLock};
@@ -26,7 +24,6 @@ use tokio::sync::RwLock;
 use tower_cookies::{Cookie, CookieManagerLayer, Cookies};
 use tower_livereload::LiveReloadLayer;
 use tracing::{info, instrument, warn};
-use utils::*;
 use uuid::Uuid;
 
 mod systemd;
@@ -46,11 +43,11 @@ static PASSWORD_HASH: LazyLock<String> = LazyLock::new(|| hash_with_rotating_sal
 
 const SESSION_COOKIE_NAME: &str = "reitunes_session";
 
-static DB: LazyLock<Pool<SqliteConnectionManager>> =
+static DB: LazyLock<r2d2::Pool<r2d2_sqlite::SqliteConnectionManager>> =
     LazyLock::new(|| open_connection_pool(DB_PATH).expect("Failed to create connection pool"));
 
 #[derive(Parser)]
-#[command(author, version, about, long_about = None, styles = utils::clap_v3_style())]
+#[command(author, version, about, long_about = None, styles = clap_v3_style())]
 struct Cli {
     #[command(subcommand)]
     command: Option<Commands>,
@@ -381,8 +378,6 @@ where
         }
     }
 }
-
-mod utils;
 
 #[derive(Template)]
 #[template(path = "login.html")]

@@ -15,7 +15,7 @@ use ratatui::{
 };
 use rusqlite::Connection;
 use sonos::{av_transport::SeekRequest, SonosDevice, TrackMetaData, TransportState};
-use sonos_player::{download_and_save_events, load_library_from_db, Library, LibraryItem};
+use reitunes_workspace::{download_and_save_events, load_library_from_db, Library, LibraryItem};
 use std::{io, sync::Arc, time::Duration};
 use tokio::{
     select,

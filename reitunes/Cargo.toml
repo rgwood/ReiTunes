@@ -7,31 +7,23 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+reitunes-workspace = { path = ".." }
 anyhow.workspace = true
-rusqlite.workspace = true
-serde_rusqlite.workspace = true
-uuid.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+clap.workspace = true
 serde.workspace = true
 serde_json.workspace = true
-time.workspace = true
+uuid.workspace = true
+r2d2.workspace = true
+r2d2_sqlite.workspace = true
+mime_guess.workspace = true
+dirs.workspace = true
 axum = { version = "0.8.3", features = ["ws"] }
-reqwest.workspace = true
-tokio.workspace = true
 tower-http = { version = "0.6.2", features = ["fs"] }
 tower-livereload = "0.9.6"
-tracing.workspace = true
-tracing-subscriber.workspace = true
-indexmap.workspace = true
 askama = {version = "0.13.0", features = ["serde_json"]  }
-clap.workspace = true
-dirs.workspace = true
-r2d2 = "0.8.10"
-r2d2_sqlite = "0.27.0"
-jiff.workspace = true
-hostname.workspace = true
 rust-embed = { version = "8.7.0", features = ["axum-ex"] }
-mime_guess.workspace = true
 tower-cookies = "0.11.0"
 axum-macros = "0.5.0"
-sha2.workspace = true
 openssl = { version = "0.10.72", features = ["vendored"] }

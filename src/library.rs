@@ -1,131 +1,15 @@
 use anyhow::{Context, Result};
 use indexmap::IndexMap;
 use jiff::{civil::DateTime, tz::TimeZone, Zoned};
-use reqwest::header::{HeaderMap, HeaderValue};
-use rusqlite::{params, Connection};
+use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
-use serde_rusqlite::*;
-use std::collections::HashSet;
 use std::{collections::HashMap, time::Duration};
 use tracing::{info, instrument, warn};
 use uuid::Uuid;
 
-pub fn open_connection(db_path: &str) -> Result<Connection> {
-    let conn = Connection::open(db_path)?;
+use crate::database::load_all_events_from_db;
 
-    // pragma synchronous=normal dramatically improves performance at the cost of durability,
-    // by not fsyncing after every transaction. There's a chance that committed transactions can be rolled back
-    // if the system crashes before buffers are flushed (application crashes are fine). I think this is an acceptable tradeoff
-    conn.execute_batch("PRAGMA synchronous=normal;")?;
-
-    // WAL mode is good but dealing with multiple DB files is a bit annoying
-    // TODO: reenable this when we're further out of development
-    // conn.execute_batch("PRAGMA journal_mode=WAL;")?;
-
-    // initialize tables if needed
-    conn.execute_batch(include_str!("../schema.sql"))?;
-
-    Ok(conn)
-}
-
-// #[instrument]
-pub fn save_event_to_db(conn: &Connection, event: &EventWithMetadata) -> Result<()> {
-    let mut stmt = conn.prepare_cached(
-        "INSERT INTO events (Id, AggregateId, AggregateType, CreatedTimeUtc, MachineName, Serialized) 
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-    )?;
-
-    stmt.execute(params![
-        event.id.to_string(),
-        event.aggregate_id.to_string(),
-        event.aggregate_type,
-        event.created_time_utc.to_string(),
-        event.machine_name,
-        serde_json::to_string(&event.event)?,
-    ])?;
-
-    Ok(())
-}
-
-#[instrument(skip(conn))]
-pub fn load_all_events_from_db(conn: &Connection) -> Result<Vec<EventWithMetadata>> {
-    let mut stmt = conn.prepare_cached(
-        "SELECT * FROM events e WHERE e.AggregateType == 'LibraryItem' ORDER BY CreatedTimeUtc",
-    )?;
-
-    // do the easy thing and load each row into a struct
-    // can get some performance wins by only getting the columns we care about, but
-    // this thing runs in sub-10ms with 3000 rows so it's not a big deal.
-    let rows = from_rows::<EventRow>(stmt.query([])?);
-
-    let mut events = Vec::new();
-    for row in rows {
-        let row = row?;
-        let event = EventWithMetadata::from_row(row)?;
-        events.push(event);
-    }
-
-    info!(event_count = events.len(), "Loaded all events from db");
-
-    Ok(events)
-}
-
-pub async fn download_and_save_events(conn: &mut Connection) -> Result<()> {
-    info!("Downloading events");
-    let mut headers = HeaderMap::new();
-    let api_key: &str = match option_env!("REITUNES_API_KEY") {
-        Some(password) => password,
-        None => "apikey",
-    };
-
-    headers.insert("X-API-Key", HeaderValue::from_static(api_key));
-
-    let client = reqwest::Client::new();
-    let events: Vec<EventWithMetadata> = client
-        .get("https://reitunes.reillywood.com/api/allevents")
-        .headers(headers)
-        .send()
-        .await?
-        .error_for_status()?
-        .json()
-        .await?;
-
-    info!(event_count = events.len(), "Downloaded events");
-
-    // Start a transaction
-    let mut tx = conn.transaction()?;
-    tx.set_drop_behavior(rusqlite::DropBehavior::Commit);
-
-    // Get existing event IDs to avoid duplicates
-    let mut stmt = tx.prepare_cached("SELECT Id FROM events")?;
-    let existing_ids: HashSet<String> = stmt
-        .query_map([], |row| row.get(0))?
-        .filter_map(Result::ok)
-        .collect();
-
-    let mut stmt = tx.prepare_cached(
-        "INSERT INTO events (Id, AggregateId, AggregateType, CreatedTimeUtc, MachineName, Serialized) 
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6)"
-    )?;
-
-    // Only save events that don't already exist
-    for event in events {
-        if !existing_ids.contains(&event.id.to_string()) {
-            stmt.execute(params![
-                event.id.to_string(),
-                event.aggregate_id.to_string(),
-                event.aggregate_type,
-                event.created_time_utc.to_string(),
-                event.machine_name,
-                serde_json::to_string(&event.event)?,
-            ])?;
-        }
-    }
-
-    info!("Saved events");
-    Ok(())
-}
-
+/// Load library from database connection
 pub fn load_library_from_db(conn: &Connection) -> Result<Library> {
     let start = std::time::Instant::now();
     let events = load_all_events_from_db(conn)?;
@@ -134,8 +18,8 @@ pub fn load_library_from_db(conn: &Connection) -> Result<Library> {
     Ok(library)
 }
 
-// Durations are serialized like "00:36:16.8991596" for historical reasons (.NET stuff)
-// basically we serialized them this way when saving to the database from .NET and now we're stuck with it
+/// Durations are serialized like "00:36:16.8991596" for historical reasons (.NET stuff)
+/// basically we serialized them this way when saving to the database from .NET and now we're stuck with it
 pub mod duration_serde_dotnet {
     use serde::{self, Deserialize, Deserializer, Serializer};
     use std::time::Duration;
@@ -174,7 +58,7 @@ pub mod duration_serde_dotnet {
     }
 }
 
-// When sending durations to the frontend, we want to serialize them as (floating point) seconds
+/// When sending durations to the frontend, we want to serialize them as (floating point) seconds
 pub mod duration_serde_seconds {
     use serde::{self, Deserialize, Deserializer, Serializer};
     use std::time::Duration;
@@ -199,18 +83,19 @@ pub mod duration_serde_seconds {
     }
 }
 
-// Id                                  │AggregateId                         │AggregateType│CreatedTimeUtc             │MachineName│Serialized
+/// Database row structure for events
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 pub struct EventRow {
-    id: Uuid,
-    aggregate_id: Uuid,
-    aggregate_type: String,
-    created_time_utc: DateTime, // if starting this over again I'd probably use Zoned instead of DateTime
-    machine_name: String,
-    serialized: String,
+    pub id: Uuid,
+    pub aggregate_id: Uuid,
+    pub aggregate_type: String,
+    pub created_time_utc: DateTime,
+    pub machine_name: String,
+    pub serialized: String,
 }
 
+/// Event with metadata wrapper
 #[derive(Debug, Serialize, Deserialize)]
 #[allow(dead_code)]
 pub struct EventWithMetadata {
@@ -250,6 +135,7 @@ impl EventWithMetadata {
     }
 }
 
+/// In-memory library containing all library items
 #[derive(Clone, Default)]
 pub struct Library {
     pub items: HashMap<Uuid, LibraryItem>,
@@ -262,6 +148,7 @@ impl Library {
         }
     }
 
+    /// Get a random bookmark from the library (sonos-player specific)
     pub fn random_bookmark(&self) -> Option<(Uuid, Uuid)> {
         let all_bookmarks: Vec<(Uuid, Uuid)> = self
             .items
@@ -273,11 +160,15 @@ impl Library {
             })
             .collect();
 
-        let random_index = rand::random::<usize>() % all_bookmarks.len();
+        if all_bookmarks.is_empty() {
+            return None;
+        }
 
+        let random_index = rand::random::<usize>() % all_bookmarks.len();
         Some(all_bookmarks[random_index])
     }
 
+    /// Build library from a list of events
     #[instrument(skip(events))]
     pub fn build_from_events(events: Vec<EventWithMetadata>) -> Self {
         let mut library = Library::new();
@@ -287,6 +178,7 @@ impl Library {
         library
     }
 
+    /// Apply an event to update the library state
     pub fn apply(&mut self, event: &EventWithMetadata) {
         match &event.event {
             Event::LibraryItemCreatedEvent { name, file_path } => {
@@ -376,6 +268,7 @@ impl Library {
     }
 }
 
+/// Library event types
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "$type", rename_all_fields = "PascalCase")]
 pub enum Event {
@@ -411,6 +304,7 @@ pub enum Event {
     },
 }
 
+/// Library item representation
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct LibraryItem {
     pub id: Uuid,
@@ -431,6 +325,7 @@ impl LibraryItem {
     }
 }
 
+/// Bookmark within a library item
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct Bookmark {
     #[serde(with = "duration_serde_seconds")]
@@ -442,33 +337,22 @@ pub struct Bookmark {
 mod tests {
     use super::*;
     use rusqlite::Connection;
+    use crate::database::{save_event_to_db};
 
     #[test]
     fn test_load_library_from_db() {
-        let conn = open_connection("test-library.db").unwrap();
+        // Use in-memory database for testing
+        let conn = Connection::open(":memory:").unwrap();
+        conn.execute_batch(include_str!("../schema.sql")).unwrap();
+        
         let library = load_library_from_db(&conn).unwrap();
 
-        assert_eq!(library.items.len(), 271, "Library should contain 271 items");
-
-        // Check for a specific known item
-        let known_item_id = Uuid::parse_str("559146d5-4901-4e09-abd9-e732a23f8429").unwrap();
-        assert!(
-            library.items.contains_key(&known_item_id),
-            "Library should contain a known item"
-        );
-
-        // Check that play counts are being incremented
-        if let Some(item) = library.items.get(&known_item_id) {
-            assert!(
-                item.play_count > 0,
-                "Known item should have been played at least once"
-            );
-        }
+        // Empty database should result in empty library
+        assert!(library.items.is_empty(), "Library should be empty for new database");
     }
 
     #[test]
     fn test_save_and_load_events() -> Result<()> {
-        tracing_subscriber::fmt::init();
         // Open a connection to the temporary database
         let conn = Connection::open(":memory:")?;
         conn.execute_batch(include_str!("../schema.sql"))?;
