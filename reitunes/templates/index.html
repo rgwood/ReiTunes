@@ -121,6 +121,7 @@
 
                 let table = new Tabulator("#library-table", {
                     data: {{ items| tojson | safe }},
+                height: "calc(100vh - 150px)", // Fill viewport minus header height
                 autoResize: true,
                 layout: "fitDataFill",
                 editTriggerEvent: "dblclick",
@@ -197,12 +198,16 @@
             url.protocol = url.protocol.replace("http", "ws");
             const socket = new WebSocket(url.href);
             socket.onmessage = function (event) {
+                const messageStart = performance.now();
                 console.log('Received websocket message:', event.data);
                 const message = JSON.parse(event.data);
                 if (message.type === 'update') {
                     table.updateOrAddData([message.item]);
+                    console.log(`Updated table in ${performance.now() - messageStart}ms`);
                 } else if (message.type === 'delete') {
                     table.deleteRow(message.id);
+                    const messageEnd = performance.now();
+                    console.log(`Deleted row from table in ${messageEnd - messageStart}ms for item ${message.id}`);
                 }
             };
 
