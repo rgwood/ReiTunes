@@ -63,11 +63,20 @@ enum Commands {
     Install,
 }
 
+#[derive(Debug, Clone, Serialize)]
+#[serde(tag = "type")]
+enum LibraryUpdate {
+    #[serde(rename = "update")]
+    Update { item: LibraryItem },
+    #[serde(rename = "delete")]
+    Delete { id: Uuid },
+}
+
 #[derive(Clone)]
 struct AppState {
     library: Arc<RwLock<Library>>,
     // used to broadcast updates to all connected clients
-    update_tx: broadcast::Sender<LibraryItem>,
+    update_tx: broadcast::Sender<LibraryUpdate>,
 }
 
 #[tokio::main]
@@ -107,6 +116,7 @@ async fn main() -> Result<()> {
                 .route("/login", get(login_handler).post(login_post_handler))
                 .route("/ui/update", post(update_handler))
                 .route("/ui/play", post(play_handler))
+                .route("/ui/delete", post(delete_handler))
                 .route("/ui/{id}/bookmarks", post(add_bookmark_handler))
                 .route("/updates", get(updates_handler))
                 .route("/{*file}", get(static_handler))
@@ -144,13 +154,13 @@ async fn updates_handler(
 
 async fn handle_websocket(
     mut socket: axum::extract::ws::WebSocket,
-    tx: broadcast::Sender<LibraryItem>,
+    tx: broadcast::Sender<LibraryUpdate>,
     addr: SocketAddr,
 ) {
     info!(addr = ?addr, "WebSocket connected");
     let mut rx = tx.subscribe();
-    while let Ok(item) = rx.recv().await {
-        let msg = serde_json::to_string(&item).unwrap();
+    while let Ok(update) = rx.recv().await {
+        let msg = serde_json::to_string(&update).unwrap();
         if socket
             .send(axum::extract::ws::Message::Text(Utf8Bytes::from(msg)))
             .await
@@ -231,10 +241,17 @@ async fn save_and_broadcast_event(event: EventWithMetadata, app_state: AppState)
     let mut library = app_state.library.write().await;
     library.apply(&event);
 
-    if let Some(updated_item) = library.items.get(&event.aggregate_id).cloned() {
-        info!(id = ?event.id, "Broadcasting updated item, event type: {:?}", event.event);
-        // Broadcast the updated item to all connected clients
-        let _ = app_state.update_tx.send(updated_item);
+    match &event.event {
+        Event::LibraryItemDeletedEvent => {
+            info!(id = ?event.id, "Broadcasting item deletion");
+            let _ = app_state.update_tx.send(LibraryUpdate::Delete { id: event.aggregate_id });
+        }
+        _ => {
+            if let Some(updated_item) = library.items.get(&event.aggregate_id).cloned() {
+                info!(id = ?event.id, "Broadcasting updated item, event type: {:?}", event.event);
+                let _ = app_state.update_tx.send(LibraryUpdate::Update { item: updated_item });
+            }
+        }
     }
     Ok(())
 }
@@ -267,7 +284,7 @@ async fn add_item_handler(
 
     if let Some(updated_item) = library.items.get(&item_id).cloned() {
         // Broadcast the new item to all connected clients
-        let _ = app_state.update_tx.send(updated_item);
+        let _ = app_state.update_tx.send(LibraryUpdate::Update { item: updated_item });
     }
 
     Ok(StatusCode::CREATED)
@@ -295,10 +312,27 @@ async fn play_handler(
 
     if let Some(updated_item) = library.items.get(&request.id).cloned() {
         // Broadcast the updated item to all connected clients
-        let _ = app_state.update_tx.send(updated_item);
+        let _ = app_state.update_tx.send(LibraryUpdate::Update { item: updated_item });
     } else {
         warn!(id=?request.id, "Received play event for unknown item");
     }
+
+    Ok(StatusCode::OK)
+}
+
+#[derive(Debug, Deserialize)]
+struct DeleteRequest {
+    id: uuid::Uuid,
+}
+
+async fn delete_handler(
+    State(app_state): State<AppState>,
+    JsonExtractor(request): JsonExtractor<DeleteRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    let event = Event::LibraryItemDeletedEvent;
+    let event_with_metadata = EventWithMetadata::new(request.id, event)?;
+
+    save_and_broadcast_event(event_with_metadata, app_state).await?;
 
     Ok(StatusCode::OK)
 }

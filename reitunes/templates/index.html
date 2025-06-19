@@ -105,6 +105,13 @@
 
     <div class="px-5">
         <div id="library-table" class="border-solarized-base01"></div>
+        
+        <!-- Context Menu -->
+        <div id="context-menu" class="hidden fixed z-50 bg-solarized-base02 border border-solarized-blue rounded shadow-lg py-1 min-w-32">
+            <div id="context-delete" class="px-3 py-2 text-solarized-base1 hover:bg-solarized-red hover:text-solarized-base3 cursor-pointer transition-colors duration-200">
+                🗑️ Delete
+            </div>
+        </div>
         <script>
             document.addEventListener('DOMContentLoaded', () => {
                 const player = document.getElementById('player');
@@ -139,6 +146,50 @@
             ],
             });
 
+            // Context menu variables
+            const contextMenu = document.getElementById('context-menu');
+            const contextDelete = document.getElementById('context-delete');
+            let currentRowData = null;
+
+            // Handle right-click on table rows
+            table.on("rowContext", function(e, row) {
+                e.preventDefault();
+                currentRowData = row.getData();
+                
+                // Position the context menu
+                contextMenu.style.left = e.pageX + 'px';
+                contextMenu.style.top = e.pageY + 'px';
+                contextMenu.classList.remove('hidden');
+            });
+
+            // Handle context menu clicks
+            contextDelete.addEventListener('click', function() {
+                if (currentRowData) {
+                    deleteItem(currentRowData);
+                }
+                hideContextMenu();
+            });
+
+            // Hide context menu function
+            function hideContextMenu() {
+                contextMenu.classList.add('hidden');
+                currentRowData = null;
+            }
+
+            // Hide context menu when clicking elsewhere
+            document.addEventListener('click', function(e) {
+                if (!contextMenu.contains(e.target)) {
+                    hideContextMenu();
+                }
+            });
+
+            // Hide context menu on escape key
+            document.addEventListener('keydown', function(e) {
+                if (e.key === 'Escape') {
+                    hideContextMenu();
+                }
+            });
+
             // Connect to WebSocket for real-time updates
             let url = new URL("/updates", window.location.href);
             // http => ws
@@ -147,8 +198,12 @@
             const socket = new WebSocket(url.href);
             socket.onmessage = function (event) {
                 console.log('Received websocket message:', event.data);
-                const updatedItem = JSON.parse(event.data);
-                table.updateOrAddData([updatedItem]);
+                const message = JSON.parse(event.data);
+                if (message.type === 'update') {
+                    table.updateOrAddData([message.item]);
+                } else if (message.type === 'delete') {
+                    table.deleteRow(message.id);
+                }
             };
 
             table.on("cellClick", function (e, cell) {
@@ -342,6 +397,27 @@
 
             // Add event listener for the bookmark button
             document.getElementById('bookmark-button').addEventListener('click', addBookmark);
+
+            // Function to delete an item
+            function deleteItem(rowData) {
+                if (confirm(`Are you sure you want to delete "${rowData.name}"?`)) {
+                    fetch('/ui/delete', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ id: rowData.id }),
+                    })
+                        .then(response => {
+                            if (!response.ok) {
+                                throw new Error(`Response status: ${response.status}`);
+                            }
+                            console.log('Item deleted successfully');
+                        })
+                        .catch(error => {
+                            console.error('Error deleting item:', error);
+                            alert('Failed to delete item');
+                        });
+                }
+            }
         });
         </script>
 </body>
