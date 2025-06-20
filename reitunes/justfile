@@ -10,6 +10,9 @@ get-logs n:
 
 # The following commands are NOT for agent use
 
+default:
+  just --list
+
 install-deps:
     cargo install xh --locked
 

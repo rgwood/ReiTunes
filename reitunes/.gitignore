@@ -19,3 +19,5 @@ target/
 
 # Samply
 profile.json
+
+web-src/dist

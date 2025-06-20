@@ -114,6 +114,9 @@ async fn main() -> Result<()> {
                 .route("/allevents", get(all_events_handler))
                 .route_layer(middleware::from_fn(api_key_auth));
 
+            #[cfg(debug_assertions)]
+            let _guard = ViteAssets::start_dev_server(true);
+
             let mut app = Router::new()
                 .route("/", get(index_handler))
                 .route("/login", get(login_handler).post(login_post_handler))
@@ -122,6 +125,7 @@ async fn main() -> Result<()> {
                 .route("/ui/delete", post(delete_handler))
                 .route("/ui/{id}/bookmarks", post(add_bookmark_handler))
                 .route("/updates", get(updates_handler))
+                .route("/api/library", get(library_handler))
                 .route("/{*file}", get(static_handler))
                 .route_layer(middleware::from_fn(auth))
                 .layer(CookieManagerLayer::new())
@@ -174,20 +178,22 @@ async fn handle_websocket(
     }
 }
 
-#[derive(Template)]
-#[template(path = "index.html")]
-struct IndexTemplate {
-    items: Vec<LibraryItem>,
+#[derive(vite_rs::Embed)]
+#[root = "./web-src"]
+struct ViteAssets;
+
+async fn index_handler(State(_app_state): State<AppState>) -> Result<impl IntoResponse, AppError> {
+    match ViteAssets::get("index.html") {
+        Some(a) => Ok(Html(a.bytes).into_response()),
+        None => Ok((StatusCode::NOT_FOUND, "File not found").into_response()),
+    }
 }
 
-#[instrument(skip(app_state))]
-async fn index_handler(State(app_state): State<AppState>) -> Result<impl IntoResponse, AppError> {
+async fn library_handler(State(app_state): State<AppState>) -> Result<impl IntoResponse, AppError> {
     let library = app_state.library.read().await;
     let mut items: Vec<_> = library.items.values().cloned().collect();
     items.sort_by(|a, b| b.play_count.cmp(&a.play_count));
-
-    let rendered = IndexTemplate { items }.render()?;
-    Ok(Html(rendered))
+    Ok(Json(items))
 }
 
 async fn all_events_handler() -> Result<impl IntoResponse, AppError> {
@@ -407,8 +413,18 @@ fn create_update_event(field: &str, value: &str) -> Result<Event> {
 }
 
 async fn static_handler(uri: Uri) -> impl IntoResponse {
+    if let Some(path_and_query) = uri.path_and_query() {
+        if let Some(va) = ViteAssets::get(path_and_query.as_str().trim_start_matches('/')) {
+            let f = Response::builder()
+                .header(header::CONTENT_TYPE, va.content_type)
+                .body(Body::from(va.bytes))
+                .unwrap();
+            return f;
+        }
+    }
+
     let path = uri.path().trim_start_matches('/').to_string();
-    StaticFile(path)
+    StaticFile(path).into_response()
 }
 
 #[derive(RustEmbed)]
