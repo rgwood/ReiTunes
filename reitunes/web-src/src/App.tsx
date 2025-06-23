@@ -149,7 +149,7 @@ function App() {
   }
 
   return (
-    <div className="bg-solarized-base03 text-solarized-base2 min-h-screen font-consolas overflow-x-hidden overflow-y-auto">
+    <div className="bg-solarized-base03 text-solarized-base2 min-h-screen font-['Consolas_NF'] overflow-x-hidden overflow-y-auto">
       {/* Header */}
       <div className="sticky top-0 bg-solarized-base03 pt-5 px-5 pb-3 z-10">
         <div className="flex justify-between items-center mb-3">

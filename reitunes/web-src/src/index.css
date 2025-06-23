@@ -31,7 +31,7 @@
   
   --shadow-solarized: 0 0 10px #268bd2;
   
-  --font-family-consolas: Consolas NF, Consolas, monospace;
+  --font-family-consolas: "Consolas NF", "Consolas", monospace;
 }
 
 @layer utilities {
