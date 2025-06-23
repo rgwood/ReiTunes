@@ -52,6 +52,23 @@ function App() {
     return () => socket.close()
   }, [])
 
+  // Keyboard shortcuts
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.ctrlKey && e.key === 'f') {
+        e.preventDefault()
+        const searchInput = document.getElementById('search-input') as HTMLInputElement
+        searchInput?.focus()
+      } else if (e.ctrlKey && e.key === 'e') {
+        e.preventDefault()
+        playRandomBookmark()
+      }
+    }
+
+    document.addEventListener('keydown', handleKeyDown)
+    return () => document.removeEventListener('keydown', handleKeyDown)
+  }, [items])
+
   const filteredItems = items.filter(item =>
     item.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
     item.artist.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -79,7 +96,10 @@ function App() {
   }
 
   const addBookmark = () => {
-    if (!selectedItem || !audioRef.current) return
+    if (!selectedItem || !audioRef.current) {
+      alert("Please select a song first.")
+      return
+    }
     
     const currentTime = audioRef.current.currentTime
     fetch(`/ui/${selectedItem.id}/bookmarks`, {
@@ -106,7 +126,7 @@ function App() {
     playSong(randomBookmark.item, randomBookmark.position, false)
   }
 
-  const formatBookmarks = (bookmarks: Record<string, { position: number; emoji?: string }>) => {
+  const formatBookmarks = (item: LibraryItem, bookmarks: Record<string, { position: number; emoji?: string }>) => {
     return Object.values(bookmarks).map((bookmark, index) => {
       const minutes = Math.floor(bookmark.position / 60)
       const seconds = Math.floor(bookmark.position % 60)
@@ -115,9 +135,12 @@ function App() {
       return (
         <span
           key={index}
-          className="cursor-pointer hover:underline decoration-blue-400 decoration-2 rounded mr-1"
+          className="cursor-pointer hover:underline decoration-solarized-blue decoration-2 rounded mr-1"
           title={timeString}
-          onClick={() => selectedItem && playSong(selectedItem, bookmark.position)}
+          onClick={(e) => {
+            e.stopPropagation()
+            playSong(item, bookmark.position)
+          }}
         >
           {bookmark.emoji || '🔖'}
         </span>
@@ -126,30 +149,36 @@ function App() {
   }
 
   return (
-    <div className="bg-slate-900 text-slate-300 min-h-screen font-mono">
+    <div className="bg-solarized-base03 text-solarized-base2 min-h-screen font-consolas overflow-x-hidden overflow-y-auto">
       {/* Header */}
-      <div className="sticky top-0 bg-slate-900 pt-5 px-5 pb-3 z-10">
+      <div className="sticky top-0 bg-solarized-base03 pt-5 px-5 pb-3 z-10">
         <div className="flex justify-between items-center mb-3">
           <div className="text-2xl flex-grow">
-            <span className="text-blue-400">{currentSong}</span>
+            <span id="current-song" className="text-solarized-blue text-shadow-solarized">
+              {currentSong}
+            </span>
           </div>
           <div className="flex items-center space-x-2">
-            <input
-              type="text"
-              placeholder="Search..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-48 px-2 py-1 bg-slate-900 text-slate-300 border border-blue-400 text-lg placeholder-slate-500"
-            />
+            <div className="relative w-48">
+              <input
+                type="text"
+                id="search-input"
+                placeholder="Search...."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full px-2 py-1 bg-solarized-base03 text-solarized-base1 border border-solarized-blue text-lg placeholder-solarized-base00"
+                autoComplete="off"
+              />
+            </div>
             <button
               onClick={addBookmark}
-              className="px-3 py-1 bg-blue-600 text-slate-900 rounded hover:bg-cyan-500 transition-colors duration-300"
+              className="px-3 py-1 bg-solarized-blue text-solarized-base03 rounded hover:bg-solarized-cyan transition-colors duration-300"
             >
               🔖
             </button>
             <button
               onClick={playRandomBookmark}
-              className="px-3 py-1 bg-blue-600 text-slate-900 rounded hover:bg-cyan-500 transition-colors duration-300"
+              className="px-3 py-1 bg-solarized-blue text-solarized-base03 rounded hover:bg-solarized-cyan transition-colors duration-300"
             >
               🎲
             </button>
@@ -159,13 +188,13 @@ function App() {
         <div className="flex items-center space-x-2 mb-3">
           <button
             onClick={() => audioRef.current && (audioRef.current.currentTime -= 30)}
-            className="px-3 py-2 bg-slate-900 text-slate-200 border border-blue-400 rounded-sm hover:bg-blue-600 hover:bg-opacity-30"
+            className="px-3 py-2 bg-solarized-base03 text-solarized-base2 border border-solarized-blue rounded-sm hover:bg-solarized-blue hover:bg-opacity-30"
           >
             ⏪
           </button>
           <button
             onClick={() => audioRef.current && (audioRef.current.currentTime += 30)}
-            className="px-3 py-2 bg-slate-900 text-slate-200 border border-blue-400 rounded-sm hover:bg-blue-600 hover:bg-opacity-30"
+            className="px-3 py-2 bg-solarized-base03 text-solarized-base3 border border-solarized-blue rounded-sm hover:bg-solarized-blue hover:bg-opacity-30"
           >
             ⏩
           </button>
@@ -173,7 +202,7 @@ function App() {
             ref={audioRef}
             controls
             autoPlay
-            className="flex-grow bg-slate-800 border border-blue-400"
+            className="flex-grow bg-solarized-base02 border border-solarized-blue"
           >
             Your browser does not support the audio element.
           </audio>
@@ -182,37 +211,54 @@ function App() {
 
       {/* Table */}
       <div className="px-5">
-        <div className="overflow-auto" style={{height: 'calc(100vh - 150px)'}}>
-          <table className="w-full text-sm">
-            <thead className="sticky top-0 bg-slate-800">
-              <tr>
-                <th className="text-left p-2 w-3/10">Name</th>
-                <th className="text-left p-2 w-2/10">Artist</th>
-                <th className="text-left p-2 w-1/10">Album</th>
-                <th className="text-left p-2">Play Count</th>
-                <th className="text-left p-2 w-1.5/10">Bookmarks</th>
-                <th className="text-left p-2">Created At (UTC)</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredItems.map((item) => (
-                <tr
-                  key={item.id}
-                  className={`border-b border-slate-700 hover:bg-slate-800 cursor-pointer ${
-                    selectedItem?.id === item.id ? 'bg-blue-900 bg-opacity-30' : ''
-                  }`}
-                  onClick={() => playSong(item)}
-                >
-                  <td className="p-2">{item.name}</td>
-                  <td className="p-2">{item.artist}</td>
-                  <td className="p-2">{item.album}</td>
-                  <td className="p-2">{item.play_count}</td>
-                  <td className="p-2">{formatBookmarks(item.bookmarks)}</td>
-                  <td className="p-2">{item.created_time_utc.split('.')[0]}</td>
+        <div className="border border-solarized-base01" style={{height: 'calc(100vh - 150px)'}}>
+          <div className="overflow-auto h-full">
+            <table className="w-full text-sm">
+              <thead className="sticky top-0 bg-solarized-base02 border-b border-solarized-base00">
+                <tr className="text-solarized-base2 font-bold">
+                  <th className="text-left p-1 border-r border-solarized-base01 w-3/10">Name</th>
+                  <th className="text-left p-1 border-r border-solarized-base01 w-2/10">Artist</th>
+                  <th className="text-left p-1 border-r border-solarized-base01 w-1/10">Album</th>
+                  <th className="text-left p-1 border-r border-solarized-base01">Play Count</th>
+                  <th className="text-left p-1 border-r border-solarized-base01 w-1.5/10">Bookmarks</th>
+                  <th className="text-left p-1">Created At (UTC)</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {filteredItems.map((item, index) => (
+                  <tr
+                    key={item.id}
+                    className={`
+                      border-b border-solarized-base01 cursor-pointer transition-colors duration-200
+                      ${index % 2 === 0 ? 'bg-solarized-base02' : 'bg-solarized-base03'}
+                      ${selectedItem?.id === item.id ? 'bg-solarized-blue' : ''}
+                      hover:bg-solarized-base01
+                    `}
+                    onClick={() => playSong(item)}
+                  >
+                    <td className="p-1 border-r border-solarized-base01 whitespace-nowrap overflow-hidden text-ellipsis">
+                      {item.name}
+                    </td>
+                    <td className="p-1 border-r border-solarized-base01 whitespace-nowrap overflow-hidden text-ellipsis">
+                      {item.artist}
+                    </td>
+                    <td className="p-1 border-r border-solarized-base01 whitespace-nowrap overflow-hidden text-ellipsis">
+                      {item.album}
+                    </td>
+                    <td className="p-1 border-r border-solarized-base01">
+                      {item.play_count}
+                    </td>
+                    <td className="p-1 border-r border-solarized-base01">
+                      {formatBookmarks(item, item.bookmarks)}
+                    </td>
+                    <td className="p-1">
+                      {item.created_time_utc.split('.')[0]}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       </div>
     </div>
