@@ -3,7 +3,17 @@
     "allow": [
       "Bash(cargo build:*)",
       "Bash(cargo test:*)",
-      "Bash(cargo check:*)"
+      "Bash(cargo check:*)",
+      "Bash(mkdir:*)",
+      "Bash(cp:*)",
+      "Bash(npm run build:*)",
+      "WebFetch(domain:docs.sonos.com)",
+      "WebFetch(domain:developer.sonos.com)",
+      "Bash(cat:*)",
+      "Bash(grep:*)",
+      "Bash(pkill:*)",
+      "Bash(true)",
+      "Bash(./test_smapi.py)"
     ],
     "deny": []
   }

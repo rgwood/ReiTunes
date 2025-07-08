@@ -20,10 +20,14 @@ r2d2_sqlite.workspace = true
 mime_guess.workspace = true
 dirs.workspace = true
 axum = { version = "0.8.3", features = ["ws"] }
-tower-http = { version = "0.6.2", features = ["fs"] }
+tower-http = { version = "0.6.2", features = ["fs", "cors", "trace"] }
 tower-livereload = "0.9.6"
 askama = {version = "0.13.0", features = ["serde_json"]  }
 rust-embed = { version = "8.7.0", features = ["axum-ex"] }
 tower-cookies = "0.11.0"
 axum-macros = "0.5.0"
 openssl = { version = "0.10.72", features = ["vendored"] }
+quick-xml = "0.31"
+serde-xml-rs = "0.6"
+thiserror = "1.0"
+regex = "1.10"
