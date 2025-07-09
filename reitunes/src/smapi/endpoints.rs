@@ -199,7 +199,14 @@ pub async fn handle_get_media_uri(
 
     let library = state.library.read().await;
 
-    if let Ok(track_id) = request.id.parse::<uuid::Uuid>() {
+    // Strip "track:" prefix if present
+    let clean_id = if request.id.starts_with("track:") {
+        &request.id[6..]
+    } else {
+        &request.id
+    };
+
+    if let Ok(track_id) = clean_id.parse::<uuid::Uuid>() {
         if let Some(track) = library.items.get(&track_id) {
             let stream_url = get_audio_stream_url(track);
             info!("Generated stream URL: '{}'", stream_url);
@@ -227,7 +234,14 @@ pub async fn handle_get_extended_metadata(
 
     let library = state.library.read().await;
 
-    if let Ok(track_id) = request.id.parse::<uuid::Uuid>() {
+    // Strip "track:" prefix if present before checking for UUID
+    let clean_id = if request.id.starts_with("track:") {
+        &request.id[6..]
+    } else {
+        &request.id
+    };
+
+    if let Ok(track_id) = clean_id.parse::<uuid::Uuid>() {
         if let Some(track) = library.items.get(&track_id) {
             let metadata = library_item_to_media_metadata(track);
             let response = GetExtendedMetadataResponse {

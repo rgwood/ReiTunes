@@ -11,14 +11,14 @@ pub fn library_item_to_media_metadata(item: &LibraryItem) -> MediaMetadata {
     };
 
     MediaMetadata {
-        id: item.id.to_string(),
+        id: format!("track:{}", item.id),
         title: item.name.clone(),
         mime_type: mime_type.to_string(),
         item_type: "track".to_string(),
         track_metadata: Some(TrackMetadata {
             artist: item.artist.clone(),
             album: item.album.clone(),
-            duration: None,     // Will be added in Phase 4
+            duration: Some(3600),     // Hardcoded 1 hour (3600 seconds) for testing
             track_number: None, // Will be added in Phase 4
         }),
     }

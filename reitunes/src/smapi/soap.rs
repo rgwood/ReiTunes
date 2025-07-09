@@ -249,6 +249,9 @@ fn json_to_simple_xml(json_str: &str, root_element: &str) -> Result<String, Soap
                         if let Some(title) = track.get("title") {
                             xml.push_str(&format!("<title>{}</title>", title.as_str().unwrap_or("")));
                         }
+                        if let Some(mime_type) = track.get("mimeType") {
+                            xml.push_str(&format!("<mimeType>{}</mimeType>", mime_type.as_str().unwrap_or("")));
+                        }
                         if let Some(item_type) = track.get("itemType") {
                             xml.push_str(&format!("<itemType>{}</itemType>", item_type.as_str().unwrap_or("")));
                         }
