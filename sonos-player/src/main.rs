@@ -1,6 +1,6 @@
 use anyhow::Result;
 use clap::Parser;
-use logging::initialize_logging;
+use logging::{initialize_logging, get_data_dir, LOG_FILE};
 use reitunes_workspace::*;
 use std::path::PathBuf;
 
@@ -12,13 +12,34 @@ use tui::run_tui;
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None, styles = clap_v3_style())]
-struct Cli {}
+struct Cli {
+    #[command(subcommand)]
+    command: Option<Commands>,
+}
+
+#[derive(Parser)]
+enum Commands {
+    /// Show the path to the logs file
+    Logs,
+}
 
 #[tokio::main]
 async fn main() -> Result<()> {
     initialize_logging()?;
+    tracing::info!("Starting sonos-player v{}", env!("CARGO_PKG_VERSION"));
 
-    let _cli = Cli::parse();
+    let cli = Cli::parse();
+
+    match cli.command {
+        Some(Commands::Logs) => {
+            let log_path = get_data_dir().join(LOG_FILE.clone());
+            println!("{}", log_path.display());
+            return Ok(());
+        }
+        None => {
+            // Default behavior - run the TUI
+        }
+    }
 
     let exe_path = std::env::current_exe()?;
     let fallback_path = PathBuf::from("."); // Fallback to current directory

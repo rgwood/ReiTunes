@@ -1,15 +1,8 @@
 # switching back to bash for now
 # set shell := ["nu", "-c"]
 
-watch:
-    watchexec --exts=rs,sql,html,css,js --on-busy-update=restart -- cargo run
-
-deploy-local:
-    cargo build --release
-    mv -f target/release/reitunes-rs ~/bin/reitunes-rs
-    reitunes-rs install
-    systemctl --user daemon-reload
-    systemctl --user restart reitunes
+run-with-secrets:
+    op run --env-file="./prod.env" -- cargo run
 
 build-with-secrets:
     op run --env-file="./prod.env" -- cargo build --release
