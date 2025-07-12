@@ -1,6 +1,6 @@
 use anyhow::Result;
 use clap::Parser;
-use logging::{initialize_logging, get_data_dir, LOG_FILE};
+use logging::{get_data_dir, initialize_logging, LOG_FILE};
 use reitunes_workspace::*;
 use std::path::PathBuf;
 

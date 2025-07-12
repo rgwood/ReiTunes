@@ -336,19 +336,22 @@ pub struct Bookmark {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::database::save_event_to_db;
     use rusqlite::Connection;
-    use crate::database::{save_event_to_db};
 
     #[test]
     fn test_load_library_from_db() {
         // Use in-memory database for testing
         let conn = Connection::open(":memory:").unwrap();
         conn.execute_batch(include_str!("../schema.sql")).unwrap();
-        
+
         let library = load_library_from_db(&conn).unwrap();
 
         // Empty database should result in empty library
-        assert!(library.items.is_empty(), "Library should be empty for new database");
+        assert!(
+            library.items.is_empty(),
+            "Library should be empty for new database"
+        );
     }
 
     #[test]

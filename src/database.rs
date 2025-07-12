@@ -7,7 +7,7 @@ use serde_rusqlite::*;
 use std::collections::HashSet;
 use tracing::{info, instrument};
 
-use crate::library::{EventWithMetadata, EventRow};
+use crate::library::{EventRow, EventWithMetadata};
 
 /// Open a direct SQLite connection (used by sonos-player)
 pub fn open_connection(db_path: &str) -> Result<Connection> {

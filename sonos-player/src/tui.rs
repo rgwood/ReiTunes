@@ -13,16 +13,16 @@ use ratatui::{
     widgets::{Block, Borders, Cell, Padding, Paragraph, Row, Table, TableState},
     Frame, Terminal,
 };
+use reitunes_workspace::{download_and_save_events, load_library_from_db, Library, LibraryItem};
 use rusqlite::Connection;
 use sonos::{av_transport::SeekRequest, SonosDevice, TrackMetaData, TransportState};
-use reitunes_workspace::{download_and_save_events, load_library_from_db, Library, LibraryItem};
 use std::{io, sync::Arc, time::Duration};
 use tokio::{
     select,
     sync::{mpsc, watch, Mutex},
 };
 use tracing::{info, warn};
-use tui_textarea::{TextArea, Input};
+use tui_textarea::{Input, TextArea};
 
 use crate::retry::{
     pause_with_retry, play_with_retry, seek_with_retry, set_av_transport_uri_with_retry,
@@ -57,18 +57,20 @@ impl App {
         let search_query = self.search_textarea.lines().join(" ");
         if self.search_mode && !search_query.is_empty() {
             let query = search_query.to_lowercase();
-            self.filtered_items = self.items.iter()
+            self.filtered_items = self
+                .items
+                .iter()
                 .filter(|item| {
-                    item.name.to_lowercase().contains(&query) ||
-                    item.artist.to_lowercase().contains(&query) ||
-                    item.album.to_lowercase().contains(&query)
+                    item.name.to_lowercase().contains(&query)
+                        || item.artist.to_lowercase().contains(&query)
+                        || item.album.to_lowercase().contains(&query)
                 })
                 .cloned()
                 .collect();
         } else {
             self.filtered_items = self.items.clone();
         }
-        
+
         // Reset selection when filtering
         if self.filtered_items.is_empty() {
             self.state.select(None);
@@ -82,13 +84,13 @@ pub async fn run_tui(library: Library, conn: Connection, devices: Vec<&'static s
     let start_time = std::time::Instant::now();
     let initial_device = SonosDevice::for_room(devices[0]).await?;
     info!("Time to get Sonos device: {:?}", start_time.elapsed());
-    
+
     enable_raw_mode()?;
     let mut stdout = io::stdout();
     execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
-    
+
     let (tx, rx) = mpsc::channel(32);
     let (device_tx, device_rx) = watch::channel(initial_device.clone());
 
@@ -131,7 +133,7 @@ pub async fn run_tui(library: Library, conn: Connection, devices: Vec<&'static s
     let mut state = TableState::default();
     state.select(Some(0));
     let device_name = initial_device.name().await?;
-    
+
     let mut search_textarea = TextArea::default();
     search_textarea.set_cursor_line_style(Style::default());
     search_textarea.set_block(
@@ -144,10 +146,10 @@ pub async fn run_tui(library: Library, conn: Connection, devices: Vec<&'static s
                     .fg(Color::Yellow)
                     .add_modifier(Modifier::BOLD),
             )
-            .border_style(Style::default().fg(Color::Yellow))
+            .border_style(Style::default().fg(Color::Yellow)),
     );
     search_textarea.set_placeholder_text("Type to search songs by name, artist, or album...");
-    
+
     let app = Arc::new(Mutex::new(App {
         conn,
         device: initial_device.clone(),
@@ -620,7 +622,7 @@ fn ui(f: &mut Frame, app: &mut App) {
     } else {
         &app.items
     };
-    
+
     let rows = items_to_display.iter().enumerate().map(|(i, item)| {
         let style = if i % 2 == 0 {
             Style::default().fg(Color::White)
@@ -638,11 +640,13 @@ fn ui(f: &mut Frame, app: &mut App) {
     let table_block = Block::default()
         .borders(Borders::ALL)
         .border_set(border::ROUNDED)
-        .title(if app.search_mode && !app.search_textarea.lines().join("").is_empty() {
-            format!("─Music Library ({})", items_to_display.len())
-        } else {
-            "─Music Library".to_string()
-        })
+        .title(
+            if app.search_mode && !app.search_textarea.lines().join("").is_empty() {
+                format!("─Music Library ({})", items_to_display.len())
+            } else {
+                "─Music Library".to_string()
+            },
+        )
         .title_style(
             Style::default()
                 .fg(Color::Green)
