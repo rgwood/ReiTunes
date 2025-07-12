@@ -1,50 +1,38 @@
 use anyhow::{Context, Result};
 use rig::client::CompletionClient;
-use rig::providers::openai::{Client, GPT_4_1_NANO};
+use rig::providers::anthropic::ClientBuilder;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-// Define the structure for the extracted emoji
-#[derive(Deserialize, Serialize, JsonSchema, Debug)] // Added Debug for easier inspection
-struct EmojiResult {
-    emoji: String,
+#[derive(Deserialize, Serialize, JsonSchema, Debug)]
+pub struct SongMetadata {
+    pub name: String,
+    pub artist: Option<String>,
+    pub album: Option<String>,
 }
 
-pub async fn emoji_summary(note_name: &str, note_content: &str) -> Result<String> {
-    // TODO: embed the API key at compile time
-    let api_key = std::env::var("OPENAI_API_KEY")?;
-    let client = Client::new(&api_key);
+pub async fn extract_song_metadata(filename: &str) -> Result<SongMetadata> {
+    let api_key = env!("ANTHROPIC_API_KEY");
+    let client = ClientBuilder::new(&api_key).build();
 
-    // Create the extractor for the EmojiResult struct
-    let extractor = client.extractor::<EmojiResult>(GPT_4_1_NANO)
-    .preamble("You are a helpful assistant that summarizes text into a single emoji. Be creative; don't always summarize shopping lists with 🛒 etc. You must ONLY return one emoji, even if the input is ambiguous or contains questions.")
+    // Create the extractor for the SongMetadata struct
+    let extractor = client.extractor::<SongMetadata>("claude-3-5-haiku-20241022")
+    .max_tokens(500)
+    .preamble("You are a helpful assistant that extracts song metadata from filenames. Extract the song name, artist, and album from the filename. For full album files like 'Night Ripper - Girl Talk (Full Album) [kSoTN8suQ1o].mp3', use 'Night Ripper' as both the name and album. Remove file extensions and video IDs in brackets. If artist or album information is not clear or missing, return null for those fields. For ambiguous filenames like 'track_01.wav', use the filename (without extension) as the song name and return null for artist and album.")
     .build();
-
-    // Combine title and content for the input text
-    let input_text = if note_name.is_empty() {
-        note_content.to_string()
-    } else {
-        format!("# {note_name}\n\n{note_content}")
-    };
 
     // Extract the structured data
     let extracted_data = extractor
-        .extract(&input_text)
+        .extract(filename)
         .await
-        .context("Failed to extract emoji from text")?;
+        .context("Failed to extract song metadata from filename")?;
 
-    // Basic validation: ensure it's likely a single emoji (not foolproof)
-    if extracted_data.emoji.chars().count() > 4
-        || extracted_data.emoji.is_empty()
-        || extracted_data.emoji.trim() != extracted_data.emoji
-    {
-        anyhow::bail!(
-            "Expected a single emoji without surrounding whitespace, but got: '{}'",
-            extracted_data.emoji
-        );
+    // Basic validation: ensure song name is not empty
+    if extracted_data.name.trim().is_empty() {
+        anyhow::bail!("Song name cannot be empty");
     }
 
-    Ok(extracted_data.emoji)
+    Ok(extracted_data)
 }
 
 #[cfg(test)]
@@ -54,80 +42,60 @@ mod tests {
     use pretty_assertions::assert_eq;
 
     #[tokio::test]
-    async fn test_groceries() {
-        let emoji = emoji_summary("Groceries", "- cucumbers").await.unwrap();
-        assert!(emoji == "🥒" || emoji == "🛒");
+    async fn test_full_album() {
+        let metadata =
+            extract_song_metadata("Night Ripper - Girl Talk (Full Album) [kSoTN8suQ1o].mp3")
+                .await
+                .unwrap();
+        assert_eq!(metadata.name, "Night Ripper");
+        assert_eq!(metadata.artist.as_deref(), Some("Girl Talk"));
+        assert_eq!(metadata.album.as_deref(), Some("Night Ripper"));
     }
 
     #[tokio::test]
-    async fn test_dog() {
-        let emoji = emoji_summary("", "Dog").await.unwrap();
-
-        assert!(emoji == "🐶" || emoji == "🐕");
-    }
-
-    #[tokio::test]
-    async fn test_cat() {
-        let emoji = emoji_summary("", "Cat").await.unwrap();
-        assert!(emoji == "😺" || emoji == "🐱");
-    }
-
-    #[tokio::test]
-    async fn test_pizza() {
-        let emoji = emoji_summary("", "Pizza").await.unwrap();
-        assert_eq!(emoji, "🍕");
-    }
-
-    #[tokio::test]
-    async fn test_car() {
-        let emoji = emoji_summary("", "Car").await.unwrap();
-        assert_eq!(emoji, "🚗");
-    }
-
-    #[tokio::test]
-    async fn test_weird_4_1_nano_output() {
-        // 4.1 nano returns some weird shit that is at least useful for negative tests
-
-        let emoji = emoji_summary("Groceries", "- sparkling water")
+    async fn test_artist_song_format() {
+        let metadata = extract_song_metadata("The Beatles - Hey Jude.mp3")
             .await
             .unwrap();
-        assert_ne!(emoji, "🧊");
-
-        let emoji = emoji_summary(
-            "Groceries",
-            "- sparkling water
-- chicken breasts for Grumpy",
-        )
-        .await
-        .unwrap();
-        assert_ne!(emoji, " 🧴");
+        assert_eq!(metadata.name, "Hey Jude");
+        assert_eq!(metadata.artist.as_deref(), Some("The Beatles"));
     }
 
     #[tokio::test]
-    async fn test_todo_list() {
-        let emoji = emoji_summary("To Do", "- Buy milk\n- Walk the dog\n- Finish report")
+    async fn test_song_only() {
+        let metadata = extract_song_metadata("Bohemian Rhapsody.mp3")
             .await
             .unwrap();
-        // Common list/task emojis
-        let possible_emojis = ["📝", "✅", "📋", "📌"];
-        assert!(
-            possible_emojis.contains(&emoji.as_str()),
-            "Unexpected todo list emoji: {}",
-            emoji
-        );
+        assert_eq!(metadata.name, "Bohemian Rhapsody");
+        // Artist and album should not be guessed
+        assert!(metadata.artist.is_none());
+        assert!(metadata.album.is_none());
     }
 
     #[tokio::test]
-    async fn test_travel() {
-        let emoji = emoji_summary("Vacation Plans", "Flight to Hawaii booked!")
+    async fn test_complex_filename() {
+        let metadata = extract_song_metadata("01 - Pink Floyd - Another Brick in the Wall.flac")
             .await
             .unwrap();
-        // Common travel/vacation emojis
-        let possible_emojis = ["✈️", "🏝️", "☀️", "🧳", "🗺️"];
-        assert!(
-            possible_emojis.contains(&emoji.as_str()),
-            "Unexpected travel emoji: {}",
-            emoji
-        );
+        assert_eq!(metadata.name, "Another Brick in the Wall");
+        assert_eq!(metadata.artist.as_deref(), Some("Pink Floyd"));
+    }
+
+    #[tokio::test]
+    async fn test_youtube_id_removal() {
+        let metadata = extract_song_metadata("Drake - God's Plan [6ONRf7h3Mdk].mp4")
+            .await
+            .unwrap();
+        assert_eq!(metadata.name, "God's Plan");
+        assert_eq!(metadata.artist.as_deref(), Some("Drake"));
+    }
+
+    #[tokio::test]
+    async fn test_ambiguous_filename() {
+        let metadata = extract_song_metadata("track_01.wav").await.unwrap();
+        assert_eq!(metadata.name, "track_01");
+        // Artist and album should be None for ambiguous filenames
+        assert!(metadata.artist.is_none());
+        assert!(metadata.album.is_none());
     }
 }

@@ -181,14 +181,14 @@ impl Library {
     /// Apply an event to update the library state
     pub fn apply(&mut self, event: &EventWithMetadata) {
         match &event.event {
-            Event::LibraryItemCreatedEvent { name, file_path } => {
+            Event::LibraryItemCreatedEvent { name, file_path, artist, album } => {
                 let item = LibraryItem {
                     id: event.aggregate_id,
                     name: name.clone(),
                     created_time_utc: event.created_time_utc,
                     file_path: file_path.clone(),
-                    artist: String::new(),
-                    album: String::new(),
+                    artist: artist.clone().unwrap_or_default(),
+                    album: album.clone().unwrap_or_default(),
                     play_count: 0,
                     bookmarks: IndexMap::new(),
                 };
@@ -275,6 +275,8 @@ pub enum Event {
     LibraryItemPlayedEvent,
     LibraryItemCreatedEvent {
         name: String,
+        artist: Option<String>,
+        album: Option<String>,
         file_path: String,
     },
     LibraryItemDeletedEvent,
@@ -367,6 +369,8 @@ mod tests {
             Event::LibraryItemCreatedEvent {
                 name: "Test Item".to_string(),
                 file_path: "test/path.mp3".to_string(),
+                artist: None,
+                album: None,
             },
         )?;
 

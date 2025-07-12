@@ -2,4 +2,5 @@
 passthrough = [
     "REITUNES_PASSWORD",
     "REITUNES_API_KEY",
+    "ANTHROPIC_API_KEY",
 ]

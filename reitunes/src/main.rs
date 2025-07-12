@@ -26,6 +26,8 @@ use tower_livereload::LiveReloadLayer;
 use tracing::{info, instrument, warn};
 use uuid::Uuid;
 
+use crate::llm::SongMetadata;
+
 mod llm;
 mod systemd;
 
@@ -273,8 +275,26 @@ async fn add_item_handler(
 ) -> Result<impl IntoResponse, AppError> {
     info!(file_path = &request.file_path, "Adding new item");
     let item_id = Uuid::new_v4();
+
+    let metadata = match llm::extract_song_metadata(&request.file_path).await {
+        Ok(metadata) => metadata,
+        Err(e) => {
+            warn!(
+                file_path = &request.file_path,
+                "Failed to extract song metadata: {:?}", e
+            );
+            SongMetadata {
+                name: request.file_path.clone(),
+                artist: None,
+                album: None,
+            }
+        }
+    };
+
     let event = Event::LibraryItemCreatedEvent {
-        name: request.file_path.clone(),
+        name: metadata.name,
+        artist: metadata.artist,
+        album: metadata.album,
         file_path: request.file_path,
     };
     let event_with_metadata = EventWithMetadata::new(item_id, event)?;
