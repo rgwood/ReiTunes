@@ -26,6 +26,7 @@ use tower_livereload::LiveReloadLayer;
 use tracing::{info, instrument, warn};
 use uuid::Uuid;
 
+mod llm;
 mod systemd;
 
 const DB_PATH: &str = "reitunes-library.db";
@@ -244,12 +245,16 @@ async fn save_and_broadcast_event(event: EventWithMetadata, app_state: AppState)
     match &event.event {
         Event::LibraryItemDeletedEvent => {
             info!(id = ?event.id, "Broadcasting item deletion");
-            let _ = app_state.update_tx.send(LibraryUpdate::Delete { id: event.aggregate_id });
+            let _ = app_state.update_tx.send(LibraryUpdate::Delete {
+                id: event.aggregate_id,
+            });
         }
         _ => {
             if let Some(updated_item) = library.items.get(&event.aggregate_id).cloned() {
                 info!(id = ?event.id, "Broadcasting updated item, event type: {:?}", event.event);
-                let _ = app_state.update_tx.send(LibraryUpdate::Update { item: updated_item });
+                let _ = app_state
+                    .update_tx
+                    .send(LibraryUpdate::Update { item: updated_item });
             }
         }
     }
@@ -284,7 +289,9 @@ async fn add_item_handler(
 
     if let Some(updated_item) = library.items.get(&item_id).cloned() {
         // Broadcast the new item to all connected clients
-        let _ = app_state.update_tx.send(LibraryUpdate::Update { item: updated_item });
+        let _ = app_state
+            .update_tx
+            .send(LibraryUpdate::Update { item: updated_item });
     }
 
     Ok(StatusCode::CREATED)
@@ -312,7 +319,9 @@ async fn play_handler(
 
     if let Some(updated_item) = library.items.get(&request.id).cloned() {
         // Broadcast the updated item to all connected clients
-        let _ = app_state.update_tx.send(LibraryUpdate::Update { item: updated_item });
+        let _ = app_state
+            .update_tx
+            .send(LibraryUpdate::Update { item: updated_item });
     } else {
         warn!(id=?request.id, "Received play event for unknown item");
     }
