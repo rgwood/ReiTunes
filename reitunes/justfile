@@ -1,5 +1,14 @@
-# switching back to bash for now
-# set shell := ["nu", "-c"]
+# The following commands ARE relevant for agents
+
+publish:
+    op run --env-file="./prod.env" -- cross build --target x86_64-unknown-linux-musl --release
+    rsync ../target/x86_64-unknown-linux-musl/release/reitunes spudnik.reillywood.com:bin/
+    ssh spudnik.reillywood.com -t "systemctl --user restart reitunes"
+
+get-logs n:
+    ssh -q spudnik -t "journalctl --user -u reitunes.service -n {{n}} --no-pager"
+
+# The following commands are NOT for agent use
 
 install-deps:
     cargo install xh --locked
@@ -7,20 +16,12 @@ install-deps:
 watch:
     watchexec --exts=rs,sql,html,css,js --on-busy-update=restart -- cargo run -- --live-reload
 
-deploy-local:
-    cargo build --release
-    mv -f target/release/reitunes-rs ~/bin/reitunes-rs
-    reitunes-rs install
-    systemctl --user daemon-reload
-    systemctl --user restart reitunes
+run-with-secrets:
+    op run --env-file="./prod.env" -- cargo run
 
 build-with-secrets:
     op run --env-file="./prod.env" -- cargo build
 
-publish:
-    op run --env-file="./prod.env" -- cross build --target x86_64-unknown-linux-musl --release
-    rsync ../target/x86_64-unknown-linux-musl/release/reitunes spudnik.reillywood.com:bin/
-    ssh spudnik.reillywood.com -t "systemctl --user restart reitunes"
 
 run:
     cargo run
@@ -37,8 +38,6 @@ build-release:
     cargo build --release
     @$"Build size: (ls target/release/{{expected_filename}} | get size)"
 
-publish-to-local-bin: build-release
-    cp target/release/{{expected_filename}} ~/bin/
 
 build-linux-x64:
     cross build --target x86_64-unknown-linux-gnu --release
@@ -48,9 +47,3 @@ build-linux-arm64:
 
 build-windows-on-linux:
     cross build --target x86_64-pc-windows-gnu --release
-
-test-api:
-    op run --env-file="./local.env" -- nu curl.nu
-
-test-api-prod:
-    op run --no-masking --env-file="./prod.env" -- nu curl.nu
