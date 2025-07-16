@@ -335,6 +335,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "613afe47fcd5fac7ccf1db93babcb082c5994d996f20b8b159f2ad1658eb5724"
 
 [[package]]
+name = "chrono"
+version = "0.4.41"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c469d952047f47f91b68d1cba3f10d63c11d73e4636f24f08daf0278abf01c4d"
+dependencies = [
+ "num-traits",
+]
+
+[[package]]
 name = "clap"
 version = "4.5.40"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3033,19 +3042,20 @@ checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
 
 [[package]]
 name = "vite-rs"
-version = "0.1.0"
+version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bd2e8124bdc188f95a998b59277dcbbb3e539e9ac7ffaadac852f1a70b8f014d"
+checksum = "795be49e049b7d1da16ef6e08c76019e11c6fac676b97e90e0d3e9077ac1904d"
 dependencies = [
  "vite-rs-dev-server",
  "vite-rs-embed-macro",
+ "vite-rs-interface",
 ]
 
 [[package]]
 name = "vite-rs-dev-server"
-version = "0.1.0"
+version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6c4971c20397ebb6d5d88e93bf02a90c50346f7b05e3b92bce72b65e11d4ecf0"
+checksum = "c77fce2acb9b496779c5cc44e043e368778cb3b26fc4e4a45b37daffce121ff4"
 dependencies = [
  "command-group",
  "ctrlc",
@@ -3055,19 +3065,27 @@ dependencies = [
 
 [[package]]
 name = "vite-rs-embed-macro"
-version = "0.1.0"
+version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ec68e0f28d50c25d2945eb2d393179a0b43defa168d7e8334847a4624434033f"
+checksum = "1319be10ced76e1afe4d1090a9ddf190919eadf068622526330dea64824efc12"
 dependencies = [
+ "chrono",
  "mime_guess",
  "proc-macro2",
  "quote",
  "serde",
  "serde_json",
+ "sha2",
  "syn",
  "vite-rs-dev-server",
  "walkdir",
 ]
+
+[[package]]
+name = "vite-rs-interface"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8650a49e3f3efe97a02388b4b56a2837e221f29c277ad30579d9fc9a80d3e7bb"
 
 [[package]]
 name = "walkdir"
