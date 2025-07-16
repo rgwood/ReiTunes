@@ -201,6 +201,11 @@ function App() {
             borderRadiusLG: 0,
             colorBgContainer: '#002b36',
             fontFamily: 'Consolas NF',
+            colorBorderSecondary: '#073642',
+            rowHoverBg: '#073642',
+            headerBg: '#073642',
+            headerColor: '#839496',
+            colorText: '#eee8d5',
           },
         },
       }}
