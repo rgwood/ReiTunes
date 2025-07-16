@@ -1,4 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
+import { Table } from 'antd'
+import type { ColumnsType } from 'antd/es/table'
 
 interface LibraryItem {
   id: number
@@ -148,6 +150,47 @@ function App() {
     })
   }
 
+  const columns: ColumnsType<LibraryItem> = [
+    {
+      title: 'Name',
+      dataIndex: 'name',
+      key: 'name',
+      width: '30%',
+      ellipsis: true,
+    },
+    {
+      title: 'Artist',
+      dataIndex: 'artist',
+      key: 'artist',
+      width: '20%',
+      ellipsis: true,
+    },
+    {
+      title: 'Album',
+      dataIndex: 'album',
+      key: 'album',
+      width: '10%',
+      ellipsis: true,
+    },
+    {
+      title: 'Play Count',
+      dataIndex: 'play_count',
+      key: 'play_count',
+    },
+    {
+      title: 'Bookmarks',
+      key: 'bookmarks',
+      width: '15%',
+      render: (_, record) => formatBookmarks(record, record.bookmarks),
+    },
+    {
+      title: 'Created At (UTC)',
+      dataIndex: 'created_time_utc',
+      key: 'created_time_utc',
+      render: (text: string) => text.split('.')[0],
+    },
+  ]
+
   return (
     <div className="bg-solarized-base03 text-solarized-base2 min-h-screen font-['Consolas_NF'] overflow-x-hidden overflow-y-auto">
       {/* Header */}
@@ -211,55 +254,22 @@ function App() {
 
       {/* Table */}
       <div className="px-5">
-        <div className="border border-solarized-base01" style={{height: 'calc(100vh - 150px)'}}>
-          <div className="overflow-auto h-full">
-            <table className="w-full text-sm">
-              <thead className="sticky top-0 bg-solarized-base02 border-b border-solarized-base00">
-                <tr className="text-solarized-base2 font-bold">
-                  <th className="text-left p-1 border-r border-solarized-base01 w-3/10">Name</th>
-                  <th className="text-left p-1 border-r border-solarized-base01 w-2/10">Artist</th>
-                  <th className="text-left p-1 border-r border-solarized-base01 w-1/10">Album</th>
-                  <th className="text-left p-1 border-r border-solarized-base01">Play Count</th>
-                  <th className="text-left p-1 border-r border-solarized-base01 w-1.5/10">Bookmarks</th>
-                  <th className="text-left p-1">Created At (UTC)</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredItems.map((item, index) => (
-                  <tr
-                    key={item.id}
-                    className={`
-                      border-b border-solarized-base01 cursor-pointer transition-colors duration-200
-                      ${index % 2 === 0 ? 'bg-solarized-base02' : 'bg-solarized-base03'}
-                      ${selectedItem?.id === item.id ? 'bg-solarized-blue' : ''}
-                      hover:bg-solarized-base01
-                    `}
-                    onClick={() => playSong(item)}
-                  >
-                    <td className="p-1 border-r border-solarized-base01 whitespace-nowrap overflow-hidden text-ellipsis">
-                      {item.name}
-                    </td>
-                    <td className="p-1 border-r border-solarized-base01 whitespace-nowrap overflow-hidden text-ellipsis">
-                      {item.artist}
-                    </td>
-                    <td className="p-1 border-r border-solarized-base01 whitespace-nowrap overflow-hidden text-ellipsis">
-                      {item.album}
-                    </td>
-                    <td className="p-1 border-r border-solarized-base01">
-                      {item.play_count}
-                    </td>
-                    <td className="p-1 border-r border-solarized-base01">
-                      {formatBookmarks(item, item.bookmarks)}
-                    </td>
-                    <td className="p-1">
-                      {item.created_time_utc.split('.')[0]}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
+        <Table
+          columns={columns}
+          dataSource={filteredItems}
+          rowKey="id"
+          onRow={(record) => ({
+            onClick: () => playSong(record),
+            className: `cursor-pointer ${selectedItem?.id === record.id ? '!bg-solarized-blue' : ''}`,
+          })}
+          scroll={{ y: 'calc(100vh - 150px)' }}
+          size="small"
+          pagination={false}
+          style={{
+            backgroundColor: 'var(--solarized-base03)',
+            color: 'var(--solarized-base2)',
+          }}
+        />
       </div>
     </div>
   )
