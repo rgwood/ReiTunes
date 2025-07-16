@@ -8,6 +8,14 @@ publish:
 get-logs n:
     ssh -q spudnik -t "journalctl --user -u reitunes.service -n {{n}} --no-pager"
 
+# Use this to check that the web build is working
+check-web:
+    cd web-src && npm run build
+
+# Use this to check that the Rust build is working
+check-rust:
+    cargo check
+
 # The following commands are NOT for agent use
 
 default:
@@ -37,16 +45,8 @@ watch-tests:
 
 expected_filename := if os_family() == "windows" { "reitunes-rs.exe" } else { "reitunes-rs" }
 
-build-release:
-    cargo build --release
-    @$"Build size: (ls target/release/{{expected_filename}} | get size)"
-
-
 build-linux-x64:
     cross build --target x86_64-unknown-linux-gnu --release
 
 build-linux-arm64:
     cross build --target aarch64-unknown-linux-gnu --release
-
-build-windows-on-linux:
-    cross build --target x86_64-pc-windows-gnu --release
