@@ -252,7 +252,6 @@ function App() {
         </div>
       </div>
 
-      {/* Table */}
       <div className="px-5">
         <Table
           columns={columns}
@@ -260,15 +259,10 @@ function App() {
           rowKey="id"
           onRow={(record) => ({
             onClick: () => playSong(record),
-            className: `cursor-pointer ${selectedItem?.id === record.id ? '!bg-solarized-blue' : ''}`,
+            className: `cursor-pointer ${selectedItem?.id === record.id ? 'ant-table-row-selected' : ''}`,
           })}
-          scroll={{ y: 'calc(100vh - 150px)' }}
           size="small"
           pagination={false}
-          style={{
-            backgroundColor: 'var(--solarized-base03)',
-            color: 'var(--solarized-base2)',
-          }}
         />
       </div>
     </div>
