@@ -46,7 +46,7 @@ watch-tests:
 expected_filename := if os_family() == "windows" { "reitunes-rs.exe" } else { "reitunes-rs" }
 
 build-linux-x64:
-    cross build --target x86_64-unknown-linux-gnu --release
+    cross build --target x86_64-unknown-linux-musl --release
 
 build-linux-arm64:
     cross build --target aarch64-unknown-linux-gnu --release
