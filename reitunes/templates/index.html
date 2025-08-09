@@ -118,6 +118,8 @@
                 const searchInput = document.getElementById('search');
                 const currentSong = document.getElementById('current-song');
                 const randomButton = document.getElementById('random-button');
+                // Track which row is currently playing so we can advance
+                let currentRowId = null;
 
                 let table = new Tabulator("#library-table", {
                     data: {{ items| tojson | safe }},
@@ -253,6 +255,7 @@
                 // Select the row in the table
                 table.deselectRow();
                 table.selectRow(rowData.id);
+                currentRowId = rowData.id;
 
                 if (prevSrc !== player.src && incrementPlayCount) {
                     // Send request to update play count
@@ -363,6 +366,35 @@
 
             // Add event listener for the random button
             randomButton.addEventListener('click', playRandomBookmark);
+
+            // When the current song finishes, advance to the next visible row
+            player.addEventListener('ended', () => {
+                try {
+                    // Use the currently active (filtered & sorted) dataset
+                    const activeData = (typeof table.getData === 'function') ? table.getData('active') : table.getData();
+                    if (!activeData || activeData.length === 0) return;
+
+                    // Find index of the currently playing row
+                    let currentIndex = activeData.findIndex(d => d.id === currentRowId);
+                    // Fallback to selected row if needed
+                    if (currentIndex === -1) {
+                        const selected = table.getSelectedRows?.()[0];
+                        const selectedId = selected ? selected.getData().id : null;
+                        currentIndex = activeData.findIndex(d => d.id === selectedId);
+                    }
+
+                    if (currentIndex === -1) return; // Unknown current row
+                    const nextIndex = currentIndex + 1;
+                    if (nextIndex < activeData.length) {
+                        playSong(activeData[nextIndex]);
+                    } else {
+                        // Reached the end: stop (no loop)
+                        console.log('Reached end of list; stopping playback.');
+                    }
+                } catch (e) {
+                    console.error('Error advancing to next track:', e);
+                }
+            });
 
             // Function to add a bookmark
             function addBookmark() {
