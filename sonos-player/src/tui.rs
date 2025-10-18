@@ -1,3 +1,7 @@
+use crate::retry::{
+    pause_with_retry, play_with_retry, seek_with_retry, set_av_transport_uri_with_retry,
+    stop_with_retry,
+};
 use anyhow::Result;
 use crossterm::{
     event::{DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEvent, KeyModifiers},
@@ -13,7 +17,9 @@ use ratatui::{
     widgets::{Block, Borders, Cell, Padding, Paragraph, Row, Table, TableState},
     Frame, Terminal,
 };
-use reitunes_workspace::{download_and_save_events, load_library_from_db, Library, LibraryItem};
+use reitunes_workspace::{
+    download_and_save_events, load_library_from_db, Bookmark, Library, LibraryItem,
+};
 use rusqlite::Connection;
 use sonos::{av_transport::SeekRequest, SonosDevice, TrackMetaData, TransportState};
 use std::{io, sync::Arc, time::Duration};
@@ -24,16 +30,18 @@ use tokio::{
 use tracing::{info, warn};
 use tui_textarea::{Input, TextArea};
 
-use crate::retry::{
-    pause_with_retry, play_with_retry, seek_with_retry, set_av_transport_uri_with_retry,
-    stop_with_retry,
-};
-
 enum InputEvent {
     Input(KeyEvent),
     Tick,
     TrackMetadataChanged(Option<TrackMetaData>),
     TransportStateChanged(TransportState),
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Focus {
+    Library,
+    Bookmarks,
+    Search,
 }
 
 struct App {
@@ -49,13 +57,15 @@ struct App {
     current_device_index: usize,
     library: Library,
     search_textarea: TextArea<'static>,
-    search_mode: bool,
+    search_active: bool,
+    focus: Focus,
+    bookmark_state: TableState,
 }
 
 impl App {
     fn update_filtered_items(&mut self) {
         let search_query = self.search_textarea.lines().join(" ");
-        if self.search_mode && !search_query.is_empty() {
+        if self.is_search_mode() && !search_query.is_empty() {
             let query = search_query.to_lowercase();
             self.filtered_items = self
                 .items
@@ -77,6 +87,57 @@ impl App {
         } else {
             self.state.select(Some(0));
         }
+        self.sync_bookmark_selection();
+    }
+
+    fn selected_items(&self) -> &Vec<LibraryItem> {
+        if self.is_search_mode() {
+            &self.filtered_items
+        } else {
+            &self.items
+        }
+    }
+
+    fn selected_item(&self) -> Option<&LibraryItem> {
+        let items = self.selected_items();
+        self.state
+            .selected()
+            .and_then(|selected| items.get(selected))
+    }
+
+    fn sync_bookmark_selection(&mut self) {
+        if let Some(item) = self.selected_item() {
+            if item.bookmarks.is_empty() {
+                self.bookmark_state.select(None);
+            } else {
+                let desired = self
+                    .bookmark_state
+                    .selected()
+                    .unwrap_or(0)
+                    .min(item.bookmarks.len() - 1);
+                self.bookmark_state.select(Some(desired));
+            }
+        } else {
+            self.bookmark_state.select(None);
+        }
+    }
+
+    fn bookmarks_for_selected_item(&self) -> Vec<Bookmark> {
+        self.selected_item()
+            .map(|item| item.bookmarks.values().cloned().collect())
+            .unwrap_or_default()
+    }
+
+    fn selected_bookmark(&self) -> Option<(&LibraryItem, &Bookmark)> {
+        let item = self.selected_item()?;
+        let bookmark_index = self.bookmark_state.selected()?;
+        item.bookmarks
+            .get_index(bookmark_index)
+            .map(|(_, bookmark)| (item, bookmark))
+    }
+
+    fn is_search_mode(&self) -> bool {
+        self.search_active
     }
 }
 
@@ -150,7 +211,7 @@ pub async fn run_tui(library: Library, conn: Connection, devices: Vec<&'static s
     );
     search_textarea.set_placeholder_text("Type to search songs by name, artist, or album...");
 
-    let app = Arc::new(Mutex::new(App {
+    let mut app_instance = App {
         conn,
         device: initial_device.clone(),
         device_name,
@@ -163,8 +224,13 @@ pub async fn run_tui(library: Library, conn: Connection, devices: Vec<&'static s
         current_device_index: 0,
         library,
         search_textarea,
-        search_mode: false,
-    }));
+        search_active: false,
+        focus: Focus::Library,
+        bookmark_state: TableState::default(),
+    };
+    app_instance.sync_bookmark_selection();
+
+    let app = Arc::new(Mutex::new(app_instance));
 
     let tx_clone = tx.clone();
 
@@ -205,12 +271,15 @@ async fn run_app<B: Backend>(
                         modifiers: KeyModifiers::CONTROL,
                         ..
                     } => {
-                        if !app.search_mode {
-                            app.search_mode = true;
+                        if !app.search_active {
+                            app.search_active = true;
                             app.search_textarea.select_all();
                             app.search_textarea.delete_line_by_head();
                             app.update_filtered_items();
+                        } else {
+                            app.search_textarea.select_all();
                         }
+                        app.focus = Focus::Search;
                     }
                     KeyEvent {
                         code: KeyCode::Char('q'),
@@ -221,12 +290,79 @@ async fn run_app<B: Backend>(
                         code: KeyCode::Esc,
                         modifiers: KeyModifiers::NONE,
                         ..
-                    } => {
-                        if app.search_mode {
-                            app.search_mode = false;
+                    } => match app.focus {
+                        Focus::Search => {
+                            app.focus = Focus::Library;
+                            app.search_active = false;
                             app.search_textarea.select_all();
                             app.search_textarea.delete_line_by_head();
                             app.update_filtered_items();
+                        }
+                        Focus::Bookmarks => {
+                            app.focus = Focus::Library;
+                        }
+                        Focus::Library => {
+                            if app.search_active {
+                                app.search_active = false;
+                                app.search_textarea.select_all();
+                                app.search_textarea.delete_line_by_head();
+                                app.update_filtered_items();
+                            }
+                        }
+                    },
+                    KeyEvent {
+                        code: KeyCode::Char('b'),
+                        modifiers: KeyModifiers::NONE,
+                        ..
+                    } if !matches!(app.focus, Focus::Search) => {
+                        if matches!(app.focus, Focus::Bookmarks) {
+                            app.focus = Focus::Library;
+                        } else {
+                            app.focus = Focus::Bookmarks;
+                            app.sync_bookmark_selection();
+                        }
+                    }
+                    KeyEvent {
+                        code: KeyCode::Tab, ..
+                    } => {
+                        app.focus = match app.focus {
+                            Focus::Search => Focus::Library,
+                            Focus::Library => Focus::Bookmarks,
+                            Focus::Bookmarks => {
+                                if app.search_active {
+                                    Focus::Search
+                                } else {
+                                    Focus::Library
+                                }
+                            }
+                        };
+                        if matches!(app.focus, Focus::Bookmarks) {
+                            app.sync_bookmark_selection();
+                        }
+                    }
+                    KeyEvent {
+                        code: KeyCode::BackTab,
+                        ..
+                    } => {
+                        app.focus = match app.focus {
+                            Focus::Search => {
+                                if app.search_active {
+                                    Focus::Bookmarks
+                                } else {
+                                    Focus::Library
+                                }
+                            }
+                            Focus::Bookmarks => Focus::Library,
+                            Focus::Library => {
+                                if app.search_active {
+                                    Focus::Search
+                                } else {
+                                    Focus::Bookmarks
+                                }
+                            }
+                        };
+                        if matches!(app.focus, Focus::Bookmarks) {
+                            app.sync_bookmark_selection();
                         }
                     }
                     // Handle typing in search mode - only printable characters and basic editing keys
@@ -234,7 +370,7 @@ async fn run_app<B: Backend>(
                         code: KeyCode::Char(_),
                         modifiers: KeyModifiers::NONE,
                         ..
-                    } if app.search_mode => {
+                    } if matches!(app.focus, Focus::Search) => {
                         let input = Input::from(key_event);
                         app.search_textarea.input(input);
                         app.update_filtered_items();
@@ -243,7 +379,7 @@ async fn run_app<B: Backend>(
                         code: KeyCode::Backspace,
                         modifiers: KeyModifiers::NONE,
                         ..
-                    } if app.search_mode => {
+                    } if matches!(app.focus, Focus::Search) => {
                         let input = Input::from(key_event);
                         app.search_textarea.input(input);
                         app.update_filtered_items();
@@ -252,7 +388,7 @@ async fn run_app<B: Backend>(
                         code: KeyCode::Delete,
                         modifiers: KeyModifiers::NONE,
                         ..
-                    } if app.search_mode => {
+                    } if matches!(app.focus, Focus::Search) => {
                         let input = Input::from(key_event);
                         app.search_textarea.input(input);
                         app.update_filtered_items();
@@ -262,7 +398,7 @@ async fn run_app<B: Backend>(
                         code: KeyCode::Home,
                         modifiers: KeyModifiers::NONE,
                         ..
-                    } if app.search_mode => {
+                    } if matches!(app.focus, Focus::Search) => {
                         let input = Input::from(key_event);
                         app.search_textarea.input(input);
                     }
@@ -270,7 +406,7 @@ async fn run_app<B: Backend>(
                         code: KeyCode::End,
                         modifiers: KeyModifiers::NONE,
                         ..
-                    } if app.search_mode => {
+                    } if matches!(app.focus, Focus::Search) => {
                         let input = Input::from(key_event);
                         app.search_textarea.input(input);
                     }
@@ -279,7 +415,7 @@ async fn run_app<B: Backend>(
                         code: KeyCode::Left,
                         modifiers: KeyModifiers::CONTROL,
                         ..
-                    } if app.search_mode => {
+                    } if matches!(app.focus, Focus::Search) => {
                         let input = Input::from(key_event);
                         app.search_textarea.input(input);
                     }
@@ -287,7 +423,7 @@ async fn run_app<B: Backend>(
                         code: KeyCode::Right,
                         modifiers: KeyModifiers::CONTROL,
                         ..
-                    } if app.search_mode => {
+                    } if matches!(app.focus, Focus::Search) => {
                         let input = Input::from(key_event);
                         app.search_textarea.input(input);
                     }
@@ -296,7 +432,7 @@ async fn run_app<B: Backend>(
                         code: KeyCode::Char('a'),
                         modifiers: KeyModifiers::CONTROL,
                         ..
-                    } if app.search_mode => {
+                    } if matches!(app.focus, Focus::Search) => {
                         let input = Input::from(key_event);
                         app.search_textarea.input(input);
                     }
@@ -305,7 +441,7 @@ async fn run_app<B: Backend>(
                         code: KeyCode::Char('u'),
                         modifiers: KeyModifiers::CONTROL,
                         ..
-                    } if app.search_mode => {
+                    } if matches!(app.focus, Focus::Search) => {
                         let input = Input::from(key_event);
                         app.search_textarea.input(input);
                         app.update_filtered_items();
@@ -316,23 +452,42 @@ async fn run_app<B: Backend>(
                         modifiers: KeyModifiers::NONE,
                         ..
                     } => {
-                        let len = if app.search_mode {
-                            app.filtered_items.len()
-                        } else {
-                            app.items.len()
-                        };
-                        if len > 0 {
-                            let i = match app.state.selected() {
-                                Some(i) => {
-                                    if i >= len - 1 {
-                                        0
-                                    } else {
-                                        i + 1
+                        if matches!(app.focus, Focus::Bookmarks) {
+                            let bookmarks = app.bookmarks_for_selected_item();
+                            let len = bookmarks.len();
+                            if len > 0 {
+                                let i = match app.bookmark_state.selected() {
+                                    Some(i) => {
+                                        if i >= len - 1 {
+                                            0
+                                        } else {
+                                            i + 1
+                                        }
                                     }
-                                }
-                                None => 0,
+                                    None => 0,
+                                };
+                                app.bookmark_state.select(Some(i));
+                            }
+                        } else {
+                            let len = if app.is_search_mode() {
+                                app.filtered_items.len()
+                            } else {
+                                app.items.len()
                             };
-                            app.state.select(Some(i));
+                            if len > 0 {
+                                let i = match app.state.selected() {
+                                    Some(i) => {
+                                        if i >= len - 1 {
+                                            0
+                                        } else {
+                                            i + 1
+                                        }
+                                    }
+                                    None => 0,
+                                };
+                                app.state.select(Some(i));
+                                app.sync_bookmark_selection();
+                            }
                         }
                     }
                     KeyEvent {
@@ -340,23 +495,36 @@ async fn run_app<B: Backend>(
                         modifiers: KeyModifiers::NONE,
                         ..
                     } => {
-                        let len = if app.search_mode {
-                            app.filtered_items.len()
+                        if matches!(app.focus, Focus::Bookmarks) {
+                            let bookmarks = app.bookmarks_for_selected_item();
+                            let len = bookmarks.len();
+                            if len > 0 {
+                                let i = match app.bookmark_state.selected() {
+                                    Some(0) | None => len - 1,
+                                    Some(i) => i - 1,
+                                };
+                                app.bookmark_state.select(Some(i));
+                            }
                         } else {
-                            app.items.len()
-                        };
-                        if len > 0 {
-                            let i = match app.state.selected() {
-                                Some(i) => {
-                                    if i == 0 {
-                                        len - 1
-                                    } else {
-                                        i - 1
-                                    }
-                                }
-                                None => 0,
+                            let len = if app.is_search_mode() {
+                                app.filtered_items.len()
+                            } else {
+                                app.items.len()
                             };
-                            app.state.select(Some(i));
+                            if len > 0 {
+                                let i = match app.state.selected() {
+                                    Some(i) => {
+                                        if i == 0 {
+                                            len - 1
+                                        } else {
+                                            i - 1
+                                        }
+                                    }
+                                    None => 0,
+                                };
+                                app.state.select(Some(i));
+                                app.sync_bookmark_selection();
+                            }
                         }
                     }
                     KeyEvent {
@@ -396,8 +564,12 @@ async fn run_app<B: Backend>(
                         modifiers: KeyModifiers::NONE,
                         ..
                     } => {
-                        if let Some(selected) = app.state.selected() {
-                            let items = if app.search_mode {
+                        if matches!(app.focus, Focus::Bookmarks) {
+                            if let Some((item, bookmark)) = app.selected_bookmark() {
+                                let _ = play_bookmark(&app.device, item, bookmark).await;
+                            }
+                        } else if let Some(selected) = app.state.selected() {
+                            let items = if app.is_search_mode() {
                                 &app.filtered_items
                             } else {
                                 &app.items
@@ -468,6 +640,7 @@ async fn run_app<B: Backend>(
                         app.items = items;
                         app.update_filtered_items();
                         app.state.select(Some(0));
+                        app.sync_bookmark_selection();
                     }
                     _ => {}
                 }
@@ -490,7 +663,7 @@ async fn run_app<B: Backend>(
 
 fn ui(f: &mut Frame, app: &mut App) {
     // Main layout with margins for a cleaner look
-    let main_layout = if app.search_mode {
+    let main_layout = if app.is_search_mode() {
         Layout::default()
             .direction(Direction::Vertical)
             .margin(1)
@@ -592,19 +765,50 @@ fn ui(f: &mut Frame, app: &mut App) {
 
     f.render_widget(device_paragraph, header_area[1]);
 
-    // Search bar (only shown when in search mode)
-    if app.search_mode {
+    // Search bar (highlight when focused)
+    if app.search_active {
+        let (border_color, title_suffix) = if matches!(app.focus, Focus::Search) {
+            (Color::Yellow, " ⦿")
+        } else {
+            (Color::DarkGray, "")
+        };
+
+        let search_block = Block::default()
+            .borders(Borders::ALL)
+            .border_set(border::ROUNDED)
+            .title(format!("─Search{}", title_suffix))
+            .title_style(
+                Style::default()
+                    .fg(border_color)
+                    .add_modifier(Modifier::BOLD),
+            )
+            .border_style(Style::default().fg(border_color))
+            .padding(Padding::new(1, 1, 0, 0));
+
+        app.search_textarea.set_block(search_block);
         f.render_widget(app.search_textarea.widget(), main_layout[1]);
     }
 
-    let table_area_index = if app.search_mode { 2 } else { 1 };
-    let table_area = main_layout[table_area_index];
+    let table_area_index = if app.is_search_mode() { 2 } else { 1 };
+    let library_area = main_layout[table_area_index];
+    let areas = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([Constraint::Min(10), Constraint::Length(14)])
+        .split(library_area);
+    let table_area = areas[0];
+    let bookmark_area = areas[1];
 
     // Enhanced table styling
-    let selected_style = Style::default()
-        .bg(Color::Blue)
-        .fg(Color::White)
-        .add_modifier(Modifier::BOLD);
+    let selected_style = if matches!(app.focus, Focus::Library) {
+        Style::default()
+            .bg(Color::Blue)
+            .fg(Color::White)
+            .add_modifier(Modifier::BOLD)
+    } else {
+        Style::default()
+            .fg(Color::LightBlue)
+            .add_modifier(Modifier::DIM)
+    };
 
     let header_style = Style::default()
         .fg(Color::Yellow)
@@ -617,7 +821,7 @@ fn ui(f: &mut Frame, app: &mut App) {
     let header = Row::new(header_cells).height(1);
 
     // Alternating row colors for better readability
-    let items_to_display = if app.search_mode {
+    let items_to_display = if app.is_search_mode() {
         &app.filtered_items
     } else {
         &app.items
@@ -641,7 +845,7 @@ fn ui(f: &mut Frame, app: &mut App) {
         .borders(Borders::ALL)
         .border_set(border::ROUNDED)
         .title(
-            if app.search_mode && !app.search_textarea.lines().join("").is_empty() {
+            if app.is_search_mode() && !app.search_textarea.lines().join("").is_empty() {
                 format!("─Music Library ({})", items_to_display.len())
             } else {
                 "─Music Library".to_string()
@@ -663,18 +867,91 @@ fn ui(f: &mut Frame, app: &mut App) {
 
     f.render_stateful_widget(table, table_area, &mut app.state);
 
+    let border_color = if matches!(app.focus, Focus::Bookmarks) {
+        Color::Magenta
+    } else {
+        Color::DarkGray
+    };
+
+    let bookmark_title = app
+        .selected_item()
+        .map(|item| format!("─Bookmarks · {}", item.name))
+        .unwrap_or_else(|| "─Bookmarks".to_string());
+
+    let bookmarks = app.bookmarks_for_selected_item();
+
+    if bookmarks.is_empty() {
+        let block = Block::default()
+            .borders(Borders::ALL)
+            .border_set(border::ROUNDED)
+            .title(bookmark_title)
+            .title_style(
+                Style::default()
+                    .fg(border_color)
+                    .add_modifier(Modifier::BOLD),
+            )
+            .border_style(Style::default().fg(border_color))
+            .padding(Padding::new(1, 1, 0, 0));
+        let paragraph = Paragraph::new("")
+            .block(block)
+            .style(Style::default().fg(Color::Gray))
+            .wrap(ratatui::widgets::Wrap { trim: true });
+        f.render_widget(paragraph, bookmark_area);
+    } else {
+        let rows = bookmarks.iter().enumerate().map(|(i, bookmark)| {
+            let base_style = if i % 2 == 0 {
+                Style::default().fg(Color::White)
+            } else {
+                Style::default().fg(Color::Gray)
+            };
+            let time_cell = Cell::from(format_duration(&bookmark.position)).style(base_style);
+            Row::new(vec![time_cell]).height(1)
+        });
+
+        let highlight_style = if matches!(app.focus, Focus::Bookmarks) {
+            Style::default()
+                .bg(Color::Magenta)
+                .fg(Color::Black)
+                .add_modifier(Modifier::BOLD)
+        } else {
+            Style::default()
+                .fg(border_color)
+                .add_modifier(Modifier::BOLD)
+        };
+
+        let table_block = Block::default()
+            .borders(Borders::ALL)
+            .border_set(border::ROUNDED)
+            .title(bookmark_title)
+            .title_style(
+                Style::default()
+                    .fg(border_color)
+                    .add_modifier(Modifier::BOLD),
+            )
+            .border_style(Style::default().fg(border_color));
+
+        let bookmark_table = Table::new(rows)
+            .block(table_block)
+            .highlight_style(highlight_style)
+            .highlight_symbol("▶ ")
+            .widths(&[Constraint::Percentage(100)]);
+
+        f.render_stateful_widget(bookmark_table, bookmark_area, &mut app.bookmark_state);
+    }
+
     // Controls footer
-    let controls_area_index = if app.search_mode { 3 } else { 2 };
+    let controls_area_index = if app.is_search_mode() { 3 } else { 2 };
     let controls_area = main_layout[controls_area_index];
-    let controls = if app.search_mode {
+    let mut controls = if app.is_search_mode() {
         vec![
             "Space: Play/Pause",
             "Enter: Play Selected",
             "↑/↓: Navigate",
             "←/→: Seek",
             "Ctrl+←/→: Move Cursor",
+            "Tab: Next Focus",
+            "Shift+Tab: Prev Focus",
             "ESC: Exit Search",
-            "❌ Q: Quit",
         ]
     } else {
         vec![
@@ -685,9 +962,18 @@ fn ui(f: &mut Frame, app: &mut App) {
             "[/] : Switch Device",
             "🔄 P: Pull Library",
             "🔍 Ctrl+F: Search",
-            "❌ Q: Quit",
+            "Tab: Next Focus",
+            "Shift+Tab: Prev Focus",
         ]
     };
+
+    if matches!(app.focus, Focus::Bookmarks) {
+        controls.push("B/Esc: Back to Library");
+        controls.push("Enter: Play Bookmark");
+    } else {
+        controls.push("B: Focus Bookmarks");
+    }
+    controls.push("❌ Q: Quit");
 
     let controls_text = controls.join(" │ ");
 
@@ -711,6 +997,14 @@ fn ui(f: &mut Frame, app: &mut App) {
     f.render_widget(controls_paragraph, controls_area);
 }
 
+fn format_duration(duration: &Duration) -> String {
+    let total_seconds = duration.as_secs();
+    let hours = total_seconds / 3600;
+    let minutes = (total_seconds % 3600) / 60;
+    let seconds = total_seconds % 60;
+    format!("{hours:02}:{minutes:02}:{seconds:02}")
+}
+
 async fn play_song(device: &SonosDevice, item: &LibraryItem) -> Result<()> {
     let url_prefix = "https://reitunes.blob.core.windows.net/music/";
     let filename_url_encoded = urlencoding::encode(&item.file_path);
@@ -720,6 +1014,25 @@ async fn play_song(device: &SonosDevice, item: &LibraryItem) -> Result<()> {
     metadata.title = item.name.clone();
     set_av_transport_uri_with_retry(device, &url, Some(metadata)).await?;
     play_with_retry(device).await?;
+    Ok(())
+}
+
+async fn play_bookmark(
+    device: &SonosDevice,
+    item: &LibraryItem,
+    bookmark: &Bookmark,
+) -> Result<()> {
+    stop_with_retry(device).await?;
+    play_song(device, item).await?;
+    seek_with_retry(
+        device,
+        sonos::av_transport::SeekRequest {
+            instance_id: 0,
+            unit: sonos::SeekMode::RelTime,
+            target: format_duration(&bookmark.position),
+        },
+    )
+    .await?;
     Ok(())
 }
 
@@ -734,12 +1047,7 @@ async fn play_random_bookmark(device: &SonosDevice, library: &Library) -> Result
                     sonos::av_transport::SeekRequest {
                         instance_id: 0,
                         unit: sonos::SeekMode::RelTime,
-                        target: format!(
-                            "{:02}:{:02}:{:02}",
-                            bookmark.position.as_secs() / 3600,
-                            (bookmark.position.as_secs() % 3600) / 60,
-                            bookmark.position.as_secs() % 60
-                        ),
+                        target: format_duration(&bookmark.position),
                     },
                 )
                 .await?;
