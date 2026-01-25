@@ -191,6 +191,7 @@ impl Library {
                     album: album.clone().unwrap_or_default(),
                     play_count: 0,
                     bookmarks: IndexMap::new(),
+                    is_favorite: false,
                 };
                 self.items.insert(item.id, item);
             }
@@ -264,6 +265,16 @@ impl Library {
                     }
                 }
             }
+            Event::LibraryItemFavoritedEvent => {
+                if let Some(item) = self.items.get_mut(&event.aggregate_id) {
+                    item.is_favorite = true;
+                }
+            }
+            Event::LibraryItemUnfavoritedEvent => {
+                if let Some(item) = self.items.get_mut(&event.aggregate_id) {
+                    item.is_favorite = false;
+                }
+            }
         }
     }
 }
@@ -304,6 +315,8 @@ pub enum Event {
         bookmark_id: Uuid,
         emoji: String,
     },
+    LibraryItemFavoritedEvent,
+    LibraryItemUnfavoritedEvent,
 }
 
 /// Library item representation
@@ -317,6 +330,7 @@ pub struct LibraryItem {
     pub album: String,
     pub play_count: u32,
     pub bookmarks: IndexMap<Uuid, Bookmark>,
+    pub is_favorite: bool,
 }
 
 const STORAGE_URL: &str = "https://reitunes.blob.core.windows.net/music/";

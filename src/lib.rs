@@ -5,9 +5,11 @@
 
 pub mod database;
 pub mod library;
+pub mod playlist;
 pub mod utils;
 
 // Re-export commonly used types and functions
 pub use database::*;
 pub use library::*;
+pub use playlist::*;
 pub use utils::*;
