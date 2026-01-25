@@ -19,6 +19,40 @@ import { useQueueStore } from '../hooks/useQueue';
 import { usePlayerStore } from '../stores/playerStore';
 import type { LibraryItem } from '../types';
 
+// Minimal icons
+const DragIcon = (
+  <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+    <circle cx="9" cy="6" r="2" />
+    <circle cx="15" cy="6" r="2" />
+    <circle cx="9" cy="12" r="2" />
+    <circle cx="15" cy="12" r="2" />
+    <circle cx="9" cy="18" r="2" />
+    <circle cx="15" cy="18" r="2" />
+  </svg>
+);
+
+const CloseIcon = (
+  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+    <line x1="18" y1="6" x2="6" y2="18" />
+    <line x1="6" y1="6" x2="18" y2="18" />
+  </svg>
+);
+
+const PlayIcon = (
+  <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor">
+    <polygon points="5 3 19 12 5 21 5 3" />
+  </svg>
+);
+
+const RepeatIcon = (
+  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+    <path d="M17 2l4 4-4 4" />
+    <path d="M3 11v-1a4 4 0 0 1 4-4h14" />
+    <path d="M7 22l-4-4 4-4" />
+    <path d="M21 13v1a4 4 0 0 1-4 4H3" />
+  </svg>
+);
+
 interface SortableItemProps {
   item: LibraryItem;
   index: number;
@@ -43,31 +77,27 @@ function SortableItem({ item, index, onRemove }: SortableItemProps) {
     <div
       ref={setNodeRef}
       style={style}
-      className="flex items-center gap-2 p-2 border-b border-solarized-base02 hover:bg-solarized-base02"
+      className="flex items-center gap-2 px-3 py-1.5 hover:bg-solarized-base02 group"
     >
       <div
         {...attributes}
         {...listeners}
-        className="cursor-grab text-solarized-base01 hover:text-solarized-base1"
+        className="cursor-grab text-solarized-base01 hover:text-solarized-base1 opacity-0 group-hover:opacity-100"
       >
-        &#9776;
+        {DragIcon}
       </div>
-      <div className="flex-grow">
-        <div className="text-sm text-solarized-base1">
-          {item.name}
-        </div>
+      <div className="flex-grow min-w-0">
+        <div className="text-xs text-solarized-base1 truncate">{item.name}</div>
         {item.artist && (
-          <div className="text-xs text-solarized-base01">
-            {item.artist}
-          </div>
+          <div className="text-[10px] text-solarized-base01 truncate">{item.artist}</div>
         )}
       </div>
       <button
         onClick={onRemove}
-        className="text-solarized-base01 hover:text-solarized-red px-2"
-        title="Remove from queue"
+        className="text-solarized-base01 hover:text-solarized-red opacity-0 group-hover:opacity-100 transition-opacity"
+        title="Remove"
       >
-        &#10005;
+        {CloseIcon}
       </button>
     </div>
   );
@@ -79,16 +109,12 @@ interface ContextItemProps {
 
 function ContextItem({ item }: ContextItemProps) {
   return (
-    <div className="flex items-center gap-2 p-2 border-b border-solarized-base02 opacity-70">
-      <div className="w-5" /> {/* Spacer to align with sortable items */}
-      <div className="flex-grow">
-        <div className="text-sm text-solarized-base01">
-          {item.name}
-        </div>
+    <div className="flex items-center gap-2 px-3 py-1.5 opacity-60">
+      <div className="w-3" />
+      <div className="flex-grow min-w-0">
+        <div className="text-xs text-solarized-base01 truncate">{item.name}</div>
         {item.artist && (
-          <div className="text-xs text-solarized-base01">
-            {item.artist}
-          </div>
+          <div className="text-[10px] text-solarized-base01 truncate">{item.artist}</div>
         )}
       </div>
     </div>
@@ -121,7 +147,6 @@ export function QueuePanel() {
     const { active, over } = event;
 
     if (over && active.id !== over.id) {
-      // Extract indices from the sortable IDs
       const activeIdParts = String(active.id).split('-');
       const overIdParts = String(over.id).split('-');
       const oldIndex = parseInt(activeIdParts[1], 10);
@@ -134,15 +159,14 @@ export function QueuePanel() {
   const hasUpcomingContext = upcomingContext.length > 0;
 
   return (
-    <div className="w-80 flex-shrink-0 bg-solarized-base03 border-l border-solarized-base02 flex flex-col h-full">
+    <div className="w-64 flex-shrink-0 bg-solarized-base03 border-l border-solarized-base02 flex flex-col h-full">
       {/* Header */}
-      <div className="flex items-center justify-between p-3 border-b border-solarized-base02">
-        <h2 className="text-sm font-semibold text-solarized-base1 uppercase tracking-wide">Queue</h2>
+      <div className="flex items-center justify-between px-3 py-2 border-b border-solarized-base02">
+        <span className="text-[10px] text-solarized-base01 uppercase tracking-wider">Queue</span>
         {hasManualQueue && (
           <button
             onClick={clearManualQueue}
-            className="text-xs text-solarized-base01 hover:text-solarized-red"
-            title="Clear manual queue"
+            className="text-[10px] text-solarized-base01 hover:text-solarized-red uppercase"
           >
             Clear
           </button>
@@ -154,30 +178,26 @@ export function QueuePanel() {
         {/* Now Playing */}
         {currentItem && (
           <div className="border-b border-solarized-base02">
-            <div className="px-4 py-2 text-xs text-solarized-base01 uppercase tracking-wide">
+            <div className="px-3 py-1 text-[10px] text-solarized-base01 uppercase tracking-wider">
               Now Playing
             </div>
-            <div className="flex items-center gap-2 p-2 bg-solarized-base02">
-              <div className="w-5 text-solarized-blue">&#9654;</div>
-              <div className="flex-grow">
-                <div className="text-sm text-solarized-blue">
-                  {currentItem.name}
-                </div>
+            <div className="flex items-center gap-2 px-3 py-1.5 bg-solarized-base02">
+              <span className="text-solarized-blue">{PlayIcon}</span>
+              <div className="flex-grow min-w-0">
+                <div className="text-xs text-solarized-blue truncate">{currentItem.name}</div>
                 {currentItem.artist && (
-                  <div className="text-xs text-solarized-base01">
-                    {currentItem.artist}
-                  </div>
+                  <div className="text-[10px] text-solarized-base01 truncate">{currentItem.artist}</div>
                 )}
               </div>
             </div>
           </div>
         )}
 
-        {/* Manual Queue (Next in Queue) */}
+        {/* Manual Queue */}
         {hasManualQueue && (
           <div className="border-b border-solarized-base02">
-            <div className="px-4 py-2 text-xs text-solarized-base01 uppercase tracking-wide">
-              Next in Queue
+            <div className="px-3 py-1 text-[10px] text-solarized-base01 uppercase tracking-wider">
+              Next Up
             </div>
             <DndContext
               sensors={sensors}
@@ -201,44 +221,62 @@ export function QueuePanel() {
           </div>
         )}
 
-        {/* Repeat One Indicator */}
-        {repeatMode === 'one' && currentItem && (
-          <div className="px-4 py-3 text-xs text-solarized-cyan flex items-center gap-2 border-b border-solarized-base02">
-            <span>&#128257;</span>
-            <span>Current song on repeat</span>
-          </div>
-        )}
-
-        {/* Shuffle Indicator */}
-        {shuffleEnabled && repeatMode !== 'one' && (
-          <div className="px-4 py-3 text-xs text-solarized-green flex items-center gap-2 border-b border-solarized-base02">
-            <span>&#128256;</span>
-            <span>Shuffle enabled - next song is random</span>
-          </div>
-        )}
-
-        {/* Context Queue (Next from Library/Playlist) */}
-        {hasUpcomingContext && repeatMode !== 'one' && !shuffleEnabled && (
+        {/* Context Queue */}
+        {currentItem && (
           <div>
-            <div className="px-4 py-2 text-xs text-solarized-base01 uppercase tracking-wide">
-              Next from {contextName}
-              {repeatMode === 'all' && <span className="ml-2 text-solarized-violet">(Repeat All)</span>}
+            <div className="px-3 py-1 text-[10px] text-solarized-base01 uppercase tracking-wider flex items-center justify-between">
+              <span>
+                {repeatMode === 'one' ? 'Repeating' : shuffleEnabled ? 'Shuffled' : contextName}
+              </span>
+              {repeatMode === 'all' && !shuffleEnabled && (
+                <span className="text-solarized-green">loop</span>
+              )}
             </div>
-            {upcomingContext.slice(0, 20).map((item, index) => (
-              <ContextItem key={`context-${index}-${item.id}`} item={item} />
-            ))}
-            {upcomingContext.length > 20 && (
-              <div className="p-2 text-center text-xs text-solarized-base01">
-                +{upcomingContext.length - 20} more
+
+            {/* Repeat One */}
+            {repeatMode === 'one' && (
+              <div className="flex items-center gap-2 px-3 py-1.5 opacity-60">
+                <span className="text-solarized-cyan">{RepeatIcon}</span>
+                <div className="flex-grow min-w-0">
+                  <div className="text-xs text-solarized-base01 truncate">{currentItem.name}</div>
+                </div>
+              </div>
+            )}
+
+            {/* Shuffle */}
+            {shuffleEnabled && repeatMode !== 'one' && (
+              <div className="px-3 py-1.5 text-[10px] text-solarized-base01">
+                Random from {upcomingContext.length + 1} tracks
+              </div>
+            )}
+
+            {/* Normal/Repeat All list */}
+            {!shuffleEnabled && repeatMode !== 'one' && hasUpcomingContext && (
+              <>
+                {upcomingContext.slice(0, 15).map((item, index) => (
+                  <ContextItem key={`context-${index}-${item.id}`} item={item} />
+                ))}
+                {upcomingContext.length > 15 && (
+                  <div className="px-3 py-1 text-[10px] text-solarized-base01 text-center">
+                    +{upcomingContext.length - 15} more
+                  </div>
+                )}
+              </>
+            )}
+
+            {/* End of queue */}
+            {!shuffleEnabled && repeatMode === 'off' && !hasUpcomingContext && (
+              <div className="px-3 py-1.5 text-[10px] text-solarized-base01">
+                End of queue
               </div>
             )}
           </div>
         )}
 
         {/* Empty state */}
-        {!currentItem && !hasManualQueue && !hasUpcomingContext && (
-          <div className="p-4 text-solarized-base01 text-center">
-            Queue is empty
+        {!currentItem && !hasManualQueue && (
+          <div className="px-3 py-4 text-xs text-solarized-base01 text-center">
+            Nothing queued
           </div>
         )}
       </div>

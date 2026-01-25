@@ -13,76 +13,14 @@ get-logs n:
 install-deps:
     cargo install xh --locked
 
-watch:
-    watchexec --exts=rs,sql,html,css,js --on-busy-update=restart -- cargo run -- --live-reload
+# Development: watches Rust files, restarts server on changes. Vite-rs handles frontend HMR.
+dev: kill
+    watchexec --exts=rs,sql --on-busy-update=restart -- cargo run -- --no-auth
 
-run-with-secrets:
-    op run --env-file="./prod.env" -- cargo run
-
-build-with-secrets:
-    op run --env-file="./prod.env" -- cargo build
-
-
-run:
-    cargo run
-
-# Development service management (for agents)
-pidfile := "/tmp/reitunes-dev.pid"
-logfile := "/tmp/reitunes-dev.log"
-
-# Start the backend as a background service
-start:
-    #!/usr/bin/env bash
-    set -euo pipefail
-    if [ -f {{pidfile}} ] && kill -0 $(cat {{pidfile}}) 2>/dev/null; then
-        echo "Backend already running (PID: $(cat {{pidfile}}))"
-        exit 0
-    fi
-    cargo build
-    nohup ../target/debug/reitunes > {{logfile}} 2>&1 &
-    echo $! > {{pidfile}}
-    sleep 2
-    if kill -0 $(cat {{pidfile}}) 2>/dev/null; then
-        echo "Backend started (PID: $(cat {{pidfile}}))"
-        tail -5 {{logfile}}
-    else
-        echo "Failed to start backend"
-        cat {{logfile}}
-        exit 1
-    fi
-
-# Stop the backend service
-stop:
-    #!/usr/bin/env bash
-    set -euo pipefail
-    if [ -f {{pidfile}} ]; then
-        PID=$(cat {{pidfile}})
-        if kill -0 $PID 2>/dev/null; then
-            kill $PID
-            echo "Stopped backend (PID: $PID)"
-        else
-            echo "Backend not running"
-        fi
-        rm -f {{pidfile}}
-    else
-        echo "No pidfile found"
-    fi
-
-# Restart the backend service
-restart: stop start
-
-# Show backend logs
-logs n="50":
-    tail -n {{n}} {{logfile}}
-
-# Check backend status
-status:
-    #!/usr/bin/env bash
-    if [ -f {{pidfile}} ] && kill -0 $(cat {{pidfile}}) 2>/dev/null; then
-        echo "Backend running (PID: $(cat {{pidfile}}))"
-    else
-        echo "Backend not running"
-    fi
+# Kill any running reitunes/watchexec dev processes
+kill:
+    -pkill -f "watchexec.*reitunes"
+    -pkill -f "target/.*reitunes"
 
 test:
     cargo nextest run

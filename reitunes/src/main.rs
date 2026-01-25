@@ -1,11 +1,11 @@
-use anyhow::{bail, Result};
+use anyhow::{bail, Context, Result};
 use askama::Template;
 use axum::extract::ws::Utf8Bytes;
 use axum::http::HeaderMap;
 use axum::{
     body::Body,
     extract::{ConnectInfo, DefaultBodyLimit, Form, Json as JsonExtractor, Path, State, WebSocketUpgrade},
-    http::{header, Request, StatusCode, Uri},
+    http::{Request, StatusCode},
     middleware::{self, Next},
     response::{Html, IntoResponse, Json, Redirect, Response},
     routing::{get, post},
@@ -15,8 +15,8 @@ use axum_extra::extract::Multipart;
 use axum_macros::debug_handler;
 use clap::{Parser, Subcommand};
 use reitunes_workspace::*;
-use rust_embed::RustEmbed;
 use serde::{Deserialize, Serialize};
+use vite_rs_axum_0_8::ViteServe;
 use std::path::PathBuf;
 use std::sync::{Arc, LazyLock};
 use std::time::Duration;
@@ -24,7 +24,6 @@ use std::{fmt, net::SocketAddr};
 use tokio::sync::broadcast;
 use tokio::sync::RwLock;
 use tower_cookies::{Cookie, CookieManagerLayer, Cookies};
-use tower_livereload::LiveReloadLayer;
 use tracing::{info, instrument, warn};
 use uuid::Uuid;
 
@@ -36,6 +35,10 @@ mod llm;
 mod metadata;
 mod storage;
 mod systemd;
+
+#[derive(vite_rs::Embed)]
+#[root = "../reitunes-web"]
+struct Assets;
 
 const DB_PATH: &str = "reitunes-library.db";
 const PASSWORD: &str = match option_env!("REITUNES_PASSWORD") {
@@ -68,10 +71,13 @@ struct Cli {
     #[command(subcommand)]
     command: Option<Commands>,
 
-    /// Enable live reload for development
+    /// Disable authentication (for local development)
     #[arg(long)]
-    live_reload: bool,
+    no_auth: bool,
 }
+
+// Global flag for auth bypass
+static NO_AUTH: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
 
 #[derive(Subcommand)]
 enum Commands {
@@ -102,7 +108,17 @@ async fn main() -> Result<()> {
 
     info!("Starting reitunes v{}", env!("CARGO_PKG_VERSION"));
 
+    // Start Vite dev server in debug mode (provides HMR for frontend)
+    #[cfg(debug_assertions)]
+    let _guard = Assets::start_dev_server(true);
+
     let cli = Cli::parse();
+
+    // Set global no-auth flag
+    NO_AUTH.set(cli.no_auth).expect("NO_AUTH already set");
+    if cli.no_auth {
+        info!("Authentication disabled (--no-auth flag)");
+    }
 
     match cli.command {
         Some(Commands::Install) => {
@@ -116,7 +132,6 @@ async fn main() -> Result<()> {
             // important to drop after using to return the connection to the pool
             // leaving this connection open slows writes down ~100x (from 0.2 ms to 20 ms)
             drop(conn);
-            // let shared_state = Arc::new(RwLock::new(library));
 
             let app_state = AppState {
                 library: Arc::new(RwLock::new(library)),
@@ -144,8 +159,11 @@ async fn main() -> Result<()> {
             // Serve local music files
             let music_service = tower_http::services::ServeDir::new(music_dir());
 
-            let mut app = Router::new()
-                .route("/", get(index_handler))
+            // Build vite service for frontend
+            let vite = ViteServe::new(Assets::boxed());
+
+            let app = Router::new()
+                // API routes (these take priority)
                 .route("/login", get(login_handler).post(login_post_handler))
                 .route("/ui/update", post(update_handler))
                 .route("/ui/play", post(play_handler))
@@ -153,20 +171,18 @@ async fn main() -> Result<()> {
                 .route("/ui/{id}/bookmarks", post(add_bookmark_handler))
                 .route("/ui/{id}/favorite", post(favorite_handler))
                 .route("/ui/{id}/unfavorite", post(unfavorite_handler))
+                .route("/ui/{id}/reload-tags", post(reload_tags_handler))
                 .route("/updates", get(updates_handler))
-                .route("/{*file}", get(static_handler))
                 .route_layer(middleware::from_fn(auth))
                 .layer(CookieManagerLayer::new())
                 .nest("/api", api_router)
                 .nest("/api", items_router)
                 // Music files don't require auth (served after route_layer)
                 .nest_service("/music", music_service)
+                // Frontend served via vite-rs (dev server in debug, embedded in release)
+                .route_service("/", vite.clone())
+                .route_service("/{*path}", vite)
                 .with_state(app_state);
-
-            if cli.live_reload {
-                app = app.layer(LiveReloadLayer::new());
-                info!("Live reload enabled");
-            }
 
             let listener = tokio::net::TcpListener::bind("127.0.0.1:5000")
                 .await
@@ -209,21 +225,6 @@ async fn handle_websocket(
     }
 }
 
-#[derive(Template)]
-#[template(path = "index.html")]
-struct IndexTemplate {
-    items: Vec<LibraryItem>,
-}
-
-#[instrument(skip(app_state))]
-async fn index_handler(State(app_state): State<AppState>) -> Result<impl IntoResponse, AppError> {
-    let library = app_state.library.read().await;
-    let mut items: Vec<_> = library.items.values().cloned().collect();
-    items.sort_by(|a, b| b.play_count.cmp(&a.play_count));
-
-    let rendered = IndexTemplate { items }.render()?;
-    Ok(Html(rendered))
-}
 
 async fn all_events_handler() -> Result<impl IntoResponse, AppError> {
     let conn = DB.get()?;
@@ -329,19 +330,20 @@ async fn upload_handler(
         };
 
         // Get name from ID3 title, or fallback to LLM, or filename
-        let (name, artist, album) = if metadata.has_info() {
+        let (name, artist, album, track_number) = if metadata.has_info() {
             (
                 metadata.title.unwrap_or_else(|| filename.clone()),
                 metadata.artist,
                 metadata.album,
+                metadata.track_number,
             )
         } else {
             // Fallback to LLM for files without ID3 tags
             match llm::extract_song_metadata(&filename).await {
-                Ok(llm_meta) => (llm_meta.name, llm_meta.artist, llm_meta.album),
+                Ok(llm_meta) => (llm_meta.name, llm_meta.artist, llm_meta.album, None),
                 Err(e) => {
                     warn!(error = ?e, "LLM extraction failed, using filename");
-                    (filename.clone(), None, None)
+                    (filename.clone(), None, None, None)
                 }
             }
         };
@@ -356,6 +358,7 @@ async fn upload_handler(
             name: name.clone(),
             artist: artist.clone(),
             album: album.clone(),
+            track_number,
             file_path: file_path.clone(),
         };
         let event_with_metadata = EventWithMetadata::new(item_id, event)?;
@@ -598,26 +601,6 @@ async fn remove_playlist_item_handler(
     Ok(StatusCode::OK)
 }
 
-#[allow(dead_code)]
-mod filters {
-    pub fn if_empty(s: &str, default: &str) -> ::askama::Result<String> {
-        let ret = if s.is_empty() { default } else { s };
-        Ok(ret.to_string())
-    }
-
-    pub fn or(s: &Option<String>, default: &str) -> ::askama::Result<String> {
-        let ret = s.clone().unwrap_or(default.to_string());
-        Ok(ret)
-    }
-
-    pub fn or_err(num: &Option<i64>) -> ::askama::Result<i64> {
-        if let Some(num) = num {
-            Ok(*num)
-        } else {
-            Err(::askama::Error::Custom("Missing value".into()))
-        }
-    }
-}
 #[derive(Debug, Deserialize)]
 struct UpdateRequest {
     id: uuid::Uuid,
@@ -697,6 +680,7 @@ async fn add_item_handler(
         name: metadata.name,
         artist: metadata.artist,
         album: metadata.album,
+        track_number: None, // LLM extraction doesn't provide track number
         file_path: request.file_path,
     };
     let event_with_metadata = EventWithMetadata::new(item_id, event)?;
@@ -790,6 +774,72 @@ async fn add_bookmark_handler(
     Ok(StatusCode::CREATED)
 }
 
+/// Reload ID3 tags for a library item from its file
+#[instrument(skip(app_state))]
+async fn reload_tags_handler(
+    State(app_state): State<AppState>,
+    axum::extract::Path(id): axum::extract::Path<Uuid>,
+) -> Result<impl IntoResponse, AppError> {
+    // Get the library item
+    let library = app_state.library.read().await;
+    let item = library
+        .items
+        .get(&id)
+        .ok_or_else(|| anyhow::anyhow!("Item not found"))?;
+
+    // Construct full file path
+    let file_path = music_dir().join(&item.file_path);
+    info!(file_path = ?file_path, "Reloading ID3 tags");
+
+    // Extract metadata
+    let metadata = crate::metadata::extract_metadata(&file_path)?;
+
+    // Drop the read lock before acquiring write lock
+    drop(library);
+
+    // Apply updates for each field that has a value
+    let conn = DB.get()?;
+
+    if let Some(title) = metadata.title {
+        let event = Event::LibraryItemNameChangedEvent { new_name: title };
+        let event_with_metadata = EventWithMetadata::new(id, event)?;
+        save_event_to_db(&conn, &event_with_metadata)?;
+        app_state.library.write().await.apply(&event_with_metadata);
+    }
+
+    if let Some(artist) = metadata.artist {
+        let event = Event::LibraryItemArtistChangedEvent { new_artist: artist };
+        let event_with_metadata = EventWithMetadata::new(id, event)?;
+        save_event_to_db(&conn, &event_with_metadata)?;
+        app_state.library.write().await.apply(&event_with_metadata);
+    }
+
+    if let Some(album) = metadata.album {
+        let event = Event::LibraryItemAlbumChangedEvent { new_album: album };
+        let event_with_metadata = EventWithMetadata::new(id, event)?;
+        save_event_to_db(&conn, &event_with_metadata)?;
+        app_state.library.write().await.apply(&event_with_metadata);
+    }
+
+    // Always update track number (even if None, to clear stale data)
+    let event = Event::LibraryItemTrackNumberChangedEvent {
+        new_track_number: metadata.track_number,
+    };
+    let event_with_metadata = EventWithMetadata::new(id, event)?;
+    save_event_to_db(&conn, &event_with_metadata)?;
+    app_state.library.write().await.apply(&event_with_metadata);
+
+    // Broadcast the updated item
+    let library = app_state.library.read().await;
+    if let Some(updated_item) = library.items.get(&id).cloned() {
+        let _ = app_state
+            .update_tx
+            .send(LibraryUpdate::Update { item: updated_item });
+    }
+
+    Ok(StatusCode::OK)
+}
+
 fn create_update_event(field: &str, value: &str) -> Result<Event> {
     match field {
         "name" => Ok(Event::LibraryItemNameChangedEvent {
@@ -804,45 +854,18 @@ fn create_update_event(field: &str, value: &str) -> Result<Event> {
         "album" => Ok(Event::LibraryItemAlbumChangedEvent {
             new_album: value.to_string(),
         }),
+        "track_number" => {
+            let new_track_number = if value.is_empty() {
+                None
+            } else {
+                Some(value.parse::<u32>().context("Invalid track number")?)
+            };
+            Ok(Event::LibraryItemTrackNumberChangedEvent { new_track_number })
+        }
         _ => bail!("Invalid field: {}", field),
     }
 }
 
-async fn static_handler(uri: Uri) -> impl IntoResponse {
-    let path = uri.path().trim_start_matches('/').to_string();
-    StaticFile(path)
-}
-
-#[derive(RustEmbed)]
-#[folder = "embed/"]
-struct Asset;
-
-pub struct StaticFile<T>(pub T);
-
-impl<T> IntoResponse for StaticFile<T>
-where
-    T: Into<String>,
-{
-    fn into_response(self) -> Response<Body> {
-        let path = self.0.into();
-
-        match Asset::get(path.as_str()) {
-            Some(content) => {
-                let body = Body::from(content.data);
-                let mime = mime_guess::from_path(path).first_or_octet_stream();
-                Response::builder()
-                    .header(header::CONTENT_TYPE, mime.as_ref())
-                    .header(header::CACHE_CONTROL, "public, max-age=31536000") // 1 year
-                    .body(body)
-                    .unwrap()
-            }
-            None => Response::builder()
-                .status(StatusCode::NOT_FOUND)
-                .body(Body::from("404"))
-                .unwrap(),
-        }
-    }
-}
 
 #[derive(Template)]
 #[template(path = "login.html")]
@@ -856,6 +879,11 @@ async fn login_handler() -> impl IntoResponse {
 // Check that the user has a valid session cookie... which is just the hashed password
 // Pretty weak authentication but this is a music library for one, not a bank
 async fn auth(cookies: Cookies, req: Request<Body>, next: Next) -> Result<Response, StatusCode> {
+    // Bypass auth if --no-auth flag was set
+    if *NO_AUTH.get().unwrap_or(&false) {
+        return Ok(next.run(req).await);
+    }
+
     if req.uri().path() == "/login" {
         return Ok(next.run(req).await);
     }

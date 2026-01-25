@@ -111,6 +111,7 @@ export async function updateLibraryItem(
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ id, field, value }),
+    credentials: 'include',
   });
   if (!response.ok) {
     throw new Error('Failed to update item');
@@ -122,6 +123,7 @@ export async function markPlayed(id: string): Promise<void> {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ id }),
+    credentials: 'include',
   });
   if (!response.ok) {
     throw new Error('Failed to mark as played');
@@ -133,6 +135,7 @@ export async function deleteItem(id: string): Promise<void> {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ id }),
+    credentials: 'include',
   });
   if (!response.ok) {
     throw new Error('Failed to delete item');
@@ -144,6 +147,7 @@ export async function addBookmark(id: string, position: number): Promise<void> {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ position }),
+    credentials: 'include',
   });
   if (!response.ok) {
     throw new Error('Failed to add bookmark');
@@ -155,8 +159,20 @@ export async function toggleFavorite(id: string, isFavorite: boolean): Promise<v
   const response = await fetch(endpoint, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
   });
   if (!response.ok) {
     throw new Error('Failed to toggle favorite');
+  }
+}
+
+export async function reloadTags(id: string): Promise<void> {
+  const response = await fetch(`/ui/${id}/reload-tags`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+  });
+  if (!response.ok) {
+    throw new Error('Failed to reload tags');
   }
 }

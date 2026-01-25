@@ -13,7 +13,7 @@ import { useQuery } from '@tanstack/react-query';
 import type { LibraryItem, Bookmark } from '../types';
 import { usePlayerStore } from '../stores/playerStore';
 import { useQueueStore } from '../hooks/useQueue';
-import { updateLibraryItem, deleteItem as apiDeleteItem } from '../hooks/useLibrary';
+import { updateLibraryItem, deleteItem as apiDeleteItem, reloadTags } from '../hooks/useLibrary';
 import { FavoriteButton } from './FavoriteButton';
 import { useAddToPlaylist } from './PlaylistSidebar';
 
@@ -29,6 +29,45 @@ interface LibraryTableProps {
   items: LibraryItem[];
   searchQuery: string;
   playlistId?: string | null;
+  onSearchChange?: (query: string) => void;
+}
+
+interface ParsedSearch {
+  artist: string | null;
+  album: string | null;
+  text: string;
+}
+
+/**
+ * Parse a search query that may contain field filters like artist:"Beatles" or album:"Abbey Road"
+ * Returns the extracted field values and any remaining text
+ */
+function parseSearchQuery(query: string): ParsedSearch {
+  let artist: string | null = null;
+  let album: string | null = null;
+  const textParts: string[] = [];
+
+  // Regex to match field:"value" or unquoted words
+  const regex = /(artist|album):"([^"]+)"|(\S+)/gi;
+  let match;
+
+  while ((match = regex.exec(query)) !== null) {
+    if (match[1] && match[2]) {
+      // Field filter: artist:"value" or album:"value"
+      const field = match[1].toLowerCase();
+      const value = match[2];
+      if (field === 'artist') {
+        artist = value;
+      } else if (field === 'album') {
+        album = value;
+      }
+    } else if (match[3]) {
+      // Regular word
+      textParts.push(match[3]);
+    }
+  }
+
+  return { artist, album, text: textParts.join(' ') };
 }
 
 function formatBookmarks(bookmarks: Record<string, Bookmark>): React.ReactNode {
@@ -50,11 +89,21 @@ function formatBookmarks(bookmarks: Record<string, Bookmark>): React.ReactNode {
 }
 
 function formatCreatedTime(value: string): string {
-  // Strip off milliseconds+nanoseconds
-  return value.split('.')[0];
+  // Parse the UTC time and convert to local time
+  // Input format: "2025-01-24T14:30:45.123456789" (UTC)
+  const utcDate = new Date(value.split('.')[0] + 'Z'); // Add 'Z' to indicate UTC
+
+  // Format as local time: "Jan 24, 2025 9:30 AM"
+  return utcDate.toLocaleString(undefined, {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  });
 }
 
-export function LibraryTable({ items, searchQuery, playlistId }: LibraryTableProps) {
+export function LibraryTable({ items, searchQuery, playlistId, onSearchChange }: LibraryTableProps) {
   const [sorting, setSorting] = useState<SortingState>([
     { id: 'created_time_utc', desc: true },
   ]);
@@ -102,14 +151,26 @@ export function LibraryTable({ items, searchQuery, playlistId }: LibraryTablePro
         .sort((a, b) => (positionMap.get(a.id) ?? 0) - (positionMap.get(b.id) ?? 0));
     }
 
-    // Then filter by search query
+    // Then filter by search query (supports field filters like artist:"Beatles")
     if (searchQuery) {
-      const query = searchQuery.toLowerCase();
-      result = result.filter(item =>
-        item.name.toLowerCase().includes(query) ||
-        item.artist.toLowerCase().includes(query) ||
-        item.album.toLowerCase().includes(query)
-      );
+      const { artist, album, text } = parseSearchQuery(searchQuery);
+      result = result.filter(item => {
+        // Field-specific filters (case-insensitive contains match)
+        if (artist && !item.artist.toLowerCase().includes(artist.toLowerCase())) {
+          return false;
+        }
+        if (album && !item.album.toLowerCase().includes(album.toLowerCase())) {
+          return false;
+        }
+        // General text search across all fields
+        if (text) {
+          const query = text.toLowerCase();
+          return item.name.toLowerCase().includes(query) ||
+                 item.artist.toLowerCase().includes(query) ||
+                 item.album.toLowerCase().includes(query);
+        }
+        return true;
+      });
     }
 
     return result;
@@ -142,6 +203,11 @@ export function LibraryTable({ items, searchQuery, playlistId }: LibraryTablePro
       cell: (info) => info.getValue(),
       size: 150,
     }),
+    columnHelper.accessor('track_number', {
+      header: '#',
+      cell: (info) => info.getValue() ?? '',
+      size: 50,
+    }),
     columnHelper.accessor('play_count', {
       header: 'Plays',
       cell: (info) => info.getValue(),
@@ -154,7 +220,7 @@ export function LibraryTable({ items, searchQuery, playlistId }: LibraryTablePro
       enableSorting: false,
     }),
     columnHelper.accessor('created_time_utc', {
-      header: 'Created (UTC)',
+      header: 'Created',
       cell: (info) => formatCreatedTime(info.getValue()),
       size: 180,
     }),
@@ -260,6 +326,31 @@ export function LibraryTable({ items, searchQuery, playlistId }: LibraryTablePro
       setContextMenu(null);
     }
   }, [contextMenu, addNext]);
+
+  const handleReloadTags = useCallback(async () => {
+    if (contextMenu) {
+      try {
+        await reloadTags(contextMenu.item.id);
+      } catch (err) {
+        console.error('Failed to reload tags:', err);
+      }
+      setContextMenu(null);
+    }
+  }, [contextMenu]);
+
+  const handleFilterByArtist = useCallback(() => {
+    if (contextMenu && onSearchChange) {
+      onSearchChange(`artist:"${contextMenu.item.artist}"`);
+      setContextMenu(null);
+    }
+  }, [contextMenu, onSearchChange]);
+
+  const handleFilterByAlbum = useCallback(() => {
+    if (contextMenu && onSearchChange) {
+      onSearchChange(`album:"${contextMenu.item.album}"`);
+      setContextMenu(null);
+    }
+  }, [contextMenu, onSearchChange]);
 
   // Close context menu on click outside
   useEffect(() => {
@@ -383,6 +474,24 @@ export function LibraryTable({ items, searchQuery, playlistId }: LibraryTablePro
           >
             &#43; Add to Queue
           </div>
+          <div className="border-t border-solarized-base01 my-1" />
+          {onSearchChange && (
+            <>
+              <div
+                className="px-3 py-2 text-solarized-base1 hover:bg-solarized-blue hover:bg-opacity-30 cursor-pointer"
+                onClick={handleFilterByArtist}
+              >
+                &#128269; Filter by Artist
+              </div>
+              <div
+                className="px-3 py-2 text-solarized-base1 hover:bg-solarized-blue hover:bg-opacity-30 cursor-pointer"
+                onClick={handleFilterByAlbum}
+              >
+                &#128269; Filter by Album
+              </div>
+              <div className="border-t border-solarized-base01 my-1" />
+            </>
+          )}
           <div
             className="relative"
             onMouseEnter={() => setShowPlaylistSubmenu(true)}
@@ -416,6 +525,12 @@ export function LibraryTable({ items, searchQuery, playlistId }: LibraryTablePro
                 )}
               </div>
             )}
+          </div>
+          <div
+            className="px-3 py-2 text-solarized-base1 hover:bg-solarized-blue hover:bg-opacity-30 cursor-pointer"
+            onClick={handleReloadTags}
+          >
+            &#128260; Reload ID3 Tags
           </div>
           <div
             className="px-3 py-2 text-solarized-base1 hover:bg-solarized-red hover:text-solarized-base3 cursor-pointer"

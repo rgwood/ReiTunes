@@ -11,6 +11,7 @@ export interface LibraryItem {
   file_path: string;
   artist: string;
   album: string;
+  track_number: number | null;
   play_count: number;
   bookmarks: Record<string, Bookmark>;
   is_favorite?: boolean;

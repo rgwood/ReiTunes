@@ -10,6 +10,34 @@ import { useLibrary } from './hooks/useLibrary';
 import { usePlayerStore } from './stores/playerStore';
 import type { LibraryItem } from './types';
 
+// Toolbar icons
+const Icons = {
+  playlist: (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M9 18V5l12-2v13" />
+      <circle cx="6" cy="18" r="3" />
+      <circle cx="18" cy="16" r="3" />
+    </svg>
+  ),
+  upload: (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+      <polyline points="17 8 12 3 7 8" />
+      <line x1="12" y1="3" x2="12" y2="15" />
+    </svg>
+  ),
+  queue: (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <line x1="8" y1="6" x2="21" y2="6" />
+      <line x1="8" y1="12" x2="21" y2="12" />
+      <line x1="8" y1="18" x2="21" y2="18" />
+      <line x1="3" y1="6" x2="3.01" y2="6" />
+      <line x1="3" y1="12" x2="3.01" y2="12" />
+      <line x1="3" y1="18" x2="3.01" y2="18" />
+    </svg>
+  ),
+};
+
 const queryClient = new QueryClient();
 
 function AppContent() {
@@ -65,19 +93,19 @@ function AppContent() {
   return (
     <div className="h-screen flex flex-col bg-solarized-base03 text-solarized-base1 font-mono overflow-hidden">
       {/* Header - sticky at top */}
-      <div className="flex-shrink-0 bg-solarized-base03 z-10">
+      <div className="flex-shrink-0 bg-solarized-base03 z-10 border-b border-solarized-base02">
         <AudioPlayer />
-        <div className="flex justify-between items-center px-5 pb-3">
+        <div className="flex justify-between items-center px-4 pb-2">
           <button
             onClick={togglePlaylists}
-            className={`px-3 py-1 rounded transition-colors duration-300 ${
+            className={`p-1.5 rounded transition-colors ${
               isPlaylistsOpen
-                ? 'bg-solarized-cyan text-solarized-base03'
-                : 'bg-solarized-violet text-solarized-base03 hover:bg-solarized-cyan'
+                ? 'text-solarized-cyan'
+                : 'text-solarized-base01 hover:text-solarized-base1'
             }`}
-            title="Toggle playlists"
+            title="Playlists"
           >
-            &#9835;
+            {Icons.playlist}
           </button>
           <div className="flex items-center gap-2">
             <SearchBar
@@ -87,21 +115,21 @@ function AppContent() {
             />
             <button
               onClick={toggleUpload}
-              className="px-3 py-1 bg-solarized-green text-solarized-base03 rounded hover:bg-solarized-cyan transition-colors duration-300"
-              title="Upload music"
+              className="p-1.5 text-solarized-base01 hover:text-solarized-green rounded transition-colors"
+              title="Upload"
             >
-              &#43;
+              {Icons.upload}
             </button>
             <button
               onClick={toggleQueue}
-              className={`px-3 py-1 rounded transition-colors duration-300 ${
+              className={`p-1.5 rounded transition-colors ${
                 isQueueOpen
-                  ? 'bg-solarized-cyan text-solarized-base03'
-                  : 'bg-solarized-blue text-solarized-base03 hover:bg-solarized-cyan'
+                  ? 'text-solarized-cyan'
+                  : 'text-solarized-base01 hover:text-solarized-base1'
               }`}
-              title="Toggle queue"
+              title="Queue"
             >
-              &#9776;
+              {Icons.queue}
             </button>
           </div>
         </div>
@@ -128,6 +156,7 @@ function AppContent() {
               items={items}
               searchQuery={searchQuery}
               playlistId={selectedPlaylistId}
+              onSearchChange={setSearchQuery}
             />
           )}
         </div>

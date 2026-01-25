@@ -27,6 +27,10 @@ export default defineConfig({
         target: 'http://localhost:5000',
         changeOrigin: true,
       },
+      '/login': {
+        target: 'http://localhost:5000',
+        changeOrigin: true,
+      },
       '/updates': {
         target: 'ws://localhost:5000',
         ws: true,
