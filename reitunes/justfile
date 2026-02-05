@@ -15,6 +15,8 @@ install-deps:
 
 # Development: watches Rust files, restarts server on changes. Vite-rs handles frontend HMR.
 dev: kill
+    #!/usr/bin/env bash
+    set -a && source .env && set +a
     watchexec --exts=rs,sql --on-busy-update=restart -- cargo run -- --no-auth
 
 # Kill any running reitunes/watchexec dev processes

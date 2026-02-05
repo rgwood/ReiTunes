@@ -19,3 +19,6 @@ target/
 
 # Samply
 profile.json
+
+# Local environment (contains secrets)
+.env
