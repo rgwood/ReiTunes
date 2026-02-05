@@ -29,7 +29,7 @@ use uuid::Uuid;
 
 use crate::llm::SongMetadata;
 use crate::metadata::extract_metadata;
-use crate::storage::{LocalStorage, StorageBackend};
+use crate::storage::{LocalStorage, S3Storage, StorageType};
 
 mod llm;
 mod metadata;
@@ -89,7 +89,7 @@ enum Commands {
 #[serde(tag = "type")]
 enum LibraryUpdate {
     #[serde(rename = "update")]
-    Update { item: LibraryItem },
+    Update { item: LibraryItemResponse },
     #[serde(rename = "delete")]
     Delete { id: Uuid },
 }
@@ -100,6 +100,8 @@ struct AppState {
     playlists: Arc<RwLock<PlaylistStore>>,
     // used to broadcast updates to all connected clients
     update_tx: broadcast::Sender<LibraryUpdate>,
+    // Storage backend (S3 or local)
+    storage: Arc<StorageType>,
 }
 
 #[tokio::main]
@@ -133,10 +135,42 @@ async fn main() -> Result<()> {
             // leaving this connection open slows writes down ~100x (from 0.2 ms to 20 ms)
             drop(conn);
 
+            // Initialize storage backend based on environment variables
+            let storage: StorageType = match (
+                std::env::var("S3_ENDPOINT"),
+                std::env::var("S3_BUCKET"),
+                std::env::var("S3_ACCESS_KEY"),
+                std::env::var("S3_SECRET_KEY"),
+            ) {
+                (Ok(endpoint), Ok(bucket), Ok(access_key), Ok(secret_key)) => {
+                    let prefix = std::env::var("S3_PREFIX").ok();
+                    info!(
+                        "Using S3 storage: {} / {} (prefix: {:?})",
+                        endpoint, bucket, prefix
+                    );
+                    StorageType::S3(
+                        S3Storage::new(
+                            &endpoint,
+                            &bucket,
+                            prefix.as_deref(),
+                            &access_key,
+                            &secret_key,
+                        )
+                        .await
+                        .expect("Failed to initialize S3 storage"),
+                    )
+                }
+                _ => {
+                    info!("Using local storage at {:?}", music_dir());
+                    StorageType::Local(LocalStorage::new(music_dir(), "/music".to_string()))
+                }
+            };
+
             let app_state = AppState {
                 library: Arc::new(RwLock::new(library)),
                 playlists: Arc::new(RwLock::new(PlaylistStore::new())),
                 update_tx: broadcast::channel(100).0,
+                storage: Arc::new(storage),
             };
 
             let api_router = Router::new()
@@ -260,11 +294,49 @@ async fn frontend_log_handler(
     StatusCode::OK
 }
 
+/// Library item response with computed URL
+#[derive(Debug, Clone, Serialize)]
+struct LibraryItemResponse {
+    id: Uuid,
+    name: String,
+    created_time_utc: jiff::civil::DateTime,
+    file_path: String,
+    artist: String,
+    album: String,
+    track_number: Option<u32>,
+    play_count: u32,
+    bookmarks: indexmap::IndexMap<Uuid, reitunes_workspace::Bookmark>,
+    is_favorite: bool,
+    url: String,
+}
+
+impl LibraryItemResponse {
+    fn from_item(item: &LibraryItem, storage: &StorageType) -> Self {
+        Self {
+            id: item.id,
+            name: item.name.clone(),
+            created_time_utc: item.created_time_utc,
+            file_path: item.file_path.clone(),
+            artist: item.artist.clone(),
+            album: item.album.clone(),
+            track_number: item.track_number,
+            play_count: item.play_count,
+            bookmarks: item.bookmarks.clone(),
+            is_favorite: item.is_favorite,
+            url: storage.url(&item.file_path),
+        }
+    }
+}
+
 /// Get all library items as JSON (for React frontend)
 #[instrument(skip(app_state))]
 async fn items_handler(State(app_state): State<AppState>) -> Result<impl IntoResponse, AppError> {
     let library = app_state.library.read().await;
-    let items: Vec<_> = library.items.values().cloned().collect();
+    let items: Vec<_> = library
+        .items
+        .values()
+        .map(|item| LibraryItemResponse::from_item(item, &app_state.storage))
+        .collect();
     Ok(Json(items))
 }
 
@@ -349,8 +421,7 @@ async fn upload_handler(
         };
 
         // Store the file
-        let storage = LocalStorage::new(music_dir(), "/music".to_string());
-        let file_path = storage.upload(&filename, &data).await?;
+        let file_path = app_state.storage.upload(&filename, &data).await?;
 
         // Create the library item
         let item_id = Uuid::new_v4();
@@ -370,10 +441,11 @@ async fn upload_handler(
         let mut library = app_state.library.write().await;
         library.apply(&event_with_metadata);
 
-        if let Some(updated_item) = library.items.get(&item_id).cloned() {
+        if let Some(updated_item) = library.items.get(&item_id) {
+            let response = LibraryItemResponse::from_item(updated_item, &app_state.storage);
             let _ = app_state
                 .update_tx
-                .send(LibraryUpdate::Update { item: updated_item });
+                .send(LibraryUpdate::Update { item: response });
         }
 
         return Ok(Json(UploadResponse {
@@ -637,11 +709,12 @@ async fn save_and_broadcast_event(event: EventWithMetadata, app_state: AppState)
             });
         }
         _ => {
-            if let Some(updated_item) = library.items.get(&event.aggregate_id).cloned() {
+            if let Some(updated_item) = library.items.get(&event.aggregate_id) {
                 info!(id = ?event.id, "Broadcasting updated item, event type: {:?}", event.event);
+                let response = LibraryItemResponse::from_item(updated_item, &app_state.storage);
                 let _ = app_state
                     .update_tx
-                    .send(LibraryUpdate::Update { item: updated_item });
+                    .send(LibraryUpdate::Update { item: response });
             }
         }
     }
@@ -693,11 +766,12 @@ async fn add_item_handler(
     let mut library = app_state.library.write().await;
     library.apply(&event_with_metadata);
 
-    if let Some(updated_item) = library.items.get(&item_id).cloned() {
+    if let Some(updated_item) = library.items.get(&item_id) {
         // Broadcast the new item to all connected clients
+        let response = LibraryItemResponse::from_item(updated_item, &app_state.storage);
         let _ = app_state
             .update_tx
-            .send(LibraryUpdate::Update { item: updated_item });
+            .send(LibraryUpdate::Update { item: response });
     }
 
     Ok(StatusCode::CREATED)
@@ -723,11 +797,12 @@ async fn play_handler(
     let mut library = app_state.library.write().await;
     library.apply(&event_with_metadata);
 
-    if let Some(updated_item) = library.items.get(&request.id).cloned() {
+    if let Some(updated_item) = library.items.get(&request.id) {
         // Broadcast the updated item to all connected clients
+        let response = LibraryItemResponse::from_item(updated_item, &app_state.storage);
         let _ = app_state
             .update_tx
-            .send(LibraryUpdate::Update { item: updated_item });
+            .send(LibraryUpdate::Update { item: response });
     } else {
         warn!(id=?request.id, "Received play event for unknown item");
     }
@@ -831,10 +906,11 @@ async fn reload_tags_handler(
 
     // Broadcast the updated item
     let library = app_state.library.read().await;
-    if let Some(updated_item) = library.items.get(&id).cloned() {
+    if let Some(updated_item) = library.items.get(&id) {
+        let response = LibraryItemResponse::from_item(updated_item, &app_state.storage);
         let _ = app_state
             .update_tx
-            .send(LibraryUpdate::Update { item: updated_item });
+            .send(LibraryUpdate::Update { item: response });
     }
 
     Ok(StatusCode::OK)
