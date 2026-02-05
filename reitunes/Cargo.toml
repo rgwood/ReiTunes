@@ -33,6 +33,11 @@ openssl = { version = "0.10.72", features = ["vendored"] }
 schemars = "0.8.22"
 lofty = "0.22"
 tempfile = "3.0"
+aws-sdk-s3 = "1.76"
+aws-config = "1.6"
+urlencoding = "2.1"
+jiff.workspace = true
+indexmap.workspace = true
 
 [dev-dependencies]
 pretty_assertions = "1.4.1"
