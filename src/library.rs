@@ -344,13 +344,6 @@ pub struct LibraryItem {
     pub is_favorite: bool,
 }
 
-const STORAGE_URL: &str = "https://reitunes.blob.core.windows.net/music/";
-
-impl LibraryItem {
-    pub fn url(&self) -> String {
-        format!("{}{}", STORAGE_URL, self.file_path)
-    }
-}
 
 /// Bookmark within a library item
 #[derive(Debug, Clone, PartialEq, Serialize)]
