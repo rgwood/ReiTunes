@@ -75,7 +75,7 @@ export function SearchBar({ value, onChange, onRandomBookmark }: SearchBarProps)
   return (
     <div className="flex items-center gap-1">
       <div className="relative">
-        <span className="absolute left-2 top-1/2 -translate-y-1/2 text-solarized-base01">
+        <span className="absolute left-2 top-1/2 -translate-y-1/2 text-solarized-base0">
           {SearchIcon}
         </span>
         <input
@@ -91,7 +91,7 @@ export function SearchBar({ value, onChange, onRandomBookmark }: SearchBarProps)
       {onRandomBookmark && (
         <button
           onClick={onRandomBookmark}
-          className="p-1.5 text-solarized-base01 hover:text-solarized-cyan rounded transition-colors"
+          className="p-1.5 text-solarized-base0 hover:text-solarized-cyan hover:bg-solarized-base02 rounded transition-colors"
           title="Random bookmark (Ctrl+E)"
         >
           {DiceIcon}

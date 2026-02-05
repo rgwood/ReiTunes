@@ -23,7 +23,7 @@ export function FavoriteButton({ itemId, isFavorite }: FavoriteButtonProps) {
       className={`text-lg transition-colors duration-200 ${
         isFavorite
           ? 'text-solarized-red hover:text-solarized-orange'
-          : 'text-solarized-base01 hover:text-solarized-red'
+          : 'text-solarized-base0 hover:text-solarized-red'
       }`}
       title={isFavorite ? 'Remove from favorites' : 'Add to favorites'}
     >

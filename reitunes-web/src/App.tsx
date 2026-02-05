@@ -100,8 +100,8 @@ function AppContent() {
             onClick={togglePlaylists}
             className={`p-1.5 rounded transition-colors ${
               isPlaylistsOpen
-                ? 'text-solarized-cyan'
-                : 'text-solarized-base01 hover:text-solarized-base1'
+                ? 'text-solarized-cyan bg-solarized-base02'
+                : 'text-solarized-base0 hover:text-solarized-base1 hover:bg-solarized-base02'
             }`}
             title="Playlists"
           >
@@ -115,7 +115,7 @@ function AppContent() {
             />
             <button
               onClick={toggleUpload}
-              className="p-1.5 text-solarized-base01 hover:text-solarized-green rounded transition-colors"
+              className="p-1.5 text-solarized-base0 hover:text-solarized-green hover:bg-solarized-base02 rounded transition-colors"
               title="Upload"
             >
               {Icons.upload}
@@ -124,8 +124,8 @@ function AppContent() {
               onClick={toggleQueue}
               className={`p-1.5 rounded transition-colors ${
                 isQueueOpen
-                  ? 'text-solarized-cyan'
-                  : 'text-solarized-base01 hover:text-solarized-base1'
+                  ? 'text-solarized-cyan bg-solarized-base02'
+                  : 'text-solarized-base0 hover:text-solarized-base1 hover:bg-solarized-base02'
               }`}
               title="Queue"
             >
@@ -148,7 +148,7 @@ function AppContent() {
         {/* Main table - center */}
         <div className="flex-grow overflow-hidden">
           {isLoading ? (
-            <div className="flex items-center justify-center h-64 text-solarized-base01">
+            <div className="flex items-center justify-center h-64 text-solarized-base0">
               Loading...
             </div>
           ) : (

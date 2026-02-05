@@ -254,17 +254,17 @@ export function AudioPlayer() {
           <>
             <span className="text-solarized-blue">{currentItem.name}</span>
             {currentItem.artist && (
-              <span className="text-solarized-base01 ml-2">— {currentItem.artist}</span>
+              <span className="text-solarized-base0 ml-2">— {currentItem.artist}</span>
             )}
           </>
         ) : (
-          <span className="text-solarized-base01">No song selected</span>
+          <span className="text-solarized-base0">No song selected</span>
         )}
       </div>
 
       {/* Progress bar */}
       <div className="flex items-center gap-3 mb-2">
-        <span className="text-xs text-solarized-base01 w-10 text-right tabular-nums">
+        <span className="text-xs text-solarized-base0 w-10 text-right tabular-nums">
           {formatTime(currentTime)}
         </span>
         <div
@@ -297,7 +297,7 @@ export function AudioPlayer() {
             );
           })}
         </div>
-        <span className="text-xs text-solarized-base01 w-10 tabular-nums">
+        <span className="text-xs text-solarized-base0 w-10 tabular-nums">
           {formatTime(duration)}
         </span>
       </div>
@@ -309,7 +309,7 @@ export function AudioPlayer() {
           <button
             onClick={toggleShuffle}
             className={`p-1.5 rounded transition-colors ${
-              shuffleEnabled ? 'text-solarized-green' : 'text-solarized-base01 hover:text-solarized-base1'
+              shuffleEnabled ? 'text-solarized-green bg-solarized-base02' : 'text-solarized-base0 hover:text-solarized-base1 hover:bg-solarized-base02'
             }`}
             title={shuffleEnabled ? 'Shuffle on' : 'Shuffle off'}
           >
@@ -321,14 +321,14 @@ export function AudioPlayer() {
         <div className="flex items-center gap-1">
           <button
             onClick={handlePrevious}
-            className="p-1.5 text-solarized-base1 hover:text-solarized-base2 rounded transition-colors"
+            className="p-1.5 text-solarized-base1 hover:text-solarized-base2 hover:bg-solarized-base02 rounded transition-colors"
             title="Previous"
           >
             {Icons.skipBack}
           </button>
           <button
             onClick={seekBack}
-            className="p-1.5 text-solarized-base1 hover:text-solarized-base2 rounded transition-colors"
+            className="p-1.5 text-solarized-base1 hover:text-solarized-base2 hover:bg-solarized-base02 rounded transition-colors"
             title="Back 30s"
           >
             {Icons.rewind}
@@ -342,14 +342,14 @@ export function AudioPlayer() {
           </button>
           <button
             onClick={seekForward}
-            className="p-1.5 text-solarized-base1 hover:text-solarized-base2 rounded transition-colors"
+            className="p-1.5 text-solarized-base1 hover:text-solarized-base2 hover:bg-solarized-base02 rounded transition-colors"
             title="Forward 30s"
           >
             {Icons.fastForward}
           </button>
           <button
             onClick={handleNext}
-            className="p-1.5 text-solarized-base1 hover:text-solarized-base2 rounded transition-colors"
+            className="p-1.5 text-solarized-base1 hover:text-solarized-base2 hover:bg-solarized-base02 rounded transition-colors"
             title="Next"
           >
             {Icons.skipForward}
@@ -361,7 +361,7 @@ export function AudioPlayer() {
           <button
             onClick={cycleRepeatMode}
             className={`p-1.5 rounded transition-colors relative ${
-              repeatMode !== 'off' ? 'text-solarized-green' : 'text-solarized-base01 hover:text-solarized-base1'
+              repeatMode !== 'off' ? 'text-solarized-green bg-solarized-base02' : 'text-solarized-base0 hover:text-solarized-base1 hover:bg-solarized-base02'
             }`}
             title={repeatMode === 'off' ? 'Repeat off' : repeatMode === 'all' ? 'Repeat all' : 'Repeat one'}
           >
@@ -374,10 +374,10 @@ export function AudioPlayer() {
             onClick={handleAddBookmark}
             className={`p-1.5 rounded transition-colors ${
               bookmarkFeedback === 'success'
-                ? 'text-solarized-green'
+                ? 'text-solarized-green bg-solarized-base02'
                 : bookmarkFeedback === 'error'
-                ? 'text-solarized-red'
-                : 'text-solarized-base01 hover:text-solarized-cyan'
+                ? 'text-solarized-red bg-solarized-base02'
+                : 'text-solarized-base0 hover:text-solarized-cyan hover:bg-solarized-base02'
             }`}
             title="Add bookmark"
           >
@@ -385,7 +385,7 @@ export function AudioPlayer() {
           </button>
           <button
             onClick={() => setIsMuted(!isMuted)}
-            className="p-1.5 text-solarized-base01 hover:text-solarized-base1 rounded transition-colors"
+            className="p-1.5 text-solarized-base0 hover:text-solarized-base1 hover:bg-solarized-base02 rounded transition-colors"
             title={isMuted ? 'Unmute' : 'Mute'}
           >
             {isMuted ? Icons.volumeMute : Icons.volume}

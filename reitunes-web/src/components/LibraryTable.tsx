@@ -504,7 +504,7 @@ export function LibraryTable({ items, searchQuery, playlistId, onSearchChange }:
             {showPlaylistSubmenu && (
               <div className="absolute left-full top-0 bg-solarized-base02 border border-solarized-blue rounded shadow-lg py-1 min-w-32">
                 {playlists.length === 0 ? (
-                  <div className="px-3 py-2 text-solarized-base01 italic">No playlists</div>
+                  <div className="px-3 py-2 text-solarized-base0 italic">No playlists</div>
                 ) : (
                   playlists.map((playlist) => (
                     <div

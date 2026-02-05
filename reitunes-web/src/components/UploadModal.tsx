@@ -140,7 +140,7 @@ export function UploadModal({ isOpen, onClose }: UploadModalProps) {
           <h2 className="text-lg text-solarized-base1">Upload Music</h2>
           <button
             onClick={handleClose}
-            className="text-solarized-base01 hover:text-solarized-base1"
+            className="text-solarized-base0 hover:text-solarized-base1"
           >
             &#10005;
           </button>
@@ -168,7 +168,7 @@ export function UploadModal({ isOpen, onClose }: UploadModalProps) {
 
           {uploads.length === 0 ? (
             <>
-              <div className="text-solarized-base01 mb-2">
+              <div className="text-solarized-base0 mb-2">
                 Drop audio files here
               </div>
               <div className="text-solarized-base00 text-sm mb-4">or</div>
@@ -210,7 +210,7 @@ export function UploadModal({ isOpen, onClose }: UploadModalProps) {
                 {/* Status icon */}
                 <div className="w-6 text-center">
                   {upload.status === 'pending' && (
-                    <span className="text-solarized-base01">&#8230;</span>
+                    <span className="text-solarized-base0">&#8230;</span>
                   )}
                   {upload.status === 'uploading' && (
                     <span className="text-solarized-blue animate-pulse">&#8635;</span>
@@ -229,7 +229,7 @@ export function UploadModal({ isOpen, onClose }: UploadModalProps) {
                     {upload.result?.name || upload.file.name}
                   </div>
                   {upload.result?.artist && (
-                    <div className="text-xs text-solarized-base01 truncate">
+                    <div className="text-xs text-solarized-base0 truncate">
                       {upload.result.artist}
                     </div>
                   )}
