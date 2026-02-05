@@ -1005,10 +1005,16 @@ fn format_duration(duration: &Duration) -> String {
     format!("{hours:02}:{minutes:02}:{seconds:02}")
 }
 
+/// Get the storage base URL from environment or default
+fn storage_base_url() -> String {
+    std::env::var("STORAGE_BASE_URL")
+        .unwrap_or_else(|_| "https://reitunes.blob.core.windows.net/music".to_string())
+}
+
 async fn play_song(device: &SonosDevice, item: &LibraryItem) -> Result<()> {
-    let url_prefix = "https://reitunes.blob.core.windows.net/music/";
+    let base_url = storage_base_url();
     let filename_url_encoded = urlencoding::encode(&item.file_path);
-    let url = format!("{}{}", url_prefix, filename_url_encoded);
+    let url = format!("{}/{}", base_url, filename_url_encoded);
 
     let mut metadata = TrackMetaData::default();
     metadata.title = item.name.clone();
