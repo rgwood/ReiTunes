@@ -2,24 +2,10 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useRef } from 'react';
 import type { LibraryItem, LibraryUpdate } from '../types';
 
-const AZURE_STORAGE_URL = 'https://reitunes.blob.core.windows.net/music/';
-
 export function getItemUrl(item: LibraryItem): string {
-  let url: string;
-
-  // If file_path looks like a URL or contains azure blob storage path, use it directly
-  if (item.file_path.startsWith('http://') || item.file_path.startsWith('https://')) {
-    url = item.file_path;
-  } else if (item.file_path.includes('/')) {
-    // If file_path contains a slash, it's likely an Azure blob path (legacy)
-    url = `${AZURE_STORAGE_URL}${encodeURIComponent(item.file_path)}`;
-  } else {
-    // Otherwise, it's a local file - serve from /music endpoint
-    url = `/music/${encodeURIComponent(item.file_path)}`;
-  }
-
-  console.info(`[Audio] Playing "${item.name}" from: ${url}`);
-  return url;
+  // URL is now provided by the backend
+  console.info(`[Audio] Playing "${item.name}" from: ${item.url}`);
+  return item.url;
 }
 
 async function fetchLibraryItems(): Promise<LibraryItem[]> {

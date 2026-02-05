@@ -15,6 +15,7 @@ export interface LibraryItem {
   play_count: number;
   bookmarks: Record<string, Bookmark>;
   is_favorite?: boolean;
+  url: string;  // Full URL provided by backend
 }
 
 // WebSocket update messages
