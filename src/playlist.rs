@@ -1,12 +1,8 @@
-use anyhow::{Context, Result};
+use anyhow::Result;
 use indexmap::IndexMap;
 use jiff::civil::DateTime;
-use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
-use tracing::info;
 use uuid::Uuid;
-
-use crate::database::{load_all_events_from_db, save_event_to_db};
 
 /// Playlist event types
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

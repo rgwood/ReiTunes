@@ -44,7 +44,7 @@ pub mod duration_serde_dotnet {
         D: Deserializer<'de>,
     {
         let s = String::deserialize(deserializer)?;
-        let parts: Vec<&str> = s.split(|c| c == ':' || c == '.').collect();
+        let parts: Vec<&str> = s.split([':', '.']).collect();
         if parts.len() != 4 {
             return Err(serde::de::Error::custom("Invalid duration format"));
         }

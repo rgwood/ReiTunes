@@ -89,7 +89,7 @@ enum Commands {
 #[serde(tag = "type")]
 enum LibraryUpdate {
     #[serde(rename = "update")]
-    Update { item: LibraryItemResponse },
+    Update { item: Box<LibraryItemResponse> },
     #[serde(rename = "delete")]
     Delete { id: Uuid },
 }
@@ -381,7 +381,7 @@ async fn upload_handler(
     mut multipart: Multipart,
 ) -> Result<impl IntoResponse, AppError> {
     // Process uploaded file
-    while let Some(field) = multipart.next_field().await? {
+    if let Some(field) = multipart.next_field().await? {
         let filename = field.file_name().unwrap_or("unknown").to_string();
         let data = field.bytes().await?;
 
@@ -445,7 +445,7 @@ async fn upload_handler(
             let response = LibraryItemResponse::from_item(updated_item, &app_state.storage);
             let _ = app_state
                 .update_tx
-                .send(LibraryUpdate::Update { item: response });
+                .send(LibraryUpdate::Update { item: Box::new(response) });
         }
 
         return Ok(Json(UploadResponse {
@@ -714,7 +714,7 @@ async fn save_and_broadcast_event(event: EventWithMetadata, app_state: AppState)
                 let response = LibraryItemResponse::from_item(updated_item, &app_state.storage);
                 let _ = app_state
                     .update_tx
-                    .send(LibraryUpdate::Update { item: response });
+                    .send(LibraryUpdate::Update { item: Box::new(response) });
             }
         }
     }
@@ -771,7 +771,7 @@ async fn add_item_handler(
         let response = LibraryItemResponse::from_item(updated_item, &app_state.storage);
         let _ = app_state
             .update_tx
-            .send(LibraryUpdate::Update { item: response });
+            .send(LibraryUpdate::Update { item: Box::new(response) });
     }
 
     Ok(StatusCode::CREATED)
@@ -802,7 +802,7 @@ async fn play_handler(
         let response = LibraryItemResponse::from_item(updated_item, &app_state.storage);
         let _ = app_state
             .update_tx
-            .send(LibraryUpdate::Update { item: response });
+            .send(LibraryUpdate::Update { item: Box::new(response) });
     } else {
         warn!(id=?request.id, "Received play event for unknown item");
     }
@@ -910,7 +910,7 @@ async fn reload_tags_handler(
         let response = LibraryItemResponse::from_item(updated_item, &app_state.storage);
         let _ = app_state
             .update_tx
-            .send(LibraryUpdate::Update { item: response });
+            .send(LibraryUpdate::Update { item: Box::new(response) });
     }
 
     Ok(StatusCode::OK)

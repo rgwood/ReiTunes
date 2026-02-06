@@ -8,6 +8,7 @@ use tracing::info;
 
 /// Extracted metadata from an audio file
 #[derive(Debug, Clone, Default)]
+#[allow(dead_code)]
 pub struct AudioMetadata {
     pub title: Option<String>,
     pub artist: Option<String>,

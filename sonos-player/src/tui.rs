@@ -835,7 +835,7 @@ fn ui(f: &mut Frame, app: &mut App) {
         };
 
         let cells = vec![
-            Cell::from(format!("{}", item.name)).style(style),
+            Cell::from(item.name.to_string()).style(style),
             Cell::from(item.artist.clone()).style(style),
         ];
         Row::new(cells).height(1)
@@ -1016,8 +1016,7 @@ async fn play_song(device: &SonosDevice, item: &LibraryItem) -> Result<()> {
     let filename_url_encoded = urlencoding::encode(&item.file_path);
     let url = format!("{}/{}", base_url, filename_url_encoded);
 
-    let mut metadata = TrackMetaData::default();
-    metadata.title = item.name.clone();
+    let metadata = TrackMetaData { title: item.name.clone(), ..Default::default() };
     set_av_transport_uri_with_retry(device, &url, Some(metadata)).await?;
     play_with_retry(device).await?;
     Ok(())
