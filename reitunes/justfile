@@ -1,7 +1,10 @@
 # The following commands ARE relevant for agents
 
 publish:
-    op run --env-file="./prod.env" -- cross build --target x86_64-unknown-linux-musl --release
+    #!/usr/bin/env bash
+    set -euo pipefail
+    set -a && source ./prod.env && set +a
+    cross build --target x86_64-unknown-linux-musl --release
     rsync ../target/x86_64-unknown-linux-musl/release/reitunes spudnik.reillywood.com:bin/
     ssh spudnik.reillywood.com -t "systemctl --user restart reitunes"
 

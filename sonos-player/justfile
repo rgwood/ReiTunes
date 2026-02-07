@@ -2,10 +2,16 @@
 # set shell := ["nu", "-c"]
 
 run-with-secrets:
-    op run --env-file="./prod.env" -- cargo run
+    #!/usr/bin/env bash
+    set -euo pipefail
+    set -a && source ./prod.env && set +a
+    cargo run
 
 build-with-secrets:
-    op run --env-file="./prod.env" -- cargo build --release
+    #!/usr/bin/env bash
+    set -euo pipefail
+    set -a && source ./prod.env && set +a
+    cargo build --release
 
 run:
     cargo run
