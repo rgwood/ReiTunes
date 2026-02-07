@@ -1008,7 +1008,7 @@ fn format_duration(duration: &Duration) -> String {
 /// Get the storage base URL from environment or default
 fn storage_base_url() -> String {
     std::env::var("STORAGE_BASE_URL")
-        .unwrap_or_else(|_| "https://reitunes.blob.core.windows.net/music".to_string())
+        .unwrap_or_else(|_| "https://reitunes.s3.ca-east-tor.io.cloud.ovh.net/prod".to_string())
 }
 
 async fn play_song(device: &SonosDevice, item: &LibraryItem) -> Result<()> {

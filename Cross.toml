@@ -4,3 +4,4 @@ passthrough = [
     "REITUNES_API_KEY",
     "ANTHROPIC_API_KEY",
 ]
+volumes = ["REITUNES_WEB_DIST"]
