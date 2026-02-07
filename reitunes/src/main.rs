@@ -210,7 +210,6 @@ async fn main() -> Result<()> {
             let vite = ViteServe::new(Assets::boxed());
 
             let app = Router::new()
-                // API routes (these take priority)
                 .route("/login", get(login_handler).post(login_post_handler))
                 .route("/ui/update", post(update_handler))
                 .route("/ui/play", post(play_handler))
@@ -220,15 +219,15 @@ async fn main() -> Result<()> {
                 .route("/ui/{id}/unfavorite", post(unfavorite_handler))
                 .route("/ui/{id}/reload-tags", post(reload_tags_handler))
                 .route("/updates", get(updates_handler))
-                .route_layer(middleware::from_fn(auth))
-                .layer(CookieManagerLayer::new())
-                .nest("/api", api_router)
-                .nest("/api", items_router)
-                // Music files don't require auth (served after route_layer)
-                .nest_service("/music", music_service)
-                // Frontend served via vite-rs (dev server in debug, embedded in release)
+                // Frontend requires auth (must be above route_layer)
                 .route_service("/", vite.clone())
                 .route_service("/{*path}", vite)
+                .route_layer(middleware::from_fn(auth))
+                .layer(CookieManagerLayer::new())
+                // API and music routes don't require session auth
+                .nest("/api", api_router)
+                .nest("/api", items_router)
+                .nest_service("/music", music_service)
                 .with_state(app_state);
 
             let listener = tokio::net::TcpListener::bind("127.0.0.1:5000")
