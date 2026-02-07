@@ -135,24 +135,37 @@ async fn main() -> Result<()> {
             // leaving this connection open slows writes down ~100x (from 0.2 ms to 20 ms)
             drop(conn);
 
-            // Initialize storage backend based on environment variables
-            let storage: StorageType = match (
-                std::env::var("S3_ENDPOINT"),
-                std::env::var("S3_BUCKET"),
-                std::env::var("S3_ACCESS_KEY"),
-                std::env::var("S3_SECRET_KEY"),
-            ) {
-                (Ok(endpoint), Ok(bucket), Ok(access_key), Ok(secret_key)) => {
-                    let prefix = std::env::var("S3_PREFIX").ok();
+            // Initialize storage backend
+            // Try compile-time env vars first (baked in via `just publish`),
+            // then runtime env vars (for dev), then fall back to local storage.
+            let s3_endpoint = option_env!("S3_ENDPOINT")
+                .map(String::from)
+                .or_else(|| std::env::var("S3_ENDPOINT").ok());
+            let s3_bucket = option_env!("S3_BUCKET")
+                .map(String::from)
+                .or_else(|| std::env::var("S3_BUCKET").ok());
+            let s3_access_key = option_env!("S3_ACCESS_KEY")
+                .map(String::from)
+                .or_else(|| std::env::var("S3_ACCESS_KEY").ok());
+            let s3_secret_key = option_env!("S3_SECRET_KEY")
+                .map(String::from)
+                .or_else(|| std::env::var("S3_SECRET_KEY").ok());
+            let s3_prefix = option_env!("S3_PREFIX")
+                .map(String::from)
+                .or_else(|| std::env::var("S3_PREFIX").ok());
+
+            let storage: StorageType = match (s3_endpoint, s3_bucket, s3_access_key, s3_secret_key)
+            {
+                (Some(endpoint), Some(bucket), Some(access_key), Some(secret_key)) => {
                     info!(
                         "Using S3 storage: {} / {} (prefix: {:?})",
-                        endpoint, bucket, prefix
+                        endpoint, bucket, s3_prefix
                     );
                     StorageType::S3(
                         S3Storage::new(
                             &endpoint,
                             &bucket,
-                            prefix.as_deref(),
+                            s3_prefix.as_deref(),
                             &access_key,
                             &secret_key,
                         )
