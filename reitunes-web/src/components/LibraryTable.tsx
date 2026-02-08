@@ -15,6 +15,7 @@ import { usePlayerStore } from '../stores/playerStore';
 import { useQueueStore } from '../hooks/useQueue';
 import { updateLibraryItem, deleteItem as apiDeleteItem, reloadTags } from '../hooks/useLibrary';
 import { FavoriteButton } from './FavoriteButton';
+import { Tooltip } from './Tooltip';
 import { useAddToPlaylist } from './PlaylistSidebar';
 
 interface Playlist {
@@ -88,12 +89,19 @@ function formatBookmarks(bookmarks: Record<string, Bookmark>): React.ReactNode {
   });
 }
 
-function formatCreatedTime(value: string): string {
+function formatCreatedTime(value: string, short = false): string {
   // Parse the UTC time and convert to local time
   // Input format: "2025-01-24T14:30:45.123456789" (UTC)
   const utcDate = new Date(value.split('.')[0] + 'Z'); // Add 'Z' to indicate UTC
 
-  // Format as local time: "Jan 24, 2025 9:30 AM"
+  if (short) {
+    return utcDate.toLocaleDateString(undefined, {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+    });
+  }
+
   return utcDate.toLocaleString(undefined, {
     month: 'short',
     day: 'numeric',
@@ -185,44 +193,48 @@ export function LibraryTable({ items, searchQuery, playlistId, onSearchChange }:
           isFavorite={info.getValue() ?? false}
         />
       ),
-      size: 40,
+      size: 36,
       enableSorting: true,
     }),
     columnHelper.accessor('name', {
       header: 'Name',
-      cell: (info) => info.getValue(),
-      size: 300,
+      cell: (info) => <Tooltip content={info.getValue()}>{info.getValue()}</Tooltip>,
+      size: 220,
     }),
     columnHelper.accessor('artist', {
       header: 'Artist',
-      cell: (info) => info.getValue(),
-      size: 200,
+      cell: (info) => <Tooltip content={info.getValue()}>{info.getValue()}</Tooltip>,
+      size: 140,
     }),
     columnHelper.accessor('album', {
       header: 'Album',
-      cell: (info) => info.getValue(),
-      size: 150,
+      cell: (info) => <Tooltip content={info.getValue()}>{info.getValue()}</Tooltip>,
+      size: 140,
     }),
     columnHelper.accessor('track_number', {
       header: '#',
       cell: (info) => info.getValue() ?? '',
-      size: 50,
+      size: 40,
     }),
     columnHelper.accessor('play_count', {
       header: 'Plays',
       cell: (info) => info.getValue(),
-      size: 80,
+      size: 50,
     }),
     columnHelper.accessor('bookmarks', {
       header: 'Bookmarks',
       cell: (info) => formatBookmarks(info.getValue()),
-      size: 150,
+      size: 100,
       enableSorting: false,
     }),
     columnHelper.accessor('created_time_utc', {
       header: 'Created',
-      cell: (info) => formatCreatedTime(info.getValue()),
-      size: 180,
+      cell: (info) => {
+        const full = formatCreatedTime(info.getValue());
+        const short = formatCreatedTime(info.getValue(), true);
+        return <Tooltip content={full} force>{short}</Tooltip>;
+      },
+      size: 130,
     }),
   ], []);
 
@@ -376,14 +388,14 @@ export function LibraryTable({ items, searchQuery, playlistId, onSearchChange }:
   return (
     <div className="px-5 h-full flex flex-col">
       <div className="overflow-auto flex-grow">
-        <table className="w-full border-collapse">
+        <table className="w-full border-collapse table-fixed">
           <thead className="sticky top-0 bg-solarized-base02">
             {table.getHeaderGroups().map((headerGroup) => (
               <tr key={headerGroup.id}>
                 {headerGroup.headers.map((header) => (
                   <th
                     key={header.id}
-                    className="text-left px-2 py-1 border-b border-solarized-base01 cursor-pointer hover:bg-solarized-base01"
+                    className="text-left px-2 py-1 border-b border-solarized-base01 cursor-pointer hover:bg-solarized-base01 whitespace-nowrap overflow-hidden text-ellipsis"
                     style={{ width: header.getSize() }}
                     onClick={header.column.getToggleSortingHandler()}
                   >
@@ -417,7 +429,7 @@ export function LibraryTable({ items, searchQuery, playlistId, onSearchChange }:
                     return (
                       <td
                         key={cell.id}
-                        className="px-2 py-1 border-b border-solarized-base02"
+                        className="px-2 py-1 border-b border-solarized-base02 whitespace-nowrap overflow-hidden text-ellipsis max-w-0"
                         onDoubleClick={() => {
                           if (isEditable) {
                             handleCellDoubleClick(row.id, field, cell.getValue() as string);
