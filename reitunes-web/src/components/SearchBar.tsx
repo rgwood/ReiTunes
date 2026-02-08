@@ -92,7 +92,7 @@ export function SearchBar({ value, onChange, onRandomBookmark }: SearchBarProps)
         <button
           onClick={onRandomBookmark}
           className="p-1.5 text-solarized-base0 hover:text-solarized-cyan hover:bg-solarized-base02 rounded transition-colors"
-          title="Random bookmark (Ctrl+E)"
+          title="Random bookmark/favourite (Ctrl+E)"
         >
           {DiceIcon}
         </button>

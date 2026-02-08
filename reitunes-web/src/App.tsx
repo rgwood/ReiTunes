@@ -50,25 +50,28 @@ function AppContent() {
   const { items, isLoading, error } = useLibrary();
   const { play } = usePlayerStore();
 
-  // Get all bookmarks for random bookmark feature
-  const allBookmarks = useMemo(() => {
-    const bookmarks: { item: LibraryItem; position: number }[] = [];
+  // Get all random targets: bookmarks + favourited songs (from start)
+  const allRandomTargets = useMemo(() => {
+    const targets: { item: LibraryItem; position: number }[] = [];
     items.forEach((item) => {
       Object.values(item.bookmarks).forEach((bookmark) => {
-        bookmarks.push({ item, position: bookmark.position });
+        targets.push({ item, position: bookmark.position });
       });
+      if (item.is_favorite) {
+        targets.push({ item, position: 0 });
+      }
     });
-    return bookmarks;
+    return targets;
   }, [items]);
 
   const handleRandomBookmark = useCallback(() => {
-    if (allBookmarks.length === 0) {
-      alert('No bookmarks found in the library.');
+    if (allRandomTargets.length === 0) {
+      alert('No bookmarks or favourites found in the library.');
       return;
     }
-    const random = allBookmarks[Math.floor(Math.random() * allBookmarks.length)];
+    const random = allRandomTargets[Math.floor(Math.random() * allRandomTargets.length)];
     play(random.item, random.position);
-  }, [allBookmarks, play]);
+  }, [allRandomTargets, play]);
 
   const toggleQueue = useCallback(() => {
     setIsQueueOpen((prev) => !prev);
