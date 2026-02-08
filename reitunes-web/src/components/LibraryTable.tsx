@@ -251,6 +251,7 @@ export function LibraryTable({ items, searchQuery, playlistId, onSearchChange }:
     getSortedRowModel: getSortedRowModel(),
     getFilteredRowModel: getFilteredRowModel(),
     getRowId: (row) => row.id,
+    columnResizeMode: 'onChange',
   });
 
   const handleRowClick = useCallback((item: LibraryItem, rowIndex: number, e: React.MouseEvent) => {
@@ -388,24 +389,34 @@ export function LibraryTable({ items, searchQuery, playlistId, onSearchChange }:
   return (
     <div className="px-5 h-full flex flex-col">
       <div className="overflow-auto flex-grow">
-        <table className="w-full border-collapse table-fixed">
+        <table className={`w-full border-collapse table-fixed ${table.getState().columnSizingInfo.isResizingColumn ? 'select-none' : ''}`}>
           <thead className="sticky top-0 bg-solarized-base02">
             {table.getHeaderGroups().map((headerGroup) => (
               <tr key={headerGroup.id}>
                 {headerGroup.headers.map((header) => (
                   <th
                     key={header.id}
-                    className="text-left px-2 py-1 border-b border-solarized-base01 cursor-pointer hover:bg-solarized-base01 whitespace-nowrap overflow-hidden text-ellipsis"
+                    className="relative text-left px-2 py-1 border-b border-solarized-base01 cursor-pointer hover:bg-solarized-base01 whitespace-nowrap overflow-hidden text-ellipsis"
                     style={{ width: header.getSize() }}
-                    onClick={header.column.getToggleSortingHandler()}
                   >
-                    <div className="flex items-center gap-1">
+                    <div
+                      className="flex items-center gap-1"
+                      onClick={header.column.getToggleSortingHandler()}
+                    >
                       {flexRender(header.column.columnDef.header, header.getContext())}
                       {{
                         asc: ' \u25B2',
                         desc: ' \u25BC',
                       }[header.column.getIsSorted() as string] ?? null}
                     </div>
+                    <div
+                      onMouseDown={header.getResizeHandler()}
+                      onTouchStart={header.getResizeHandler()}
+                      onClick={(e) => e.stopPropagation()}
+                      className={`absolute right-0 top-0 h-full w-1 cursor-col-resize hover:bg-solarized-blue ${
+                        header.column.getIsResizing() ? 'bg-solarized-blue' : ''
+                      }`}
+                    />
                   </th>
                 ))}
               </tr>
@@ -430,6 +441,7 @@ export function LibraryTable({ items, searchQuery, playlistId, onSearchChange }:
                       <td
                         key={cell.id}
                         className="px-2 py-1 border-b border-solarized-base02 whitespace-nowrap overflow-hidden text-ellipsis max-w-0"
+                        style={{ width: cell.column.getSize() }}
                         onDoubleClick={() => {
                           if (isEditable) {
                             handleCellDoubleClick(row.id, field, cell.getValue() as string);
