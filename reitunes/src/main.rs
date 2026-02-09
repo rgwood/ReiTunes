@@ -29,7 +29,7 @@ use uuid::Uuid;
 
 use crate::llm::SongMetadata;
 use crate::metadata::extract_metadata;
-use crate::storage::{LocalStorage, S3Storage, StorageType};
+use crate::storage::S3Storage;
 
 mod llm;
 mod metadata;
@@ -100,8 +100,7 @@ struct AppState {
     playlists: Arc<RwLock<PlaylistStore>>,
     // used to broadcast updates to all connected clients
     update_tx: broadcast::Sender<LibraryUpdate>,
-    // Storage backend (S3 or local)
-    storage: Arc<StorageType>,
+    storage: Arc<S3Storage>,
 }
 
 #[tokio::main]
@@ -135,49 +134,42 @@ async fn main() -> Result<()> {
             // leaving this connection open slows writes down ~100x (from 0.2 ms to 20 ms)
             drop(conn);
 
-            // Initialize storage backend
+            // Initialize S3 storage backend
             // Try compile-time env vars first (baked in via `just publish`),
-            // then runtime env vars (for dev), then fall back to local storage.
+            // then fall back to runtime env vars (for dev).
             let s3_endpoint = option_env!("S3_ENDPOINT")
                 .map(String::from)
-                .or_else(|| std::env::var("S3_ENDPOINT").ok());
+                .or_else(|| std::env::var("S3_ENDPOINT").ok())
+                .expect("S3_ENDPOINT must be set (compile-time or runtime)");
             let s3_bucket = option_env!("S3_BUCKET")
                 .map(String::from)
-                .or_else(|| std::env::var("S3_BUCKET").ok());
+                .or_else(|| std::env::var("S3_BUCKET").ok())
+                .expect("S3_BUCKET must be set (compile-time or runtime)");
             let s3_access_key = option_env!("S3_ACCESS_KEY")
                 .map(String::from)
-                .or_else(|| std::env::var("S3_ACCESS_KEY").ok());
+                .or_else(|| std::env::var("S3_ACCESS_KEY").ok())
+                .expect("S3_ACCESS_KEY must be set (compile-time or runtime)");
             let s3_secret_key = option_env!("S3_SECRET_KEY")
                 .map(String::from)
-                .or_else(|| std::env::var("S3_SECRET_KEY").ok());
+                .or_else(|| std::env::var("S3_SECRET_KEY").ok())
+                .expect("S3_SECRET_KEY must be set (compile-time or runtime)");
             let s3_prefix = option_env!("S3_PREFIX")
                 .map(String::from)
                 .or_else(|| std::env::var("S3_PREFIX").ok());
 
-            let storage: StorageType = match (s3_endpoint, s3_bucket, s3_access_key, s3_secret_key)
-            {
-                (Some(endpoint), Some(bucket), Some(access_key), Some(secret_key)) => {
-                    info!(
-                        "Using S3 storage: {} / {} (prefix: {:?})",
-                        endpoint, bucket, s3_prefix
-                    );
-                    StorageType::S3(
-                        S3Storage::new(
-                            &endpoint,
-                            &bucket,
-                            s3_prefix.as_deref(),
-                            &access_key,
-                            &secret_key,
-                        )
-                        .await
-                        .expect("Failed to initialize S3 storage"),
-                    )
-                }
-                _ => {
-                    info!("Using local storage at {:?}", music_dir());
-                    StorageType::Local(LocalStorage::new(music_dir(), "/music".to_string()))
-                }
-            };
+            info!(
+                "Using S3 storage: {} / {} (prefix: {:?})",
+                s3_endpoint, s3_bucket, s3_prefix
+            );
+            let storage = S3Storage::new(
+                &s3_endpoint,
+                &s3_bucket,
+                s3_prefix.as_deref(),
+                &s3_access_key,
+                &s3_secret_key,
+            )
+            .await
+            .expect("Failed to initialize S3 storage");
 
             let app_state = AppState {
                 library: Arc::new(RwLock::new(library)),
@@ -323,7 +315,7 @@ struct LibraryItemResponse {
 }
 
 impl LibraryItemResponse {
-    fn from_item(item: &LibraryItem, storage: &StorageType) -> Self {
+    fn from_item(item: &LibraryItem, storage: &S3Storage) -> Self {
         Self {
             id: item.id,
             name: item.name.clone(),
