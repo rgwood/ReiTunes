@@ -48,15 +48,15 @@ function parseSearchQuery(query: string): ParsedSearch {
   let album: string | null = null;
   const textParts: string[] = [];
 
-  // Regex to match field:"value" or unquoted words
-  const regex = /(artist|album):"([^"]+)"|(\S+)/gi;
+  // Regex to match field:"value" (with escaped quotes) or unquoted words
+  const regex = /(artist|album):"((?:[^"\\]|\\.)*)"|(\S+)/gi;
   let match;
 
   while ((match = regex.exec(query)) !== null) {
-    if (match[1] && match[2]) {
+    if (match[1] && match[2] !== undefined) {
       // Field filter: artist:"value" or album:"value"
       const field = match[1].toLowerCase();
-      const value = match[2];
+      const value = match[2].replace(/\\"/g, '"');
       if (field === 'artist') {
         artist = value;
       } else if (field === 'album') {
@@ -342,14 +342,16 @@ export function LibraryTable({ items, searchQuery, playlistId, onSearchChange }:
 
   const handleFilterByArtist = useCallback(() => {
     if (contextMenu && onSearchChange) {
-      onSearchChange(`artist:"${contextMenu.item.artist}"`);
+      const escaped = contextMenu.item.artist.replace(/"/g, '\\"');
+      onSearchChange(`artist:"${escaped}"`);
       setContextMenu(null);
     }
   }, [contextMenu, onSearchChange]);
 
   const handleFilterByAlbum = useCallback(() => {
     if (contextMenu && onSearchChange) {
-      onSearchChange(`album:"${contextMenu.item.album}"`);
+      const escaped = contextMenu.item.album.replace(/"/g, '\\"');
+      onSearchChange(`album:"${escaped}"`);
       setContextMenu(null);
     }
   }, [contextMenu, onSearchChange]);

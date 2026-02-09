@@ -30,10 +30,13 @@ export function useLibrary() {
 
   // WebSocket connection for real-time updates
   useEffect(() => {
+    let mounted = true;
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const wsUrl = `${protocol}//${window.location.host}/updates`;
 
     const connect = () => {
+      if (!mounted) return;
+
       const ws = new WebSocket(wsUrl);
       wsRef.current = ws;
 
@@ -63,8 +66,10 @@ export function useLibrary() {
       };
 
       ws.onclose = () => {
-        // Reconnect after a delay
-        setTimeout(connect, 3000);
+        // Reconnect after a delay, but not if we've been unmounted
+        if (mounted) {
+          setTimeout(connect, 3000);
+        }
       };
 
       ws.onerror = (error) => {
@@ -76,6 +81,7 @@ export function useLibrary() {
     connect();
 
     return () => {
+      mounted = false;
       wsRef.current?.close();
     };
   }, [queryClient]);
