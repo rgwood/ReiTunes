@@ -13,7 +13,7 @@ import { useQuery } from '@tanstack/react-query';
 import type { LibraryItem, Bookmark } from '../types';
 import { usePlayerStore } from '../stores/playerStore';
 import { useQueueStore } from '../hooks/useQueue';
-import { updateLibraryItem, deleteItem as apiDeleteItem, reloadTags } from '../hooks/useLibrary';
+import { updateLibraryItem, deleteItem as apiDeleteItem } from '../hooks/useLibrary';
 import { FavoriteButton } from './FavoriteButton';
 import { Tooltip } from './Tooltip';
 import { useAddToPlaylist } from './PlaylistSidebar';
@@ -340,17 +340,6 @@ export function LibraryTable({ items, searchQuery, playlistId, onSearchChange }:
     }
   }, [contextMenu, addNext]);
 
-  const handleReloadTags = useCallback(async () => {
-    if (contextMenu) {
-      try {
-        await reloadTags(contextMenu.item.id);
-      } catch (err) {
-        console.error('Failed to reload tags:', err);
-      }
-      setContextMenu(null);
-    }
-  }, [contextMenu]);
-
   const handleFilterByArtist = useCallback(() => {
     if (contextMenu && onSearchChange) {
       onSearchChange(`artist:"${contextMenu.item.artist}"`);
@@ -549,12 +538,6 @@ export function LibraryTable({ items, searchQuery, playlistId, onSearchChange }:
                 )}
               </div>
             )}
-          </div>
-          <div
-            className="px-3 py-2 text-solarized-base1 hover:bg-solarized-blue hover:bg-opacity-30 cursor-pointer"
-            onClick={handleReloadTags}
-          >
-            &#128260; Reload ID3 Tags
           </div>
           <div
             className="px-3 py-2 text-solarized-base1 hover:bg-solarized-red hover:text-solarized-base3 cursor-pointer"

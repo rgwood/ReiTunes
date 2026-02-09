@@ -17,7 +17,7 @@ use clap::{Parser, Subcommand};
 use reitunes_workspace::*;
 use serde::{Deserialize, Serialize};
 use vite_rs_axum_0_8::ViteServe;
-use std::path::PathBuf;
+
 use std::sync::{Arc, LazyLock};
 use std::time::Duration;
 use std::{fmt, net::SocketAddr};
@@ -57,13 +57,6 @@ const SESSION_COOKIE_NAME: &str = "reitunes_session";
 
 static DB: LazyLock<r2d2::Pool<r2d2_sqlite::SqliteConnectionManager>> =
     LazyLock::new(|| open_connection_pool(DB_PATH).expect("Failed to create connection pool"));
-
-/// Music directory for local file storage
-fn music_dir() -> PathBuf {
-    std::env::var("MUSIC_DIR")
-        .map(PathBuf::from)
-        .unwrap_or_else(|_| PathBuf::from("./music"))
-}
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None, styles = clap_v3_style())]
@@ -195,9 +188,6 @@ async fn main() -> Result<()> {
                 .route("/playlists/{id}/items", post(add_playlist_item_handler))
                 .route("/playlists/{playlist_id}/items/{item_id}", axum::routing::delete(remove_playlist_item_handler));
 
-            // Serve local music files
-            let music_service = tower_http::services::ServeDir::new(music_dir());
-
             // Build vite service for frontend
             let vite = ViteServe::new(Assets::boxed());
 
@@ -209,17 +199,15 @@ async fn main() -> Result<()> {
                 .route("/ui/{id}/bookmarks", post(add_bookmark_handler))
                 .route("/ui/{id}/favorite", post(favorite_handler))
                 .route("/ui/{id}/unfavorite", post(unfavorite_handler))
-                .route("/ui/{id}/reload-tags", post(reload_tags_handler))
                 .route("/updates", get(updates_handler))
                 // Frontend requires auth (must be above route_layer)
                 .route_service("/", vite.clone())
                 .route_service("/{*path}", vite)
                 .route_layer(middleware::from_fn(auth))
                 .layer(CookieManagerLayer::new())
-                // API and music routes don't require session auth
+                // API routes don't require session auth
                 .nest("/api", api_router)
                 .nest("/api", items_router)
-                .nest_service("/music", music_service)
                 .with_state(app_state);
 
             let listener = tokio::net::TcpListener::bind("127.0.0.1:5000")
@@ -853,72 +841,6 @@ async fn add_bookmark_handler(
     Ok(StatusCode::CREATED)
 }
 
-/// Reload ID3 tags for a library item from its file
-#[instrument(skip(app_state))]
-async fn reload_tags_handler(
-    State(app_state): State<AppState>,
-    axum::extract::Path(id): axum::extract::Path<Uuid>,
-) -> Result<impl IntoResponse, AppError> {
-    // Get the library item
-    let library = app_state.library.read().await;
-    let item = library
-        .items
-        .get(&id)
-        .ok_or_else(|| anyhow::anyhow!("Item not found"))?;
-
-    // Construct full file path
-    let file_path = music_dir().join(&item.file_path);
-    info!(file_path = ?file_path, "Reloading ID3 tags");
-
-    // Extract metadata
-    let metadata = crate::metadata::extract_metadata(&file_path)?;
-
-    // Drop the read lock before acquiring write lock
-    drop(library);
-
-    // Apply updates for each field that has a value
-    let conn = DB.get()?;
-
-    if let Some(title) = metadata.title {
-        let event = Event::LibraryItemNameChangedEvent { new_name: title };
-        let event_with_metadata = EventWithMetadata::new(id, event)?;
-        save_event_to_db(&conn, &event_with_metadata)?;
-        app_state.library.write().await.apply(&event_with_metadata);
-    }
-
-    if let Some(artist) = metadata.artist {
-        let event = Event::LibraryItemArtistChangedEvent { new_artist: artist };
-        let event_with_metadata = EventWithMetadata::new(id, event)?;
-        save_event_to_db(&conn, &event_with_metadata)?;
-        app_state.library.write().await.apply(&event_with_metadata);
-    }
-
-    if let Some(album) = metadata.album {
-        let event = Event::LibraryItemAlbumChangedEvent { new_album: album };
-        let event_with_metadata = EventWithMetadata::new(id, event)?;
-        save_event_to_db(&conn, &event_with_metadata)?;
-        app_state.library.write().await.apply(&event_with_metadata);
-    }
-
-    // Always update track number (even if None, to clear stale data)
-    let event = Event::LibraryItemTrackNumberChangedEvent {
-        new_track_number: metadata.track_number,
-    };
-    let event_with_metadata = EventWithMetadata::new(id, event)?;
-    save_event_to_db(&conn, &event_with_metadata)?;
-    app_state.library.write().await.apply(&event_with_metadata);
-
-    // Broadcast the updated item
-    let library = app_state.library.read().await;
-    if let Some(updated_item) = library.items.get(&id) {
-        let response = LibraryItemResponse::from_item(updated_item, &app_state.storage);
-        let _ = app_state
-            .update_tx
-            .send(LibraryUpdate::Update { item: Box::new(response) });
-    }
-
-    Ok(StatusCode::OK)
-}
 
 fn create_update_event(field: &str, value: &str) -> Result<Event> {
     match field {

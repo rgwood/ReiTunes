@@ -152,13 +152,3 @@ export async function toggleFavorite(id: string, isFavorite: boolean): Promise<v
   }
 }
 
-export async function reloadTags(id: string): Promise<void> {
-  const response = await fetch(`/ui/${id}/reload-tags`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    credentials: 'include',
-  });
-  if (!response.ok) {
-    throw new Error('Failed to reload tags');
-  }
-}
