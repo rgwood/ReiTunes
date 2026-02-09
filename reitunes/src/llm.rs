@@ -13,7 +13,7 @@ pub struct SongMetadata {
 
 pub async fn extract_song_metadata(filename: &str) -> Result<SongMetadata> {
     let api_key = env!("ANTHROPIC_API_KEY");
-    let client = ClientBuilder::new(&api_key).build();
+    let client = ClientBuilder::new(api_key).build();
 
     // Create the extractor for the SongMetadata struct
     let extractor = client.extractor::<SongMetadata>("claude-3-5-haiku-20241022")

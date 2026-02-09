@@ -835,7 +835,7 @@ fn ui(f: &mut Frame, app: &mut App) {
         };
 
         let cells = vec![
-            Cell::from(format!("{}", item.name)).style(style),
+            Cell::from(item.name.to_string()).style(style),
             Cell::from(item.artist.clone()).style(style),
         ];
         Row::new(cells).height(1)
@@ -1005,13 +1005,18 @@ fn format_duration(duration: &Duration) -> String {
     format!("{hours:02}:{minutes:02}:{seconds:02}")
 }
 
-async fn play_song(device: &SonosDevice, item: &LibraryItem) -> Result<()> {
-    let url_prefix = "https://reitunes.blob.core.windows.net/music/";
-    let filename_url_encoded = urlencoding::encode(&item.file_path);
-    let url = format!("{}{}", url_prefix, filename_url_encoded);
+/// Get the storage base URL from environment or default
+fn storage_base_url() -> String {
+    std::env::var("STORAGE_BASE_URL")
+        .unwrap_or_else(|_| "https://reitunes.s3.ca-east-tor.io.cloud.ovh.net/prod".to_string())
+}
 
-    let mut metadata = TrackMetaData::default();
-    metadata.title = item.name.clone();
+async fn play_song(device: &SonosDevice, item: &LibraryItem) -> Result<()> {
+    let base_url = storage_base_url();
+    let filename_url_encoded = urlencoding::encode(&item.file_path);
+    let url = format!("{}/{}", base_url, filename_url_encoded);
+
+    let metadata = TrackMetaData { title: item.name.clone(), ..Default::default() };
     set_av_transport_uri_with_retry(device, &url, Some(metadata)).await?;
     play_with_retry(device).await?;
     Ok(())

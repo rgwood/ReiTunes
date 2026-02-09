@@ -148,16 +148,3 @@ pub async fn download_and_save_events(conn: &mut Connection) -> Result<()> {
     info!("Saved events");
     Ok(())
 }
-
-/// Fetch all events from remote server (reitunes specific)
-#[instrument]
-pub async fn fetch_all_events() -> Result<Vec<EventWithMetadata>> {
-    let client = reqwest::Client::new();
-    let response = client
-        .get("https://spudnik.reillywood.com/reitunes/allevents")
-        .send()
-        .await?;
-
-    let events: Vec<EventWithMetadata> = response.json().await?;
-    Ok(events)
-}

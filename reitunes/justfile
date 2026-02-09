@@ -1,7 +1,10 @@
 # The following commands ARE relevant for agents
 
 publish:
-    op run --env-file="./prod.env" -- cross build --target x86_64-unknown-linux-musl --release
+    #!/usr/bin/env bash
+    set -euo pipefail
+    set -a && source ./prod.env && set +a
+    cargo build -p reitunes --target x86_64-unknown-linux-musl --release
     rsync ../target/x86_64-unknown-linux-musl/release/reitunes spudnik.reillywood.com:bin/
     ssh spudnik.reillywood.com -t "systemctl --user restart reitunes"
 
@@ -13,18 +16,16 @@ get-logs n:
 install-deps:
     cargo install xh --locked
 
-watch:
-    watchexec --exts=rs,sql,html,css,js --on-busy-update=restart -- cargo run -- --live-reload
+# Development: watches Rust files, restarts server on changes. Vite-rs handles frontend HMR.
+dev: kill
+    #!/usr/bin/env bash
+    set -a && source .env && set +a
+    watchexec --exts=rs,sql --on-busy-update=restart -- cargo run -- --no-auth
 
-run-with-secrets:
-    op run --env-file="./prod.env" -- cargo run
-
-build-with-secrets:
-    op run --env-file="./prod.env" -- cargo build
-
-
-run:
-    cargo run
+# Kill any running reitunes/watchexec dev processes
+kill:
+    -pkill -f "watchexec.*reitunes"
+    -pkill -f "target/.*reitunes"
 
 test:
     cargo nextest run

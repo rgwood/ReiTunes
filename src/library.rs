@@ -44,7 +44,7 @@ pub mod duration_serde_dotnet {
         D: Deserializer<'de>,
     {
         let s = String::deserialize(deserializer)?;
-        let parts: Vec<&str> = s.split(|c| c == ':' || c == '.').collect();
+        let parts: Vec<&str> = s.split([':', '.']).collect();
         if parts.len() != 4 {
             return Err(serde::de::Error::custom("Invalid duration format"));
         }
@@ -181,7 +181,7 @@ impl Library {
     /// Apply an event to update the library state
     pub fn apply(&mut self, event: &EventWithMetadata) {
         match &event.event {
-            Event::LibraryItemCreatedEvent { name, file_path, artist, album } => {
+            Event::LibraryItemCreatedEvent { name, file_path, artist, album, track_number } => {
                 let item = LibraryItem {
                     id: event.aggregate_id,
                     name: name.clone(),
@@ -189,8 +189,10 @@ impl Library {
                     file_path: file_path.clone(),
                     artist: artist.clone().unwrap_or_default(),
                     album: album.clone().unwrap_or_default(),
+                    track_number: *track_number,
                     play_count: 0,
                     bookmarks: IndexMap::new(),
+                    is_favorite: false,
                 };
                 self.items.insert(item.id, item);
             }
@@ -221,6 +223,11 @@ impl Library {
             Event::LibraryItemAlbumChangedEvent { new_album } => {
                 if let Some(item) = self.items.get_mut(&event.aggregate_id) {
                     item.album = new_album.clone();
+                }
+            }
+            Event::LibraryItemTrackNumberChangedEvent { new_track_number } => {
+                if let Some(item) = self.items.get_mut(&event.aggregate_id) {
+                    item.track_number = *new_track_number;
                 }
             }
             Event::LibraryItemBookmarkAddedEvent {
@@ -264,6 +271,16 @@ impl Library {
                     }
                 }
             }
+            Event::LibraryItemFavoritedEvent => {
+                if let Some(item) = self.items.get_mut(&event.aggregate_id) {
+                    item.is_favorite = true;
+                }
+            }
+            Event::LibraryItemUnfavoritedEvent => {
+                if let Some(item) = self.items.get_mut(&event.aggregate_id) {
+                    item.is_favorite = false;
+                }
+            }
         }
     }
 }
@@ -277,6 +294,7 @@ pub enum Event {
         name: String,
         artist: Option<String>,
         album: Option<String>,
+        track_number: Option<u32>,
         file_path: String,
     },
     LibraryItemDeletedEvent,
@@ -292,6 +310,9 @@ pub enum Event {
     LibraryItemAlbumChangedEvent {
         new_album: String,
     },
+    LibraryItemTrackNumberChangedEvent {
+        new_track_number: Option<u32>,
+    },
     LibraryItemBookmarkAddedEvent {
         bookmark_id: Uuid,
         #[serde(with = "duration_serde_dotnet")]
@@ -304,6 +325,8 @@ pub enum Event {
         bookmark_id: Uuid,
         emoji: String,
     },
+    LibraryItemFavoritedEvent,
+    LibraryItemUnfavoritedEvent,
 }
 
 /// Library item representation
@@ -315,17 +338,12 @@ pub struct LibraryItem {
     pub file_path: String,
     pub artist: String,
     pub album: String,
+    pub track_number: Option<u32>,
     pub play_count: u32,
     pub bookmarks: IndexMap<Uuid, Bookmark>,
+    pub is_favorite: bool,
 }
 
-const STORAGE_URL: &str = "https://reitunes.blob.core.windows.net/music/";
-
-impl LibraryItem {
-    pub fn url(&self) -> String {
-        format!("{}{}", STORAGE_URL, self.file_path)
-    }
-}
 
 /// Bookmark within a library item
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -371,6 +389,7 @@ mod tests {
                 file_path: "test/path.mp3".to_string(),
                 artist: None,
                 album: None,
+                track_number: None,
             },
         )?;
 
