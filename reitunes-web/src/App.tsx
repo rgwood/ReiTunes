@@ -5,6 +5,7 @@ import { LibraryTable } from './components/LibraryTable';
 import { SearchBar } from './components/SearchBar';
 import { QueuePanel } from './components/QueuePanel';
 import { UploadModal } from './components/UploadModal';
+import { DownloadModal } from './components/DownloadModal';
 import { PlaylistSidebar } from './components/PlaylistSidebar';
 import { useLibrary } from './hooks/useLibrary';
 import { usePlayerStore } from './stores/playerStore';
@@ -36,6 +37,13 @@ const Icons = {
       <line x1="3" y1="18" x2="3.01" y2="18" />
     </svg>
   ),
+  download: (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+      <polyline points="7 10 12 15 17 10" />
+      <line x1="12" y1="15" x2="12" y2="3" />
+    </svg>
+  ),
 };
 
 const queryClient = new QueryClient();
@@ -44,6 +52,7 @@ function AppContent() {
   const [searchQuery, setSearchQuery] = useState('');
   const [isQueueOpen, setIsQueueOpen] = useState(false);
   const [isUploadOpen, setIsUploadOpen] = useState(false);
+  const [isDownloadOpen, setIsDownloadOpen] = useState(false);
   const [isPlaylistsOpen, setIsPlaylistsOpen] = useState(false);
   const [selectedPlaylistId, setSelectedPlaylistId] = useState<string | null>(null);
 
@@ -79,6 +88,10 @@ function AppContent() {
 
   const toggleUpload = useCallback(() => {
     setIsUploadOpen((prev) => !prev);
+  }, []);
+
+  const toggleDownload = useCallback(() => {
+    setIsDownloadOpen((prev) => !prev);
   }, []);
 
   const togglePlaylists = useCallback(() => {
@@ -122,6 +135,13 @@ function AppContent() {
               title="Upload"
             >
               {Icons.upload}
+            </button>
+            <button
+              onClick={toggleDownload}
+              className="p-1.5 text-solarized-base0 hover:text-solarized-green hover:bg-solarized-base02 rounded transition-colors"
+              title="Download from URL"
+            >
+              {Icons.download}
             </button>
             <button
               onClick={toggleQueue}
@@ -169,6 +189,7 @@ function AppContent() {
       </div>
 
       <UploadModal isOpen={isUploadOpen} onClose={() => setIsUploadOpen(false)} />
+      <DownloadModal isOpen={isDownloadOpen} onClose={() => setIsDownloadOpen(false)} />
     </div>
   );
 }

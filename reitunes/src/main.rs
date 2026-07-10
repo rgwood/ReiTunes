@@ -55,6 +55,16 @@ static PASSWORD_HASH: LazyLock<String> = LazyLock::new(|| hash_with_rotating_sal
 
 const SESSION_COOKIE_NAME: &str = "reitunes_session";
 
+/// URL of the downloader service that fetches audio/video from arbitrary URLs.
+/// Resolved at compile time via `option_env!` (baked in via `just publish`),
+/// then falling back to a runtime env var (for dev), then a hardcoded default.
+fn downloader_url() -> String {
+    option_env!("DOWNLOADER_URL")
+        .map(String::from)
+        .or_else(|| std::env::var("DOWNLOADER_URL").ok())
+        .unwrap_or_else(|| "http://potato-pi:3000/download".to_string())
+}
+
 static DB: LazyLock<r2d2::Pool<r2d2_sqlite::SqliteConnectionManager>> =
     LazyLock::new(|| open_connection_pool(DB_PATH).expect("Failed to create connection pool"));
 
@@ -182,6 +192,7 @@ async fn main() -> Result<()> {
                 .route("/upload", post(upload_handler))
                 // Allow uploads up to 500MB
                 .layer(DefaultBodyLimit::max(500 * 1024 * 1024))
+                .route("/download", post(download_handler))
                 .route("/log", post(frontend_log_handler))
                 .route("/playlists", get(list_playlists_handler).post(create_playlist_handler))
                 .route("/playlists/{id}", axum::routing::put(rename_playlist_handler).delete(delete_playlist_handler))
@@ -450,6 +461,57 @@ async fn upload_handler(
     }
 
     Err(AppError(anyhow::anyhow!("No file uploaded")))
+}
+
+/// Request body for `/api/download`
+#[derive(Debug, Deserialize, Serialize)]
+struct DownloadRequest {
+    url: String,
+    dl_type: String,
+}
+
+/// Forward a request to the downloader service running on `potato-pi`, which
+/// queues the download and pushes the finished track into ReiTunes itself.
+#[debug_handler]
+async fn download_handler(
+    JsonExtractor(req): JsonExtractor<DownloadRequest>,
+) -> Result<impl IntoResponse, (StatusCode, String)> {
+    if req.url.trim().is_empty() {
+        return Err((StatusCode::BAD_REQUEST, "URL must not be empty".to_string()));
+    }
+    if !(req.url.starts_with("http://") || req.url.starts_with("https://")) {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "URL must start with http:// or https://".to_string(),
+        ));
+    }
+
+    let client = reqwest::Client::new();
+    let response = client
+        .post(downloader_url())
+        .json(&req)
+        .send()
+        .await
+        .map_err(|e| {
+            warn!(error = %e, "Failed to reach downloader service");
+            (
+                StatusCode::BAD_GATEWAY,
+                format!("Failed to reach downloader service: {e}"),
+            )
+        })?;
+
+    let status = response.status();
+    let body = response.text().await.unwrap_or_default();
+
+    if !status.is_success() {
+        warn!(status = %status, body = %body, "Downloader service returned an error");
+        return Err((
+            StatusCode::BAD_GATEWAY,
+            format!("Downloader service error ({status}): {body}"),
+        ));
+    }
+
+    Ok(body)
 }
 
 // ============================================================================
