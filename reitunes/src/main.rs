@@ -190,9 +190,10 @@ async fn main() -> Result<()> {
             let smapi_router =
                 Router::new().route("/v1/soap", post(smapi::smapi_soap_handler));
 
-            // API routes that require regular auth (for React frontend)
-            let items_router = Router::new()
-                .route("/items", get(items_handler))
+            let public_items_router = Router::new().route("/items", get(items_handler));
+
+            // Private API routes require the same session as the React frontend.
+            let protected_api_router = Router::new()
                 .route("/upload", post(upload_handler))
                 // Allow uploads up to 500MB
                 .layer(DefaultBodyLimit::max(500 * 1024 * 1024))
@@ -201,7 +202,8 @@ async fn main() -> Result<()> {
                 .route("/playlists", get(list_playlists_handler).post(create_playlist_handler))
                 .route("/playlists/{id}", axum::routing::put(rename_playlist_handler).delete(delete_playlist_handler))
                 .route("/playlists/{id}/items", post(add_playlist_item_handler))
-                .route("/playlists/{playlist_id}/items/{item_id}", axum::routing::delete(remove_playlist_item_handler));
+                .route("/playlists/{playlist_id}/items/{item_id}", axum::routing::delete(remove_playlist_item_handler))
+                .route_layer(middleware::from_fn(api_session_auth));
 
             // Build vite service for frontend
             let vite = ViteServe::new(Assets::boxed());
@@ -219,11 +221,13 @@ async fn main() -> Result<()> {
                 .route_service("/", vite.clone())
                 .route_service("/{*path}", vite)
                 .route_layer(middleware::from_fn(auth))
-                .layer(CookieManagerLayer::new())
-                // API routes don't require session auth
+                // Service, API-key, and read-only routes stay outside session auth.
                 .nest("/api", api_router)
                 .nest("/smapi", smapi_router)
-                .nest("/api", items_router)
+                .nest("/api", public_items_router)
+                .nest("/api", protected_api_router)
+                // Cookie extraction is used by both frontend and API auth middleware.
+                .layer(CookieManagerLayer::new())
                 .with_state(app_state);
 
             let listener = tokio::net::TcpListener::bind("127.0.0.1:5000")
@@ -964,6 +968,25 @@ async fn auth(cookies: Cookies, req: Request<Body>, next: Next) -> Result<Respon
     }
 
     Ok(Redirect::to("/login").into_response())
+}
+
+async fn api_session_auth(
+    cookies: Cookies,
+    req: Request<Body>,
+    next: Next,
+) -> Result<Response, StatusCode> {
+    if *NO_AUTH.get().unwrap_or(&false) {
+        return Ok(next.run(req).await);
+    }
+
+    if cookies
+        .get(SESSION_COOKIE_NAME)
+        .is_some_and(|cookie| cookie.value() == *PASSWORD_HASH)
+    {
+        return Ok(next.run(req).await);
+    }
+
+    Err(StatusCode::UNAUTHORIZED)
 }
 
 async fn api_key_auth(
