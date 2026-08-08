@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useEffect, useMemo } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { AudioPlayer } from './components/AudioPlayer';
 import { LibraryTable } from './components/LibraryTable';
@@ -7,7 +7,9 @@ import { QueuePanel } from './components/QueuePanel';
 import { UploadModal } from './components/UploadModal';
 import { DownloadModal } from './components/DownloadModal';
 import { PlaylistSidebar } from './components/PlaylistSidebar';
+import { BookmarkSidebar } from './components/BookmarkSidebar';
 import { useLibrary } from './hooks/useLibrary';
+import { useQueueStore } from './hooks/useQueue';
 import { usePlayerStore } from './stores/playerStore';
 import type { LibraryItem } from './types';
 
@@ -18,6 +20,11 @@ const Icons = {
       <path d="M9 18V5l12-2v13" />
       <circle cx="6" cy="18" r="3" />
       <circle cx="18" cy="16" r="3" />
+    </svg>
+  ),
+  bookmark: (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M6 3h12a1 1 0 0 1 1 1v17l-7-4-7 4V4a1 1 0 0 1 1-1z" />
     </svg>
   ),
   upload: (
@@ -54,10 +61,46 @@ function AppContent() {
   const [isUploadOpen, setIsUploadOpen] = useState(false);
   const [isDownloadOpen, setIsDownloadOpen] = useState(false);
   const [isPlaylistsOpen, setIsPlaylistsOpen] = useState(false);
+  const [isBookmarksOpen, setIsBookmarksOpen] = useState(false);
   const [selectedPlaylistId, setSelectedPlaylistId] = useState<string | null>(null);
 
   const { items, isLoading, error } = useLibrary();
-  const { play } = usePlayerStore();
+  const {
+    play,
+    currentItem,
+    currentItemId,
+    restoreCurrentItem,
+    refreshCurrentItem,
+    clearCurrentItem,
+  } = usePlayerStore();
+  const { reconcileWithLibrary } = useQueueStore();
+
+  // Resolve persisted IDs and stale queue snapshots against the current library.
+  // Restored tracks stay paused until the user explicitly resumes playback.
+  useEffect(() => {
+    if (isLoading) return;
+
+    reconcileWithLibrary(items);
+
+    if (!currentItemId) return;
+    const libraryItem = items.find((item) => item.id === currentItemId);
+    if (!libraryItem) {
+      clearCurrentItem();
+    } else if (!currentItem) {
+      restoreCurrentItem(libraryItem);
+    } else if (currentItem !== libraryItem) {
+      refreshCurrentItem(libraryItem);
+    }
+  }, [
+    items,
+    isLoading,
+    currentItem,
+    currentItemId,
+    clearCurrentItem,
+    reconcileWithLibrary,
+    refreshCurrentItem,
+    restoreCurrentItem,
+  ]);
 
   // Get all random targets: bookmarks + favourited songs (from start)
   const allRandomTargets = useMemo(() => {
@@ -96,6 +139,12 @@ function AppContent() {
 
   const togglePlaylists = useCallback(() => {
     setIsPlaylistsOpen((prev) => !prev);
+    setIsBookmarksOpen(false);
+  }, []);
+
+  const toggleBookmarks = useCallback(() => {
+    setIsBookmarksOpen((prev) => !prev);
+    setIsPlaylistsOpen(false);
   }, []);
 
   if (error) {
@@ -112,17 +161,32 @@ function AppContent() {
       <div className="flex-shrink-0 bg-solarized-base03 z-10 border-b border-solarized-base02">
         <AudioPlayer />
         <div className="flex justify-between items-center px-4 pb-2">
-          <button
-            onClick={togglePlaylists}
-            className={`p-1.5 rounded transition-colors ${
-              isPlaylistsOpen
-                ? 'text-solarized-cyan bg-solarized-base02'
-                : 'text-solarized-base0 hover:text-solarized-base1 hover:bg-solarized-base02'
-            }`}
-            title="Playlists"
-          >
-            {Icons.playlist}
-          </button>
+          <div className="flex items-center gap-1">
+            <button
+              onClick={togglePlaylists}
+              className={`p-1.5 rounded transition-colors ${
+                isPlaylistsOpen
+                  ? 'text-solarized-cyan bg-solarized-base02'
+                  : 'text-solarized-base0 hover:text-solarized-base1 hover:bg-solarized-base02'
+              }`}
+              title="Playlists"
+              aria-label="Playlists"
+            >
+              {Icons.playlist}
+            </button>
+            <button
+              onClick={toggleBookmarks}
+              className={`p-1.5 rounded transition-colors ${
+                isBookmarksOpen
+                  ? 'text-solarized-cyan bg-solarized-base02'
+                  : 'text-solarized-base0 hover:text-solarized-base1 hover:bg-solarized-base02'
+              }`}
+              title="Bookmarks"
+              aria-label="Bookmarks"
+            >
+              {Icons.bookmark}
+            </button>
+          </div>
           <div className="flex items-center gap-2">
             <SearchBar
               value={searchQuery}
@@ -167,6 +231,8 @@ function AppContent() {
             onSelectPlaylist={setSelectedPlaylistId}
           />
         )}
+
+        {isBookmarksOpen && <BookmarkSidebar items={items} onPlay={play} />}
 
         {/* Main table - center */}
         <div className="flex-grow overflow-hidden">

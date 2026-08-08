@@ -141,6 +141,7 @@ async fn main() -> Result<()> {
             // Start the web server
             let conn = DB.get()?;
             let library = load_library_from_db(&conn)?;
+            let playlists = load_playlists_from_db(&conn)?;
             // important to drop after using to return the connection to the pool
             // leaving this connection open slows writes down ~100x (from 0.2 ms to 20 ms)
             drop(conn);
@@ -184,7 +185,7 @@ async fn main() -> Result<()> {
 
             let app_state = AppState {
                 library: Arc::new(RwLock::new(library)),
-                playlists: Arc::new(RwLock::new(PlaylistStore::new())),
+                playlists: Arc::new(RwLock::new(playlists)),
                 update_tx: broadcast::channel(100).0,
                 storage: Arc::new(storage),
             };
@@ -220,6 +221,11 @@ async fn main() -> Result<()> {
                 .route("/ui/play", post(play_handler))
                 .route("/ui/delete", post(delete_handler))
                 .route("/ui/{id}/bookmarks", post(add_bookmark_handler))
+                .route(
+                    "/ui/{item_id}/bookmarks/{bookmark_id}",
+                    axum::routing::put(update_bookmark_handler)
+                        .delete(delete_bookmark_handler),
+                )
                 .route("/ui/{id}/favorite", post(favorite_handler))
                 .route("/ui/{id}/unfavorite", post(unfavorite_handler))
                 .route("/updates", get(updates_handler))
@@ -557,21 +563,8 @@ async fn create_playlist_handler(
     };
     let event_with_metadata = PlaylistEventWithMetadata::new(playlist_id, event)?;
 
-    // Save to database
-    // Note: We're using the same events table with aggregate_type = "Playlist"
-    let serialized = serde_json::to_string(&event_with_metadata.event)?;
     let conn = DB.get()?;
-    conn.execute(
-        "INSERT INTO events (Id, AggregateId, AggregateType, CreatedTimeUtc, MachineName, Serialized) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-        rusqlite::params![
-            event_with_metadata.id.to_string(),
-            event_with_metadata.aggregate_id.to_string(),
-            event_with_metadata.aggregate_type,
-            event_with_metadata.created_time_utc.to_string(),
-            event_with_metadata.machine_name,
-            serialized,
-        ],
-    )?;
+    save_playlist_event_to_db(&conn, &event_with_metadata)?;
 
     // Apply to in-memory store
     let mut playlists = app_state.playlists.write().await;
@@ -597,20 +590,8 @@ async fn rename_playlist_handler(
     };
     let event_with_metadata = PlaylistEventWithMetadata::new(id, event.clone())?;
 
-    // Save to database
-    let serialized = serde_json::to_string(&event_with_metadata.event)?;
     let conn = DB.get()?;
-    conn.execute(
-        "INSERT INTO events (Id, AggregateId, AggregateType, CreatedTimeUtc, MachineName, Serialized) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-        rusqlite::params![
-            event_with_metadata.id.to_string(),
-            event_with_metadata.aggregate_id.to_string(),
-            event_with_metadata.aggregate_type,
-            event_with_metadata.created_time_utc.to_string(),
-            event_with_metadata.machine_name,
-            serialized,
-        ],
-    )?;
+    save_playlist_event_to_db(&conn, &event_with_metadata)?;
 
     // Apply to in-memory store
     let mut playlists = app_state.playlists.write().await;
@@ -629,20 +610,8 @@ async fn delete_playlist_handler(
     let event = PlaylistEvent::PlaylistDeletedEvent;
     let event_with_metadata = PlaylistEventWithMetadata::new(id, event.clone())?;
 
-    // Save to database
-    let serialized = serde_json::to_string(&event_with_metadata.event)?;
     let conn = DB.get()?;
-    conn.execute(
-        "INSERT INTO events (Id, AggregateId, AggregateType, CreatedTimeUtc, MachineName, Serialized) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-        rusqlite::params![
-            event_with_metadata.id.to_string(),
-            event_with_metadata.aggregate_id.to_string(),
-            event_with_metadata.aggregate_type,
-            event_with_metadata.created_time_utc.to_string(),
-            event_with_metadata.machine_name,
-            serialized,
-        ],
-    )?;
+    save_playlist_event_to_db(&conn, &event_with_metadata)?;
 
     // Apply to in-memory store
     let mut playlists = app_state.playlists.write().await;
@@ -683,20 +652,8 @@ async fn add_playlist_item_handler(
     };
     let event_with_metadata = PlaylistEventWithMetadata::new(id, event.clone())?;
 
-    // Save to database
-    let serialized = serde_json::to_string(&event_with_metadata.event)?;
     let conn = DB.get()?;
-    conn.execute(
-        "INSERT INTO events (Id, AggregateId, AggregateType, CreatedTimeUtc, MachineName, Serialized) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-        rusqlite::params![
-            event_with_metadata.id.to_string(),
-            event_with_metadata.aggregate_id.to_string(),
-            event_with_metadata.aggregate_type,
-            event_with_metadata.created_time_utc.to_string(),
-            event_with_metadata.machine_name,
-            serialized,
-        ],
-    )?;
+    save_playlist_event_to_db(&conn, &event_with_metadata)?;
 
     // Apply to in-memory store
     let mut playlists = app_state.playlists.write().await;
@@ -717,20 +674,8 @@ async fn remove_playlist_item_handler(
     };
     let event_with_metadata = PlaylistEventWithMetadata::new(playlist_id, event.clone())?;
 
-    // Save to database
-    let serialized = serde_json::to_string(&event_with_metadata.event)?;
     let conn = DB.get()?;
-    conn.execute(
-        "INSERT INTO events (Id, AggregateId, AggregateType, CreatedTimeUtc, MachineName, Serialized) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-        rusqlite::params![
-            event_with_metadata.id.to_string(),
-            event_with_metadata.aggregate_id.to_string(),
-            event_with_metadata.aggregate_type,
-            event_with_metadata.created_time_utc.to_string(),
-            event_with_metadata.machine_name,
-            serialized,
-        ],
-    )?;
+    save_playlist_event_to_db(&conn, &event_with_metadata)?;
 
     // Apply to in-memory store
     let mut playlists = app_state.playlists.write().await;
@@ -898,6 +843,8 @@ async fn delete_handler(
 #[derive(Debug, Deserialize)]
 struct AddBookmarkRequest {
     position: f64,
+    #[serde(default)]
+    label: Option<String>,
 }
 
 #[instrument(skip(app_state))]
@@ -909,6 +856,7 @@ async fn add_bookmark_handler(
     let event = Event::LibraryItemBookmarkAddedEvent {
         bookmark_id: Uuid::new_v4(),
         position: Duration::from_secs_f64(request.position),
+        label: clean_bookmark_label(request.label),
     };
     let event_with_metadata = EventWithMetadata::new(id, event)?;
 
@@ -917,6 +865,79 @@ async fn add_bookmark_handler(
     Ok(StatusCode::CREATED)
 }
 
+#[derive(Debug, Deserialize)]
+struct UpdateBookmarkRequest {
+    label: Option<String>,
+    emoji: String,
+}
+
+#[instrument(skip(app_state))]
+async fn update_bookmark_handler(
+    State(app_state): State<AppState>,
+    Path((item_id, bookmark_id)): Path<(Uuid, Uuid)>,
+    JsonExtractor(request): JsonExtractor<UpdateBookmarkRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    let existing_emoji = {
+        let library = app_state.library.read().await;
+        library
+            .items
+            .get(&item_id)
+            .and_then(|item| item.bookmarks.get(&bookmark_id))
+            .map(|bookmark| bookmark.emoji.clone())
+    };
+    let Some(existing_emoji) = existing_emoji else {
+        return Ok(StatusCode::NOT_FOUND);
+    };
+
+    let label_event = Event::LibraryItemBookmarkLabelChangedEvent {
+        bookmark_id,
+        label: clean_bookmark_label(request.label),
+    };
+    save_and_broadcast_event(
+        EventWithMetadata::new(item_id, label_event)?,
+        app_state.clone(),
+    )
+    .await?;
+
+    let emoji = request.emoji.trim();
+    if !emoji.is_empty() && emoji != existing_emoji {
+        let emoji_event = Event::LibraryItemBookmarkSetEmojiEvent {
+            bookmark_id,
+            emoji: emoji.to_string(),
+        };
+        save_and_broadcast_event(EventWithMetadata::new(item_id, emoji_event)?, app_state).await?;
+    }
+
+    Ok(StatusCode::OK)
+}
+
+#[instrument(skip(app_state))]
+async fn delete_bookmark_handler(
+    State(app_state): State<AppState>,
+    Path((item_id, bookmark_id)): Path<(Uuid, Uuid)>,
+) -> Result<impl IntoResponse, AppError> {
+    let bookmark_exists = {
+        let library = app_state.library.read().await;
+        library
+            .items
+            .get(&item_id)
+            .is_some_and(|item| item.bookmarks.contains_key(&bookmark_id))
+    };
+    if !bookmark_exists {
+        return Ok(StatusCode::NOT_FOUND);
+    }
+
+    let event = Event::LibraryItemBookmarkDeletedEvent { bookmark_id };
+    save_and_broadcast_event(EventWithMetadata::new(item_id, event)?, app_state).await?;
+
+    Ok(StatusCode::NO_CONTENT)
+}
+
+fn clean_bookmark_label(label: Option<String>) -> Option<String> {
+    label
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+}
 
 fn create_update_event(field: &str, value: &str) -> Result<Event> {
     match field {

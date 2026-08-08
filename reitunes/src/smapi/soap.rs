@@ -426,12 +426,21 @@ fn track_xml(track: &LibraryItem) -> String {
 }
 
 fn bookmark_xml(id: &str, track: &LibraryItem, bookmark: &Bookmark) -> String {
-    let title = format!(
-        "{} {} — {}",
-        bookmark.emoji,
-        track.name,
-        format_position(bookmark.position)
-    );
+    let title = match bookmark.label.as_deref() {
+        Some(label) => format!(
+            "{} {} — {} — {}",
+            bookmark.emoji,
+            label,
+            track.name,
+            format_position(bookmark.position)
+        ),
+        None => format!(
+            "{} {} — {}",
+            bookmark.emoji,
+            track.name,
+            format_position(bookmark.position)
+        ),
+    };
     track_xml_with_identity(id, &title, track, true)
 }
 
@@ -703,6 +712,7 @@ mod tests {
                 Event::LibraryItemBookmarkAddedEvent {
                     bookmark_id,
                     position: std::time::Duration::from_secs(754),
+                    label: Some("The good bit".to_string()),
                 },
             )
             .unwrap(),
@@ -764,7 +774,7 @@ mod tests {
         .unwrap();
         assert!(bookmarks.contains("<count>1</count><total>1</total>"));
         assert!(bookmarks.contains(&format!("<id>{bookmark_item_id}</id>")));
-        assert!(bookmarks.contains("One &amp; Only — 12:34"));
+        assert!(bookmarks.contains("The good bit — One &amp; Only — 12:34"));
         assert!(bookmarks.contains("<canResume>true</canResume>"));
 
         let artist_id = stable_id("artist", &["A <B"]);

@@ -81,7 +81,7 @@ function formatBookmarks(bookmarks: Record<string, Bookmark>): React.ReactNode {
         key={id}
         className="bookmark-emoji cursor-pointer hover:underline decoration-solarized-blue decoration-2 rounded"
         data-position={bookmark.position}
-        title={timeString}
+        title={bookmark.label ? `${bookmark.label} · ${timeString}` : timeString}
       >
         {bookmark.emoji || '\u{1F516}'}
       </span>

@@ -86,15 +86,26 @@ export function AudioPlayer() {
   const progressRef = useRef<HTMLDivElement>(null);
   const lastPlayedIdRef = useRef<string | null>(null);
   const lastItemIdRef = useRef<string | null>(null);
+  const lastCheckpointRef = useRef(-1);
+  const isChangingSourceRef = useRef(false);
 
-  const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTimeLocal] = useState(0);
   const [duration, setDurationLocal] = useState(0);
-  const [volume, setVolume] = useState(1);
-  const [isMuted, setIsMuted] = useState(false);
   const [bookmarkFeedback, setBookmarkFeedback] = useState<'idle' | 'success' | 'error'>('idle');
 
-  const { currentItem, pendingSeek, setCurrentTime, setDuration, clearPendingSeek, play } = usePlayerStore();
+  const {
+    currentItem,
+    isPlaying,
+    pendingSeek,
+    volume,
+    isMuted,
+    setIsPlaying,
+    clearPendingSeek,
+    play,
+    setResumePosition,
+    setVolume,
+    setMuted,
+  } = usePlayerStore();
   const { playNext, playPrevious, shuffleEnabled, repeatMode, toggleShuffle, cycleRepeatMode } = useQueueStore();
 
   // Handle song changes
@@ -105,9 +116,27 @@ export function AudioPlayer() {
     const isNewSong = currentItem.id !== lastItemIdRef.current;
     if (isNewSong) {
       lastItemIdRef.current = currentItem.id;
+      lastCheckpointRef.current = -1;
+      isChangingSourceRef.current = true;
       audio.src = getItemUrl(currentItem);
     }
   }, [currentItem]);
+
+  // Restored tracks remain paused. Tracks selected by the user set isPlaying
+  // and start through this effect.
+  useEffect(() => {
+    const audio = audioRef.current;
+    if (!audio || !currentItem) return;
+
+    if (isPlaying && audio.paused) {
+      audio.play().catch((error) => {
+        console.error('Failed to start playback:', error);
+        setIsPlaying(false);
+      });
+    } else if (!isPlaying && !audio.paused) {
+      audio.pause();
+    }
+  }, [currentItem, isPlaying, setIsPlaying]);
 
   // Handle pending seek
   useEffect(() => {
@@ -115,7 +144,8 @@ export function AudioPlayer() {
     if (!audio || pendingSeek === null) return;
 
     const doSeek = () => {
-      if (pendingSeek > 0) audio.currentTime = pendingSeek;
+      audio.currentTime = pendingSeek;
+      setCurrentTimeLocal(pendingSeek);
       clearPendingSeek();
     };
 
@@ -131,14 +161,6 @@ export function AudioPlayer() {
     }
   }, [pendingSeek, clearPendingSeek]);
 
-  // Mark as played
-  useEffect(() => {
-    if (currentItem && currentItem.id !== lastPlayedIdRef.current) {
-      lastPlayedIdRef.current = currentItem.id;
-      markPlayed(currentItem.id).catch(console.error);
-    }
-  }, [currentItem]);
-
   // Sync volume
   useEffect(() => {
     if (audioRef.current) {
@@ -148,19 +170,26 @@ export function AudioPlayer() {
 
   const handleTimeUpdate = useCallback(() => {
     if (audioRef.current) {
-      setCurrentTimeLocal(audioRef.current.currentTime);
-      setCurrentTime(audioRef.current.currentTime);
+      const position = audioRef.current.currentTime;
+      setCurrentTimeLocal(position);
+
+      const checkpoint = Math.floor(position / 5);
+      if (checkpoint !== lastCheckpointRef.current) {
+        lastCheckpointRef.current = checkpoint;
+        setResumePosition(position);
+      }
     }
-  }, [setCurrentTime]);
+  }, [setResumePosition]);
 
   const handleLoadedMetadata = useCallback(() => {
     if (audioRef.current) {
+      isChangingSourceRef.current = false;
       setDurationLocal(audioRef.current.duration);
-      setDuration(audioRef.current.duration);
     }
-  }, [setDuration]);
+  }, []);
 
   const handleEnded = useCallback(() => {
+    setResumePosition(0);
     if (repeatMode === 'one' && audioRef.current) {
       audioRef.current.currentTime = 0;
       audioRef.current.play();
@@ -168,14 +197,16 @@ export function AudioPlayer() {
     }
     const nextItem = playNext();
     if (nextItem) play(nextItem);
-  }, [playNext, play, repeatMode]);
+  }, [playNext, play, repeatMode, setResumePosition]);
 
   const handlePlayPause = useCallback(() => {
     if (!audioRef.current) return;
     if (isPlaying) {
       audioRef.current.pause();
     } else {
-      audioRef.current.play();
+      audioRef.current.play().catch((error) => {
+        console.error('Failed to resume playback:', error);
+      });
     }
   }, [isPlaying]);
 
@@ -183,20 +214,26 @@ export function AudioPlayer() {
     if (!progressRef.current || !audioRef.current || !duration) return;
     const rect = progressRef.current.getBoundingClientRect();
     const percent = (e.clientX - rect.left) / rect.width;
-    audioRef.current.currentTime = percent * duration;
-  }, [duration]);
+    const position = percent * duration;
+    audioRef.current.currentTime = position;
+    setResumePosition(position);
+  }, [duration, setResumePosition]);
 
   const seekBack = useCallback(() => {
     if (audioRef.current) {
-      audioRef.current.currentTime = Math.max(0, audioRef.current.currentTime - 30);
+      const position = Math.max(0, audioRef.current.currentTime - 30);
+      audioRef.current.currentTime = position;
+      setResumePosition(position);
     }
-  }, []);
+  }, [setResumePosition]);
 
   const seekForward = useCallback(() => {
     if (audioRef.current) {
-      audioRef.current.currentTime = Math.min(audioRef.current.duration, audioRef.current.currentTime + 30);
+      const position = Math.min(audioRef.current.duration, audioRef.current.currentTime + 30);
+      audioRef.current.currentTime = position;
+      setResumePosition(position);
     }
-  }, []);
+  }, [setResumePosition]);
 
   const handleAddBookmark = useCallback(async () => {
     if (!currentItem) {
@@ -232,6 +269,119 @@ export function AudioPlayer() {
     if (nextItem) play(nextItem);
   }, [playNext, play]);
 
+  const handleAudioPause = useCallback(() => {
+    if (isChangingSourceRef.current) return;
+    setIsPlaying(false);
+    if (audioRef.current) setResumePosition(audioRef.current.currentTime);
+  }, [setIsPlaying, setResumePosition]);
+
+  const handleAudioPlay = useCallback(() => {
+    isChangingSourceRef.current = false;
+    setIsPlaying(true);
+    if (currentItem && currentItem.id !== lastPlayedIdRef.current) {
+      lastPlayedIdRef.current = currentItem.id;
+      markPlayed(currentItem.id).catch(console.error);
+    }
+  }, [currentItem, setIsPlaying]);
+
+  useEffect(() => {
+    const checkpoint = () => {
+      if (audioRef.current) setResumePosition(audioRef.current.currentTime);
+    };
+    window.addEventListener('pagehide', checkpoint);
+    return () => window.removeEventListener('pagehide', checkpoint);
+  }, [setResumePosition]);
+
+  useEffect(() => {
+    if (!('mediaSession' in navigator)) return;
+
+    navigator.mediaSession.metadata = currentItem
+      ? new MediaMetadata({
+          title: currentItem.name,
+          artist: currentItem.artist,
+          album: currentItem.album,
+        })
+      : null;
+
+    return () => {
+      navigator.mediaSession.metadata = null;
+    };
+  }, [currentItem]);
+
+  useEffect(() => {
+    if (!('mediaSession' in navigator)) return;
+    navigator.mediaSession.playbackState = currentItem
+      ? isPlaying ? 'playing' : 'paused'
+      : 'none';
+  }, [currentItem, isPlaying]);
+
+  useEffect(() => {
+    if (!('mediaSession' in navigator) || !duration || !Number.isFinite(duration)) return;
+
+    try {
+      navigator.mediaSession.setPositionState({
+        duration,
+        playbackRate: audioRef.current?.playbackRate ?? 1,
+        position: Math.min(duration, Math.max(0, currentTime)),
+      });
+    } catch (error) {
+      console.debug('Could not update media session position:', error);
+    }
+  }, [currentTime, duration]);
+
+  useEffect(() => {
+    if (!('mediaSession' in navigator)) return;
+
+    const handlers: Array<[MediaSessionAction, MediaSessionActionHandler]> = [
+      ['play', () => {
+        audioRef.current?.play().catch((error) => {
+          console.error('Failed to resume from media controls:', error);
+        });
+      }],
+      ['pause', () => audioRef.current?.pause()],
+      ['seekbackward', (details) => {
+        if (!audioRef.current) return;
+        const position = Math.max(0, audioRef.current.currentTime - (details.seekOffset ?? 30));
+        audioRef.current.currentTime = position;
+        setResumePosition(position);
+      }],
+      ['seekforward', (details) => {
+        if (!audioRef.current) return;
+        const position = Math.min(
+          audioRef.current.duration,
+          audioRef.current.currentTime + (details.seekOffset ?? 30)
+        );
+        audioRef.current.currentTime = position;
+        setResumePosition(position);
+      }],
+      ['seekto', (details) => {
+        if (!audioRef.current || details.seekTime === undefined) return;
+        audioRef.current.currentTime = details.seekTime;
+        setResumePosition(details.seekTime);
+      }],
+      ['previoustrack', handlePrevious],
+      ['nexttrack', handleNext],
+    ];
+
+    for (const [action, handler] of handlers) {
+      try {
+        navigator.mediaSession.setActionHandler(action, handler);
+      } catch (error) {
+        console.debug(`Media session action ${action} is unavailable:`, error);
+      }
+    }
+
+    return () => {
+      for (const [action] of handlers) {
+        try {
+          navigator.mediaSession.setActionHandler(action, null);
+        } catch {
+          // Unsupported handlers did not register and need no cleanup.
+        }
+      }
+    };
+  }, [handleNext, handlePrevious, setResumePosition]);
+
   const progress = duration > 0 ? (currentTime / duration) * 100 : 0;
   const bookmarks = currentItem?.bookmarks ? Object.values(currentItem.bookmarks) : [];
 
@@ -240,12 +390,11 @@ export function AudioPlayer() {
       {/* Hidden audio element */}
       <audio
         ref={audioRef}
-        autoPlay
         onTimeUpdate={handleTimeUpdate}
         onLoadedMetadata={handleLoadedMetadata}
         onEnded={handleEnded}
-        onPlay={() => setIsPlaying(true)}
-        onPause={() => setIsPlaying(false)}
+        onPlay={handleAudioPlay}
+        onPause={handleAudioPause}
       />
 
       {/* Now playing info - compact */}
@@ -288,11 +437,12 @@ export function AudioPlayer() {
                   e.stopPropagation();
                   if (audioRef.current) {
                     audioRef.current.currentTime = bookmark.position;
+                    setResumePosition(bookmark.position);
                   }
                 }}
                 className="absolute top-1/2 -translate-y-1/2 w-1 h-3 bg-solarized-cyan/60 hover:bg-solarized-cyan hover:w-2 hover:h-5 transition-all cursor-pointer rounded-sm"
                 style={{ left: `${position}%` }}
-                title={`${bookmark.emoji || '🔖'} ${formatTime(bookmark.position)}`}
+                title={`${bookmark.emoji || '🔖'} ${bookmark.label ? `${bookmark.label} · ` : ''}${formatTime(bookmark.position)}`}
               />
             );
           })}
@@ -384,7 +534,7 @@ export function AudioPlayer() {
             {Icons.bookmark}
           </button>
           <button
-            onClick={() => setIsMuted(!isMuted)}
+            onClick={() => setMuted(!isMuted)}
             className="p-1.5 text-solarized-base0 hover:text-solarized-base1 hover:bg-solarized-base02 rounded transition-colors"
             title={isMuted ? 'Unmute' : 'Mute'}
           >
@@ -398,7 +548,7 @@ export function AudioPlayer() {
             value={isMuted ? 0 : volume}
             onChange={(e) => {
               setVolume(parseFloat(e.target.value));
-              setIsMuted(false);
+              setMuted(false);
             }}
             className="w-16 h-1 accent-solarized-blue bg-solarized-base02 rounded-full cursor-pointer"
             title="Volume"
