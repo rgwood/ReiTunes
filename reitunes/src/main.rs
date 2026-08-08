@@ -47,10 +47,17 @@ const PASSWORD: &str = match option_env!("REITUNES_PASSWORD") {
     None => "password",
 };
 
+#[cfg(debug_assertions)]
 const API_KEY: &str = match option_env!("REITUNES_API_KEY") {
-    Some(password) => password,
-    None => "apikey",
+    Some(api_key) => api_key,
+    None => "development-only-api-key",
 };
+
+#[cfg(not(debug_assertions))]
+const API_KEY: &str = env!(
+    "REITUNES_API_KEY",
+    "REITUNES_API_KEY must be set when building a release binary"
+);
 
 static PASSWORD_HASH: LazyLock<String> = LazyLock::new(|| hash_with_rotating_salt(PASSWORD));
 

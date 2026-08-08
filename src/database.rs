@@ -9,6 +9,18 @@ use tracing::{info, instrument};
 
 use crate::library::{EventRow, EventWithMetadata};
 
+#[cfg(debug_assertions)]
+const REMOTE_API_KEY: &str = match option_env!("REITUNES_API_KEY") {
+    Some(api_key) => api_key,
+    None => "development-only-api-key",
+};
+
+#[cfg(not(debug_assertions))]
+const REMOTE_API_KEY: &str = env!(
+    "REITUNES_API_KEY",
+    "REITUNES_API_KEY must be set when building a release binary"
+);
+
 /// Open a direct SQLite connection (used by sonos-player)
 pub fn open_connection(db_path: &str) -> Result<Connection> {
     let conn = Connection::open(db_path)?;
@@ -96,12 +108,7 @@ pub fn load_all_events_from_db(conn: &Connection) -> Result<Vec<EventWithMetadat
 pub async fn download_and_save_events(conn: &mut Connection) -> Result<()> {
     info!("Downloading events");
     let mut headers = HeaderMap::new();
-    let api_key: &str = match option_env!("REITUNES_API_KEY") {
-        Some(password) => password,
-        None => "apikey",
-    };
-
-    headers.insert("X-API-Key", HeaderValue::from_static(api_key));
+    headers.insert("X-API-Key", HeaderValue::from_static(REMOTE_API_KEY));
 
     let client = reqwest::Client::new();
     let events: Vec<EventWithMetadata> = client
