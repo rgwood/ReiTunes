@@ -33,6 +33,7 @@ use crate::storage::S3Storage;
 
 mod llm;
 mod metadata;
+mod smapi;
 mod storage;
 mod systemd;
 
@@ -186,6 +187,9 @@ async fn main() -> Result<()> {
                 .route("/allevents", get(all_events_handler))
                 .route_layer(middleware::from_fn(api_key_auth));
 
+            let smapi_router =
+                Router::new().route("/v1/soap", post(smapi::smapi_soap_handler));
+
             // API routes that require regular auth (for React frontend)
             let items_router = Router::new()
                 .route("/items", get(items_handler))
@@ -218,6 +222,7 @@ async fn main() -> Result<()> {
                 .layer(CookieManagerLayer::new())
                 // API routes don't require session auth
                 .nest("/api", api_router)
+                .nest("/smapi", smapi_router)
                 .nest("/api", items_router)
                 .with_state(app_state);
 

@@ -29,6 +29,8 @@ vite-rs-axum-0-8 = "0.2"
 tower-cookies = "0.11.0"
 axum-macros = "0.5.0"
 openssl = { version = "0.10.72", features = ["vendored"] }
+thiserror = "1.0"
+regex = "1.10"
 schemars = "1.0"
 lofty = "0.22"
 tempfile = "3.0"

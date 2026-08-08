@@ -157,4 +157,3 @@ export async function toggleFavorite(id: string, isFavorite: boolean): Promise<v
     throw new Error('Failed to toggle favorite');
   }
 }
-
