@@ -74,7 +74,9 @@ function AppContent() {
   const [isPlaylistsOpen, setIsPlaylistsOpen] = useState(false);
   const [isBookmarksOpen, setIsBookmarksOpen] = useState(false);
   const [isSonosOpen, setIsSonosOpen] = useState(
-    () => new URLSearchParams(window.location.search).get('sonos') === 'connected'
+    () =>
+      window.location.hash === '#sonos=connected' ||
+      new URLSearchParams(window.location.search).get('sonos') === 'connected'
   );
   const [selectedPlaylistId, setSelectedPlaylistId] = useState<string | null>(null);
 
@@ -162,9 +164,12 @@ function AppContent() {
   }, []);
 
   useEffect(() => {
-    if (new URLSearchParams(window.location.search).has('sonos')) {
-      const url = new URL(window.location.href);
+    const url = new URL(window.location.href);
+    const hasSonosQuery = url.searchParams.has('sonos');
+    const hasSonosHash = url.hash === '#sonos=connected';
+    if (hasSonosQuery || hasSonosHash) {
       url.searchParams.delete('sonos');
+      if (hasSonosHash) url.hash = '';
       window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`);
     }
   }, []);

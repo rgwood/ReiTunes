@@ -212,6 +212,18 @@ test('offers Sonos authorization when the server is not connected', async ({ pag
   );
 });
 
+test('opens Sonos after the OAuth callback without sending the marker to the server', async ({ page }) => {
+  await mockBackend(page);
+  await page.route('**/api/sonos/status', (route) =>
+    route.fulfill({ json: { configured: true, connected: false } })
+  );
+
+  await page.goto('/#sonos=connected');
+
+  await expect(page.getByRole('dialog', { name: 'Sonos' })).toBeVisible();
+  await expect(page).toHaveURL(/\/$/);
+});
+
 test('shows Sonos households and groups without playback controls', async ({ page }) => {
   await mockBackend(page);
   await page.route('**/api/sonos/status', (route) =>

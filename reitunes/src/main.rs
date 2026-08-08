@@ -498,7 +498,9 @@ async fn sonos_callback_handler(
         .complete_authorization(&code, &state)
         .await
         .map_err(sonos_failure)?;
-    Ok(Redirect::to("/?sonos=connected"))
+    // Keep the OAuth completion marker out of the HTTP request. The embedded
+    // Vite service treats query-string URLs as asset paths in production.
+    Ok(Redirect::to("/#sonos=connected"))
 }
 
 async fn sonos_households_handler(
