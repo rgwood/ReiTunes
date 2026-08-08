@@ -542,12 +542,14 @@ async fn sonos_disconnect_handler(State(app_state): State<AppState>) -> SonosApi
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct PrepareCloudQueueRequest {
     item_ids: Vec<Uuid>,
     start_item_id: Option<Uuid>,
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct SonosPlayRequest {
     group_id: String,
     item_ids: Vec<Uuid>,
@@ -1414,5 +1416,29 @@ where
 impl fmt::Debug for AppError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         fmt::Debug::fmt(&self.0, f)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn deserializes_sonos_play_request_from_frontend_json() {
+        let item_id = Uuid::new_v4();
+        let request: SonosPlayRequest = serde_json::from_value(serde_json::json!({
+            "groupId": "group-1",
+            "itemIds": [item_id],
+            "startItemId": item_id,
+            "positionMillis": 42_000,
+            "allowTakeover": true
+        }))
+        .unwrap();
+
+        assert_eq!(request.group_id, "group-1");
+        assert_eq!(request.item_ids, vec![item_id]);
+        assert_eq!(request.start_item_id, item_id);
+        assert_eq!(request.position_millis, 42_000);
+        assert!(request.allow_takeover);
     }
 }
