@@ -4,358 +4,417 @@ use axum::{
     http::{HeaderMap, StatusCode},
     response::{IntoResponse, Response},
 };
-use serde_xml_rs::to_string;
+use regex::Regex;
+use reitunes_workspace::{Library, LibraryItem};
+use std::hash::{DefaultHasher, Hash, Hasher};
 use tracing::{debug, error, info};
+use uuid::Uuid;
 
-use crate::smapi::auth::{handle_get_last_update, handle_get_session_id};
-use crate::smapi::endpoints::*;
-use crate::smapi::types::*;
+const SONOS_NAMESPACE: &str = "http://www.sonos.com/Services/1.1";
 
 pub async fn smapi_soap_handler(
     State(state): State<crate::AppState>,
     headers: HeaderMap,
     body: String,
 ) -> Result<Response, SoapError> {
-    info!("=== SMAPI SOAP REQUEST ===");
-    info!("Headers: {:?}", headers);
-    info!("Body length: {} bytes", body.len());
-    debug!("Full SOAP request body: {}", body);
+    let action = soap_action(&headers)?;
+    info!(action, "Handling SMAPI request");
+    debug!(body, "SMAPI request body");
 
-    let soap_action = headers
-        .get("SOAPAction")
-        .and_then(|h| h.to_str().ok())
-        .unwrap_or("");
-
-    info!("SOAP Action: '{}'", soap_action);
-    
-    // Log other important headers
-    if let Some(content_type) = headers.get("Content-Type") {
-        info!("Content-Type: {:?}", content_type);
-    }
-    if let Some(user_agent) = headers.get("User-Agent") {
-        info!("User-Agent: {:?}", user_agent);
-    }
-
-    let response = match soap_action {
-        "\"http://www.sonos.com/Services/1.1#getMetadata\"" => {
-            handle_get_metadata(state, body).await?
-        }
-        "\"http://www.sonos.com/Services/1.1#search\"" => handle_search(state, body).await?,
-        "\"http://www.sonos.com/Services/1.1#getMediaURI\"" => {
-            handle_get_media_uri(state, body).await?
-        }
-        "\"http://www.sonos.com/Services/1.1#getSessionId\"" => {
-            handle_get_session_id(state, body).await?
-        }
-        "\"http://www.sonos.com/Services/1.1#getLastUpdate\"" => {
-            handle_get_last_update(state, body).await?
-        }
-        "\"http://www.sonos.com/Services/1.1#getExtendedMetadata\"" => {
-            handle_get_extended_metadata(state, body).await?
-        }
-        _ => {
-            error!("Unsupported SOAP operation: '{}'", soap_action);
-            return Err(SoapError::UnsupportedOperation(soap_action.to_string()));
-        }
+    let response_body = match action {
+        "getMetadata" => get_metadata(&state, &body).await?,
+        "search" => search(&state, &body).await?,
+        "getMediaURI" => get_media_uri(&state, &body).await?,
+        "getMediaMetadata" => get_media_metadata(&state, &body).await?,
+        "getLastUpdate" => get_last_update(&state).await,
+        _ => return Err(SoapError::UnsupportedOperation(action.to_string())),
     };
 
-    info!("=== SMAPI SOAP RESPONSE ===");
-    info!("Response length: {} bytes", response.len());
-    debug!("Full SOAP response: {}", response);
-    
-    // Also log first 500 chars at INFO level for easier debugging
-    if response.len() > 500 {
-        info!("Response preview: {}...", &response[..500]);
-    } else {
-        info!("Full response: {}", response);
-    }
-
-    let final_response = Response::builder()
+    debug!(response_body, "SMAPI response body");
+    Ok(Response::builder()
         .status(StatusCode::OK)
         .header("Content-Type", "text/xml; charset=utf-8")
-        .body(Body::from(response))?;
-    
-    info!("Response sent successfully");
-    Ok(final_response)
+        .body(Body::from(response_body))?)
+}
+
+async fn get_metadata(state: &crate::AppState, body: &str) -> Result<String, SoapError> {
+    let id = request_value(body, "id").unwrap_or_else(|| "root".to_string());
+    let index = request_number(body, "index").unwrap_or(0);
+    let requested_count = request_number(body, "count").unwrap_or(100).min(500);
+
+    let items = match id.as_str() {
+        "" | "root" => vec![BrowseItem::Collection {
+            id: "tracks".to_string(),
+            item_type: "trackList",
+            title: "All songs".to_string(),
+        }],
+        "tracks" => {
+            let library = state.library.read().await;
+            sorted_tracks(&library)
+                .into_iter()
+                .map(BrowseItem::from)
+                .collect()
+        }
+        _ => return Err(SoapError::NotFound(id)),
+    };
+
+    Ok(metadata_response(
+        "getMetadata",
+        index,
+        requested_count,
+        &items,
+    ))
+}
+
+async fn search(state: &crate::AppState, body: &str) -> Result<String, SoapError> {
+    let term = request_value(body, "term")
+        .unwrap_or_default()
+        .to_lowercase();
+    let index = request_number(body, "index").unwrap_or(0);
+    let requested_count = request_number(body, "count").unwrap_or(100).min(500);
+    let library = state.library.read().await;
+    let items: Vec<_> = sorted_tracks(&library)
+        .into_iter()
+        .filter(|track| {
+            track.name.to_lowercase().contains(&term)
+                || track.artist.to_lowercase().contains(&term)
+                || track.album.to_lowercase().contains(&term)
+        })
+        .map(BrowseItem::from)
+        .collect();
+
+    Ok(metadata_response("search", index, requested_count, &items))
+}
+
+async fn get_media_uri(state: &crate::AppState, body: &str) -> Result<String, SoapError> {
+    let id = required_request_value(body, "id")?;
+    let track_id = track_uuid(&id)?;
+    let library = state.library.read().await;
+    let track = library
+        .items
+        .get(&track_id)
+        .ok_or_else(|| SoapError::NotFound(id.clone()))?;
+    let url = state.storage.url(&track.file_path);
+
+    Ok(soap_envelope(&format!(
+        "<getMediaURIResponse xmlns=\"{SONOS_NAMESPACE}\"><getMediaURIResult>{}</getMediaURIResult></getMediaURIResponse>",
+        escape_xml(&url)
+    )))
+}
+
+async fn get_media_metadata(state: &crate::AppState, body: &str) -> Result<String, SoapError> {
+    let id = required_request_value(body, "id")?;
+    let track_id = track_uuid(&id)?;
+    let library = state.library.read().await;
+    let track = library
+        .items
+        .get(&track_id)
+        .ok_or_else(|| SoapError::NotFound(id))?;
+
+    Ok(soap_envelope(&format!(
+        "<getMediaMetadataResponse xmlns=\"{SONOS_NAMESPACE}\"><getMediaMetadataResult>{}</getMediaMetadataResult></getMediaMetadataResponse>",
+        track_xml(track)
+    )))
+}
+
+async fn get_last_update(state: &crate::AppState) -> String {
+    let library = state.library.read().await;
+    let catalog = catalog_version(&library);
+    soap_envelope(&format!(
+        "<getLastUpdateResponse xmlns=\"{SONOS_NAMESPACE}\"><getLastUpdateResult><favorites>{catalog}</favorites><catalog>{catalog}</catalog><pollInterval>120</pollInterval></getLastUpdateResult></getLastUpdateResponse>"
+    ))
+}
+
+fn metadata_response(
+    action: &str,
+    index: usize,
+    requested_count: usize,
+    items: &[BrowseItem],
+) -> String {
+    let total = items.len();
+    let start = index.min(total);
+    let end = start.saturating_add(requested_count).min(total);
+    let items_xml: String = items[start..end].iter().map(BrowseItem::to_xml).collect();
+
+    soap_envelope(&format!(
+        "<{action}Response xmlns=\"{SONOS_NAMESPACE}\"><{action}Result><index>{start}</index><count>{}</count><total>{total}</total>{items_xml}</{action}Result></{action}Response>",
+        end - start
+    ))
+}
+
+enum BrowseItem {
+    Collection {
+        id: String,
+        item_type: &'static str,
+        title: String,
+    },
+    Track(LibraryItem),
+}
+
+impl From<LibraryItem> for BrowseItem {
+    fn from(track: LibraryItem) -> Self {
+        Self::Track(track)
+    }
+}
+
+impl BrowseItem {
+    fn to_xml(&self) -> String {
+        match self {
+            Self::Collection {
+                id,
+                item_type,
+                title,
+            } => format!(
+                "<mediaCollection><id>{}</id><itemType>{item_type}</itemType><title>{}</title><canPlay>false</canPlay><canEnumerate>true</canEnumerate></mediaCollection>",
+                escape_xml(id),
+                escape_xml(title)
+            ),
+            Self::Track(track) => format!("<mediaMetadata>{}</mediaMetadata>", track_xml(track)),
+        }
+    }
+}
+
+fn track_xml(track: &LibraryItem) -> String {
+    let mime_type = mime_guess::from_path(&track.file_path)
+        .first_or_octet_stream()
+        .to_string();
+    let track_number = track
+        .track_number
+        .map(|number| format!("<trackNumber>{number}</trackNumber>"))
+        .unwrap_or_default();
+
+    format!(
+        "<id>track:{}</id><itemType>track</itemType><title>{}</title><mimeType>{}</mimeType><trackMetadata><artist>{}</artist><album>{}</album>{track_number}<canPlay>true</canPlay><canSkip>true</canSkip></trackMetadata>",
+        track.id,
+        escape_xml(&track.name),
+        escape_xml(&mime_type),
+        escape_xml(&track.artist),
+        escape_xml(&track.album),
+    )
+}
+
+fn sorted_tracks(library: &Library) -> Vec<LibraryItem> {
+    let mut tracks: Vec<_> = library.items.values().cloned().collect();
+    tracks.sort_by(|left, right| {
+        left.artist
+            .to_lowercase()
+            .cmp(&right.artist.to_lowercase())
+            .then_with(|| left.album.to_lowercase().cmp(&right.album.to_lowercase()))
+            .then_with(|| left.track_number.cmp(&right.track_number))
+            .then_with(|| left.name.to_lowercase().cmp(&right.name.to_lowercase()))
+    });
+    tracks
+}
+
+fn catalog_version(library: &Library) -> u64 {
+    let mut ids: Vec<_> = library.items.keys().collect();
+    ids.sort();
+    let mut hasher = DefaultHasher::new();
+    for id in ids {
+        let item = &library.items[id];
+        id.hash(&mut hasher);
+        item.name.hash(&mut hasher);
+        item.artist.hash(&mut hasher);
+        item.album.hash(&mut hasher);
+        item.file_path.hash(&mut hasher);
+        item.track_number.hash(&mut hasher);
+    }
+    hasher.finish()
+}
+
+fn soap_action(headers: &HeaderMap) -> Result<&str, SoapError> {
+    let header = headers
+        .get("SOAPAction")
+        .and_then(|value| value.to_str().ok())
+        .ok_or(SoapError::MissingSoapAction)?;
+    Ok(header
+        .trim()
+        .trim_matches('"')
+        .rsplit_once('#')
+        .map_or(header, |(_, action)| action))
+}
+
+fn request_number(body: &str, name: &str) -> Option<usize> {
+    request_value(body, name)?.parse().ok()
+}
+
+fn required_request_value(body: &str, name: &str) -> Result<String, SoapError> {
+    request_value(body, name).ok_or_else(|| SoapError::InvalidRequest(format!("missing {name}")))
+}
+
+fn request_value(body: &str, name: &str) -> Option<String> {
+    let pattern = format!(
+        r"(?s)<(?:[A-Za-z_][A-Za-z0-9_.-]*:)?{name}(?:\s[^>]*)?>(.*?)</(?:[A-Za-z_][A-Za-z0-9_.-]*:)?{name}\s*>"
+    );
+    Regex::new(&pattern)
+        .expect("request element regex should be valid")
+        .captures(body)
+        .and_then(|captures| captures.get(1))
+        .map(|value| value.as_str().trim().to_string())
+}
+
+fn track_uuid(id: &str) -> Result<Uuid, SoapError> {
+    id.strip_prefix("track:")
+        .unwrap_or(id)
+        .parse()
+        .map_err(|_| SoapError::InvalidRequest(format!("invalid track id: {id}")))
+}
+
+fn soap_envelope(content: &str) -> String {
+    format!(
+        "<?xml version=\"1.0\" encoding=\"utf-8\"?><soap:Envelope xmlns:soap=\"http://schemas.xmlsoap.org/soap/envelope/\"><soap:Body>{content}</soap:Body></soap:Envelope>"
+    )
+}
+
+fn escape_xml(value: &str) -> String {
+    value
+        .replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+        .replace('\'', "&apos;")
 }
 
 #[derive(Debug, thiserror::Error)]
 pub enum SoapError {
-    #[error("XML parsing error: {0}")]
-    XmlParsing(#[from] serde_xml_rs::Error),
-    #[error("HTTP error: {0}")]
-    Http(#[from] axum::http::Error),
-    #[error("Unsupported operation: {0}")]
+    #[error("missing SOAPAction header")]
+    MissingSoapAction,
+    #[error("unsupported operation: {0}")]
     UnsupportedOperation(String),
-    #[error("Internal error: {0}")]
-    Internal(String),
+    #[error("invalid request: {0}")]
+    InvalidRequest(String),
+    #[error("item not found: {0}")]
+    NotFound(String),
+    #[error("HTTP response error: {0}")]
+    Http(#[from] axum::http::Error),
 }
 
 impl IntoResponse for SoapError {
     fn into_response(self) -> Response {
-        error!("=== SMAPI SOAP ERROR ===");
-        error!("Error type: {:?}", self);
-        
-        let fault = match self {
-            SoapError::UnsupportedOperation(op) => SoapFault {
-                faultcode: "Client.UnsupportedOperation".to_string(),
-                faultstring: format!("Unsupported operation: {}", op),
-                detail: None,
-            },
-            _ => SoapFault {
-                faultcode: "Server.InternalError".to_string(),
-                faultstring: self.to_string(),
-                detail: None,
-            },
+        error!(error = %self, "SMAPI request failed");
+        let fault_code = match self {
+            Self::MissingSoapAction | Self::UnsupportedOperation(_) | Self::InvalidRequest(_) => {
+                "Client"
+            }
+            Self::NotFound(_) | Self::Http(_) => "Server",
         };
-
-        let fault_response = format!(
-            r#"<?xml version="1.0" encoding="utf-8"?>
-<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
-    <soap:Body>
-        <soap:Fault>
-            <faultcode>{}</faultcode>
-            <faultstring>{}</faultstring>
-        </soap:Fault>
-    </soap:Body>
-</soap:Envelope>"#,
-            fault.faultcode, fault.faultstring
-        );
-
-        error!("Fault response: {}", fault_response);
-
+        let body = soap_envelope(&format!(
+            "<soap:Fault><faultcode>{fault_code}</faultcode><faultstring>{}</faultstring></soap:Fault>",
+            escape_xml(&self.to_string())
+        ));
         Response::builder()
             .status(StatusCode::INTERNAL_SERVER_ERROR)
             .header("Content-Type", "text/xml; charset=utf-8")
-            .body(Body::from(fault_response))
-            .unwrap()
+            .body(Body::from(body))
+            .expect("static SOAP fault response should be valid")
     }
 }
 
-pub fn create_soap_response<T: serde::Serialize>(
-    _action: &str,
-    data: T,
-) -> Result<String, SoapError> {
-    let response_json = serde_json::to_string(&data)
-        .map_err(|e| SoapError::Internal(format!("JSON serialization error: {}", e)))?;
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use reitunes_workspace::{Event, EventWithMetadata, PlaylistStore};
+    use std::sync::Arc;
+    use tokio::sync::{broadcast, RwLock};
 
-    info!("Response JSON: {}", response_json);
+    #[test]
+    fn extracts_default_and_prefixed_namespace_values() {
+        let default_namespace =
+            r#"<getMetadata xmlns="http://www.sonos.com/Services/1.1"><id>root</id></getMetadata>"#;
+        let prefixed_namespace = r#"<ns:getMetadata><ns:id>tracks</ns:id></ns:getMetadata>"#;
 
-    // Convert to simple XML manually for now
-    let response_xml = json_to_simple_xml(&response_json, _action)?;
-
-    let full_response = format!(
-        r#"<?xml version="1.0" encoding="utf-8"?>
-<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
-    <soap:Body>
-        {}
-    </soap:Body>
-</soap:Envelope>"#,
-        response_xml
-    );
-
-    Ok(full_response)
-}
-
-fn json_to_simple_xml(json_str: &str, root_element: &str) -> Result<String, SoapError> {
-    let json_value: serde_json::Value = serde_json::from_str(json_str)
-        .map_err(|e| SoapError::Internal(format!("JSON parsing error: {}", e)))?;
-
-    match root_element {
-        "getSessionIdResponse" => {
-            if let Some(result) = json_value.get("getSessionIdResult") {
-                if let Some(result_str) = result.as_str() {
-                    return Ok(format!("<getSessionIdResponse><getSessionIdResult>{}</getSessionIdResult></getSessionIdResponse>", result_str));
-                }
-            }
-        }
-        "getLastUpdateResponse" => {
-            if let Some(result) = json_value.get("getLastUpdateResult") {
-                if let Some(result_str) = result.as_str() {
-                    return Ok(format!("<getLastUpdateResponse><getLastUpdateResult>{}</getLastUpdateResult></getLastUpdateResponse>", result_str));
-                }
-            }
-        }
-        "getMediaURIResponse" => {
-            if let Some(result) = json_value.get("getMediaURIResult") {
-                if let Some(result_str) = result.as_str() {
-                    return Ok(format!("<getMediaURIResponse><getMediaURIResult>{}</getMediaURIResult></getMediaURIResponse>", result_str));
-                }
-            }
-        }
-        "getMetadataResponse" => {
-            let mut xml = String::from("<getMetadataResponse><getMetadataResult>");
-
-            if let Some(index) = json_value.get("index") {
-                xml.push_str(&format!("<index>{}</index>", index));
-            }
-            if let Some(count) = json_value.get("count") {
-                xml.push_str(&format!("<count>{}</count>", count));
-            }
-            if let Some(total) = json_value.get("total") {
-                xml.push_str(&format!("<total>{}</total>", total));
-            }
-
-            if let Some(collections) = json_value.get("mediaCollection") {
-                if let Some(collections_array) = collections.as_array() {
-                    for collection in collections_array {
-                        xml.push_str("<mediaCollection>");
-                        if let Some(id) = collection.get("id") {
-                            xml.push_str(&format!("<id>{}</id>", id.as_str().unwrap_or("")));
-                        }
-                        if let Some(title) = collection.get("title") {
-                            xml.push_str(&format!(
-                                "<title>{}</title>",
-                                title.as_str().unwrap_or("")
-                            ));
-                        }
-                        if let Some(item_type) = collection.get("itemType") {
-                            xml.push_str(&format!(
-                                "<itemType>{}</itemType>",
-                                item_type.as_str().unwrap_or("")
-                            ));
-                        }
-                        if let Some(can_play) = collection.get("canPlay") {
-                            xml.push_str(&format!(
-                                "<canPlay>{}</canPlay>",
-                                can_play.as_bool().unwrap_or(false)
-                            ));
-                        }
-                        if let Some(can_enumerate) = collection.get("canEnumerate") {
-                            xml.push_str(&format!(
-                                "<canEnumerate>{}</canEnumerate>",
-                                can_enumerate.as_bool().unwrap_or(false)
-                            ));
-                        }
-                        if let Some(can_cache) = collection.get("canCache") {
-                            xml.push_str(&format!(
-                                "<canCache>{}</canCache>",
-                                can_cache.as_bool().unwrap_or(false)
-                            ));
-                        }
-                        xml.push_str("</mediaCollection>");
-                    }
-                }
-            }
-
-            // Add mediaMetadata if present 
-            if let Some(metadata) = json_value.get("mediaMetadata") {
-                if let Some(metadata_array) = metadata.as_array() {
-                    for track in metadata_array {
-                        xml.push_str("<mediaMetadata>");
-                        if let Some(id) = track.get("id") {
-                            xml.push_str(&format!("<id>{}</id>", id.as_str().unwrap_or("")));
-                        }
-                        if let Some(title) = track.get("title") {
-                            xml.push_str(&format!("<title>{}</title>", title.as_str().unwrap_or("")));
-                        }
-                        if let Some(mime_type) = track.get("mimeType") {
-                            xml.push_str(&format!("<mimeType>{}</mimeType>", mime_type.as_str().unwrap_or("")));
-                        }
-                        if let Some(item_type) = track.get("itemType") {
-                            xml.push_str(&format!("<itemType>{}</itemType>", item_type.as_str().unwrap_or("")));
-                        }
-                        if let Some(track_metadata) = track.get("trackMetadata") {
-                            xml.push_str("<trackMetadata>");
-                            if let Some(artist) = track_metadata.get("artist") {
-                                xml.push_str(&format!("<artist>{}</artist>", artist.as_str().unwrap_or("")));
-                            }
-                            if let Some(album) = track_metadata.get("album") {
-                                xml.push_str(&format!("<album>{}</album>", album.as_str().unwrap_or("")));
-                            }
-                            if let Some(duration) = track_metadata.get("duration") {
-                                if !duration.is_null() {
-                                    xml.push_str(&format!("<duration>{}</duration>", duration));
-                                }
-                            }
-                            if let Some(track_number) = track_metadata.get("trackNumber") {
-                                if !track_number.is_null() {
-                                    xml.push_str(&format!("<trackNumber>{}</trackNumber>", track_number));
-                                }
-                            }
-                            xml.push_str("</trackMetadata>");
-                        }
-                        xml.push_str("</mediaMetadata>");
-                    }
-                }
-            }
-
-            xml.push_str("</getMetadataResult></getMetadataResponse>");
-            return Ok(xml);
-        }
-        "getExtendedMetadataResponse" => {
-            let mut xml = String::from("<getExtendedMetadataResponse><getExtendedMetadataResult>");
-
-            // Handle mediaMetadata if present
-            if let Some(metadata) = json_value.get("mediaMetadata") {
-                xml.push_str("<mediaMetadata>");
-                if let Some(id) = metadata.get("id") {
-                    xml.push_str(&format!("<id>{}</id>", id.as_str().unwrap_or("")));
-                }
-                if let Some(title) = metadata.get("title") {
-                    xml.push_str(&format!("<title>{}</title>", title.as_str().unwrap_or("")));
-                }
-                if let Some(mime_type) = metadata.get("mimeType") {
-                    xml.push_str(&format!("<mimeType>{}</mimeType>", mime_type.as_str().unwrap_or("")));
-                }
-                if let Some(item_type) = metadata.get("itemType") {
-                    xml.push_str(&format!("<itemType>{}</itemType>", item_type.as_str().unwrap_or("")));
-                }
-                if let Some(track_metadata) = metadata.get("trackMetadata") {
-                    xml.push_str("<trackMetadata>");
-                    if let Some(artist) = track_metadata.get("artist") {
-                        xml.push_str(&format!("<artist>{}</artist>", artist.as_str().unwrap_or("")));
-                    }
-                    if let Some(album) = track_metadata.get("album") {
-                        xml.push_str(&format!("<album>{}</album>", album.as_str().unwrap_or("")));
-                    }
-                    if let Some(duration) = track_metadata.get("duration") {
-                        if !duration.is_null() {
-                            xml.push_str(&format!("<duration>{}</duration>", duration));
-                        }
-                    }
-                    if let Some(track_number) = track_metadata.get("trackNumber") {
-                        if !track_number.is_null() {
-                            xml.push_str(&format!("<trackNumber>{}</trackNumber>", track_number));
-                        }
-                    }
-                    xml.push_str("</trackMetadata>");
-                }
-                xml.push_str("</mediaMetadata>");
-            }
-
-            // Handle mediaCollection if present
-            if let Some(collection) = json_value.get("mediaCollection") {
-                xml.push_str("<mediaCollection>");
-                if let Some(id) = collection.get("id") {
-                    xml.push_str(&format!("<id>{}</id>", id.as_str().unwrap_or("")));
-                }
-                if let Some(title) = collection.get("title") {
-                    xml.push_str(&format!("<title>{}</title>", title.as_str().unwrap_or("")));
-                }
-                if let Some(item_type) = collection.get("itemType") {
-                    xml.push_str(&format!("<itemType>{}</itemType>", item_type.as_str().unwrap_or("")));
-                }
-                if let Some(can_play) = collection.get("canPlay") {
-                    xml.push_str(&format!("<canPlay>{}</canPlay>", can_play.as_bool().unwrap_or(false)));
-                }
-                if let Some(can_enumerate) = collection.get("canEnumerate") {
-                    xml.push_str(&format!("<canEnumerate>{}</canEnumerate>", can_enumerate.as_bool().unwrap_or(false)));
-                }
-                if let Some(can_cache) = collection.get("canCache") {
-                    xml.push_str(&format!("<canCache>{}</canCache>", can_cache.as_bool().unwrap_or(false)));
-                }
-                xml.push_str("</mediaCollection>");
-            }
-
-            xml.push_str("</getExtendedMetadataResult></getExtendedMetadataResponse>");
-            return Ok(xml);
-        }
-        _ => {}
+        assert_eq!(
+            request_value(default_namespace, "id").as_deref(),
+            Some("root")
+        );
+        assert_eq!(
+            request_value(prefixed_namespace, "id").as_deref(),
+            Some("tracks")
+        );
     }
 
-    Err(SoapError::Internal(format!(
-        "Unknown response type: {}",
-        root_element
-    )))
+    #[test]
+    fn root_response_has_sonos_namespace_and_pagination() {
+        let items = vec![
+            BrowseItem::Collection {
+                id: "one".to_string(),
+                item_type: "container",
+                title: "One & only".to_string(),
+            },
+            BrowseItem::Collection {
+                id: "two".to_string(),
+                item_type: "container",
+                title: "Two".to_string(),
+            },
+        ];
+
+        let response = metadata_response("getMetadata", 1, 1, &items);
+
+        assert!(response.contains(&format!(
+            "<getMetadataResponse xmlns=\"{SONOS_NAMESPACE}\">"
+        )));
+        assert!(response.contains("<index>1</index><count>1</count><total>2</total>"));
+        assert!(response.contains("<title>Two</title>"));
+        assert!(!response.contains("One &amp; only"));
+    }
+
+    #[test]
+    fn xml_values_are_escaped() {
+        assert_eq!(
+            escape_xml("AC/DC & <friends> \"live\""),
+            "AC/DC &amp; &lt;friends&gt; &quot;live&quot;"
+        );
+    }
+
+    #[tokio::test]
+    async fn metadata_and_media_uri_use_the_current_library_and_storage() {
+        let track_id = Uuid::new_v4();
+        let event = EventWithMetadata::new(
+            track_id,
+            Event::LibraryItemCreatedEvent {
+                name: "One & Only".to_string(),
+                artist: Some("A <B".to_string()),
+                album: Some("Album".to_string()),
+                track_number: Some(1),
+                file_path: "one and only.mp3".to_string(),
+            },
+        )
+        .unwrap();
+        let storage = crate::storage::S3Storage::new(
+            "https://s3.example.com",
+            "reitunes",
+            Some("music"),
+            "test-key",
+            "test-secret",
+        )
+        .await
+        .unwrap();
+        let state = crate::AppState {
+            library: Arc::new(RwLock::new(Library::build_from_events(vec![event]))),
+            playlists: Arc::new(RwLock::new(PlaylistStore::new())),
+            update_tx: broadcast::channel(1).0,
+            storage: Arc::new(storage),
+        };
+
+        let metadata = get_metadata(
+            &state,
+            r#"<ns:getMetadata><ns:id>tracks</ns:id><ns:index>0</ns:index><ns:count>10</ns:count></ns:getMetadata>"#,
+        )
+        .await
+        .unwrap();
+        assert!(metadata.contains("<count>1</count><total>1</total>"));
+        assert!(metadata.contains("<title>One &amp; Only</title>"));
+        assert!(metadata.contains("<artist>A &lt;B</artist>"));
+        assert!(metadata.contains(&format!("<id>track:{track_id}</id>")));
+
+        let media_uri = get_media_uri(
+            &state,
+            &format!("<getMediaURI><id>track:{track_id}</id></getMediaURI>"),
+        )
+        .await
+        .unwrap();
+        assert!(media_uri.contains(
+            "<getMediaURIResult>https://reitunes.s3.example.com/music/one%20and%20only.mp3</getMediaURIResult>"
+        ));
+    }
 }

@@ -2,145 +2,91 @@
 # /// script
 # requires-python = ">=3.12"
 # dependencies = [
-# "requests",
+#     "requests>=2.32",
 # ]
 # ///
 
+"""Smoke-test a deployed ReiTunes SMAPI browse and playback flow."""
 
-import requests
+from __future__ import annotations
+
+import argparse
 import xml.etree.ElementTree as ET
 
-# Test the SMAPI endpoints
-# BASE_URL = "https://reitunes.reillywood.com/api"
-BASE_URL = "http://localhost:5000"
+import requests
 
-def test_get_session_id():
-    """Test the getSessionId endpoint"""
-    soap_request = """<?xml version="1.0" encoding="utf-8"?>
-<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
-    <soap:Body>
-        <getSessionId/>
-    </soap:Body>
-</soap:Envelope>"""
-    
-    headers = {
-        'Content-Type': 'text/xml; charset=utf-8',
-        'SOAPAction': '"http://www.sonos.com/Services/1.1#getSessionId"'
-    }
-    
-    response = requests.post(f"{BASE_URL}/smapi/v1/soap", data=soap_request, headers=headers)
-    print(f"getSessionId Status Code: {response.status_code}")
-    print(f"Response: {response.text}")
-    return response.status_code == 200
+SONOS_NAMESPACE = "http://www.sonos.com/Services/1.1"
+NAMESPACES = {"sonos": SONOS_NAMESPACE}
 
-def test_get_metadata_root():
-    """Test the getMetadata endpoint for root"""
-    soap_request = """<?xml version="1.0" encoding="utf-8"?>
-<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
-    <soap:Body>
-        <getMetadata>
-            <id>root</id>
-            <index>0</index>
-            <count>100</count>
-        </getMetadata>
-    </soap:Body>
-</soap:Envelope>"""
-    
-    headers = {
-        'Content-Type': 'text/xml; charset=utf-8',
-        'SOAPAction': '"http://www.sonos.com/Services/1.1#getMetadata"'
-    }
-    
-    response = requests.post(f"{BASE_URL}/smapi/v1/soap", data=soap_request, headers=headers)
-    print(f"getMetadata (root) Status Code: {response.status_code}")
-    print(f"Response: {response.text}")
-    return response.status_code == 200
 
-def test_get_metadata_empty():
-    """Test the getMetadata endpoint with empty ID (what Sonos might send)"""
-    soap_request = """<?xml version="1.0" encoding="utf-8"?>
-<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
-    <soap:Body>
-        <getMetadata>
-            <id></id>
-            <index>0</index>
-            <count>100</count>
-        </getMetadata>
-    </soap:Body>
-</soap:Envelope>"""
-    
-    headers = {
-        'Content-Type': 'text/xml; charset=utf-8',
-        'SOAPAction': '"http://www.sonos.com/Services/1.1#getMetadata"'
-    }
-    
-    response = requests.post(f"{BASE_URL}/smapi/v1/soap", data=soap_request, headers=headers)
-    print(f"getMetadata (empty) Status Code: {response.status_code}")
-    print(f"Response: {response.text}")
-    return response.status_code == 200
+def soap_envelope(content: str) -> str:
+    return (
+        '<?xml version="1.0" encoding="utf-8"?>'
+        '<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">'
+        f"<soap:Body>{content}</soap:Body>"
+        "</soap:Envelope>"
+    )
 
-def test_get_metadata_artists():
-    """Test the getMetadata endpoint for artists"""
-    soap_request = """<?xml version="1.0" encoding="utf-8"?>
-<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
-    <soap:Body>
-        <getMetadata>
-            <id>artists</id>
-            <index>0</index>
-            <count>10</count>
-        </getMetadata>
-    </soap:Body>
-</soap:Envelope>"""
-    
-    headers = {
-        'Content-Type': 'text/xml; charset=utf-8',
-        'SOAPAction': '"http://www.sonos.com/Services/1.1#getMetadata"'
-    }
-    
-    response = requests.post(f"{BASE_URL}/smapi/v1/soap", data=soap_request, headers=headers)
-    print(f"getMetadata (artists) Status Code: {response.status_code}")
-    print(f"Response: {response.text}")
-    return response.status_code == 200
 
-def test_get_last_update():
-    """Test the getLastUpdate endpoint"""
-    soap_request = """<?xml version="1.0" encoding="utf-8"?>
-<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
-    <soap:Body>
-        <getLastUpdate/>
-    </soap:Body>
-</soap:Envelope>"""
-    
-    headers = {
-        'Content-Type': 'text/xml; charset=utf-8',
-        'SOAPAction': '"http://www.sonos.com/Services/1.1#getLastUpdate"'
-    }
-    
-    response = requests.post(f"{BASE_URL}/smapi/v1/soap", data=soap_request, headers=headers)
-    print(f"getLastUpdate Status Code: {response.status_code}")
-    print(f"Response: {response.text}")
-    return response.status_code == 200
+def post_smapi(base_url: str, action: str, content: str) -> ET.Element:
+    response = requests.post(
+        f"{base_url.rstrip('/')}/smapi/v1/soap",
+        headers={
+            "Content-Type": "text/xml; charset=utf-8",
+            "SOAPAction": f'"{SONOS_NAMESPACE}#{action}"',
+        },
+        data=soap_envelope(content),
+        timeout=30,
+    )
+    response.raise_for_status()
+    return ET.fromstring(response.text)
+
+
+def required_text(element: ET.Element, path: str) -> str:
+    value = element.findtext(path, namespaces=NAMESPACES)
+    if value is None:
+        raise RuntimeError(f"SMAPI response did not contain {path}")
+    return value
+
+
+def test_service(base_url: str) -> None:
+    root = post_smapi(
+        base_url,
+        "getMetadata",
+        f'<getMetadata xmlns="{SONOS_NAMESPACE}">'
+        "<id>root</id><index>0</index><count>100</count>"
+        "</getMetadata>",
+    )
+    collection_id = required_text(root, ".//sonos:mediaCollection/sonos:id")
+    print(f"Root browse works: {collection_id}")
+
+    tracks = post_smapi(
+        base_url,
+        "getMetadata",
+        f'<getMetadata xmlns="{SONOS_NAMESPACE}">'
+        f"<id>{collection_id}</id><index>0</index><count>100</count>"
+        "</getMetadata>",
+    )
+    total = int(required_text(tracks, ".//sonos:getMetadataResult/sonos:total"))
+    track_id = required_text(tracks, ".//sonos:mediaMetadata/sonos:id")
+    title = required_text(tracks, ".//sonos:mediaMetadata/sonos:title")
+    print(f"Track browse works: {total} songs; first is {title!r}")
+
+    media = post_smapi(
+        base_url,
+        "getMediaURI",
+        f'<getMediaURI xmlns="{SONOS_NAMESPACE}"><id>{track_id}</id></getMediaURI>',
+    )
+    media_uri = required_text(media, ".//sonos:getMediaURIResult")
+    print(f"Playback URL works: {media_uri}")
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--base-url", default="http://localhost:5000")
+    args = parser.parse_args()
+    test_service(args.base_url)
+
 
 if __name__ == "__main__":
-    print("Testing SMAPI endpoints...")
-    
-    try:
-        print("\n1. Testing getSessionId...")
-        test_get_session_id()
-        
-        print("\n2. Testing getMetadata (root)...")
-        test_get_metadata_root()
-        
-        print("\n3. Testing getMetadata (empty)...")
-        test_get_metadata_empty()
-        
-        print("\n4. Testing getMetadata (artists)...")
-        test_get_metadata_artists()
-        
-        print("\n5. Testing getLastUpdate...")
-        test_get_last_update()
-        
-    except requests.exceptions.ConnectionError:
-        print("Error: Could not connect to server. Make sure the server is running on localhost:5000")
-    except Exception as e:
-        print(f"Error: {e}")
+    main()

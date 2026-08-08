@@ -1,29 +1,33 @@
-# switching back to bash for now
-# set shell := ["nu", "-c"]
+# The following commands ARE relevant for agents
+
+publish:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if [[ ! -f ./prod.env ]]; then echo "ERROR: prod.env not found, refusing to build a secretless binary" >&2; exit 1; fi
+    set -a && source ./prod.env && set +a
+    if [[ -z "${S3_ENDPOINT:-}" || -z "${REITUNES_PASSWORD:-}" ]]; then echo "ERROR: prod.env is missing required values" >&2; exit 1; fi
+    cargo build -p reitunes --target x86_64-unknown-linux-musl --release
+    rsync ../target/x86_64-unknown-linux-musl/release/reitunes spudnik.reillywood.com:bin/
+    ssh spudnik.reillywood.com -t "systemctl --user restart reitunes"
+
+get-logs n:
+    ssh -q spudnik -t "journalctl --user -u reitunes.service -n {{n}} --no-pager"
+
+# The following commands are NOT for agent use
 
 install-deps:
     cargo install xh --locked
 
-watch:
-    watchexec --exts=rs,sql,html,css,js --on-busy-update=restart -- cargo run -- --live-reload
+# Development: watches Rust files, restarts server on changes. Vite-rs handles frontend HMR.
+dev: kill
+    #!/usr/bin/env bash
+    set -a && source .env && set +a
+    watchexec --exts=rs,sql --on-busy-update=restart -- cargo run -- --no-auth
 
-deploy-local:
-    cargo build --release
-    mv -f target/release/reitunes-rs ~/bin/reitunes-rs
-    reitunes-rs install
-    systemctl --user daemon-reload
-    systemctl --user restart reitunes
-
-build-with-secrets:
-    op run --env-file="./prod.env" -- cargo build
-
-publish:
-    op run --env-file="./prod.env" -- cross build --target x86_64-unknown-linux-musl --release
-    rsync ../target/x86_64-unknown-linux-musl/release/reitunes spudnik.reillywood.com:bin/
-    ssh spudnik.reillywood.com -t "systemctl --user restart reitunes"
-
-run:
-    cargo run
+# Kill any running reitunes/watchexec dev processes
+kill:
+    -pkill -f "watchexec.*reitunes"
+    -pkill -f "target/.*reitunes"
 
 test:
     cargo nextest run
@@ -37,8 +41,6 @@ build-release:
     cargo build --release
     @$"Build size: (ls target/release/{{expected_filename}} | get size)"
 
-publish-to-local-bin: build-release
-    cp target/release/{{expected_filename}} ~/bin/
 
 build-linux-x64:
     cross build --target x86_64-unknown-linux-gnu --release
@@ -48,9 +50,3 @@ build-linux-arm64:
 
 build-windows-on-linux:
     cross build --target x86_64-pc-windows-gnu --release
-
-test-api:
-    op run --env-file="./local.env" -- nu curl.nu
-
-test-api-prod:
-    op run --no-masking --env-file="./prod.env" -- nu curl.nu

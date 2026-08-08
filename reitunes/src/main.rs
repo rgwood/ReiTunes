@@ -1,33 +1,46 @@
-use anyhow::{bail, Result};
+use anyhow::{bail, Context, Result};
 use askama::Template;
 use axum::extract::ws::Utf8Bytes;
 use axum::http::HeaderMap;
 use axum::{
     body::Body,
-    extract::{ConnectInfo, Form, Json as JsonExtractor, State, WebSocketUpgrade},
-    http::{header, Request, StatusCode, Uri},
+    extract::{ConnectInfo, DefaultBodyLimit, Form, Json as JsonExtractor, Path, State, WebSocketUpgrade},
+    http::{Request, StatusCode},
     middleware::{self, Next},
     response::{Html, IntoResponse, Json, Redirect, Response},
     routing::{get, post},
     Router,
 };
+use axum_extra::extract::Multipart;
 use axum_macros::debug_handler;
 use clap::{Parser, Subcommand};
 use reitunes_workspace::*;
-use rust_embed::RustEmbed;
 use serde::{Deserialize, Serialize};
+use vite_rs_axum_0_8::ViteServe;
+
 use std::sync::{Arc, LazyLock};
 use std::time::Duration;
 use std::{fmt, net::SocketAddr};
 use tokio::sync::broadcast;
 use tokio::sync::RwLock;
 use tower_cookies::{Cookie, CookieManagerLayer, Cookies};
-use tower_livereload::LiveReloadLayer;
 use tracing::{info, instrument, warn};
 use uuid::Uuid;
 
+use crate::llm::SongMetadata;
+use crate::metadata::extract_metadata;
+use crate::storage::S3Storage;
+
+mod llm;
+mod metadata;
 mod smapi;
+mod storage;
 mod systemd;
+
+#[derive(vite_rs::Embed)]
+#[root = "../reitunes-web"]
+#[dev_server_port = 21012]
+struct Assets;
 
 const DB_PATH: &str = "reitunes-library.db";
 const PASSWORD: &str = match option_env!("REITUNES_PASSWORD") {
@@ -44,6 +57,16 @@ static PASSWORD_HASH: LazyLock<String> = LazyLock::new(|| hash_with_rotating_sal
 
 const SESSION_COOKIE_NAME: &str = "reitunes_session";
 
+/// URL of the downloader service that fetches audio/video from arbitrary URLs.
+/// Resolved at compile time via `option_env!` (baked in via `just publish`),
+/// then falling back to a runtime env var (for dev), then a hardcoded default.
+fn downloader_url() -> String {
+    option_env!("DOWNLOADER_URL")
+        .map(String::from)
+        .or_else(|| std::env::var("DOWNLOADER_URL").ok())
+        .unwrap_or_else(|| "http://potato-pi:3000/download".to_string())
+}
+
 static DB: LazyLock<r2d2::Pool<r2d2_sqlite::SqliteConnectionManager>> =
     LazyLock::new(|| open_connection_pool(DB_PATH).expect("Failed to create connection pool"));
 
@@ -53,10 +76,13 @@ struct Cli {
     #[command(subcommand)]
     command: Option<Commands>,
 
-    /// Enable live reload for development
+    /// Disable authentication (for local development)
     #[arg(long)]
-    live_reload: bool,
+    no_auth: bool,
 }
+
+// Global flag for auth bypass
+static NO_AUTH: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
 
 #[derive(Subcommand)]
 enum Commands {
@@ -68,7 +94,7 @@ enum Commands {
 #[serde(tag = "type")]
 enum LibraryUpdate {
     #[serde(rename = "update")]
-    Update { item: LibraryItem },
+    Update { item: Box<LibraryItemResponse> },
     #[serde(rename = "delete")]
     Delete { id: Uuid },
 }
@@ -76,8 +102,10 @@ enum LibraryUpdate {
 #[derive(Clone)]
 struct AppState {
     library: Arc<RwLock<Library>>,
+    playlists: Arc<RwLock<PlaylistStore>>,
     // used to broadcast updates to all connected clients
     update_tx: broadcast::Sender<LibraryUpdate>,
+    storage: Arc<S3Storage>,
 }
 
 #[tokio::main]
@@ -86,7 +114,17 @@ async fn main() -> Result<()> {
 
     info!("Starting reitunes v{}", env!("CARGO_PKG_VERSION"));
 
+    // Start Vite dev server in debug mode (provides HMR for frontend)
+    #[cfg(debug_assertions)]
+    let _guard = Assets::start_dev_server(true);
+
     let cli = Cli::parse();
+
+    // Set global no-auth flag
+    NO_AUTH.set(cli.no_auth).expect("NO_AUTH already set");
+    if cli.no_auth {
+        info!("Authentication disabled (--no-auth flag)");
+    }
 
     match cli.command {
         Some(Commands::Install) => {
@@ -100,11 +138,49 @@ async fn main() -> Result<()> {
             // important to drop after using to return the connection to the pool
             // leaving this connection open slows writes down ~100x (from 0.2 ms to 20 ms)
             drop(conn);
-            // let shared_state = Arc::new(RwLock::new(library));
+
+            // Initialize S3 storage backend
+            // Try compile-time env vars first (baked in via `just publish`),
+            // then fall back to runtime env vars (for dev).
+            let s3_endpoint = option_env!("S3_ENDPOINT")
+                .map(String::from)
+                .or_else(|| std::env::var("S3_ENDPOINT").ok())
+                .expect("S3_ENDPOINT must be set (compile-time or runtime)");
+            let s3_bucket = option_env!("S3_BUCKET")
+                .map(String::from)
+                .or_else(|| std::env::var("S3_BUCKET").ok())
+                .expect("S3_BUCKET must be set (compile-time or runtime)");
+            let s3_access_key = option_env!("S3_ACCESS_KEY")
+                .map(String::from)
+                .or_else(|| std::env::var("S3_ACCESS_KEY").ok())
+                .expect("S3_ACCESS_KEY must be set (compile-time or runtime)");
+            let s3_secret_key = option_env!("S3_SECRET_KEY")
+                .map(String::from)
+                .or_else(|| std::env::var("S3_SECRET_KEY").ok())
+                .expect("S3_SECRET_KEY must be set (compile-time or runtime)");
+            let s3_prefix = option_env!("S3_PREFIX")
+                .map(String::from)
+                .or_else(|| std::env::var("S3_PREFIX").ok());
+
+            info!(
+                "Using S3 storage: {} / {} (prefix: {:?})",
+                s3_endpoint, s3_bucket, s3_prefix
+            );
+            let storage = S3Storage::new(
+                &s3_endpoint,
+                &s3_bucket,
+                s3_prefix.as_deref(),
+                &s3_access_key,
+                &s3_secret_key,
+            )
+            .await
+            .expect("Failed to initialize S3 storage");
 
             let app_state = AppState {
                 library: Arc::new(RwLock::new(library)),
+                playlists: Arc::new(RwLock::new(PlaylistStore::new())),
                 update_tx: broadcast::channel(100).0,
+                storage: Arc::new(storage),
             };
 
             let api_router = Router::new()
@@ -115,25 +191,41 @@ async fn main() -> Result<()> {
             let smapi_router =
                 Router::new().route("/v1/soap", post(smapi::smapi_soap_handler));
 
-            let mut app = Router::new()
-                .route("/", get(index_handler))
+            // API routes that require regular auth (for React frontend)
+            let items_router = Router::new()
+                .route("/items", get(items_handler))
+                .route("/upload", post(upload_handler))
+                // Allow uploads up to 500MB
+                .layer(DefaultBodyLimit::max(500 * 1024 * 1024))
+                .route("/download", post(download_handler))
+                .route("/log", post(frontend_log_handler))
+                .route("/playlists", get(list_playlists_handler).post(create_playlist_handler))
+                .route("/playlists/{id}", axum::routing::put(rename_playlist_handler).delete(delete_playlist_handler))
+                .route("/playlists/{id}/items", post(add_playlist_item_handler))
+                .route("/playlists/{playlist_id}/items/{item_id}", axum::routing::delete(remove_playlist_item_handler));
+
+            // Build vite service for frontend
+            let vite = ViteServe::new(Assets::boxed());
+
+            let app = Router::new()
                 .route("/login", get(login_handler).post(login_post_handler))
                 .route("/ui/update", post(update_handler))
                 .route("/ui/play", post(play_handler))
                 .route("/ui/delete", post(delete_handler))
                 .route("/ui/{id}/bookmarks", post(add_bookmark_handler))
+                .route("/ui/{id}/favorite", post(favorite_handler))
+                .route("/ui/{id}/unfavorite", post(unfavorite_handler))
                 .route("/updates", get(updates_handler))
-                .route("/{*file}", get(static_handler))
+                // Frontend requires auth (must be above route_layer)
+                .route_service("/", vite.clone())
+                .route_service("/{*path}", vite)
                 .route_layer(middleware::from_fn(auth))
                 .layer(CookieManagerLayer::new())
+                // API routes don't require session auth
                 .nest("/api", api_router)
                 .nest("/smapi", smapi_router)
+                .nest("/api", items_router)
                 .with_state(app_state);
-
-            if cli.live_reload {
-                app = app.layer(LiveReloadLayer::new());
-                info!("Live reload enabled");
-            }
 
             let listener = tokio::net::TcpListener::bind("127.0.0.1:5000")
                 .await
@@ -176,21 +268,6 @@ async fn handle_websocket(
     }
 }
 
-#[derive(Template)]
-#[template(path = "index.html")]
-struct IndexTemplate {
-    items: Vec<LibraryItem>,
-}
-
-#[instrument(skip(app_state))]
-async fn index_handler(State(app_state): State<AppState>) -> Result<impl IntoResponse, AppError> {
-    let library = app_state.library.read().await;
-    let mut items: Vec<_> = library.items.values().cloned().collect();
-    items.sort_by(|a, b| b.play_count.cmp(&a.play_count));
-
-    let rendered = IndexTemplate { items }.render()?;
-    Ok(Html(rendered))
-}
 
 async fn all_events_handler() -> Result<impl IntoResponse, AppError> {
     let conn = DB.get()?;
@@ -198,26 +275,464 @@ async fn all_events_handler() -> Result<impl IntoResponse, AppError> {
     Ok(Json(events))
 }
 
-#[allow(dead_code)]
-mod filters {
-    pub fn if_empty(s: &str, default: &str) -> ::askama::Result<String> {
-        let ret = if s.is_empty() { default } else { s };
-        Ok(ret.to_string())
-    }
+/// Receive log messages from frontend
+#[derive(Debug, Deserialize)]
+struct FrontendLogRequest {
+    level: String,
+    message: String,
+    #[serde(default)]
+    args: Vec<serde_json::Value>,
+}
 
-    pub fn or(s: &Option<String>, default: &str) -> ::askama::Result<String> {
-        let ret = s.clone().unwrap_or(default.to_string());
-        Ok(ret)
-    }
+async fn frontend_log_handler(
+    JsonExtractor(req): JsonExtractor<FrontendLogRequest>,
+) -> StatusCode {
+    let args_str = if req.args.is_empty() {
+        String::new()
+    } else {
+        format!(" {:?}", req.args)
+    };
 
-    pub fn or_err(num: &Option<i64>) -> ::askama::Result<i64> {
-        if let Some(num) = num {
-            Ok(*num)
-        } else {
-            Err(::askama::Error::Custom("Missing value".into()))
+    match req.level.as_str() {
+        "error" => tracing::error!(target: "frontend", "{}{}", req.message, args_str),
+        "warn" => tracing::warn!(target: "frontend", "{}{}", req.message, args_str),
+        "info" => tracing::info!(target: "frontend", "{}{}", req.message, args_str),
+        "debug" => tracing::debug!(target: "frontend", "{}{}", req.message, args_str),
+        _ => tracing::info!(target: "frontend", "[{}] {}{}", req.level, req.message, args_str),
+    }
+    StatusCode::OK
+}
+
+/// Library item response with computed URL
+#[derive(Debug, Clone, Serialize)]
+struct LibraryItemResponse {
+    id: Uuid,
+    name: String,
+    created_time_utc: jiff::civil::DateTime,
+    file_path: String,
+    artist: String,
+    album: String,
+    track_number: Option<u32>,
+    play_count: u32,
+    bookmarks: indexmap::IndexMap<Uuid, reitunes_workspace::Bookmark>,
+    is_favorite: bool,
+    url: String,
+}
+
+impl LibraryItemResponse {
+    fn from_item(item: &LibraryItem, storage: &S3Storage) -> Self {
+        Self {
+            id: item.id,
+            name: item.name.clone(),
+            created_time_utc: item.created_time_utc,
+            file_path: item.file_path.clone(),
+            artist: item.artist.clone(),
+            album: item.album.clone(),
+            track_number: item.track_number,
+            play_count: item.play_count,
+            bookmarks: item.bookmarks.clone(),
+            is_favorite: item.is_favorite,
+            url: storage.url(&item.file_path),
         }
     }
 }
+
+/// Get all library items as JSON (for React frontend)
+#[instrument(skip(app_state))]
+async fn items_handler(State(app_state): State<AppState>) -> Result<impl IntoResponse, AppError> {
+    let library = app_state.library.read().await;
+    let items: Vec<_> = library
+        .items
+        .values()
+        .map(|item| LibraryItemResponse::from_item(item, &app_state.storage))
+        .collect();
+    Ok(Json(items))
+}
+
+/// Mark a library item as favorite
+#[instrument(skip(app_state))]
+async fn favorite_handler(
+    State(app_state): State<AppState>,
+    Path(id): Path<Uuid>,
+) -> Result<impl IntoResponse, AppError> {
+    let event = Event::LibraryItemFavoritedEvent;
+    let event_with_metadata = EventWithMetadata::new(id, event)?;
+    save_and_broadcast_event(event_with_metadata, app_state).await?;
+    Ok(StatusCode::OK)
+}
+
+/// Remove favorite from a library item
+#[instrument(skip(app_state))]
+async fn unfavorite_handler(
+    State(app_state): State<AppState>,
+    Path(id): Path<Uuid>,
+) -> Result<impl IntoResponse, AppError> {
+    let event = Event::LibraryItemUnfavoritedEvent;
+    let event_with_metadata = EventWithMetadata::new(id, event)?;
+    save_and_broadcast_event(event_with_metadata, app_state).await?;
+    Ok(StatusCode::OK)
+}
+
+/// Upload response with extracted metadata
+#[derive(Debug, Serialize)]
+struct UploadResponse {
+    id: Uuid,
+    name: String,
+    artist: Option<String>,
+    album: Option<String>,
+    file_path: String,
+}
+
+/// Handle file upload with ID3 metadata extraction
+#[debug_handler]
+async fn upload_handler(
+    State(app_state): State<AppState>,
+    mut multipart: Multipart,
+) -> Result<impl IntoResponse, AppError> {
+    // Process uploaded file
+    if let Some(field) = multipart.next_field().await? {
+        let filename = field.file_name().unwrap_or("unknown").to_string();
+        let data = field.bytes().await?;
+
+        info!(filename = %filename, size = data.len(), "Received file upload");
+
+        // Write to temp file for ID3 extraction
+        let temp_dir = tempfile::tempdir()?;
+        let temp_path = temp_dir.path().join(&filename);
+        tokio::fs::write(&temp_path, &data).await?;
+
+        // Extract ID3 metadata
+        let metadata = match extract_metadata(&temp_path) {
+            Ok(m) => m,
+            Err(e) => {
+                warn!(error = ?e, "Failed to extract ID3 metadata, falling back to LLM");
+                crate::metadata::AudioMetadata::default()
+            }
+        };
+
+        // Get name from ID3 title, or fallback to LLM, or filename
+        let (name, artist, album, track_number) = if metadata.has_info() {
+            (
+                metadata.title.unwrap_or_else(|| filename.clone()),
+                metadata.artist,
+                metadata.album,
+                metadata.track_number,
+            )
+        } else {
+            // Fallback to LLM for files without ID3 tags
+            match llm::extract_song_metadata(&filename).await {
+                Ok(llm_meta) => (llm_meta.name, llm_meta.artist, llm_meta.album, None),
+                Err(e) => {
+                    warn!(error = ?e, "LLM extraction failed, using filename");
+                    (filename.clone(), None, None, None)
+                }
+            }
+        };
+
+        // Store the file
+        let file_path = app_state.storage.upload(&filename, &data).await?;
+
+        // Create the library item
+        let item_id = Uuid::new_v4();
+        let event = Event::LibraryItemCreatedEvent {
+            name: name.clone(),
+            artist: artist.clone(),
+            album: album.clone(),
+            track_number,
+            file_path: file_path.clone(),
+        };
+        let event_with_metadata = EventWithMetadata::new(item_id, event)?;
+
+        // Save and broadcast
+        let conn = DB.get()?;
+        save_event_to_db(&conn, &event_with_metadata)?;
+
+        let mut library = app_state.library.write().await;
+        library.apply(&event_with_metadata);
+
+        if let Some(updated_item) = library.items.get(&item_id) {
+            let response = LibraryItemResponse::from_item(updated_item, &app_state.storage);
+            let _ = app_state
+                .update_tx
+                .send(LibraryUpdate::Update { item: Box::new(response) });
+        }
+
+        return Ok(Json(UploadResponse {
+            id: item_id,
+            name,
+            artist,
+            album,
+            file_path,
+        }));
+    }
+
+    Err(AppError(anyhow::anyhow!("No file uploaded")))
+}
+
+/// Request body for `/api/download`
+#[derive(Debug, Deserialize, Serialize)]
+struct DownloadRequest {
+    url: String,
+    dl_type: String,
+}
+
+/// Forward a request to the downloader service running on `potato-pi`, which
+/// queues the download and pushes the finished track into ReiTunes itself.
+#[debug_handler]
+async fn download_handler(
+    JsonExtractor(req): JsonExtractor<DownloadRequest>,
+) -> Result<impl IntoResponse, (StatusCode, String)> {
+    if req.url.trim().is_empty() {
+        return Err((StatusCode::BAD_REQUEST, "URL must not be empty".to_string()));
+    }
+    if !(req.url.starts_with("http://") || req.url.starts_with("https://")) {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "URL must start with http:// or https://".to_string(),
+        ));
+    }
+
+    let client = reqwest::Client::new();
+    let response = client
+        .post(downloader_url())
+        .json(&req)
+        .send()
+        .await
+        .map_err(|e| {
+            warn!(error = %e, "Failed to reach downloader service");
+            (
+                StatusCode::BAD_GATEWAY,
+                format!("Failed to reach downloader service: {e}"),
+            )
+        })?;
+
+    let status = response.status();
+    let body = response.text().await.unwrap_or_default();
+
+    if !status.is_success() {
+        warn!(status = %status, body = %body, "Downloader service returned an error");
+        return Err((
+            StatusCode::BAD_GATEWAY,
+            format!("Downloader service error ({status}): {body}"),
+        ));
+    }
+
+    Ok(body)
+}
+
+// ============================================================================
+// Playlist Handlers
+// ============================================================================
+
+/// List all playlists
+async fn list_playlists_handler(
+    State(app_state): State<AppState>,
+) -> Result<impl IntoResponse, AppError> {
+    let playlists = app_state.playlists.read().await;
+    let active: Vec<_> = playlists.active_playlists().into_iter().cloned().collect();
+    Ok(Json(active))
+}
+
+#[derive(Debug, Deserialize)]
+struct CreatePlaylistRequest {
+    name: String,
+}
+
+/// Create a new playlist
+async fn create_playlist_handler(
+    State(app_state): State<AppState>,
+    JsonExtractor(request): JsonExtractor<CreatePlaylistRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    let playlist_id = Uuid::new_v4();
+    let event = PlaylistEvent::PlaylistCreatedEvent {
+        name: request.name.clone(),
+    };
+    let event_with_metadata = PlaylistEventWithMetadata::new(playlist_id, event)?;
+
+    // Save to database
+    // Note: We're using the same events table with aggregate_type = "Playlist"
+    let serialized = serde_json::to_string(&event_with_metadata.event)?;
+    let conn = DB.get()?;
+    conn.execute(
+        "INSERT INTO events (Id, AggregateId, AggregateType, CreatedTimeUtc, MachineName, Serialized) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+        rusqlite::params![
+            event_with_metadata.id.to_string(),
+            event_with_metadata.aggregate_id.to_string(),
+            event_with_metadata.aggregate_type,
+            event_with_metadata.created_time_utc.to_string(),
+            event_with_metadata.machine_name,
+            serialized,
+        ],
+    )?;
+
+    // Apply to in-memory store
+    let mut playlists = app_state.playlists.write().await;
+    let playlist = Playlist::new(playlist_id, request.name, event_with_metadata.created_time_utc);
+    playlists.playlists.insert(playlist_id, playlist.clone());
+
+    Ok((StatusCode::CREATED, Json(playlist)))
+}
+
+#[derive(Debug, Deserialize)]
+struct RenamePlaylistRequest {
+    name: String,
+}
+
+/// Rename a playlist
+async fn rename_playlist_handler(
+    State(app_state): State<AppState>,
+    Path(id): Path<Uuid>,
+    JsonExtractor(request): JsonExtractor<RenamePlaylistRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    let event = PlaylistEvent::PlaylistRenamedEvent {
+        new_name: request.name,
+    };
+    let event_with_metadata = PlaylistEventWithMetadata::new(id, event.clone())?;
+
+    // Save to database
+    let serialized = serde_json::to_string(&event_with_metadata.event)?;
+    let conn = DB.get()?;
+    conn.execute(
+        "INSERT INTO events (Id, AggregateId, AggregateType, CreatedTimeUtc, MachineName, Serialized) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+        rusqlite::params![
+            event_with_metadata.id.to_string(),
+            event_with_metadata.aggregate_id.to_string(),
+            event_with_metadata.aggregate_type,
+            event_with_metadata.created_time_utc.to_string(),
+            event_with_metadata.machine_name,
+            serialized,
+        ],
+    )?;
+
+    // Apply to in-memory store
+    let mut playlists = app_state.playlists.write().await;
+    if let Some(playlist) = playlists.playlists.get_mut(&id) {
+        playlist.apply(&event);
+    }
+
+    Ok(StatusCode::OK)
+}
+
+/// Delete a playlist
+async fn delete_playlist_handler(
+    State(app_state): State<AppState>,
+    Path(id): Path<Uuid>,
+) -> Result<impl IntoResponse, AppError> {
+    let event = PlaylistEvent::PlaylistDeletedEvent;
+    let event_with_metadata = PlaylistEventWithMetadata::new(id, event.clone())?;
+
+    // Save to database
+    let serialized = serde_json::to_string(&event_with_metadata.event)?;
+    let conn = DB.get()?;
+    conn.execute(
+        "INSERT INTO events (Id, AggregateId, AggregateType, CreatedTimeUtc, MachineName, Serialized) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+        rusqlite::params![
+            event_with_metadata.id.to_string(),
+            event_with_metadata.aggregate_id.to_string(),
+            event_with_metadata.aggregate_type,
+            event_with_metadata.created_time_utc.to_string(),
+            event_with_metadata.machine_name,
+            serialized,
+        ],
+    )?;
+
+    // Apply to in-memory store
+    let mut playlists = app_state.playlists.write().await;
+    if let Some(playlist) = playlists.playlists.get_mut(&id) {
+        playlist.apply(&event);
+    }
+
+    Ok(StatusCode::OK)
+}
+
+#[derive(Debug, Deserialize)]
+struct AddPlaylistItemRequest {
+    library_item_id: Uuid,
+    position: Option<u32>,
+}
+
+/// Add item to a playlist
+async fn add_playlist_item_handler(
+    State(app_state): State<AppState>,
+    Path(id): Path<Uuid>,
+    JsonExtractor(request): JsonExtractor<AddPlaylistItemRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    // Get current position if not specified
+    let position = {
+        let playlists = app_state.playlists.read().await;
+        request.position.unwrap_or_else(|| {
+            playlists
+                .playlists
+                .get(&id)
+                .map(|p| p.items.len() as u32)
+                .unwrap_or(0)
+        })
+    };
+
+    let event = PlaylistEvent::PlaylistItemAddedEvent {
+        library_item_id: request.library_item_id,
+        position,
+    };
+    let event_with_metadata = PlaylistEventWithMetadata::new(id, event.clone())?;
+
+    // Save to database
+    let serialized = serde_json::to_string(&event_with_metadata.event)?;
+    let conn = DB.get()?;
+    conn.execute(
+        "INSERT INTO events (Id, AggregateId, AggregateType, CreatedTimeUtc, MachineName, Serialized) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+        rusqlite::params![
+            event_with_metadata.id.to_string(),
+            event_with_metadata.aggregate_id.to_string(),
+            event_with_metadata.aggregate_type,
+            event_with_metadata.created_time_utc.to_string(),
+            event_with_metadata.machine_name,
+            serialized,
+        ],
+    )?;
+
+    // Apply to in-memory store
+    let mut playlists = app_state.playlists.write().await;
+    if let Some(playlist) = playlists.playlists.get_mut(&id) {
+        playlist.apply(&event);
+    }
+
+    Ok(StatusCode::CREATED)
+}
+
+/// Remove item from a playlist
+async fn remove_playlist_item_handler(
+    State(app_state): State<AppState>,
+    Path((playlist_id, item_id)): Path<(Uuid, Uuid)>,
+) -> Result<impl IntoResponse, AppError> {
+    let event = PlaylistEvent::PlaylistItemRemovedEvent {
+        library_item_id: item_id,
+    };
+    let event_with_metadata = PlaylistEventWithMetadata::new(playlist_id, event.clone())?;
+
+    // Save to database
+    let serialized = serde_json::to_string(&event_with_metadata.event)?;
+    let conn = DB.get()?;
+    conn.execute(
+        "INSERT INTO events (Id, AggregateId, AggregateType, CreatedTimeUtc, MachineName, Serialized) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+        rusqlite::params![
+            event_with_metadata.id.to_string(),
+            event_with_metadata.aggregate_id.to_string(),
+            event_with_metadata.aggregate_type,
+            event_with_metadata.created_time_utc.to_string(),
+            event_with_metadata.machine_name,
+            serialized,
+        ],
+    )?;
+
+    // Apply to in-memory store
+    let mut playlists = app_state.playlists.write().await;
+    if let Some(playlist) = playlists.playlists.get_mut(&playlist_id) {
+        playlist.apply(&event);
+    }
+
+    Ok(StatusCode::OK)
+}
+
 #[derive(Debug, Deserialize)]
 struct UpdateRequest {
     id: uuid::Uuid,
@@ -254,11 +769,12 @@ async fn save_and_broadcast_event(event: EventWithMetadata, app_state: AppState)
             });
         }
         _ => {
-            if let Some(updated_item) = library.items.get(&event.aggregate_id).cloned() {
+            if let Some(updated_item) = library.items.get(&event.aggregate_id) {
                 info!(id = ?event.id, "Broadcasting updated item, event type: {:?}", event.event);
+                let response = LibraryItemResponse::from_item(updated_item, &app_state.storage);
                 let _ = app_state
                     .update_tx
-                    .send(LibraryUpdate::Update { item: updated_item });
+                    .send(LibraryUpdate::Update { item: Box::new(response) });
             }
         }
     }
@@ -277,8 +793,27 @@ async fn add_item_handler(
 ) -> Result<impl IntoResponse, AppError> {
     info!(file_path = &request.file_path, "Adding new item");
     let item_id = Uuid::new_v4();
+
+    let metadata = match llm::extract_song_metadata(&request.file_path).await {
+        Ok(metadata) => metadata,
+        Err(e) => {
+            warn!(
+                file_path = &request.file_path,
+                "Failed to extract song metadata: {:?}", e
+            );
+            SongMetadata {
+                name: request.file_path.clone(),
+                artist: None,
+                album: None,
+            }
+        }
+    };
+
     let event = Event::LibraryItemCreatedEvent {
-        name: request.file_path.clone(),
+        name: metadata.name,
+        artist: metadata.artist,
+        album: metadata.album,
+        track_number: None, // LLM extraction doesn't provide track number
         file_path: request.file_path,
     };
     let event_with_metadata = EventWithMetadata::new(item_id, event)?;
@@ -291,11 +826,12 @@ async fn add_item_handler(
     let mut library = app_state.library.write().await;
     library.apply(&event_with_metadata);
 
-    if let Some(updated_item) = library.items.get(&item_id).cloned() {
+    if let Some(updated_item) = library.items.get(&item_id) {
         // Broadcast the new item to all connected clients
+        let response = LibraryItemResponse::from_item(updated_item, &app_state.storage);
         let _ = app_state
             .update_tx
-            .send(LibraryUpdate::Update { item: updated_item });
+            .send(LibraryUpdate::Update { item: Box::new(response) });
     }
 
     Ok(StatusCode::CREATED)
@@ -321,11 +857,12 @@ async fn play_handler(
     let mut library = app_state.library.write().await;
     library.apply(&event_with_metadata);
 
-    if let Some(updated_item) = library.items.get(&request.id).cloned() {
+    if let Some(updated_item) = library.items.get(&request.id) {
         // Broadcast the updated item to all connected clients
+        let response = LibraryItemResponse::from_item(updated_item, &app_state.storage);
         let _ = app_state
             .update_tx
-            .send(LibraryUpdate::Update { item: updated_item });
+            .send(LibraryUpdate::Update { item: Box::new(response) });
     } else {
         warn!(id=?request.id, "Received play event for unknown item");
     }
@@ -372,6 +909,7 @@ async fn add_bookmark_handler(
     Ok(StatusCode::CREATED)
 }
 
+
 fn create_update_event(field: &str, value: &str) -> Result<Event> {
     match field {
         "name" => Ok(Event::LibraryItemNameChangedEvent {
@@ -386,45 +924,18 @@ fn create_update_event(field: &str, value: &str) -> Result<Event> {
         "album" => Ok(Event::LibraryItemAlbumChangedEvent {
             new_album: value.to_string(),
         }),
+        "track_number" => {
+            let new_track_number = if value.is_empty() {
+                None
+            } else {
+                Some(value.parse::<u32>().context("Invalid track number")?)
+            };
+            Ok(Event::LibraryItemTrackNumberChangedEvent { new_track_number })
+        }
         _ => bail!("Invalid field: {}", field),
     }
 }
 
-async fn static_handler(uri: Uri) -> impl IntoResponse {
-    let path = uri.path().trim_start_matches('/').to_string();
-    StaticFile(path)
-}
-
-#[derive(RustEmbed)]
-#[folder = "embed/"]
-struct Asset;
-
-pub struct StaticFile<T>(pub T);
-
-impl<T> IntoResponse for StaticFile<T>
-where
-    T: Into<String>,
-{
-    fn into_response(self) -> Response<Body> {
-        let path = self.0.into();
-
-        match Asset::get(path.as_str()) {
-            Some(content) => {
-                let body = Body::from(content.data);
-                let mime = mime_guess::from_path(path).first_or_octet_stream();
-                Response::builder()
-                    .header(header::CONTENT_TYPE, mime.as_ref())
-                    .header(header::CACHE_CONTROL, "public, max-age=31536000") // 1 year
-                    .body(body)
-                    .unwrap()
-            }
-            None => Response::builder()
-                .status(StatusCode::NOT_FOUND)
-                .body(Body::from("404"))
-                .unwrap(),
-        }
-    }
-}
 
 #[derive(Template)]
 #[template(path = "login.html")]
@@ -438,6 +949,11 @@ async fn login_handler() -> impl IntoResponse {
 // Check that the user has a valid session cookie... which is just the hashed password
 // Pretty weak authentication but this is a music library for one, not a bank
 async fn auth(cookies: Cookies, req: Request<Body>, next: Next) -> Result<Response, StatusCode> {
+    // Bypass auth if --no-auth flag was set
+    if *NO_AUTH.get().unwrap_or(&false) {
+        return Ok(next.run(req).await);
+    }
+
     if req.uri().path() == "/login" {
         return Ok(next.run(req).await);
     }

@@ -368,3 +368,9 @@ FodyWeavers.xsd
 .aider*
 
 target/
+
+# Local music files uploaded during development
+reitunes/music/
+
+# Production secrets
+prod.env
