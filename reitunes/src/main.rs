@@ -221,6 +221,11 @@ async fn main() -> Result<()> {
                 .route("/ui/play", post(play_handler))
                 .route("/ui/delete", post(delete_handler))
                 .route("/ui/{id}/bookmarks", post(add_bookmark_handler))
+                .route(
+                    "/ui/{item_id}/bookmarks/{bookmark_id}",
+                    axum::routing::put(update_bookmark_handler)
+                        .delete(delete_bookmark_handler),
+                )
                 .route("/ui/{id}/favorite", post(favorite_handler))
                 .route("/ui/{id}/unfavorite", post(unfavorite_handler))
                 .route("/updates", get(updates_handler))
@@ -838,6 +843,8 @@ async fn delete_handler(
 #[derive(Debug, Deserialize)]
 struct AddBookmarkRequest {
     position: f64,
+    #[serde(default)]
+    label: Option<String>,
 }
 
 #[instrument(skip(app_state))]
@@ -849,6 +856,7 @@ async fn add_bookmark_handler(
     let event = Event::LibraryItemBookmarkAddedEvent {
         bookmark_id: Uuid::new_v4(),
         position: Duration::from_secs_f64(request.position),
+        label: clean_bookmark_label(request.label),
     };
     let event_with_metadata = EventWithMetadata::new(id, event)?;
 
@@ -857,6 +865,79 @@ async fn add_bookmark_handler(
     Ok(StatusCode::CREATED)
 }
 
+#[derive(Debug, Deserialize)]
+struct UpdateBookmarkRequest {
+    label: Option<String>,
+    emoji: String,
+}
+
+#[instrument(skip(app_state))]
+async fn update_bookmark_handler(
+    State(app_state): State<AppState>,
+    Path((item_id, bookmark_id)): Path<(Uuid, Uuid)>,
+    JsonExtractor(request): JsonExtractor<UpdateBookmarkRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    let existing_emoji = {
+        let library = app_state.library.read().await;
+        library
+            .items
+            .get(&item_id)
+            .and_then(|item| item.bookmarks.get(&bookmark_id))
+            .map(|bookmark| bookmark.emoji.clone())
+    };
+    let Some(existing_emoji) = existing_emoji else {
+        return Ok(StatusCode::NOT_FOUND);
+    };
+
+    let label_event = Event::LibraryItemBookmarkLabelChangedEvent {
+        bookmark_id,
+        label: clean_bookmark_label(request.label),
+    };
+    save_and_broadcast_event(
+        EventWithMetadata::new(item_id, label_event)?,
+        app_state.clone(),
+    )
+    .await?;
+
+    let emoji = request.emoji.trim();
+    if !emoji.is_empty() && emoji != existing_emoji {
+        let emoji_event = Event::LibraryItemBookmarkSetEmojiEvent {
+            bookmark_id,
+            emoji: emoji.to_string(),
+        };
+        save_and_broadcast_event(EventWithMetadata::new(item_id, emoji_event)?, app_state).await?;
+    }
+
+    Ok(StatusCode::OK)
+}
+
+#[instrument(skip(app_state))]
+async fn delete_bookmark_handler(
+    State(app_state): State<AppState>,
+    Path((item_id, bookmark_id)): Path<(Uuid, Uuid)>,
+) -> Result<impl IntoResponse, AppError> {
+    let bookmark_exists = {
+        let library = app_state.library.read().await;
+        library
+            .items
+            .get(&item_id)
+            .is_some_and(|item| item.bookmarks.contains_key(&bookmark_id))
+    };
+    if !bookmark_exists {
+        return Ok(StatusCode::NOT_FOUND);
+    }
+
+    let event = Event::LibraryItemBookmarkDeletedEvent { bookmark_id };
+    save_and_broadcast_event(EventWithMetadata::new(item_id, event)?, app_state).await?;
+
+    Ok(StatusCode::NO_CONTENT)
+}
+
+fn clean_bookmark_label(label: Option<String>) -> Option<String> {
+    label
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+}
 
 fn create_update_event(field: &str, value: &str) -> Result<Event> {
     match field {

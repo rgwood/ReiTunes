@@ -233,6 +233,7 @@ impl Library {
             Event::LibraryItemBookmarkAddedEvent {
                 bookmark_id,
                 position,
+                label,
             } => {
                 if let Some(item) = self.items.get_mut(&event.aggregate_id) {
                     let music_emoji = vec![
@@ -248,6 +249,8 @@ impl Library {
                         Bookmark {
                             position: *position,
                             emoji: music_emoji[emoji_index].to_string(),
+                            label: label.clone(),
+                            created_time_utc: event.created_time_utc,
                         },
                     );
                     item.bookmarks
@@ -268,6 +271,13 @@ impl Library {
                 if let Some(item) = self.items.get_mut(&event.aggregate_id) {
                     if let Some(bookmark) = item.bookmarks.get_mut(bookmark_id) {
                         bookmark.emoji = emoji.clone();
+                    }
+                }
+            }
+            Event::LibraryItemBookmarkLabelChangedEvent { bookmark_id, label } => {
+                if let Some(item) = self.items.get_mut(&event.aggregate_id) {
+                    if let Some(bookmark) = item.bookmarks.get_mut(bookmark_id) {
+                        bookmark.label = label.clone();
                     }
                 }
             }
@@ -317,6 +327,8 @@ pub enum Event {
         bookmark_id: Uuid,
         #[serde(with = "duration_serde_dotnet")]
         position: Duration,
+        #[serde(default)]
+        label: Option<String>,
     },
     LibraryItemBookmarkDeletedEvent {
         bookmark_id: Uuid,
@@ -324,6 +336,10 @@ pub enum Event {
     LibraryItemBookmarkSetEmojiEvent {
         bookmark_id: Uuid,
         emoji: String,
+    },
+    LibraryItemBookmarkLabelChangedEvent {
+        bookmark_id: Uuid,
+        label: Option<String>,
     },
     LibraryItemFavoritedEvent,
     LibraryItemUnfavoritedEvent,
@@ -351,6 +367,8 @@ pub struct Bookmark {
     #[serde(with = "duration_serde_seconds")]
     pub position: std::time::Duration,
     pub emoji: String,
+    pub label: Option<String>,
+    pub created_time_utc: DateTime,
 }
 
 #[cfg(test)]
@@ -417,6 +435,7 @@ mod tests {
             Event::LibraryItemBookmarkAddedEvent {
                 bookmark_id,
                 position: Duration::from_secs(60),
+                label: None,
             },
         )?;
 
@@ -431,6 +450,82 @@ mod tests {
 
         // Compare the in-memory library with the reloaded library
         assert_eq!(in_memory_library.items, reloaded_library.items);
+
+        Ok(())
+    }
+
+    #[test]
+    fn bookmark_events_support_labels_and_deletion() -> Result<()> {
+        let item_id = Uuid::new_v4();
+        let bookmark_id = Uuid::new_v4();
+        let mut library = Library::new();
+
+        library.apply(&EventWithMetadata::new(
+            item_id,
+            Event::LibraryItemCreatedEvent {
+                name: "Test Item".to_string(),
+                artist: None,
+                album: None,
+                track_number: None,
+                file_path: "test.mp3".to_string(),
+            },
+        )?);
+        library.apply(&EventWithMetadata::new(
+            item_id,
+            Event::LibraryItemBookmarkAddedEvent {
+                bookmark_id,
+                position: Duration::from_secs(42),
+                label: Some("Intro".to_string()),
+            },
+        )?);
+
+        let bookmark = library.items[&item_id].bookmarks.get(&bookmark_id).unwrap();
+        assert_eq!(bookmark.label.as_deref(), Some("Intro"));
+
+        library.apply(&EventWithMetadata::new(
+            item_id,
+            Event::LibraryItemBookmarkLabelChangedEvent {
+                bookmark_id,
+                label: Some("Chorus".to_string()),
+            },
+        )?);
+        library.apply(&EventWithMetadata::new(
+            item_id,
+            Event::LibraryItemBookmarkSetEmojiEvent {
+                bookmark_id,
+                emoji: "🔥".to_string(),
+            },
+        )?);
+
+        let bookmark = library.items[&item_id].bookmarks.get(&bookmark_id).unwrap();
+        assert_eq!(bookmark.label.as_deref(), Some("Chorus"));
+        assert_eq!(bookmark.emoji, "🔥");
+
+        library.apply(&EventWithMetadata::new(
+            item_id,
+            Event::LibraryItemBookmarkDeletedEvent { bookmark_id },
+        )?);
+        assert!(library.items[&item_id].bookmarks.is_empty());
+
+        Ok(())
+    }
+
+    #[test]
+    fn old_bookmark_events_without_labels_still_deserialize() -> Result<()> {
+        let bookmark_id = Uuid::new_v4();
+        let serialized = format!(
+            r#"{{"$type":"LibraryItemBookmarkAddedEvent","BookmarkId":"{bookmark_id}","Position":"00:01:02.000000000"}}"#
+        );
+
+        let event: Event = serde_json::from_str(&serialized)?;
+        assert_eq!(
+            event,
+            Event::LibraryItemBookmarkAddedEvent {
+                bookmark_id,
+                position: Duration::from_secs(62),
+                label: None,
+            }
+        );
 
         Ok(())
     }

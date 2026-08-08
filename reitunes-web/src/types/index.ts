@@ -2,6 +2,8 @@
 export interface Bookmark {
   position: number; // in seconds
   emoji: string;
+  label: string | null;
+  created_time_utc: string;
 }
 
 export interface LibraryItem {

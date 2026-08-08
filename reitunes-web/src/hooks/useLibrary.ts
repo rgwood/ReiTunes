@@ -146,6 +146,33 @@ export async function addBookmark(id: string, position: number): Promise<void> {
   }
 }
 
+export async function updateBookmark(
+  itemId: string,
+  bookmarkId: string,
+  label: string,
+  emoji: string
+): Promise<void> {
+  const response = await fetch(`/ui/${itemId}/bookmarks/${bookmarkId}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ label: label.trim() || null, emoji }),
+    credentials: 'include',
+  });
+  if (!response.ok) {
+    throw new Error('Failed to update bookmark');
+  }
+}
+
+export async function deleteBookmark(itemId: string, bookmarkId: string): Promise<void> {
+  const response = await fetch(`/ui/${itemId}/bookmarks/${bookmarkId}`, {
+    method: 'DELETE',
+    credentials: 'include',
+  });
+  if (!response.ok) {
+    throw new Error('Failed to delete bookmark');
+  }
+}
+
 export async function toggleFavorite(id: string, isFavorite: boolean): Promise<void> {
   const endpoint = isFavorite ? `/ui/${id}/unfavorite` : `/ui/${id}/favorite`;
   const response = await fetch(endpoint, {

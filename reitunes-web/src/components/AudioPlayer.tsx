@@ -442,7 +442,7 @@ export function AudioPlayer() {
                 }}
                 className="absolute top-1/2 -translate-y-1/2 w-1 h-3 bg-solarized-cyan/60 hover:bg-solarized-cyan hover:w-2 hover:h-5 transition-all cursor-pointer rounded-sm"
                 style={{ left: `${position}%` }}
-                title={`${bookmark.emoji || '🔖'} ${formatTime(bookmark.position)}`}
+                title={`${bookmark.emoji || '🔖'} ${bookmark.label ? `${bookmark.label} · ` : ''}${formatTime(bookmark.position)}`}
               />
             );
           })}
