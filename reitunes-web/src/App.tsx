@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useEffect, useMemo } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { AudioPlayer } from './components/AudioPlayer';
 import { LibraryTable } from './components/LibraryTable';
@@ -8,6 +8,7 @@ import { UploadModal } from './components/UploadModal';
 import { DownloadModal } from './components/DownloadModal';
 import { PlaylistSidebar } from './components/PlaylistSidebar';
 import { useLibrary } from './hooks/useLibrary';
+import { useQueueStore } from './hooks/useQueue';
 import { usePlayerStore } from './stores/playerStore';
 import type { LibraryItem } from './types';
 
@@ -57,7 +58,42 @@ function AppContent() {
   const [selectedPlaylistId, setSelectedPlaylistId] = useState<string | null>(null);
 
   const { items, isLoading, error } = useLibrary();
-  const { play } = usePlayerStore();
+  const {
+    play,
+    currentItem,
+    currentItemId,
+    restoreCurrentItem,
+    refreshCurrentItem,
+    clearCurrentItem,
+  } = usePlayerStore();
+  const { reconcileWithLibrary } = useQueueStore();
+
+  // Resolve persisted IDs and stale queue snapshots against the current library.
+  // Restored tracks stay paused until the user explicitly resumes playback.
+  useEffect(() => {
+    if (isLoading) return;
+
+    reconcileWithLibrary(items);
+
+    if (!currentItemId) return;
+    const libraryItem = items.find((item) => item.id === currentItemId);
+    if (!libraryItem) {
+      clearCurrentItem();
+    } else if (!currentItem) {
+      restoreCurrentItem(libraryItem);
+    } else if (currentItem !== libraryItem) {
+      refreshCurrentItem(libraryItem);
+    }
+  }, [
+    items,
+    isLoading,
+    currentItem,
+    currentItemId,
+    clearCurrentItem,
+    reconcileWithLibrary,
+    refreshCurrentItem,
+    restoreCurrentItem,
+  ]);
 
   // Get all random targets: bookmarks + favourited songs (from start)
   const allRandomTargets = useMemo(() => {

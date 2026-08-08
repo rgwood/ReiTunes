@@ -1,174 +1,192 @@
 import { create } from 'zustand';
+import { createJSONStorage, persist } from 'zustand/middleware';
 import type { LibraryItem } from '../types';
 
 type RepeatMode = 'off' | 'one' | 'all';
 
-interface QueueState {
-  // Manual queue (priority) - items added via "Add to Queue" / "Play Next"
-  manualQueue: LibraryItem[];
+export const QUEUE_STORAGE_KEY = 'reitunes-queue';
 
-  // Context (playing from) - the list you started playing from
+interface PersistedQueueState {
+  manualQueue: LibraryItem[];
   contextItems: LibraryItem[];
   contextIndex: number;
-  contextName: string; // "Library" or playlist name
-
-  // Shuffle and repeat
+  contextName: string;
   shuffleEnabled: boolean;
   repeatMode: RepeatMode;
+}
 
-  // Actions
-  addToQueue: (item: LibraryItem) => void;      // append to manual queue
-  addNext: (item: LibraryItem) => void;         // prepend to manual queue
+interface QueueState extends PersistedQueueState {
+  addToQueue: (item: LibraryItem) => void;
+  addNext: (item: LibraryItem) => void;
   removeFromManualQueue: (index: number) => void;
   moveManualQueueItem: (fromIndex: number, toIndex: number) => void;
   setContext: (items: LibraryItem[], startIndex: number, name: string) => void;
-  playNext: () => LibraryItem | null;           // returns next item (manual first, then context)
+  playNext: () => LibraryItem | null;
   playPrevious: () => LibraryItem | null;
   clearManualQueue: () => void;
   getCurrentItem: () => LibraryItem | null;
   toggleShuffle: () => void;
-  cycleRepeatMode: () => void;  // off → all → one → off
-
-  // For getting preview of upcoming items
+  cycleRepeatMode: () => void;
   getUpcomingManualQueue: () => LibraryItem[];
   getUpcomingContext: () => LibraryItem[];
+  reconcileWithLibrary: (items: LibraryItem[]) => void;
 }
 
-export const useQueueStore = create<QueueState>()((set, get) => ({
-  manualQueue: [],
-  contextItems: [],
-  contextIndex: -1,
-  contextName: 'Library',
-  shuffleEnabled: false,
-  repeatMode: 'off' as RepeatMode,
+export function reconcileLibraryItems(
+  savedItems: LibraryItem[],
+  libraryItems: LibraryItem[]
+): LibraryItem[] {
+  const currentItems = new Map(libraryItems.map((item) => [item.id, item]));
+  return savedItems
+    .map((item) => currentItems.get(item.id))
+    .filter((item): item is LibraryItem => item !== undefined);
+}
 
-  addToQueue: (item) => set((state) => ({
-    manualQueue: [...state.manualQueue, item],
-  })),
+export const useQueueStore = create<QueueState>()(
+  persist<QueueState, [], [], PersistedQueueState>(
+    (set, get) => ({
+      manualQueue: [],
+      contextItems: [],
+      contextIndex: -1,
+      contextName: 'Library',
+      shuffleEnabled: false,
+      repeatMode: 'off',
 
-  addNext: (item) => set((state) => ({
-    manualQueue: [item, ...state.manualQueue],
-  })),
+      addToQueue: (item) => set((state) => ({
+        manualQueue: [...state.manualQueue, item],
+      })),
 
-  removeFromManualQueue: (index) => set((state) => {
-    const newQueue = [...state.manualQueue];
-    newQueue.splice(index, 1);
-    return { manualQueue: newQueue };
-  }),
+      addNext: (item) => set((state) => ({
+        manualQueue: [item, ...state.manualQueue],
+      })),
 
-  moveManualQueueItem: (fromIndex, toIndex) => set((state) => {
-    const newQueue = [...state.manualQueue];
-    const [item] = newQueue.splice(fromIndex, 1);
-    newQueue.splice(toIndex, 0, item);
-    return { manualQueue: newQueue };
-  }),
+      removeFromManualQueue: (index) => set((state) => {
+        const newQueue = [...state.manualQueue];
+        newQueue.splice(index, 1);
+        return { manualQueue: newQueue };
+      }),
 
-  setContext: (items, startIndex, name) => set({
-    contextItems: items,
-    contextIndex: startIndex,
-    contextName: name,
-    // Clear manual queue when setting new context (clicking a new song)
-    manualQueue: [],
-  }),
+      moveManualQueueItem: (fromIndex, toIndex) => set((state) => {
+        const newQueue = [...state.manualQueue];
+        const [item] = newQueue.splice(fromIndex, 1);
+        newQueue.splice(toIndex, 0, item);
+        return { manualQueue: newQueue };
+      }),
 
-  playNext: () => {
-    const state = get();
+      setContext: (items, startIndex, name) => set({
+        contextItems: items,
+        contextIndex: startIndex,
+        contextName: name,
+        manualQueue: [],
+      }),
 
-    // If repeat one, return current item (caller handles replay)
-    if (state.repeatMode === 'one') {
-      return state.getCurrentItem();
-    }
+      playNext: () => {
+        const state = get();
 
-    // First priority: manual queue
-    if (state.manualQueue.length > 0) {
-      const [nextItem, ...rest] = state.manualQueue;
-      set({ manualQueue: rest });
-      return nextItem;
-    }
-
-    // Second priority: context
-    if (state.shuffleEnabled) {
-      // Pick random from remaining context items (excluding current)
-      const remainingIndices: number[] = [];
-      for (let i = 0; i < state.contextItems.length; i++) {
-        if (i !== state.contextIndex) {
-          remainingIndices.push(i);
+        if (state.repeatMode === 'one') {
+          return state.getCurrentItem();
         }
-      }
-      if (remainingIndices.length > 0) {
-        const randomIdx = remainingIndices[Math.floor(Math.random() * remainingIndices.length)];
-        set({ contextIndex: randomIdx });
-        return state.contextItems[randomIdx];
-      }
-      return null;
+
+        if (state.manualQueue.length > 0) {
+          const [nextItem, ...rest] = state.manualQueue;
+          set({ manualQueue: rest });
+          return nextItem;
+        }
+
+        if (state.shuffleEnabled) {
+          const remainingIndices: number[] = [];
+          for (let i = 0; i < state.contextItems.length; i++) {
+            if (i !== state.contextIndex) remainingIndices.push(i);
+          }
+          if (remainingIndices.length > 0) {
+            const randomIdx = remainingIndices[Math.floor(Math.random() * remainingIndices.length)];
+            set({ contextIndex: randomIdx });
+            return state.contextItems[randomIdx];
+          }
+          return null;
+        }
+
+        if (state.contextIndex < state.contextItems.length - 1) {
+          const nextIndex = state.contextIndex + 1;
+          set({ contextIndex: nextIndex });
+          return state.contextItems[nextIndex];
+        }
+
+        if (state.repeatMode === 'all' && state.contextItems.length > 0) {
+          set({ contextIndex: 0 });
+          return state.contextItems[0];
+        }
+
+        return null;
+      },
+
+      playPrevious: () => {
+        const state = get();
+        if (state.contextIndex > 0) {
+          const prevIndex = state.contextIndex - 1;
+          set({ contextIndex: prevIndex });
+          return state.contextItems[prevIndex];
+        }
+        return null;
+      },
+
+      clearManualQueue: () => set({ manualQueue: [] }),
+
+      getCurrentItem: () => {
+        const state = get();
+        if (state.contextIndex >= 0 && state.contextIndex < state.contextItems.length) {
+          return state.contextItems[state.contextIndex];
+        }
+        return null;
+      },
+
+      toggleShuffle: () => set((state) => ({ shuffleEnabled: !state.shuffleEnabled })),
+
+      cycleRepeatMode: () => set((state) => {
+        const modes: RepeatMode[] = ['off', 'all', 'one'];
+        const currentIdx = modes.indexOf(state.repeatMode);
+        return { repeatMode: modes[(currentIdx + 1) % modes.length] };
+      }),
+
+      getUpcomingManualQueue: () => get().manualQueue,
+
+      getUpcomingContext: () => {
+        const state = get();
+        if (state.contextIndex < 0 || state.contextItems.length === 0) return [];
+
+        const remaining = state.contextItems.slice(state.contextIndex + 1);
+        if (state.repeatMode === 'all') {
+          return [...remaining, ...state.contextItems.slice(0, state.contextIndex)];
+        }
+        return remaining;
+      },
+
+      reconcileWithLibrary: (items) => set((state) => {
+        const currentContextItem = state.contextItems[state.contextIndex];
+        const contextItems = reconcileLibraryItems(state.contextItems, items);
+        const contextIndex = currentContextItem
+          ? contextItems.findIndex((item) => item.id === currentContextItem.id)
+          : -1;
+
+        return {
+          manualQueue: reconcileLibraryItems(state.manualQueue, items),
+          contextItems,
+          contextIndex,
+        };
+      }),
+    }),
+    {
+      name: QUEUE_STORAGE_KEY,
+      storage: createJSONStorage(() => localStorage),
+      version: 1,
+      partialize: (state) => ({
+        manualQueue: state.manualQueue,
+        contextItems: state.contextItems,
+        contextIndex: state.contextIndex,
+        contextName: state.contextName,
+        shuffleEnabled: state.shuffleEnabled,
+        repeatMode: state.repeatMode,
+      }),
     }
-
-    // Normal sequential play
-    if (state.contextIndex < state.contextItems.length - 1) {
-      const nextIndex = state.contextIndex + 1;
-      set({ contextIndex: nextIndex });
-      return state.contextItems[nextIndex];
-    }
-
-    // At end of context - check repeat all
-    if (state.repeatMode === 'all' && state.contextItems.length > 0) {
-      set({ contextIndex: 0 });
-      return state.contextItems[0];
-    }
-
-    return null;
-  },
-
-  playPrevious: () => {
-    const state = get();
-    // For now, just go back in context
-    // Manual queue items that were played are already removed, so we can't go back to them
-    if (state.contextIndex > 0) {
-      const prevIndex = state.contextIndex - 1;
-      set({ contextIndex: prevIndex });
-      return state.contextItems[prevIndex];
-    }
-    return null;
-  },
-
-  clearManualQueue: () => set({ manualQueue: [] }),
-
-  getCurrentItem: () => {
-    const state = get();
-    if (state.contextIndex >= 0 && state.contextIndex < state.contextItems.length) {
-      return state.contextItems[state.contextIndex];
-    }
-    return null;
-  },
-
-  toggleShuffle: () => set((state) => ({ shuffleEnabled: !state.shuffleEnabled })),
-
-  cycleRepeatMode: () => set((state) => {
-    const modes: RepeatMode[] = ['off', 'all', 'one'];
-    const currentIdx = modes.indexOf(state.repeatMode);
-    const nextIdx = (currentIdx + 1) % modes.length;
-    return { repeatMode: modes[nextIdx] };
-  }),
-
-  getUpcomingManualQueue: () => {
-    return get().manualQueue;
-  },
-
-  getUpcomingContext: () => {
-    const state = get();
-    if (state.contextIndex < 0 || state.contextItems.length === 0) {
-      return [];
-    }
-
-    // Items after current position
-    const remaining = state.contextItems.slice(state.contextIndex + 1);
-
-    // If repeat all and at/near end, wrap around to show beginning items
-    if (state.repeatMode === 'all') {
-      const itemsFromStart = state.contextItems.slice(0, state.contextIndex);
-      return [...remaining, ...itemsFromStart];
-    }
-
-    return remaining;
-  },
-}));
+  )
+);
