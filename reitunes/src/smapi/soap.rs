@@ -731,6 +731,10 @@ mod tests {
             playlists: Arc::new(RwLock::new(PlaylistStore::new())),
             update_tx: broadcast::channel(1).0,
             storage: Arc::new(storage),
+            sonos: None,
+            cloud_queues: Arc::new(crate::cloud_queue::CloudQueueStore::with_base_url(
+                "https://reitunes.example.com/",
+            )),
         };
 
         let metadata = get_metadata(

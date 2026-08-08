@@ -13,6 +13,7 @@ import { useQuery } from '@tanstack/react-query';
 import type { LibraryItem, Bookmark } from '../types';
 import { usePlayerStore } from '../stores/playerStore';
 import { useQueueStore } from '../hooks/useQueue';
+import { usePlayback } from '../hooks/usePlayback';
 import { updateLibraryItem, deleteItem as apiDeleteItem } from '../hooks/useLibrary';
 import { FavoriteButton } from './FavoriteButton';
 import { Tooltip } from './Tooltip';
@@ -123,7 +124,8 @@ export function LibraryTable({ items, searchQuery, playlistId, onSearchChange }:
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; item: LibraryItem } | null>(null);
   const [showPlaylistSubmenu, setShowPlaylistSubmenu] = useState(false);
 
-  const { play, currentItem } = usePlayerStore();
+  const { currentItem } = usePlayerStore();
+  const play = usePlayback();
   const { addToQueue, addNext, setContext } = useQueueStore();
 
   // Fetch playlists for context menu and filtering
@@ -265,12 +267,12 @@ export function LibraryTable({ items, searchQuery, playlistId, onSearchChange }:
     // Set the context to the library or playlist name
     const contextName = selectedPlaylist ? selectedPlaylist.name : 'Library';
     setContext(sortedItems, rowIndex, contextName);
-    play(item);
+    void play(item);
   }, [play, editingCell, table, setContext, selectedPlaylist]);
 
   const handleBookmarkClick = useCallback((item: LibraryItem, position: number, e: React.MouseEvent) => {
     e.stopPropagation();
-    play(item, position);
+    void play(item, position);
   }, [play]);
 
   const handleCellDoubleClick = useCallback((rowId: string, field: string, currentValue: string) => {

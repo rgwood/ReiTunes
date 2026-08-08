@@ -11,6 +11,7 @@ use axum::{
     routing::{get, post},
     Router,
 };
+use axum::extract::Query;
 use axum_extra::extract::Multipart;
 use axum_macros::debug_handler;
 use clap::{Parser, Subcommand};
@@ -34,6 +35,8 @@ use crate::storage::S3Storage;
 mod llm;
 mod metadata;
 mod smapi;
+mod sonos;
+mod cloud_queue;
 mod storage;
 mod systemd;
 
@@ -97,12 +100,19 @@ enum Commands {
 }
 
 #[derive(Debug, Clone, Serialize)]
-#[serde(tag = "type")]
-enum LibraryUpdate {
+#[serde(tag = "type", rename_all_fields = "camelCase")]
+enum FrontendUpdate {
     #[serde(rename = "update")]
     Update { item: Box<LibraryItemResponse> },
     #[serde(rename = "delete")]
     Delete { id: Uuid },
+    #[serde(rename = "sonos")]
+    Sonos {
+        namespace: String,
+        event_type: String,
+        target_id: String,
+        payload: serde_json::Value,
+    },
 }
 
 #[derive(Clone)]
@@ -110,8 +120,10 @@ struct AppState {
     library: Arc<RwLock<Library>>,
     playlists: Arc<RwLock<PlaylistStore>>,
     // used to broadcast updates to all connected clients
-    update_tx: broadcast::Sender<LibraryUpdate>,
+    update_tx: broadcast::Sender<FrontendUpdate>,
     storage: Arc<S3Storage>,
+    sonos: Option<Arc<sonos::SonosControl>>,
+    cloud_queues: Arc<cloud_queue::CloudQueueStore>,
 }
 
 #[tokio::main]
@@ -188,7 +200,15 @@ async fn main() -> Result<()> {
                 playlists: Arc::new(RwLock::new(playlists)),
                 update_tx: broadcast::channel(100).0,
                 storage: Arc::new(storage),
+                sonos: sonos::SonosControl::from_env(DB.clone())?,
+                cloud_queues: Arc::new(cloud_queue::CloudQueueStore::from_env(DB.clone())?),
             };
+
+            if app_state.sonos.is_some() {
+                info!("Sonos Direct Control is configured");
+            } else {
+                info!("Sonos Direct Control is not configured");
+            }
 
             let api_router = Router::new()
                 .route("/add", post(add_item_handler))
@@ -197,6 +217,18 @@ async fn main() -> Result<()> {
 
             let smapi_router =
                 Router::new().route("/v1/soap", post(smapi::smapi_soap_handler));
+
+            let cloud_queue_router = Router::new()
+                .route("/{queue_id}/v2.3/context", get(cloud_queue_context_handler))
+                .route("/{queue_id}/v2.3/version", get(cloud_queue_version_handler))
+                .route(
+                    "/{queue_id}/v2.3/itemWindow",
+                    get(cloud_queue_item_window_handler),
+                )
+                .route(
+                    "/{queue_id}/v2.3/timePlayed",
+                    post(cloud_queue_time_played_handler),
+                );
 
             // Private API routes require the same session as the React frontend.
             let protected_api_router = Router::new()
@@ -210,6 +242,40 @@ async fn main() -> Result<()> {
                 .route("/playlists/{id}", axum::routing::put(rename_playlist_handler).delete(delete_playlist_handler))
                 .route("/playlists/{id}/items", post(add_playlist_item_handler))
                 .route("/playlists/{playlist_id}/items/{item_id}", axum::routing::delete(remove_playlist_item_handler))
+                .route("/sonos/status", get(sonos_status_handler))
+                .route("/sonos/authorize", get(sonos_authorize_handler))
+                .route("/sonos/callback", get(sonos_callback_handler))
+                .route("/sonos/households", get(sonos_households_handler))
+                .route("/sonos/cloud-queues", post(prepare_cloud_queue_handler))
+                .route("/sonos/play", post(sonos_play_handler))
+                .route(
+                    "/sonos/groups/{group_id}/playback",
+                    get(sonos_group_playback_handler),
+                )
+                .route(
+                    "/sonos/groups/{group_id}/playback/play",
+                    post(sonos_group_play_handler),
+                )
+                .route(
+                    "/sonos/groups/{group_id}/playback/pause",
+                    post(sonos_group_pause_handler),
+                )
+                .route(
+                    "/sonos/groups/{group_id}/volume",
+                    get(sonos_group_volume_handler).post(sonos_set_group_volume_handler),
+                )
+                .route(
+                    "/sonos/groups/{group_id}/mute",
+                    post(sonos_set_group_mute_handler),
+                )
+                .route(
+                    "/sonos/households/{household_id}/groups",
+                    get(sonos_groups_handler),
+                )
+                .route(
+                    "/sonos/connection",
+                    axum::routing::delete(sonos_disconnect_handler),
+                )
                 .route_layer(middleware::from_fn(api_session_auth));
 
             // Build vite service for frontend
@@ -234,8 +300,10 @@ async fn main() -> Result<()> {
                 .route_service("/{*path}", vite)
                 .route_layer(middleware::from_fn(auth))
                 // Service and API-key routes stay outside session auth.
+                .route("/api/sonos/events", post(sonos_event_handler))
                 .nest("/api", api_router)
                 .nest("/smapi", smapi_router)
+                .nest("/sonos/cloud-queue", cloud_queue_router)
                 .nest("/api", protected_api_router)
                 // Cookie extraction is used by both frontend and API auth middleware.
                 .layer(CookieManagerLayer::new())
@@ -265,7 +333,7 @@ async fn updates_handler(
 
 async fn handle_websocket(
     mut socket: axum::extract::ws::WebSocket,
-    tx: broadcast::Sender<LibraryUpdate>,
+    tx: broadcast::Sender<FrontendUpdate>,
     addr: SocketAddr,
 ) {
     info!(addr = ?addr, "WebSocket connected");
@@ -361,6 +429,542 @@ async fn items_handler(State(app_state): State<AppState>) -> Result<impl IntoRes
         .map(|item| LibraryItemResponse::from_item(item, &app_state.storage))
         .collect();
     Ok(Json(items))
+}
+
+// ============================================================================
+// Sonos Direct Control
+// ============================================================================
+
+#[derive(Debug, Serialize)]
+struct SonosApiError {
+    error: String,
+}
+
+type SonosApiResult<T> = Result<T, (StatusCode, Json<SonosApiError>)>;
+
+fn sonos_unavailable() -> (StatusCode, Json<SonosApiError>) {
+    (
+        StatusCode::SERVICE_UNAVAILABLE,
+        Json(SonosApiError {
+            error: "Sonos Direct Control is not configured".to_string(),
+        }),
+    )
+}
+
+fn sonos_failure(error: anyhow::Error) -> (StatusCode, Json<SonosApiError>) {
+    warn!(error = %error, "Sonos Direct Control request failed");
+    (
+        StatusCode::BAD_GATEWAY,
+        Json(SonosApiError {
+            error: error.to_string(),
+        }),
+    )
+}
+
+fn sonos_playback_failure(
+    error: sonos::SonosPlaybackError,
+) -> (StatusCode, Json<SonosApiError>) {
+    let status = match error {
+        sonos::SonosPlaybackError::TakeoverRequired
+        | sonos::SonosPlaybackError::SessionEnded(_) => StatusCode::CONFLICT,
+        sonos::SonosPlaybackError::Control(_) => StatusCode::BAD_GATEWAY,
+    };
+    warn!(error = %error, "Sonos playback request failed");
+    (status, Json(SonosApiError { error: error.to_string() }))
+}
+
+fn cloud_queue_failure(
+    error: cloud_queue::CloudQueueError,
+) -> (StatusCode, Json<SonosApiError>) {
+    let status = match &error {
+        cloud_queue::CloudQueueError::NotConfigured => StatusCode::SERVICE_UNAVAILABLE,
+        cloud_queue::CloudQueueError::NotFound => StatusCode::NOT_FOUND,
+        cloud_queue::CloudQueueError::Unauthorized => StatusCode::UNAUTHORIZED,
+        cloud_queue::CloudQueueError::InvalidRequest(_) => StatusCode::BAD_REQUEST,
+        cloud_queue::CloudQueueError::Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,
+    };
+    if status.is_server_error() {
+        warn!(error = %error, "Sonos Cloud Queue request failed");
+    }
+    (status, Json(SonosApiError { error: error.to_string() }))
+}
+
+async fn sonos_status_handler(
+    State(app_state): State<AppState>,
+) -> SonosApiResult<Json<sonos::SonosStatus>> {
+    match app_state.sonos {
+        Some(control) => control.status().map(Json).map_err(sonos_failure),
+        None => Ok(Json(sonos::SonosStatus {
+            configured: false,
+            connected: false,
+        })),
+    }
+}
+
+async fn sonos_authorize_handler(State(app_state): State<AppState>) -> SonosApiResult<Redirect> {
+    let control = app_state.sonos.ok_or_else(sonos_unavailable)?;
+    let url = control.authorization_url().map_err(sonos_failure)?;
+    Ok(Redirect::to(url.as_str()))
+}
+
+#[derive(Debug, Deserialize)]
+struct SonosCallbackQuery {
+    code: Option<String>,
+    state: Option<String>,
+    error: Option<String>,
+    error_description: Option<String>,
+}
+
+async fn sonos_callback_handler(
+    State(app_state): State<AppState>,
+    Query(query): Query<SonosCallbackQuery>,
+) -> SonosApiResult<Redirect> {
+    let control = app_state.sonos.ok_or_else(sonos_unavailable)?;
+    if let Some(error) = query.error {
+        let description = query.error_description.unwrap_or_default();
+        return Err(sonos_failure(anyhow::anyhow!(
+            "Sonos authorization was denied: {error} {description}"
+        )));
+    }
+
+    let code = query
+        .code
+        .context("Sonos callback did not contain a code")
+        .map_err(sonos_failure)?;
+    let state = query
+        .state
+        .context("Sonos callback did not contain state")
+        .map_err(sonos_failure)?;
+    control
+        .complete_authorization(&code, &state)
+        .await
+        .map_err(sonos_failure)?;
+    // Keep the OAuth completion marker out of the HTTP request. The embedded
+    // Vite service treats query-string URLs as asset paths in production.
+    Ok(Redirect::to("/#sonos=connected"))
+}
+
+fn sonos_event_rejection(reason: &str) -> (StatusCode, Json<SonosApiError>) {
+    warn!(reason, "Rejected Sonos event callback");
+    (
+        StatusCode::UNAUTHORIZED,
+        Json(SonosApiError {
+            error: "Sonos event authentication failed".to_string(),
+        }),
+    )
+}
+
+fn sonos_event_header<'a>(headers: &'a HeaderMap, name: &str) -> Option<&'a str> {
+    headers.get(name).and_then(|value| value.to_str().ok())
+}
+
+async fn sonos_event_handler(
+    State(app_state): State<AppState>,
+    headers: HeaderMap,
+    JsonExtractor(payload): JsonExtractor<serde_json::Value>,
+) -> SonosApiResult<StatusCode> {
+    let control = app_state.sonos.clone().ok_or_else(sonos_unavailable)?;
+    let sequence_id = sonos_event_header(&headers, "X-Sonos-Event-Seq-Id")
+        .ok_or_else(|| sonos_event_rejection("missing event sequence ID"))?;
+    let namespace = sonos_event_header(&headers, "X-Sonos-Namespace")
+        .ok_or_else(|| sonos_event_rejection("missing namespace"))?;
+    let event_type = sonos_event_header(&headers, "X-Sonos-Type")
+        .ok_or_else(|| sonos_event_rejection("missing event type"))?;
+    let target_type = sonos_event_header(&headers, "X-Sonos-Target-Type")
+        .ok_or_else(|| sonos_event_rejection("missing target type"))?;
+    let target_id = sonos_event_header(&headers, "X-Sonos-Target-Value")
+        .ok_or_else(|| sonos_event_rejection("missing target value"))?;
+    let signature = sonos_event_header(&headers, "X-Sonos-Event-Signature")
+        .ok_or_else(|| sonos_event_rejection("missing event signature"))?;
+
+    let is_new = control
+        .accept_event(
+            sequence_id,
+            namespace,
+            event_type,
+            target_type,
+            target_id,
+            signature,
+        )
+        .map_err(|error| sonos_event_rejection(&error.to_string()))?;
+    if !is_new {
+        return Ok(StatusCode::OK);
+    }
+    info!(namespace, event_type, target_id, sequence_id, "Accepted Sonos event callback");
+
+    let frontend_payload = if namespace == "playback" && event_type == "playbackStatus" {
+        let playback: sonos::SonosGroupPlayback = serde_json::from_value(payload)
+            .map_err(|error| sonos_event_rejection(&error.to_string()))?;
+        let response =
+            sonos_group_playback_response(&app_state, &control, target_id, playback)?;
+        serde_json::to_value(response).map_err(|error| sonos_failure(error.into()))?
+    } else if namespace == "groupVolume" && event_type == "groupVolume" {
+        let volume: sonos::SonosGroupVolume = serde_json::from_value(payload)
+            .map_err(|error| sonos_event_rejection(&error.to_string()))?;
+        serde_json::to_value(volume).map_err(|error| sonos_failure(error.into()))?
+    } else {
+        payload
+    };
+
+    let _ = app_state.update_tx.send(FrontendUpdate::Sonos {
+        namespace: namespace.to_string(),
+        event_type: event_type.to_string(),
+        target_id: target_id.to_string(),
+        payload: frontend_payload,
+    });
+    Ok(StatusCode::OK)
+}
+
+async fn sonos_households_handler(
+    State(app_state): State<AppState>,
+) -> SonosApiResult<Json<sonos::HouseholdsResponse>> {
+    let control = app_state.sonos.ok_or_else(sonos_unavailable)?;
+    control.households().await.map(Json).map_err(sonos_failure)
+}
+
+async fn sonos_groups_handler(
+    State(app_state): State<AppState>,
+    Path(household_id): Path<String>,
+) -> SonosApiResult<Json<sonos::GroupsResponse>> {
+    let control = app_state.sonos.ok_or_else(sonos_unavailable)?;
+    control
+        .groups(&household_id)
+        .await
+        .map(Json)
+        .map_err(sonos_failure)
+}
+
+async fn sonos_disconnect_handler(State(app_state): State<AppState>) -> SonosApiResult<StatusCode> {
+    let control = app_state.sonos.ok_or_else(sonos_unavailable)?;
+    control.disconnect().map_err(sonos_failure)?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PrepareCloudQueueRequest {
+    item_ids: Vec<Uuid>,
+    start_item_id: Option<Uuid>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SonosPlayRequest {
+    group_id: String,
+    item_ids: Vec<Uuid>,
+    start_item_id: Uuid,
+    #[serde(default)]
+    position_millis: u32,
+    #[serde(default)]
+    allow_takeover: bool,
+}
+
+async fn sonos_play_handler(
+    State(app_state): State<AppState>,
+    JsonExtractor(request): JsonExtractor<SonosPlayRequest>,
+) -> SonosApiResult<Json<sonos::SonosPlaybackStatus>> {
+    if request.group_id.trim().is_empty() {
+        return Err(cloud_queue_failure(
+            cloud_queue::CloudQueueError::InvalidRequest(
+                "A Sonos speaker group is required".to_string(),
+            ),
+        ));
+    }
+
+    let control = app_state.sonos.clone().ok_or_else(sonos_unavailable)?;
+    let prepared = prepare_cloud_queue(
+        &app_state,
+        &PrepareCloudQueueRequest {
+            item_ids: request.item_ids,
+            start_item_id: Some(request.start_item_id),
+        },
+    )
+    .await?;
+    let playback = app_state
+        .cloud_queues
+        .playback_parameters(prepared.queue_id)
+        .map_err(cloud_queue_failure)?;
+    let status = control
+        .play_cloud_queue(
+            &request.group_id,
+            &playback,
+            request.position_millis,
+            request.allow_takeover,
+        )
+        .await
+        .map_err(sonos_playback_failure)?;
+    Ok(Json(status))
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SonosGroupPlaybackResponse {
+    #[serde(flatten)]
+    playback: sonos::SonosGroupPlayback,
+    source_item_id: Option<Uuid>,
+    reitunes_session_active: bool,
+}
+
+async fn sonos_group_playback_handler(
+    State(app_state): State<AppState>,
+    Path(group_id): Path<String>,
+) -> SonosApiResult<Json<SonosGroupPlaybackResponse>> {
+    let control = app_state.sonos.clone().ok_or_else(sonos_unavailable)?;
+    let playback = control
+        .group_playback(&group_id)
+        .await
+        .map_err(sonos_failure)?;
+    let response = sonos_group_playback_response(&app_state, &control, &group_id, playback)?;
+    if response.reitunes_session_active {
+        if let Err(error) = control.ensure_event_subscriptions(&group_id).await {
+            warn!(error = %error, group_id, "Could not renew Sonos event subscriptions");
+        }
+    }
+    Ok(Json(response))
+}
+
+fn sonos_group_playback_response(
+    app_state: &AppState,
+    control: &sonos::SonosControl,
+    group_id: &str,
+    playback: sonos::SonosGroupPlayback,
+) -> SonosApiResult<SonosGroupPlaybackResponse> {
+    let source_item_id = app_state
+        .cloud_queues
+        .source_item_id(
+            playback.queue_version.as_deref(),
+            playback.item_id.as_deref(),
+        )
+        .map_err(cloud_queue_failure)?;
+    let reitunes_session_active = source_item_id.is_some()
+        && control
+            .has_playback_session(group_id)
+            .map_err(sonos_failure)?;
+    Ok(SonosGroupPlaybackResponse {
+        playback,
+        source_item_id,
+        reitunes_session_active,
+    })
+}
+
+async fn active_sonos_control(
+    app_state: &AppState,
+    group_id: &str,
+) -> Result<Arc<sonos::SonosControl>, sonos::SonosPlaybackError> {
+    let control = app_state.sonos.clone().ok_or_else(|| {
+        sonos::SonosPlaybackError::Control(anyhow::anyhow!(
+            "Sonos Direct Control is not configured"
+        ))
+    })?;
+    if !control.has_playback_session(group_id)? {
+        return Err(sonos::SonosPlaybackError::TakeoverRequired);
+    }
+    let playback = control.group_playback(group_id).await?;
+    let source_item_id = app_state
+        .cloud_queues
+        .source_item_id(
+            playback.queue_version.as_deref(),
+            playback.item_id.as_deref(),
+        )
+        .map_err(|error| sonos::SonosPlaybackError::Control(error.into()))?;
+    if source_item_id.is_none() {
+        return Err(sonos::SonosPlaybackError::TakeoverRequired);
+    }
+    Ok(control)
+}
+
+async fn sonos_group_play_handler(
+    State(app_state): State<AppState>,
+    Path(group_id): Path<String>,
+) -> SonosApiResult<StatusCode> {
+    let control = active_sonos_control(&app_state, &group_id)
+        .await
+        .map_err(sonos_playback_failure)?;
+    control
+        .play(&group_id)
+        .await
+        .map_err(sonos_failure)?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn sonos_group_pause_handler(
+    State(app_state): State<AppState>,
+    Path(group_id): Path<String>,
+) -> SonosApiResult<StatusCode> {
+    let control = active_sonos_control(&app_state, &group_id)
+        .await
+        .map_err(sonos_playback_failure)?;
+    control
+        .pause(&group_id)
+        .await
+        .map_err(sonos_failure)?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn sonos_group_volume_handler(
+    State(app_state): State<AppState>,
+    Path(group_id): Path<String>,
+) -> SonosApiResult<Json<sonos::SonosGroupVolume>> {
+    let control = app_state.sonos.ok_or_else(sonos_unavailable)?;
+    control
+        .group_volume(&group_id)
+        .await
+        .map(Json)
+        .map_err(sonos_failure)
+}
+
+#[derive(Debug, Deserialize)]
+struct SonosSetVolumeRequest {
+    volume: u8,
+}
+
+async fn sonos_set_group_volume_handler(
+    State(app_state): State<AppState>,
+    Path(group_id): Path<String>,
+    JsonExtractor(request): JsonExtractor<SonosSetVolumeRequest>,
+) -> SonosApiResult<StatusCode> {
+    if request.volume > 100 {
+        return Err(cloud_queue_failure(
+            cloud_queue::CloudQueueError::InvalidRequest(
+                "Sonos volume must be between 0 and 100".to_string(),
+            ),
+        ));
+    }
+    let control = app_state.sonos.ok_or_else(sonos_unavailable)?;
+    control
+        .set_group_volume(&group_id, request.volume)
+        .await
+        .map_err(sonos_failure)?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+#[derive(Debug, Deserialize)]
+struct SonosSetMuteRequest {
+    muted: bool,
+}
+
+async fn sonos_set_group_mute_handler(
+    State(app_state): State<AppState>,
+    Path(group_id): Path<String>,
+    JsonExtractor(request): JsonExtractor<SonosSetMuteRequest>,
+) -> SonosApiResult<StatusCode> {
+    let control = app_state.sonos.ok_or_else(sonos_unavailable)?;
+    control
+        .set_group_mute(&group_id, request.muted)
+        .await
+        .map_err(sonos_failure)?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn prepare_cloud_queue_handler(
+    State(app_state): State<AppState>,
+    JsonExtractor(request): JsonExtractor<PrepareCloudQueueRequest>,
+) -> SonosApiResult<(StatusCode, Json<cloud_queue::PreparedQueue>)> {
+    let prepared = prepare_cloud_queue(&app_state, &request).await?;
+    Ok((StatusCode::CREATED, Json(prepared)))
+}
+
+async fn prepare_cloud_queue(
+    app_state: &AppState,
+    request: &PrepareCloudQueueRequest,
+) -> SonosApiResult<cloud_queue::PreparedQueue> {
+    if request.item_ids.len() > 500 {
+        return Err(cloud_queue_failure(
+            cloud_queue::CloudQueueError::InvalidRequest(
+                "A Sonos queue cannot contain more than 500 tracks".to_string(),
+            ),
+        ));
+    }
+
+    let library = app_state.library.read().await;
+    let mut tracks = Vec::with_capacity(request.item_ids.len());
+    for item_id in &request.item_ids {
+        let item = library.items.get(item_id).ok_or_else(|| {
+            cloud_queue_failure(cloud_queue::CloudQueueError::InvalidRequest(format!(
+                "Library item {item_id} was not found"
+            )))
+        })?;
+        tracks.push(cloud_queue::QueueTrack {
+            source_id: *item_id,
+            queue_item_id: Uuid::new_v4(),
+            name: item.name.clone(),
+            artist: non_empty_string(&item.artist),
+            album: non_empty_string(&item.album),
+            track_number: item.track_number,
+            media_url: app_state.storage.url(&item.file_path),
+            content_type: mime_guess::from_path(&item.file_path)
+                .first_or_octet_stream()
+                .essence_str()
+                .to_string(),
+        });
+    }
+    drop(library);
+
+    let prepared = app_state
+        .cloud_queues
+        .prepare(tracks, request.start_item_id)
+        .map_err(cloud_queue_failure)?;
+    Ok(prepared)
+}
+
+async fn cloud_queue_context_handler(
+    State(app_state): State<AppState>,
+    Path(queue_id): Path<Uuid>,
+    headers: HeaderMap,
+) -> SonosApiResult<Json<cloud_queue::QueueContext>> {
+    app_state
+        .cloud_queues
+        .context(queue_id, authorization_header(&headers))
+        .map(Json)
+        .map_err(cloud_queue_failure)
+}
+
+async fn cloud_queue_version_handler(
+    State(app_state): State<AppState>,
+    Path(queue_id): Path<Uuid>,
+    headers: HeaderMap,
+) -> SonosApiResult<Json<cloud_queue::QueueVersion>> {
+    app_state
+        .cloud_queues
+        .version(queue_id, authorization_header(&headers))
+        .map(Json)
+        .map_err(cloud_queue_failure)
+}
+
+async fn cloud_queue_item_window_handler(
+    State(app_state): State<AppState>,
+    Path(queue_id): Path<Uuid>,
+    headers: HeaderMap,
+    Query(query): Query<cloud_queue::ItemWindowQuery>,
+) -> SonosApiResult<Json<cloud_queue::ItemWindow>> {
+    app_state
+        .cloud_queues
+        .item_window(queue_id, authorization_header(&headers), &query)
+        .map(Json)
+        .map_err(cloud_queue_failure)
+}
+
+async fn cloud_queue_time_played_handler(
+    State(app_state): State<AppState>,
+    Path(queue_id): Path<Uuid>,
+    headers: HeaderMap,
+    JsonExtractor(_report): JsonExtractor<serde_json::Value>,
+) -> SonosApiResult<StatusCode> {
+    app_state
+        .cloud_queues
+        .accept_report(queue_id, authorization_header(&headers))
+        .map_err(cloud_queue_failure)?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+fn authorization_header(headers: &HeaderMap) -> Option<&str> {
+    headers
+        .get(axum::http::header::AUTHORIZATION)
+        .and_then(|value| value.to_str().ok())
+}
+
+fn non_empty_string(value: &str) -> Option<String> {
+    (!value.trim().is_empty()).then(|| value.to_string())
 }
 
 /// Mark a library item as favorite
@@ -468,7 +1072,7 @@ async fn upload_handler(
             let response = LibraryItemResponse::from_item(updated_item, &app_state.storage);
             let _ = app_state
                 .update_tx
-                .send(LibraryUpdate::Update { item: Box::new(response) });
+                .send(FrontendUpdate::Update { item: Box::new(response) });
         }
 
         return Ok(Json(UploadResponse {
@@ -717,7 +1321,7 @@ async fn save_and_broadcast_event(event: EventWithMetadata, app_state: AppState)
     match &event.event {
         Event::LibraryItemDeletedEvent => {
             info!(id = ?event.id, "Broadcasting item deletion");
-            let _ = app_state.update_tx.send(LibraryUpdate::Delete {
+            let _ = app_state.update_tx.send(FrontendUpdate::Delete {
                 id: event.aggregate_id,
             });
         }
@@ -727,7 +1331,7 @@ async fn save_and_broadcast_event(event: EventWithMetadata, app_state: AppState)
                 let response = LibraryItemResponse::from_item(updated_item, &app_state.storage);
                 let _ = app_state
                     .update_tx
-                    .send(LibraryUpdate::Update { item: Box::new(response) });
+                    .send(FrontendUpdate::Update { item: Box::new(response) });
             }
         }
     }
@@ -784,7 +1388,7 @@ async fn add_item_handler(
         let response = LibraryItemResponse::from_item(updated_item, &app_state.storage);
         let _ = app_state
             .update_tx
-            .send(LibraryUpdate::Update { item: Box::new(response) });
+            .send(FrontendUpdate::Update { item: Box::new(response) });
     }
 
     Ok(StatusCode::CREATED)
@@ -815,7 +1419,7 @@ async fn play_handler(
         let response = LibraryItemResponse::from_item(updated_item, &app_state.storage);
         let _ = app_state
             .update_tx
-            .send(LibraryUpdate::Update { item: Box::new(response) });
+            .send(FrontendUpdate::Update { item: Box::new(response) });
     } else {
         warn!(id=?request.id, "Received play event for unknown item");
     }
@@ -1071,5 +1675,50 @@ where
 impl fmt::Debug for AppError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         fmt::Debug::fmt(&self.0, f)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn deserializes_sonos_play_request_from_frontend_json() {
+        let item_id = Uuid::new_v4();
+        let request: SonosPlayRequest = serde_json::from_value(serde_json::json!({
+            "groupId": "group-1",
+            "itemIds": [item_id],
+            "startItemId": item_id,
+            "positionMillis": 42_000,
+            "allowTakeover": true
+        }))
+        .unwrap();
+
+        assert_eq!(request.group_id, "group-1");
+        assert_eq!(request.item_ids, vec![item_id]);
+        assert_eq!(request.start_item_id, item_id);
+        assert_eq!(request.position_millis, 42_000);
+        assert!(request.allow_takeover);
+    }
+
+    #[test]
+    fn serializes_sonos_events_for_the_browser() {
+        let update = FrontendUpdate::Sonos {
+            namespace: "playback".to_string(),
+            event_type: "playbackStatus".to_string(),
+            target_id: "group-1".to_string(),
+            payload: serde_json::json!({ "positionMillis": 42_000 }),
+        };
+
+        assert_eq!(
+            serde_json::to_value(update).unwrap(),
+            serde_json::json!({
+                "type": "sonos",
+                "namespace": "playback",
+                "eventType": "playbackStatus",
+                "targetId": "group-1",
+                "payload": { "positionMillis": 42_000 }
+            })
+        );
     }
 }

@@ -8,9 +8,12 @@ import { UploadModal } from './components/UploadModal';
 import { DownloadModal } from './components/DownloadModal';
 import { PlaylistSidebar } from './components/PlaylistSidebar';
 import { BookmarkSidebar } from './components/BookmarkSidebar';
+import { SonosModal } from './components/SonosModal';
 import { useLibrary } from './hooks/useLibrary';
 import { useQueueStore } from './hooks/useQueue';
+import { usePlayback } from './hooks/usePlayback';
 import { usePlayerStore } from './stores/playerStore';
+import { usePlaybackTargetStore } from './stores/playbackTargetStore';
 import type { LibraryItem } from './types';
 
 // Toolbar icons
@@ -51,6 +54,16 @@ const Icons = {
       <line x1="12" y1="15" x2="12" y2="3" />
     </svg>
   ),
+  sonos: (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M5 8.5a5 5 0 0 1 0 7" />
+      <path d="M8.5 5a10 10 0 0 1 0 14" />
+      <circle cx="3" cy="12" r="1" fill="currentColor" stroke="none" />
+      <rect x="13" y="4" width="8" height="16" rx="2" />
+      <circle cx="17" cy="9" r="1.5" />
+      <circle cx="17" cy="15" r="2.5" />
+    </svg>
+  ),
 };
 
 const queryClient = new QueryClient();
@@ -62,17 +75,23 @@ function AppContent() {
   const [isDownloadOpen, setIsDownloadOpen] = useState(false);
   const [isPlaylistsOpen, setIsPlaylistsOpen] = useState(false);
   const [isBookmarksOpen, setIsBookmarksOpen] = useState(false);
+  const [isSonosOpen, setIsSonosOpen] = useState(
+    () =>
+      window.location.hash === '#sonos=connected' ||
+      new URLSearchParams(window.location.search).get('sonos') === 'connected'
+  );
   const [selectedPlaylistId, setSelectedPlaylistId] = useState<string | null>(null);
 
   const { items, isLoading, error } = useLibrary();
+  const play = usePlayback();
   const {
-    play,
     currentItem,
     currentItemId,
     restoreCurrentItem,
     refreshCurrentItem,
     clearCurrentItem,
   } = usePlayerStore();
+  const playbackTarget = usePlaybackTargetStore((state) => state.target);
   const { reconcileWithLibrary } = useQueueStore();
 
   // Resolve persisted IDs and stale queue snapshots against the current library.
@@ -122,7 +141,7 @@ function AppContent() {
       return;
     }
     const random = allRandomTargets[Math.floor(Math.random() * allRandomTargets.length)];
-    play(random.item, random.position);
+    void play(random.item, random.position);
   }, [allRandomTargets, play]);
 
   const toggleQueue = useCallback(() => {
@@ -147,6 +166,17 @@ function AppContent() {
     setIsPlaylistsOpen(false);
   }, []);
 
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    const hasSonosQuery = url.searchParams.has('sonos');
+    const hasSonosHash = url.hash === '#sonos=connected';
+    if (hasSonosQuery || hasSonosHash) {
+      url.searchParams.delete('sonos');
+      if (hasSonosHash) url.hash = '';
+      window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`);
+    }
+  }, []);
+
   if (error) {
     return (
       <div className="flex items-center justify-center h-screen bg-solarized-base03 text-solarized-red">
@@ -159,7 +189,7 @@ function AppContent() {
     <div className="h-screen flex flex-col bg-solarized-base03 text-solarized-base1 font-mono overflow-hidden">
       {/* Header - sticky at top */}
       <div className="flex-shrink-0 bg-solarized-base03 z-10 border-b border-solarized-base02">
-        <AudioPlayer />
+        <AudioPlayer items={items} onChooseOutput={() => setIsSonosOpen(true)} />
         <div className="flex justify-between items-center px-4 pb-2">
           <div className="flex items-center gap-1">
             <button
@@ -206,6 +236,27 @@ function AppContent() {
               title="Download from URL"
             >
               {Icons.download}
+            </button>
+            <button
+              onClick={() => setIsSonosOpen(true)}
+              className={`p-1.5 rounded transition-colors flex items-center gap-1.5 max-w-48 ${
+                playbackTarget.kind === 'sonos'
+                  ? 'text-solarized-cyan bg-solarized-base02'
+                  : 'text-solarized-base0 hover:text-solarized-cyan hover:bg-solarized-base02'
+              }`}
+              title={
+                playbackTarget.kind === 'sonos'
+                  ? `Playback output: ${playbackTarget.groupName}`
+                  : 'Playback output: This browser'
+              }
+              aria-label="Sonos"
+            >
+              {Icons.sonos}
+              {playbackTarget.kind === 'sonos' && (
+                <span className="text-xs truncate hidden sm:inline">
+                  {playbackTarget.groupName}
+                </span>
+              )}
             </button>
             <button
               onClick={toggleQueue}
@@ -256,6 +307,7 @@ function AppContent() {
 
       <UploadModal isOpen={isUploadOpen} onClose={() => setIsUploadOpen(false)} />
       <DownloadModal isOpen={isDownloadOpen} onClose={() => setIsDownloadOpen(false)} />
+      <SonosModal isOpen={isSonosOpen} onClose={() => setIsSonosOpen(false)} />
     </div>
   );
 }
