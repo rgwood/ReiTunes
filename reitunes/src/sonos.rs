@@ -16,6 +16,7 @@ use sha2::{Digest, Sha256};
 use tokio::sync::Mutex;
 
 const SONOS_SCOPE: &str = "playback-control-all";
+const SONOS_API_KEY_HEADER: &str = "X-Sonos-Api-Key";
 const STATE_LIFETIME: Duration = Duration::from_secs(10 * 60);
 const REFRESH_EARLY_BY_SECONDS: u64 = 60;
 const TOKEN_AAD: &[u8] = b"reitunes-sonos-oauth-v1";
@@ -331,6 +332,7 @@ impl SonosControl {
             .client
             .get(url)
             .bearer_auth(access_token)
+            .header(SONOS_API_KEY_HEADER, &self.config.client_id)
             .send()
             .await
             .context("failed to reach Sonos control API")?;
@@ -669,6 +671,7 @@ mod tests {
 
         async fn households(headers: HeaderMap) -> Json<serde_json::Value> {
             assert_eq!(headers.get("authorization").unwrap(), "Bearer access-token");
+            assert_eq!(headers.get(SONOS_API_KEY_HEADER).unwrap(), "test-client");
             Json(serde_json::json!({
                 "households": [{ "id": "Sonos_household" }]
             }))
@@ -723,6 +726,7 @@ mod tests {
                 headers.get("authorization").unwrap(),
                 "Bearer refreshed-access-token"
             );
+            assert_eq!(headers.get(SONOS_API_KEY_HEADER).unwrap(), "test-client");
             Json(serde_json::json!({ "households": [] }))
         }
 
