@@ -199,6 +199,8 @@ pub struct SonosGroupPlayback {
 pub struct SonosPlaybackActions {
     #[serde(default)]
     pub can_pause: Option<bool>,
+    #[serde(default)]
+    pub can_seek: Option<bool>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
@@ -254,6 +256,13 @@ struct SetVolumeRequest {
 #[derive(Debug, Serialize)]
 struct SetMuteRequest {
     muted: bool,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SeekRequest<'a> {
+    position_millis: u32,
+    item_id: &'a str,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -464,6 +473,18 @@ impl SonosControl {
     pub async fn pause(&self, group_id: &str) -> Result<()> {
         let url = self.control_url(&["groups", group_id, "playback", "pause"])?;
         self.post_command(url).await
+    }
+
+    pub async fn seek(&self, group_id: &str, position_millis: u32, item_id: &str) -> Result<()> {
+        let url = self.control_url(&["groups", group_id, "playback", "seek"])?;
+        self.post_empty(
+            url,
+            &SeekRequest {
+                position_millis,
+                item_id,
+            },
+        )
+        .await
     }
 
     pub async fn group_volume(&self, group_id: &str) -> Result<SonosGroupVolume> {
@@ -1221,7 +1242,7 @@ mod tests {
                 "positionMillis": 42_000,
                 "itemId": "queue-item-1",
                 "queueVersion": "queue-version-1",
-                "availablePlaybackActions": { "canPause": true }
+                "availablePlaybackActions": { "canPause": true, "canSeek": true }
             }))
         }
 
@@ -1253,6 +1274,21 @@ mod tests {
             axum::http::StatusCode::OK
         }
 
+        async fn seek(
+            headers: HeaderMap,
+            Json(body): Json<serde_json::Value>,
+        ) -> axum::http::StatusCode {
+            assert_headers(&headers);
+            assert_eq!(
+                body,
+                serde_json::json!({
+                    "positionMillis": 123_000,
+                    "itemId": "queue-item-1"
+                })
+            );
+            axum::http::StatusCode::OK
+        }
+
         let router = Router::new()
             .route("/control/api/v1/groups/group-1/playback", get(playback))
             .route(
@@ -1262,6 +1298,10 @@ mod tests {
             .route(
                 "/control/api/v1/groups/group-1/playback/pause",
                 axum::routing::post(command),
+            )
+            .route(
+                "/control/api/v1/groups/group-1/playback/seek",
+                axum::routing::post(seek),
             )
             .route(
                 "/control/api/v1/groups/group-1/groupVolume",
@@ -1285,15 +1325,16 @@ mod tests {
         let playback = control.group_playback("group-1").await.unwrap();
         assert_eq!(playback.position_millis, 42_000);
         assert_eq!(playback.item_id.as_deref(), Some("queue-item-1"));
-        assert_eq!(
-            playback
-                .available_playback_actions
-                .and_then(|actions| actions.can_pause),
-            Some(true)
-        );
+        let actions = playback.available_playback_actions.as_ref().unwrap();
+        assert_eq!(actions.can_pause, Some(true));
+        assert_eq!(actions.can_seek, Some(true));
         assert_eq!(control.group_volume("group-1").await.unwrap().volume, 37);
         control.play("group-1").await.unwrap();
         control.pause("group-1").await.unwrap();
+        control
+            .seek("group-1", 123_000, "queue-item-1")
+            .await
+            .unwrap();
         control.set_group_volume("group-1", 63).await.unwrap();
         control.set_group_mute("group-1", true).await.unwrap();
         server.abort();

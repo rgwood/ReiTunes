@@ -15,6 +15,7 @@ export interface SonosPlaybackStatus {
   reitunesSessionActive: boolean;
   availablePlaybackActions?: {
     canPause?: boolean;
+    canSeek?: boolean;
   };
 }
 
@@ -200,6 +201,63 @@ export function useSonosControls(groupId: string | null) {
     [groupId, isTransportPending, playback, refreshPlayback]
   );
 
+  const seek = useCallback(
+    async (positionMillis: number) => {
+      if (
+        !groupId ||
+        !playback?.reitunesSessionActive ||
+        !playback.itemId ||
+        playback.availablePlaybackActions?.canSeek === false ||
+        !Number.isFinite(positionMillis) ||
+        isTransportPending
+      ) {
+        return;
+      }
+
+      const itemId = playback.itemId;
+      const rounded = Math.round(
+        Math.min(2_147_483_647, Math.max(0, positionMillis))
+      );
+      setIsTransportPending(true);
+      setCommandError(null);
+      positionRef.current = rounded;
+      setPositionMillis(rounded);
+      setPlayback({
+        ...playback,
+        positionMillis: rounded,
+        observedAt: Date.now(),
+      });
+
+      try {
+        const response = await fetch(
+          `/api/sonos/groups/${encodeURIComponent(groupId)}/playback/seek`,
+          {
+            method: 'POST',
+            credentials: 'include',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ positionMillis: rounded, itemId }),
+          }
+        );
+        if (!response.ok) {
+          const message = await responseError(response);
+          if (response.status === 409) {
+            usePlaybackTargetStore.getState().failSending(message, true);
+          }
+          throw new Error(message);
+        }
+        await refreshPlayback();
+      } catch (nextError) {
+        setCommandError(
+          nextError instanceof Error ? nextError.message : 'Could not seek Sonos playback'
+        );
+        await refreshPlayback().catch(() => undefined);
+      } finally {
+        setIsTransportPending(false);
+      }
+    },
+    [groupId, isTransportPending, playback, refreshPlayback]
+  );
+
   const setGroupVolume = useCallback(
     async (nextVolume: number) => {
       if (!groupId || isVolumePending || volume?.fixed) return;
@@ -268,6 +326,7 @@ export function useSonosControls(groupId: string | null) {
     isVolumePending,
     play: () => sendTransport('play'),
     pause: () => sendTransport('pause'),
+    seek,
     setGroupVolume,
     setMuted,
     refreshPlayback,

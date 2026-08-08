@@ -261,6 +261,10 @@ async fn main() -> Result<()> {
                     post(sonos_group_pause_handler),
                 )
                 .route(
+                    "/sonos/groups/{group_id}/playback/seek",
+                    post(sonos_group_seek_handler),
+                )
+                .route(
                     "/sonos/groups/{group_id}/volume",
                     get(sonos_group_volume_handler).post(sonos_set_group_volume_handler),
                 )
@@ -796,6 +800,47 @@ async fn sonos_group_pause_handler(
         .map_err(sonos_playback_failure)?;
     control
         .pause(&group_id)
+        .await
+        .map_err(sonos_failure)?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SonosSeekRequest {
+    position_millis: u64,
+    item_id: String,
+}
+
+async fn sonos_group_seek_handler(
+    State(app_state): State<AppState>,
+    Path(group_id): Path<String>,
+    JsonExtractor(request): JsonExtractor<SonosSeekRequest>,
+) -> SonosApiResult<StatusCode> {
+    if request.position_millis > i32::MAX as u64 {
+        return Err(cloud_queue_failure(
+            cloud_queue::CloudQueueError::InvalidRequest(
+                "Sonos seek position is too large".to_string(),
+            ),
+        ));
+    }
+    if request.item_id.is_empty() || request.item_id.len() > 128 {
+        return Err(cloud_queue_failure(
+            cloud_queue::CloudQueueError::InvalidRequest(
+                "A valid Sonos queue item is required".to_string(),
+            ),
+        ));
+    }
+
+    let control = active_sonos_control(&app_state, &group_id)
+        .await
+        .map_err(sonos_playback_failure)?;
+    control
+        .seek(
+            &group_id,
+            request.position_millis as u32,
+            &request.item_id,
+        )
         .await
         .map_err(sonos_failure)?;
     Ok(StatusCode::NO_CONTENT)
@@ -1699,6 +1744,18 @@ mod tests {
         assert_eq!(request.start_item_id, item_id);
         assert_eq!(request.position_millis, 42_000);
         assert!(request.allow_takeover);
+    }
+
+    #[test]
+    fn deserializes_sonos_seek_request_with_the_current_queue_item() {
+        let request: SonosSeekRequest = serde_json::from_value(serde_json::json!({
+            "positionMillis": 123_000,
+            "itemId": "queue-item-1"
+        }))
+        .unwrap();
+
+        assert_eq!(request.position_millis, 123_000);
+        assert_eq!(request.item_id, "queue-item-1");
     }
 
     #[test]

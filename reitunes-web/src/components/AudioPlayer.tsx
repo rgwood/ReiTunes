@@ -101,6 +101,7 @@ export function AudioPlayer({ onChooseOutput, items }: AudioPlayerProps) {
 
   const [currentTime, setCurrentTimeLocal] = useState(0);
   const [duration, setDurationLocal] = useState(0);
+  const [sonosSeekDraft, setSonosSeekDraft] = useState<number | null>(null);
   const [sonosVolumeDraft, setSonosVolumeDraft] = useState<number | null>(null);
   const [bookmarkFeedback, setBookmarkFeedback] = useState<'idle' | 'success' | 'error'>('idle');
 
@@ -123,6 +124,7 @@ export function AudioPlayer({ onChooseOutput, items }: AudioPlayerProps) {
     usePlaybackTargetStore();
   const sonos = useSonosControls(target.kind === 'sonos' ? target.groupId : null);
   const refreshSonosPlayback = sonos.refreshPlayback;
+  const seekSonos = sonos.seek;
   const { playNext, playPrevious, shuffleEnabled, repeatMode, toggleShuffle, cycleRepeatMode } = useQueueStore();
 
   useEffect(() => {
@@ -462,13 +464,35 @@ export function AudioPlayer({ onChooseOutput, items }: AudioPlayerProps) {
     sonos.playback?.playbackState === 'PLAYBACK_STATE_PLAYING' ||
     sonos.playback?.playbackState === 'PLAYBACK_STATE_BUFFERING';
   const sonosPosition = sonosSessionActive ? sonos.positionMillis / 1000 : 0;
-  const sonosProgress = duration > 0 ? Math.min(100, (sonosPosition / duration) * 100) : 0;
+  const rawSonosPosition = sonosSeekDraft ?? sonosPosition;
+  const displayedSonosPosition = duration > 0
+    ? Math.min(duration, Math.max(0, rawSonosPosition))
+    : Math.max(0, rawSonosPosition);
+  const sonosProgress = duration > 0
+    ? Math.min(100, (displayedSonosPosition / duration) * 100)
+    : 0;
   const displayedSonosVolume = sonosVolumeDraft ?? sonos.volume?.volume ?? 0;
   const sonosTransportDisabled =
     !sonosSessionActive ||
     !currentItem ||
     sonos.isTransportPending ||
     (sonosIsPlaying && sonos.playback?.availablePlaybackActions?.canPause === false);
+  const sonosSeekDisabled =
+    !sonosSessionActive ||
+    !sonos.playback?.itemId ||
+    !duration ||
+    sonos.isTransportPending ||
+    sonos.playback.availablePlaybackActions?.canSeek === false;
+
+  const commitSonosSeek = useCallback(
+    async (position: number) => {
+      const bounded = Math.min(duration, Math.max(0, position));
+      setResumePosition(bounded);
+      await seekSonos(bounded * 1000);
+      setSonosSeekDraft(null);
+    },
+    [duration, seekSonos, setResumePosition]
+  );
 
   if (target.kind === 'sonos') {
     return (
@@ -535,26 +559,52 @@ export function AudioPlayer({ onChooseOutput, items }: AudioPlayerProps) {
 
         <div className="flex items-center gap-3 mt-3 mb-2">
           <span className="text-xs text-solarized-base0 w-10 text-right tabular-nums">
-            {formatTime(sonosPosition)}
+            {formatTime(displayedSonosPosition)}
           </span>
-          <div className="flex-grow h-1 bg-solarized-base02 rounded-full relative">
-            <div
-              className="h-full bg-solarized-cyan rounded-full relative transition-[width] duration-200"
-              style={{ width: `${sonosProgress}%` }}
-            >
-              <div className="absolute right-0 top-1/2 -translate-y-1/2 w-2.5 h-2.5 bg-solarized-cyan rounded-full" />
+          <div className="flex-grow h-4 relative">
+            <div className="absolute inset-x-0 top-1/2 -translate-y-1/2 h-1 bg-solarized-base02 rounded-full">
+              <div
+                className="h-full bg-solarized-cyan rounded-full relative transition-[width] duration-200"
+                style={{ width: `${sonosProgress}%` }}
+              >
+                <div className="absolute right-0 top-1/2 -translate-y-1/2 w-2.5 h-2.5 bg-solarized-cyan rounded-full" />
+              </div>
+              {bookmarks.map((bookmark, idx) => {
+                const position = duration > 0 ? (bookmark.position / duration) * 100 : 0;
+                return (
+                  <div
+                    key={idx}
+                    className="absolute top-1/2 -translate-y-1/2 w-1 h-3 bg-solarized-blue/70 rounded-sm"
+                    style={{ left: `${position}%` }}
+                    title={`${bookmark.emoji || '🔖'} ${bookmark.label ? `${bookmark.label} · ` : ''}${formatTime(bookmark.position)}`}
+                  />
+                );
+              })}
             </div>
-            {bookmarks.map((bookmark, idx) => {
-              const position = duration > 0 ? (bookmark.position / duration) * 100 : 0;
-              return (
-                <div
-                  key={idx}
-                  className="absolute top-1/2 -translate-y-1/2 w-1 h-3 bg-solarized-blue/70 rounded-sm"
-                  style={{ left: `${position}%` }}
-                  title={`${bookmark.emoji || '🔖'} ${bookmark.label ? `${bookmark.label} · ` : ''}${formatTime(bookmark.position)}`}
-                />
-              );
-            })}
+            <input
+              type="range"
+              min="0"
+              max={duration || 0}
+              step="1"
+              value={displayedSonosPosition}
+              onChange={(event) => setSonosSeekDraft(Number(event.target.value))}
+              onPointerUp={(event) =>
+                void commitSonosSeek(Number(event.currentTarget.value))
+              }
+              onPointerCancel={() => setSonosSeekDraft(null)}
+              onKeyUp={(event) => {
+                if (
+                  ['ArrowLeft', 'ArrowRight', 'Home', 'End', 'PageUp', 'PageDown'].includes(
+                    event.key
+                  )
+                ) {
+                  void commitSonosSeek(Number(event.currentTarget.value));
+                }
+              }}
+              disabled={sonosSeekDisabled}
+              className="absolute inset-0 z-10 w-full h-full opacity-0 cursor-pointer disabled:cursor-not-allowed"
+              aria-label="Sonos playback position"
+            />
           </div>
           <span className="text-xs text-solarized-base0 w-10 tabular-nums">
             {duration > 0 ? formatTime(duration) : '—:—'}

@@ -272,10 +272,12 @@ test('switches between Sonos and browser playback without playing twice', async 
   const sonosPlayRequests: Array<Record<string, unknown>> = [];
   let sonosSessionActive = false;
   let sonosPlaybackState = 'PLAYBACK_STATE_PLAYING';
+  let sonosPosition = 42_000;
   let sonosVolume = 37;
   let sonosMuted = false;
   let rejectNextPlay = false;
   const transportRequests: string[] = [];
+  const seekRequests: Array<Record<string, unknown>> = [];
   const volumeRequests: Array<Record<string, unknown>> = [];
   await page.route('**/api/sonos/play', async (route) => {
     const request = route.request().postDataJSON() as Record<string, unknown>;
@@ -301,17 +303,24 @@ test('switches between Sonos and browser playback without playing twice', async 
     route.fulfill({
       json: {
         playbackState: sonosPlaybackState,
-        positionMillis: 42_000,
+        positionMillis: sonosPosition,
         itemId: 'queue-item-1',
         queueVersion: 'queue-version-1',
         sourceItemId: sonosSessionActive ? TRACK_ID : null,
         reitunesSessionActive: sonosSessionActive,
-        availablePlaybackActions: { canPause: true },
+        availablePlaybackActions: { canPause: true, canSeek: true },
       },
     })
   );
   await page.route('**/api/sonos/groups/group-1/playback/*', async (route) => {
     const command = route.request().url().split('/').at(-1) || '';
+    if (command === 'seek') {
+      const body = route.request().postDataJSON() as Record<string, unknown>;
+      seekRequests.push(body);
+      sonosPosition = body.positionMillis as number;
+      await route.fulfill({ status: 204 });
+      return;
+    }
     transportRequests.push(command);
     sonosPlaybackState =
       command === 'pause' ? 'PLAYBACK_STATE_PAUSED' : 'PLAYBACK_STATE_PLAYING';
@@ -358,6 +367,12 @@ test('switches between Sonos and browser playback without playing twice', async 
   });
   await expect(page.getByText('Sonos · Downstairs · Playing')).toBeVisible();
   await expect(page.getByText(/^0:4[2-9]$/)).toBeVisible();
+  await page.evaluate(() => {
+    const audio = document.querySelector('audio');
+    if (!audio) throw new Error('Expected the Sonos metadata audio element');
+    Object.defineProperty(audio, 'duration', { configurable: true, value: 240 });
+    audio.dispatchEvent(new Event('loadedmetadata'));
+  });
   expect(
     await page.evaluate(() => (window as typeof window & { __playCalls: number }).__playCalls)
   ).toBe(0);
@@ -377,7 +392,7 @@ test('switches between Sonos and browser playback without playing twice', async 
             queueVersion: 'queue-version-1',
             sourceItemId: trackId,
             reitunesSessionActive: true,
-            availablePlaybackActions: { canPause: true },
+            availablePlaybackActions: { canPause: true, canSeek: true },
           },
         },
       })
@@ -414,13 +429,24 @@ test('switches between Sonos and browser playback without playing twice', async 
             queueVersion: 'queue-version-1',
             sourceItemId: trackId,
             reitunesSessionActive: true,
-            availablePlaybackActions: { canPause: true },
+            availablePlaybackActions: { canPause: true, canSeek: true },
           },
         },
       })
     );
   }, TRACK_ID);
   await expect(page.getByRole('button', { name: 'Pause Sonos' })).toBeVisible();
+
+  const sonosPositionSlider = page.getByRole('slider', {
+    name: 'Sonos playback position',
+  });
+  await sonosPositionSlider.fill('120');
+  await sonosPositionSlider.dispatchEvent('pointerup');
+  await expect.poll(() => seekRequests).toContainEqual({
+    positionMillis: 120_000,
+    itemId: 'queue-item-1',
+  });
+  await expect(page.getByText('2:00')).toBeVisible();
 
   await page.getByRole('button', { name: 'Pause Sonos' }).click();
   await expect.poll(() => transportRequests).toContain('pause');
