@@ -194,3 +194,57 @@ test('restores a saved track paused and registers media controls', async ({ page
   await playButton.click();
   await expect.poll(() => page.evaluate(() => (window as typeof window & { __playCalls: number }).__playCalls)).toBeGreaterThan(0);
 });
+
+test('offers Sonos authorization when the server is not connected', async ({ page }) => {
+  await mockBackend(page);
+  await page.route('**/api/sonos/status', (route) =>
+    route.fulfill({ json: { configured: true, connected: false } })
+  );
+
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Sonos' }).click();
+
+  await expect(page.getByRole('heading', { name: 'Sonos' })).toBeVisible();
+  await expect(page.getByText('Speaker discovery only')).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Connect Sonos' })).toHaveAttribute(
+    'href',
+    '/api/sonos/authorize'
+  );
+});
+
+test('shows Sonos households and groups without playback controls', async ({ page }) => {
+  await mockBackend(page);
+  await page.route('**/api/sonos/status', (route) =>
+    route.fulfill({ json: { configured: true, connected: true } })
+  );
+  await page.route('**/api/sonos/households', (route) =>
+    route.fulfill({ json: { households: [{ id: 'Sonos_household' }] } })
+  );
+  await page.route('**/api/sonos/households/Sonos_household/groups', (route) =>
+    route.fulfill({
+      json: {
+        groups: [
+          {
+            id: 'group-1',
+            name: 'Downstairs',
+            coordinatorId: 'player-1',
+            playerIds: ['player-1', 'player-2'],
+            playbackState: 'PLAYBACK_STATE_IDLE',
+          },
+        ],
+        players: [
+          { id: 'player-1', name: 'Kitchen', capabilities: ['PLAYBACK'] },
+          { id: 'player-2', name: 'Dining Room', capabilities: ['PLAYBACK'] },
+        ],
+      },
+    })
+  );
+
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Sonos' }).click();
+
+  const dialog = page.getByRole('dialog', { name: 'Sonos' });
+  await expect(dialog.getByText('Downstairs')).toBeVisible();
+  await expect(dialog.getByText('Kitchen + Dining Room')).toBeVisible();
+  await expect(dialog.getByRole('button', { name: /play/i })).toHaveCount(0);
+});

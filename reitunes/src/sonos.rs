@@ -1,0 +1,754 @@
+use std::{
+    collections::HashMap,
+    sync::{Arc, Mutex as StdMutex},
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
+};
+
+use anyhow::{bail, Context, Result};
+use openssl::symm::{Cipher, Crypter, Mode};
+use r2d2::Pool;
+use r2d2_sqlite::SqliteConnectionManager;
+use rand::{rngs::OsRng, RngCore};
+use reqwest::Url;
+use rusqlite::{params, OptionalExtension};
+use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
+use tokio::sync::Mutex;
+
+const SONOS_SCOPE: &str = "playback-control-all";
+const STATE_LIFETIME: Duration = Duration::from_secs(10 * 60);
+const REFRESH_EARLY_BY_SECONDS: u64 = 60;
+const TOKEN_AAD: &[u8] = b"reitunes-sonos-oauth-v1";
+
+#[derive(Clone)]
+struct SonosConfig {
+    client_id: String,
+    client_secret: String,
+    redirect_uri: String,
+    token_encryption_key: [u8; 32],
+}
+
+impl SonosConfig {
+    fn from_env() -> Result<Option<Self>> {
+        let client_id = configured_value("SONOS_CLIENT_ID", option_env!("SONOS_CLIENT_ID"));
+        let client_secret =
+            configured_value("SONOS_CLIENT_SECRET", option_env!("SONOS_CLIENT_SECRET"));
+        let redirect_uri =
+            configured_value("SONOS_REDIRECT_URI", option_env!("SONOS_REDIRECT_URI"));
+        let encryption_secret = configured_value(
+            "SONOS_TOKEN_ENCRYPTION_SECRET",
+            option_env!("SONOS_TOKEN_ENCRYPTION_SECRET"),
+        );
+
+        if [
+            &client_id,
+            &client_secret,
+            &redirect_uri,
+            &encryption_secret,
+        ]
+        .iter()
+        .all(|value| value.is_none())
+        {
+            return Ok(None);
+        }
+
+        let client_id =
+            client_id.context("SONOS_CLIENT_ID is required when Sonos is configured")?;
+        let client_secret =
+            client_secret.context("SONOS_CLIENT_SECRET is required when Sonos is configured")?;
+        let redirect_uri =
+            redirect_uri.context("SONOS_REDIRECT_URI is required when Sonos is configured")?;
+        let encryption_secret = encryption_secret
+            .context("SONOS_TOKEN_ENCRYPTION_SECRET is required when Sonos is configured")?;
+
+        let redirect_url = Url::parse(&redirect_uri).context("SONOS_REDIRECT_URI is not a URL")?;
+        if redirect_url.scheme() != "https" && redirect_url.host_str() != Some("localhost") {
+            bail!("SONOS_REDIRECT_URI must use HTTPS (except on localhost)");
+        }
+        if encryption_secret.len() < 32 {
+            bail!("SONOS_TOKEN_ENCRYPTION_SECRET must be at least 32 characters");
+        }
+
+        let token_encryption_key = Sha256::digest(encryption_secret.as_bytes()).into();
+        Ok(Some(Self {
+            client_id,
+            client_secret,
+            redirect_uri,
+            token_encryption_key,
+        }))
+    }
+}
+
+fn configured_value(name: &str, compile_time_value: Option<&'static str>) -> Option<String> {
+    compile_time_value
+        .filter(|value| !value.trim().is_empty())
+        .map(ToOwned::to_owned)
+        .or_else(|| std::env::var(name).ok())
+        .filter(|value| !value.trim().is_empty())
+}
+
+#[derive(Clone)]
+struct SonosEndpoints {
+    authorization: Url,
+    token: Url,
+    control: Url,
+}
+
+impl Default for SonosEndpoints {
+    fn default() -> Self {
+        Self {
+            authorization: Url::parse("https://api.sonos.com/login/v3/oauth")
+                .expect("hard-coded Sonos authorization URL should be valid"),
+            token: Url::parse("https://api.sonos.com/login/v3/oauth/access")
+                .expect("hard-coded Sonos token URL should be valid"),
+            control: Url::parse("https://api.ws.sonos.com/control/api/v1/")
+                .expect("hard-coded Sonos control URL should be valid"),
+        }
+    }
+}
+
+#[derive(Debug, Serialize)]
+pub struct SonosStatus {
+    pub configured: bool,
+    pub connected: bool,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct Household {
+    pub id: String,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+pub struct HouseholdsResponse {
+    #[serde(default)]
+    pub households: Vec<Household>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct SonosGroup {
+    pub id: String,
+    pub name: String,
+    pub coordinator_id: String,
+    #[serde(default)]
+    pub player_ids: Vec<String>,
+    #[serde(default)]
+    pub playback_state: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct SonosPlayer {
+    pub id: String,
+    pub name: String,
+    #[serde(default)]
+    pub capabilities: Vec<String>,
+    #[serde(default)]
+    pub websocket_url: Option<String>,
+    #[serde(default)]
+    pub software_version: Option<String>,
+    #[serde(default)]
+    pub api_version: Option<String>,
+    #[serde(default)]
+    pub min_api_version: Option<String>,
+    #[serde(default)]
+    pub is_unregistered: Option<bool>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+pub struct GroupsResponse {
+    #[serde(default)]
+    pub groups: Vec<SonosGroup>,
+    #[serde(default)]
+    pub players: Vec<SonosPlayer>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+struct StoredTokenSet {
+    access_token: String,
+    refresh_token: String,
+    token_type: String,
+    scope: Option<String>,
+    expires_at_unix: u64,
+}
+
+impl StoredTokenSet {
+    fn should_refresh(&self) -> bool {
+        self.expires_at_unix <= unix_timestamp().saturating_add(REFRESH_EARLY_BY_SECONDS)
+    }
+}
+
+#[derive(Debug, Deserialize)]
+struct TokenResponse {
+    access_token: String,
+    #[serde(default)]
+    refresh_token: Option<String>,
+    #[serde(default = "default_token_type")]
+    token_type: String,
+    #[serde(default)]
+    scope: Option<String>,
+    expires_in: u64,
+}
+
+fn default_token_type() -> String {
+    "Bearer".to_string()
+}
+
+#[derive(Debug)]
+struct EncryptedTokens {
+    nonce: Vec<u8>,
+    ciphertext: Vec<u8>,
+    authentication_tag: Vec<u8>,
+}
+
+pub struct SonosControl {
+    config: SonosConfig,
+    endpoints: SonosEndpoints,
+    client: reqwest::Client,
+    db: Pool<SqliteConnectionManager>,
+    pending_states: StdMutex<HashMap<String, Instant>>,
+    refresh_lock: Mutex<()>,
+}
+
+impl SonosControl {
+    pub fn from_env(db: Pool<SqliteConnectionManager>) -> Result<Option<Arc<Self>>> {
+        Ok(SonosConfig::from_env()?
+            .map(|config| Arc::new(Self::new(config, SonosEndpoints::default(), db))))
+    }
+
+    fn new(
+        config: SonosConfig,
+        endpoints: SonosEndpoints,
+        db: Pool<SqliteConnectionManager>,
+    ) -> Self {
+        Self {
+            config,
+            endpoints,
+            client: reqwest::Client::builder()
+                .user_agent(concat!("ReiTunes/", env!("CARGO_PKG_VERSION")))
+                .build()
+                .expect("ReiTunes Sonos HTTP client should be valid"),
+            db,
+            pending_states: StdMutex::new(HashMap::new()),
+            refresh_lock: Mutex::new(()),
+        }
+    }
+
+    pub fn status(&self) -> Result<SonosStatus> {
+        Ok(SonosStatus {
+            configured: true,
+            connected: self.load_tokens()?.is_some(),
+        })
+    }
+
+    pub fn authorization_url(&self) -> Result<Url> {
+        let state = random_state();
+        {
+            let mut pending = self
+                .pending_states
+                .lock()
+                .map_err(|_| anyhow::anyhow!("Sonos OAuth state lock was poisoned"))?;
+            pending.retain(|_, created| created.elapsed() < STATE_LIFETIME);
+            pending.insert(state.clone(), Instant::now());
+        }
+
+        let mut url = self.endpoints.authorization.clone();
+        url.query_pairs_mut()
+            .append_pair("client_id", &self.config.client_id)
+            .append_pair("response_type", "code")
+            .append_pair("state", &state)
+            .append_pair("scope", SONOS_SCOPE)
+            .append_pair("redirect_uri", &self.config.redirect_uri);
+        Ok(url)
+    }
+
+    pub async fn complete_authorization(&self, code: &str, state: &str) -> Result<()> {
+        self.consume_state(state)?;
+
+        let response = self
+            .client
+            .post(self.endpoints.token.clone())
+            .basic_auth(&self.config.client_id, Some(&self.config.client_secret))
+            .form(&[
+                ("grant_type", "authorization_code"),
+                ("code", code),
+                ("redirect_uri", self.config.redirect_uri.as_str()),
+            ])
+            .send()
+            .await
+            .context("failed to reach Sonos OAuth token endpoint")?;
+
+        let token = parse_token_response(response).await?;
+        let refresh_token = token
+            .refresh_token
+            .context("Sonos did not return a refresh token")?;
+        self.save_tokens(&StoredTokenSet {
+            access_token: token.access_token,
+            refresh_token,
+            token_type: token.token_type,
+            scope: token.scope,
+            expires_at_unix: unix_timestamp().saturating_add(token.expires_in),
+        })
+    }
+
+    pub async fn households(&self) -> Result<HouseholdsResponse> {
+        self.get_control_api("households").await
+    }
+
+    pub async fn groups(&self, household_id: &str) -> Result<GroupsResponse> {
+        let mut url = self.endpoints.control.clone();
+        url.path_segments_mut()
+            .map_err(|_| anyhow::anyhow!("invalid Sonos control API base URL"))?
+            .extend(["households", household_id, "groups"]);
+        self.get_url(url).await
+    }
+
+    pub fn disconnect(&self) -> Result<()> {
+        let conn = self.db.get()?;
+        conn.execute("DELETE FROM sonos_oauth_tokens WHERE Id = 1", [])?;
+        Ok(())
+    }
+
+    async fn get_control_api<T>(&self, path: &str) -> Result<T>
+    where
+        T: for<'de> Deserialize<'de>,
+    {
+        let url = self
+            .endpoints
+            .control
+            .join(path)
+            .context("failed to build Sonos control API URL")?;
+        self.get_url(url).await
+    }
+
+    async fn get_url<T>(&self, url: Url) -> Result<T>
+    where
+        T: for<'de> Deserialize<'de>,
+    {
+        let access_token = self.access_token().await?;
+        let response = self
+            .client
+            .get(url)
+            .bearer_auth(access_token)
+            .send()
+            .await
+            .context("failed to reach Sonos control API")?;
+        parse_json_response(response).await
+    }
+
+    async fn access_token(&self) -> Result<String> {
+        let token = self
+            .load_tokens()?
+            .context("ReiTunes is not connected to Sonos")?;
+        if !token.should_refresh() {
+            return Ok(token.access_token);
+        }
+
+        let _refresh_guard = self.refresh_lock.lock().await;
+        let token = self
+            .load_tokens()?
+            .context("ReiTunes is not connected to Sonos")?;
+        if !token.should_refresh() {
+            return Ok(token.access_token);
+        }
+
+        let response = self
+            .client
+            .post(self.endpoints.token.clone())
+            .basic_auth(&self.config.client_id, Some(&self.config.client_secret))
+            .form(&[
+                ("grant_type", "refresh_token"),
+                ("refresh_token", token.refresh_token.as_str()),
+            ])
+            .send()
+            .await
+            .context("failed to refresh Sonos access token")?;
+        let refreshed = parse_token_response(response).await?;
+        let stored = StoredTokenSet {
+            access_token: refreshed.access_token,
+            refresh_token: refreshed.refresh_token.unwrap_or(token.refresh_token),
+            token_type: refreshed.token_type,
+            scope: refreshed.scope.or(token.scope),
+            expires_at_unix: unix_timestamp().saturating_add(refreshed.expires_in),
+        };
+        self.save_tokens(&stored)?;
+        Ok(stored.access_token)
+    }
+
+    fn consume_state(&self, state: &str) -> Result<()> {
+        let created = self
+            .pending_states
+            .lock()
+            .map_err(|_| anyhow::anyhow!("Sonos OAuth state lock was poisoned"))?
+            .remove(state)
+            .context("invalid or already-used Sonos OAuth state")?;
+        if created.elapsed() >= STATE_LIFETIME {
+            bail!("Sonos OAuth state expired; start the connection again");
+        }
+        Ok(())
+    }
+
+    fn save_tokens(&self, tokens: &StoredTokenSet) -> Result<()> {
+        let plaintext = serde_json::to_vec(tokens)?;
+        let encrypted = encrypt_tokens(&self.config.token_encryption_key, &plaintext)?;
+        let conn = self.db.get()?;
+        conn.execute(
+            "INSERT INTO sonos_oauth_tokens (Id, Nonce, Ciphertext, AuthenticationTag)
+             VALUES (1, ?1, ?2, ?3)
+             ON CONFLICT(Id) DO UPDATE SET
+                 Nonce = excluded.Nonce,
+                 Ciphertext = excluded.Ciphertext,
+                 AuthenticationTag = excluded.AuthenticationTag",
+            params![
+                encrypted.nonce,
+                encrypted.ciphertext,
+                encrypted.authentication_tag
+            ],
+        )?;
+        Ok(())
+    }
+
+    fn load_tokens(&self) -> Result<Option<StoredTokenSet>> {
+        let conn = self.db.get()?;
+        let encrypted = conn
+            .query_row(
+                "SELECT Nonce, Ciphertext, AuthenticationTag
+                 FROM sonos_oauth_tokens WHERE Id = 1",
+                [],
+                |row| {
+                    Ok(EncryptedTokens {
+                        nonce: row.get(0)?,
+                        ciphertext: row.get(1)?,
+                        authentication_tag: row.get(2)?,
+                    })
+                },
+            )
+            .optional()?;
+
+        encrypted
+            .map(|encrypted| {
+                let plaintext = decrypt_tokens(&self.config.token_encryption_key, &encrypted)
+                    .context("stored Sonos credentials could not be decrypted")?;
+                serde_json::from_slice(&plaintext)
+                    .context("stored Sonos credentials were not valid JSON")
+            })
+            .transpose()
+    }
+}
+
+async fn parse_token_response(response: reqwest::Response) -> Result<TokenResponse> {
+    parse_json_response(response).await
+}
+
+async fn parse_json_response<T>(response: reqwest::Response) -> Result<T>
+where
+    T: for<'de> Deserialize<'de>,
+{
+    let status = response.status();
+    let body = response
+        .text()
+        .await
+        .context("failed to read response from Sonos")?;
+    if !status.is_success() {
+        bail!("Sonos returned {status}: {body}");
+    }
+    serde_json::from_str(&body).context("Sonos returned an unexpected response")
+}
+
+fn random_state() -> String {
+    let mut bytes = [0_u8; 32];
+    OsRng.fill_bytes(&mut bytes);
+    bytes.iter().map(|byte| format!("{byte:02x}")).collect()
+}
+
+fn unix_timestamp() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs()
+}
+
+fn encrypt_tokens(key: &[u8; 32], plaintext: &[u8]) -> Result<EncryptedTokens> {
+    let cipher = Cipher::aes_256_gcm();
+    let mut nonce = vec![0_u8; 12];
+    OsRng.fill_bytes(&mut nonce);
+    let mut crypter = Crypter::new(cipher, Mode::Encrypt, key, Some(&nonce))?;
+    crypter.aad_update(TOKEN_AAD)?;
+
+    let mut ciphertext = vec![0_u8; plaintext.len() + cipher.block_size()];
+    let mut count = crypter.update(plaintext, &mut ciphertext)?;
+    count += crypter.finalize(&mut ciphertext[count..])?;
+    ciphertext.truncate(count);
+
+    let mut authentication_tag = vec![0_u8; 16];
+    crypter.get_tag(&mut authentication_tag)?;
+    Ok(EncryptedTokens {
+        nonce,
+        ciphertext,
+        authentication_tag,
+    })
+}
+
+fn decrypt_tokens(key: &[u8; 32], encrypted: &EncryptedTokens) -> Result<Vec<u8>> {
+    let cipher = Cipher::aes_256_gcm();
+    let mut crypter = Crypter::new(cipher, Mode::Decrypt, key, Some(&encrypted.nonce))?;
+    crypter.aad_update(TOKEN_AAD)?;
+    crypter.set_tag(&encrypted.authentication_tag)?;
+
+    let mut plaintext = vec![0_u8; encrypted.ciphertext.len() + cipher.block_size()];
+    let mut count = crypter.update(&encrypted.ciphertext, &mut plaintext)?;
+    count += crypter.finalize(&mut plaintext[count..])?;
+    plaintext.truncate(count);
+    Ok(plaintext)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::{
+        extract::{Form, State},
+        http::HeaderMap,
+        routing::get,
+        Json, Router,
+    };
+    use reitunes_workspace::open_connection_pool;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    fn test_control() -> (SonosControl, tempfile::TempDir) {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db_path = temp_dir.path().join("test.db");
+        let db = open_connection_pool(db_path.to_str().unwrap()).unwrap();
+        let config = SonosConfig {
+            client_id: "test-client".to_string(),
+            client_secret: "test-secret".to_string(),
+            redirect_uri: "https://example.com/api/sonos/callback".to_string(),
+            token_encryption_key: [42; 32],
+        };
+        (
+            SonosControl::new(config, SonosEndpoints::default(), db),
+            temp_dir,
+        )
+    }
+
+    async fn test_control_with_server(
+        router: Router,
+    ) -> (SonosControl, tempfile::TempDir, tokio::task::JoinHandle<()>) {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            axum::serve(listener, router).await.unwrap();
+        });
+
+        let (mut control, temp_dir) = test_control();
+        let base = Url::parse(&format!("http://{address}/")).unwrap();
+        control.endpoints = SonosEndpoints {
+            authorization: base.join("authorize").unwrap(),
+            token: base.join("token").unwrap(),
+            control: base.join("control/api/v1/").unwrap(),
+        };
+        (control, temp_dir, server)
+    }
+
+    #[test]
+    fn authorization_url_uses_documented_sonos_parameters() {
+        let (control, _temp_dir) = test_control();
+        let url = control.authorization_url().unwrap();
+        let query: HashMap<_, _> = url.query_pairs().into_owned().collect();
+
+        assert_eq!(
+            url.as_str().split('?').next().unwrap(),
+            "https://api.sonos.com/login/v3/oauth"
+        );
+        assert_eq!(query.get("client_id").unwrap(), "test-client");
+        assert_eq!(query.get("response_type").unwrap(), "code");
+        assert_eq!(query.get("scope").unwrap(), SONOS_SCOPE);
+        assert_eq!(
+            query.get("redirect_uri").unwrap(),
+            "https://example.com/api/sonos/callback"
+        );
+        assert_eq!(query.get("state").unwrap().len(), 64);
+    }
+
+    #[test]
+    fn oauth_state_is_single_use() {
+        let (control, _temp_dir) = test_control();
+        let url = control.authorization_url().unwrap();
+        let state = url
+            .query_pairs()
+            .find(|(key, _)| key == "state")
+            .unwrap()
+            .1
+            .into_owned();
+
+        control.consume_state(&state).unwrap();
+        assert!(control.consume_state(&state).is_err());
+    }
+
+    #[test]
+    fn stored_tokens_are_encrypted_and_authenticated() {
+        let (control, _temp_dir) = test_control();
+        let token = StoredTokenSet {
+            access_token: "secret-access-token".to_string(),
+            refresh_token: "secret-refresh-token".to_string(),
+            token_type: "Bearer".to_string(),
+            scope: Some(SONOS_SCOPE.to_string()),
+            expires_at_unix: 1234,
+        };
+        control.save_tokens(&token).unwrap();
+
+        let conn = control.db.get().unwrap();
+        let ciphertext: Vec<u8> = conn
+            .query_row(
+                "SELECT Ciphertext FROM sonos_oauth_tokens WHERE Id = 1",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert!(!String::from_utf8_lossy(&ciphertext).contains("secret-access-token"));
+        drop(conn);
+
+        let loaded = control.load_tokens().unwrap().unwrap();
+        assert_eq!(loaded.access_token, token.access_token);
+        assert_eq!(loaded.refresh_token, token.refresh_token);
+
+        let conn = control.db.get().unwrap();
+        conn.execute(
+            "UPDATE sonos_oauth_tokens SET Ciphertext = zeroblob(length(Ciphertext)) WHERE Id = 1",
+            [],
+        )
+        .unwrap();
+        drop(conn);
+        assert!(control.load_tokens().is_err());
+    }
+
+    #[test]
+    fn groups_response_accepts_the_documented_discovery_shape() {
+        let response: GroupsResponse = serde_json::from_value(serde_json::json!({
+            "groups": [{
+                "id": "RINCON_group:1",
+                "name": "Kitchen + 1",
+                "coordinatorId": "RINCON_kitchen",
+                "playbackState": "PLAYBACK_STATE_IDLE",
+                "playerIds": ["RINCON_kitchen", "RINCON_dining"]
+            }],
+            "players": [{
+                "id": "RINCON_kitchen",
+                "name": "Kitchen",
+                "capabilities": ["PLAYBACK", "CLOUD"]
+            }]
+        }))
+        .unwrap();
+
+        assert_eq!(response.groups[0].name, "Kitchen + 1");
+        assert_eq!(response.players[0].name, "Kitchen");
+    }
+
+    #[tokio::test]
+    async fn exchanges_an_authorization_code_then_discovers_households() {
+        async fn token(
+            headers: HeaderMap,
+            Form(form): Form<HashMap<String, String>>,
+        ) -> Json<serde_json::Value> {
+            assert!(headers
+                .get("authorization")
+                .unwrap()
+                .to_str()
+                .unwrap()
+                .starts_with("Basic "));
+            assert_eq!(form.get("grant_type").unwrap(), "authorization_code");
+            assert_eq!(form.get("code").unwrap(), "authorization-code");
+            Json(serde_json::json!({
+                "access_token": "access-token",
+                "refresh_token": "refresh-token",
+                "token_type": "Bearer",
+                "scope": SONOS_SCOPE,
+                "expires_in": 86_400
+            }))
+        }
+
+        async fn households(headers: HeaderMap) -> Json<serde_json::Value> {
+            assert_eq!(headers.get("authorization").unwrap(), "Bearer access-token");
+            Json(serde_json::json!({
+                "households": [{ "id": "Sonos_household" }]
+            }))
+        }
+
+        let router = Router::new()
+            .route("/token", axum::routing::post(token))
+            .route("/control/api/v1/households", get(households));
+        let (control, _temp_dir, server) = test_control_with_server(router).await;
+        let authorization_url = control.authorization_url().unwrap();
+        let state = authorization_url
+            .query_pairs()
+            .find(|(key, _)| key == "state")
+            .unwrap()
+            .1
+            .into_owned();
+
+        control
+            .complete_authorization("authorization-code", &state)
+            .await
+            .unwrap();
+        assert!(control.status().unwrap().connected);
+
+        let households = control.households().await.unwrap();
+        assert_eq!(households.households[0].id, "Sonos_household");
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn refreshes_an_expired_token_without_losing_the_refresh_token() {
+        #[derive(Clone)]
+        struct TestState {
+            refreshes: Arc<AtomicUsize>,
+        }
+
+        async fn token(
+            State(state): State<TestState>,
+            Form(form): Form<HashMap<String, String>>,
+        ) -> Json<serde_json::Value> {
+            assert_eq!(form.get("grant_type").unwrap(), "refresh_token");
+            assert_eq!(form.get("refresh_token").unwrap(), "original-refresh-token");
+            state.refreshes.fetch_add(1, Ordering::SeqCst);
+            Json(serde_json::json!({
+                "access_token": "refreshed-access-token",
+                "token_type": "Bearer",
+                "expires_in": 86_400
+            }))
+        }
+
+        async fn households(headers: HeaderMap) -> Json<serde_json::Value> {
+            assert_eq!(
+                headers.get("authorization").unwrap(),
+                "Bearer refreshed-access-token"
+            );
+            Json(serde_json::json!({ "households": [] }))
+        }
+
+        let refreshes = Arc::new(AtomicUsize::new(0));
+        let router = Router::new()
+            .route("/token", axum::routing::post(token))
+            .route("/control/api/v1/households", get(households))
+            .with_state(TestState {
+                refreshes: refreshes.clone(),
+            });
+        let (control, _temp_dir, server) = test_control_with_server(router).await;
+        control
+            .save_tokens(&StoredTokenSet {
+                access_token: "expired-access-token".to_string(),
+                refresh_token: "original-refresh-token".to_string(),
+                token_type: "Bearer".to_string(),
+                scope: Some(SONOS_SCOPE.to_string()),
+                expires_at_unix: 0,
+            })
+            .unwrap();
+
+        control.households().await.unwrap();
+        assert_eq!(refreshes.load(Ordering::SeqCst), 1);
+        let stored = control.load_tokens().unwrap().unwrap();
+        assert_eq!(stored.access_token, "refreshed-access-token");
+        assert_eq!(stored.refresh_token, "original-refresh-token");
+        server.abort();
+    }
+}

@@ -8,6 +8,7 @@ import { UploadModal } from './components/UploadModal';
 import { DownloadModal } from './components/DownloadModal';
 import { PlaylistSidebar } from './components/PlaylistSidebar';
 import { BookmarkSidebar } from './components/BookmarkSidebar';
+import { SonosModal } from './components/SonosModal';
 import { useLibrary } from './hooks/useLibrary';
 import { useQueueStore } from './hooks/useQueue';
 import { usePlayerStore } from './stores/playerStore';
@@ -51,6 +52,16 @@ const Icons = {
       <line x1="12" y1="15" x2="12" y2="3" />
     </svg>
   ),
+  sonos: (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M5 8.5a5 5 0 0 1 0 7" />
+      <path d="M8.5 5a10 10 0 0 1 0 14" />
+      <circle cx="3" cy="12" r="1" fill="currentColor" stroke="none" />
+      <rect x="13" y="4" width="8" height="16" rx="2" />
+      <circle cx="17" cy="9" r="1.5" />
+      <circle cx="17" cy="15" r="2.5" />
+    </svg>
+  ),
 };
 
 const queryClient = new QueryClient();
@@ -62,6 +73,9 @@ function AppContent() {
   const [isDownloadOpen, setIsDownloadOpen] = useState(false);
   const [isPlaylistsOpen, setIsPlaylistsOpen] = useState(false);
   const [isBookmarksOpen, setIsBookmarksOpen] = useState(false);
+  const [isSonosOpen, setIsSonosOpen] = useState(
+    () => new URLSearchParams(window.location.search).get('sonos') === 'connected'
+  );
   const [selectedPlaylistId, setSelectedPlaylistId] = useState<string | null>(null);
 
   const { items, isLoading, error } = useLibrary();
@@ -147,6 +161,14 @@ function AppContent() {
     setIsPlaylistsOpen(false);
   }, []);
 
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).has('sonos')) {
+      const url = new URL(window.location.href);
+      url.searchParams.delete('sonos');
+      window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`);
+    }
+  }, []);
+
   if (error) {
     return (
       <div className="flex items-center justify-center h-screen bg-solarized-base03 text-solarized-red">
@@ -208,6 +230,14 @@ function AppContent() {
               {Icons.download}
             </button>
             <button
+              onClick={() => setIsSonosOpen(true)}
+              className="p-1.5 text-solarized-base0 hover:text-solarized-cyan hover:bg-solarized-base02 rounded transition-colors"
+              title="Sonos"
+              aria-label="Sonos"
+            >
+              {Icons.sonos}
+            </button>
+            <button
               onClick={toggleQueue}
               className={`p-1.5 rounded transition-colors ${
                 isQueueOpen
@@ -256,6 +286,7 @@ function AppContent() {
 
       <UploadModal isOpen={isUploadOpen} onClose={() => setIsUploadOpen(false)} />
       <DownloadModal isOpen={isDownloadOpen} onClose={() => setIsDownloadOpen(false)} />
+      <SonosModal isOpen={isSonosOpen} onClose={() => setIsSonosOpen(false)} />
     </div>
   );
 }

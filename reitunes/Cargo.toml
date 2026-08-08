@@ -40,6 +40,8 @@ urlencoding = "2.1"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 jiff.workspace = true
 indexmap.workspace = true
+rand.workspace = true
+sha2.workspace = true
 
 [dev-dependencies]
 pretty_assertions = "1.4.1"

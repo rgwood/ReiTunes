@@ -11,6 +11,7 @@ use axum::{
     routing::{get, post},
     Router,
 };
+use axum::extract::Query;
 use axum_extra::extract::Multipart;
 use axum_macros::debug_handler;
 use clap::{Parser, Subcommand};
@@ -34,6 +35,8 @@ use crate::storage::S3Storage;
 mod llm;
 mod metadata;
 mod smapi;
+mod sonos;
+mod cloud_queue;
 mod storage;
 mod systemd;
 
@@ -112,6 +115,8 @@ struct AppState {
     // used to broadcast updates to all connected clients
     update_tx: broadcast::Sender<LibraryUpdate>,
     storage: Arc<S3Storage>,
+    sonos: Option<Arc<sonos::SonosControl>>,
+    cloud_queues: Arc<cloud_queue::CloudQueueStore>,
 }
 
 #[tokio::main]
@@ -188,7 +193,15 @@ async fn main() -> Result<()> {
                 playlists: Arc::new(RwLock::new(playlists)),
                 update_tx: broadcast::channel(100).0,
                 storage: Arc::new(storage),
+                sonos: sonos::SonosControl::from_env(DB.clone())?,
+                cloud_queues: Arc::new(cloud_queue::CloudQueueStore::from_env()?),
             };
+
+            if app_state.sonos.is_some() {
+                info!("Sonos Direct Control is configured");
+            } else {
+                info!("Sonos Direct Control is not configured");
+            }
 
             let api_router = Router::new()
                 .route("/add", post(add_item_handler))
@@ -197,6 +210,18 @@ async fn main() -> Result<()> {
 
             let smapi_router =
                 Router::new().route("/v1/soap", post(smapi::smapi_soap_handler));
+
+            let cloud_queue_router = Router::new()
+                .route("/{queue_id}/v2.3/context", get(cloud_queue_context_handler))
+                .route("/{queue_id}/v2.3/version", get(cloud_queue_version_handler))
+                .route(
+                    "/{queue_id}/v2.3/itemWindow",
+                    get(cloud_queue_item_window_handler),
+                )
+                .route(
+                    "/{queue_id}/v2.3/timePlayed",
+                    post(cloud_queue_time_played_handler),
+                );
 
             // Private API routes require the same session as the React frontend.
             let protected_api_router = Router::new()
@@ -210,6 +235,19 @@ async fn main() -> Result<()> {
                 .route("/playlists/{id}", axum::routing::put(rename_playlist_handler).delete(delete_playlist_handler))
                 .route("/playlists/{id}/items", post(add_playlist_item_handler))
                 .route("/playlists/{playlist_id}/items/{item_id}", axum::routing::delete(remove_playlist_item_handler))
+                .route("/sonos/status", get(sonos_status_handler))
+                .route("/sonos/authorize", get(sonos_authorize_handler))
+                .route("/sonos/callback", get(sonos_callback_handler))
+                .route("/sonos/households", get(sonos_households_handler))
+                .route("/sonos/cloud-queues", post(prepare_cloud_queue_handler))
+                .route(
+                    "/sonos/households/{household_id}/groups",
+                    get(sonos_groups_handler),
+                )
+                .route(
+                    "/sonos/connection",
+                    axum::routing::delete(sonos_disconnect_handler),
+                )
                 .route_layer(middleware::from_fn(api_session_auth));
 
             // Build vite service for frontend
@@ -236,6 +274,7 @@ async fn main() -> Result<()> {
                 // Service and API-key routes stay outside session auth.
                 .nest("/api", api_router)
                 .nest("/smapi", smapi_router)
+                .nest("/sonos/cloud-queue", cloud_queue_router)
                 .nest("/api", protected_api_router)
                 // Cookie extraction is used by both frontend and API auth middleware.
                 .layer(CookieManagerLayer::new())
@@ -361,6 +400,239 @@ async fn items_handler(State(app_state): State<AppState>) -> Result<impl IntoRes
         .map(|item| LibraryItemResponse::from_item(item, &app_state.storage))
         .collect();
     Ok(Json(items))
+}
+
+// ============================================================================
+// Sonos Direct Control (authorization and read-only discovery only)
+// ============================================================================
+
+#[derive(Debug, Serialize)]
+struct SonosApiError {
+    error: String,
+}
+
+type SonosApiResult<T> = Result<T, (StatusCode, Json<SonosApiError>)>;
+
+fn sonos_unavailable() -> (StatusCode, Json<SonosApiError>) {
+    (
+        StatusCode::SERVICE_UNAVAILABLE,
+        Json(SonosApiError {
+            error: "Sonos Direct Control is not configured".to_string(),
+        }),
+    )
+}
+
+fn sonos_failure(error: anyhow::Error) -> (StatusCode, Json<SonosApiError>) {
+    warn!(error = %error, "Sonos Direct Control request failed");
+    (
+        StatusCode::BAD_GATEWAY,
+        Json(SonosApiError {
+            error: error.to_string(),
+        }),
+    )
+}
+
+fn cloud_queue_failure(
+    error: cloud_queue::CloudQueueError,
+) -> (StatusCode, Json<SonosApiError>) {
+    let status = match &error {
+        cloud_queue::CloudQueueError::NotConfigured => StatusCode::SERVICE_UNAVAILABLE,
+        cloud_queue::CloudQueueError::NotFound => StatusCode::NOT_FOUND,
+        cloud_queue::CloudQueueError::Unauthorized => StatusCode::UNAUTHORIZED,
+        cloud_queue::CloudQueueError::InvalidRequest(_) => StatusCode::BAD_REQUEST,
+        cloud_queue::CloudQueueError::Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,
+    };
+    if status.is_server_error() {
+        warn!(error = %error, "Sonos Cloud Queue request failed");
+    }
+    (status, Json(SonosApiError { error: error.to_string() }))
+}
+
+async fn sonos_status_handler(
+    State(app_state): State<AppState>,
+) -> SonosApiResult<Json<sonos::SonosStatus>> {
+    match app_state.sonos {
+        Some(control) => control.status().map(Json).map_err(sonos_failure),
+        None => Ok(Json(sonos::SonosStatus {
+            configured: false,
+            connected: false,
+        })),
+    }
+}
+
+async fn sonos_authorize_handler(State(app_state): State<AppState>) -> SonosApiResult<Redirect> {
+    let control = app_state.sonos.ok_or_else(sonos_unavailable)?;
+    let url = control.authorization_url().map_err(sonos_failure)?;
+    Ok(Redirect::to(url.as_str()))
+}
+
+#[derive(Debug, Deserialize)]
+struct SonosCallbackQuery {
+    code: Option<String>,
+    state: Option<String>,
+    error: Option<String>,
+    error_description: Option<String>,
+}
+
+async fn sonos_callback_handler(
+    State(app_state): State<AppState>,
+    Query(query): Query<SonosCallbackQuery>,
+) -> SonosApiResult<Redirect> {
+    let control = app_state.sonos.ok_or_else(sonos_unavailable)?;
+    if let Some(error) = query.error {
+        let description = query.error_description.unwrap_or_default();
+        return Err(sonos_failure(anyhow::anyhow!(
+            "Sonos authorization was denied: {error} {description}"
+        )));
+    }
+
+    let code = query
+        .code
+        .context("Sonos callback did not contain a code")
+        .map_err(sonos_failure)?;
+    let state = query
+        .state
+        .context("Sonos callback did not contain state")
+        .map_err(sonos_failure)?;
+    control
+        .complete_authorization(&code, &state)
+        .await
+        .map_err(sonos_failure)?;
+    Ok(Redirect::to("/?sonos=connected"))
+}
+
+async fn sonos_households_handler(
+    State(app_state): State<AppState>,
+) -> SonosApiResult<Json<sonos::HouseholdsResponse>> {
+    let control = app_state.sonos.ok_or_else(sonos_unavailable)?;
+    control.households().await.map(Json).map_err(sonos_failure)
+}
+
+async fn sonos_groups_handler(
+    State(app_state): State<AppState>,
+    Path(household_id): Path<String>,
+) -> SonosApiResult<Json<sonos::GroupsResponse>> {
+    let control = app_state.sonos.ok_or_else(sonos_unavailable)?;
+    control
+        .groups(&household_id)
+        .await
+        .map(Json)
+        .map_err(sonos_failure)
+}
+
+async fn sonos_disconnect_handler(State(app_state): State<AppState>) -> SonosApiResult<StatusCode> {
+    let control = app_state.sonos.ok_or_else(sonos_unavailable)?;
+    control.disconnect().map_err(sonos_failure)?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+#[derive(Debug, Deserialize)]
+struct PrepareCloudQueueRequest {
+    item_ids: Vec<Uuid>,
+    start_item_id: Option<Uuid>,
+}
+
+async fn prepare_cloud_queue_handler(
+    State(app_state): State<AppState>,
+    JsonExtractor(request): JsonExtractor<PrepareCloudQueueRequest>,
+) -> SonosApiResult<(StatusCode, Json<cloud_queue::PreparedQueue>)> {
+    if request.item_ids.len() > 500 {
+        return Err(cloud_queue_failure(
+            cloud_queue::CloudQueueError::InvalidRequest(
+                "A Sonos queue cannot contain more than 500 tracks".to_string(),
+            ),
+        ));
+    }
+
+    let library = app_state.library.read().await;
+    let mut tracks = Vec::with_capacity(request.item_ids.len());
+    for item_id in &request.item_ids {
+        let item = library.items.get(item_id).ok_or_else(|| {
+            cloud_queue_failure(cloud_queue::CloudQueueError::InvalidRequest(format!(
+                "Library item {item_id} was not found"
+            )))
+        })?;
+        tracks.push(cloud_queue::QueueTrack {
+            source_id: *item_id,
+            queue_item_id: Uuid::new_v4(),
+            name: item.name.clone(),
+            artist: non_empty_string(&item.artist),
+            album: non_empty_string(&item.album),
+            track_number: item.track_number,
+            media_url: app_state.storage.url(&item.file_path),
+            content_type: mime_guess::from_path(&item.file_path)
+                .first_or_octet_stream()
+                .essence_str()
+                .to_string(),
+        });
+    }
+    drop(library);
+
+    let prepared = app_state
+        .cloud_queues
+        .prepare(tracks, request.start_item_id)
+        .map_err(cloud_queue_failure)?;
+    Ok((StatusCode::CREATED, Json(prepared)))
+}
+
+async fn cloud_queue_context_handler(
+    State(app_state): State<AppState>,
+    Path(queue_id): Path<Uuid>,
+    headers: HeaderMap,
+) -> SonosApiResult<Json<cloud_queue::QueueContext>> {
+    app_state
+        .cloud_queues
+        .context(queue_id, authorization_header(&headers))
+        .map(Json)
+        .map_err(cloud_queue_failure)
+}
+
+async fn cloud_queue_version_handler(
+    State(app_state): State<AppState>,
+    Path(queue_id): Path<Uuid>,
+    headers: HeaderMap,
+) -> SonosApiResult<Json<cloud_queue::QueueVersion>> {
+    app_state
+        .cloud_queues
+        .version(queue_id, authorization_header(&headers))
+        .map(Json)
+        .map_err(cloud_queue_failure)
+}
+
+async fn cloud_queue_item_window_handler(
+    State(app_state): State<AppState>,
+    Path(queue_id): Path<Uuid>,
+    headers: HeaderMap,
+    Query(query): Query<cloud_queue::ItemWindowQuery>,
+) -> SonosApiResult<Json<cloud_queue::ItemWindow>> {
+    app_state
+        .cloud_queues
+        .item_window(queue_id, authorization_header(&headers), &query)
+        .map(Json)
+        .map_err(cloud_queue_failure)
+}
+
+async fn cloud_queue_time_played_handler(
+    State(app_state): State<AppState>,
+    Path(queue_id): Path<Uuid>,
+    headers: HeaderMap,
+    JsonExtractor(_report): JsonExtractor<serde_json::Value>,
+) -> SonosApiResult<StatusCode> {
+    app_state
+        .cloud_queues
+        .accept_report(queue_id, authorization_header(&headers))
+        .map_err(cloud_queue_failure)?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+fn authorization_header(headers: &HeaderMap) -> Option<&str> {
+    headers
+        .get(axum::http::header::AUTHORIZATION)
+        .and_then(|value| value.to_str().ok())
+}
+
+fn non_empty_string(value: &str) -> Option<String> {
+    (!value.trim().is_empty()).then(|| value.to_string())
 }
 
 /// Mark a library item as favorite
