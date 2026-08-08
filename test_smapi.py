@@ -63,7 +63,7 @@ def test_service(base_url: str) -> None:
         for element in root.findall(".//sonos:mediaCollection/sonos:id", NAMESPACES)
         if (text := element.text) is not None
     }
-    expected_collections = {"tracks", "artists", "albums"}
+    expected_collections = {"tracks", "artists", "albums", "favorites", "bookmarks"}
     if not expected_collections.issubset(collection_ids):
         raise RuntimeError(
             f"Root browse returned {collection_ids}, expected {expected_collections}"
@@ -107,6 +107,44 @@ def test_service(base_url: str) -> None:
         )
         required_text(child_response, ".//sonos:mediaMetadata/sonos:id")
         print(f"{category.capitalize()} browse works: {category_total} entries")
+
+    favorites = post_smapi(
+        base_url,
+        "getMetadata",
+        f'<getMetadata xmlns="{SONOS_NAMESPACE}">'
+        "<id>favorites</id><index>0</index><count>100</count>"
+        "</getMetadata>",
+    )
+    favorites_total = int(
+        required_text(favorites, ".//sonos:getMetadataResult/sonos:total")
+    )
+    required_text(favorites, ".//sonos:mediaMetadata/sonos:id")
+    print(f"Favourites browse works: {favorites_total} tracks")
+
+    bookmarks = post_smapi(
+        base_url,
+        "getMetadata",
+        f'<getMetadata xmlns="{SONOS_NAMESPACE}">'
+        "<id>bookmarks</id><index>0</index><count>100</count>"
+        "</getMetadata>",
+    )
+    bookmarks_total = int(
+        required_text(bookmarks, ".//sonos:getMetadataResult/sonos:total")
+    )
+    bookmark_id = required_text(bookmarks, ".//sonos:mediaMetadata/sonos:id")
+    bookmark_title = required_text(bookmarks, ".//sonos:mediaMetadata/sonos:title")
+    bookmark_media = post_smapi(
+        base_url,
+        "getMediaURI",
+        f'<getMediaURI xmlns="{SONOS_NAMESPACE}"><id>{bookmark_id}</id></getMediaURI>',
+    )
+    bookmark_offset = required_text(
+        bookmark_media, ".//sonos:positionInformation/sonos:offsetMillis"
+    )
+    print(
+        f"Bookmarks browse works: {bookmarks_total} entries; "
+        f"first is {bookmark_title!r} at {bookmark_offset} ms"
+    )
 
     search_term = next(
         (word for word in re.findall(r"[A-Za-z0-9]+", title) if len(word) >= 3),
