@@ -128,12 +128,12 @@ export function AudioPlayer() {
     const audio = audioRef.current;
     if (!audio || !currentItem) return;
 
-    if (isPlaying) {
+    if (isPlaying && audio.paused) {
       audio.play().catch((error) => {
         console.error('Failed to start playback:', error);
         setIsPlaying(false);
       });
-    } else {
+    } else if (!isPlaying && !audio.paused) {
       audio.pause();
     }
   }, [currentItem, isPlaying, setIsPlaying]);
