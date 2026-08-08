@@ -177,6 +177,34 @@ pub struct SonosPlaybackStatus {
     pub session_created: bool,
 }
 
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct SonosGroupPlayback {
+    pub playback_state: String,
+    #[serde(default)]
+    pub position_millis: u64,
+    #[serde(default)]
+    pub item_id: Option<String>,
+    #[serde(default)]
+    pub queue_version: Option<String>,
+    #[serde(default)]
+    pub available_playback_actions: Option<SonosPlaybackActions>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct SonosPlaybackActions {
+    #[serde(default)]
+    pub can_pause: Option<bool>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+pub struct SonosGroupVolume {
+    pub volume: u8,
+    pub muted: bool,
+    pub fixed: bool,
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum SonosPlaybackError {
     #[error("Choose this Sonos group again to confirm that ReiTunes may replace its playback")]
@@ -213,6 +241,16 @@ struct LoadCloudQueueRequest<'a> {
     queue_version: &'a str,
     position_millis: u32,
     play_on_completion: bool,
+}
+
+#[derive(Debug, Serialize)]
+struct SetVolumeRequest {
+    volume: u8,
+}
+
+#[derive(Debug, Serialize)]
+struct SetMuteRequest {
+    muted: bool,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -398,6 +436,44 @@ impl SonosControl {
         })
     }
 
+    pub async fn group_playback(&self, group_id: &str) -> Result<SonosGroupPlayback> {
+        let url = self.control_url(&["groups", group_id, "playback"])?;
+        self.get_url(url).await
+    }
+
+    pub async fn play(&self, group_id: &str) -> Result<()> {
+        let url = self.control_url(&["groups", group_id, "playback", "play"])?;
+        self.post_command(url).await
+    }
+
+    pub async fn pause(&self, group_id: &str) -> Result<()> {
+        let url = self.control_url(&["groups", group_id, "playback", "pause"])?;
+        self.post_command(url).await
+    }
+
+    pub async fn group_volume(&self, group_id: &str) -> Result<SonosGroupVolume> {
+        let url = self.control_url(&["groups", group_id, "groupVolume"])?;
+        self.get_url(url).await
+    }
+
+    pub async fn set_group_volume(&self, group_id: &str, volume: u8) -> Result<()> {
+        let url = self.control_url(&["groups", group_id, "groupVolume"])?;
+        self.post_empty(url, &SetVolumeRequest { volume }).await
+    }
+
+    pub async fn set_group_mute(&self, group_id: &str, muted: bool) -> Result<()> {
+        let url = self.control_url(&["groups", group_id, "groupVolume", "mute"])?;
+        self.post_empty(url, &SetMuteRequest { muted }).await
+    }
+
+    pub fn has_playback_session(&self, group_id: &str) -> Result<bool> {
+        Ok(self
+            .playback_sessions
+            .lock()
+            .map_err(|_| anyhow::anyhow!("Sonos playback session lock was poisoned"))?
+            .contains_key(group_id))
+    }
+
     pub fn disconnect(&self) -> Result<()> {
         let conn = self.db.get()?;
         conn.execute("DELETE FROM sonos_oauth_tokens WHERE Id = 1", [])?;
@@ -493,6 +569,10 @@ impl SonosControl {
             .get(url)
             .bearer_auth(access_token)
             .header(SONOS_API_KEY_HEADER, &self.config.client_id)
+            .header(
+                SONOS_CORRELATION_ID_HEADER,
+                uuid::Uuid::new_v4().to_string(),
+            )
             .send()
             .await
             .context("failed to reach Sonos control API")?;
@@ -506,6 +586,23 @@ impl SonosControl {
     {
         let response = self.post_request(url, body).await?;
         parse_json_response(response).await
+    }
+
+    async fn post_command(&self, url: Url) -> Result<()> {
+        let access_token = self.access_token().await?;
+        let response = self
+            .client
+            .post(url)
+            .bearer_auth(access_token)
+            .header(SONOS_API_KEY_HEADER, &self.config.client_id)
+            .header(
+                SONOS_CORRELATION_ID_HEADER,
+                uuid::Uuid::new_v4().to_string(),
+            )
+            .send()
+            .await
+            .context("failed to reach Sonos control API")?;
+        ensure_success_response(response).await
     }
 
     async fn post_empty<B>(&self, url: Url, body: &B) -> Result<()>
@@ -909,6 +1006,106 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn reads_and_controls_group_playback_and_volume() {
+        fn assert_headers(headers: &HeaderMap) {
+            assert_eq!(headers.get("authorization").unwrap(), "Bearer access-token");
+            assert_eq!(headers.get(SONOS_API_KEY_HEADER).unwrap(), "test-client");
+            uuid::Uuid::parse_str(
+                headers
+                    .get(SONOS_CORRELATION_ID_HEADER)
+                    .unwrap()
+                    .to_str()
+                    .unwrap(),
+            )
+            .unwrap();
+        }
+
+        async fn playback(headers: HeaderMap) -> Json<serde_json::Value> {
+            assert_headers(&headers);
+            Json(serde_json::json!({
+                "playbackState": "PLAYBACK_STATE_PLAYING",
+                "positionMillis": 42_000,
+                "itemId": "queue-item-1",
+                "queueVersion": "queue-version-1",
+                "availablePlaybackActions": { "canPause": true }
+            }))
+        }
+
+        async fn volume(headers: HeaderMap) -> Json<serde_json::Value> {
+            assert_headers(&headers);
+            Json(serde_json::json!({ "volume": 37, "muted": false, "fixed": false }))
+        }
+
+        async fn command(headers: HeaderMap) -> axum::http::StatusCode {
+            assert_headers(&headers);
+            axum::http::StatusCode::OK
+        }
+
+        async fn set_volume(
+            headers: HeaderMap,
+            Json(body): Json<serde_json::Value>,
+        ) -> axum::http::StatusCode {
+            assert_headers(&headers);
+            assert_eq!(body, serde_json::json!({ "volume": 63 }));
+            axum::http::StatusCode::OK
+        }
+
+        async fn set_mute(
+            headers: HeaderMap,
+            Json(body): Json<serde_json::Value>,
+        ) -> axum::http::StatusCode {
+            assert_headers(&headers);
+            assert_eq!(body, serde_json::json!({ "muted": true }));
+            axum::http::StatusCode::OK
+        }
+
+        let router = Router::new()
+            .route("/control/api/v1/groups/group-1/playback", get(playback))
+            .route(
+                "/control/api/v1/groups/group-1/playback/play",
+                axum::routing::post(command),
+            )
+            .route(
+                "/control/api/v1/groups/group-1/playback/pause",
+                axum::routing::post(command),
+            )
+            .route(
+                "/control/api/v1/groups/group-1/groupVolume",
+                get(volume).post(set_volume),
+            )
+            .route(
+                "/control/api/v1/groups/group-1/groupVolume/mute",
+                axum::routing::post(set_mute),
+            );
+        let (control, _temp_dir, server) = test_control_with_server(router).await;
+        control
+            .save_tokens(&StoredTokenSet {
+                access_token: "access-token".to_string(),
+                refresh_token: "refresh-token".to_string(),
+                token_type: "Bearer".to_string(),
+                scope: Some(SONOS_SCOPE.to_string()),
+                expires_at_unix: u64::MAX,
+            })
+            .unwrap();
+
+        let playback = control.group_playback("group-1").await.unwrap();
+        assert_eq!(playback.position_millis, 42_000);
+        assert_eq!(playback.item_id.as_deref(), Some("queue-item-1"));
+        assert_eq!(
+            playback
+                .available_playback_actions
+                .and_then(|actions| actions.can_pause),
+            Some(true)
+        );
+        assert_eq!(control.group_volume("group-1").await.unwrap().volume, 37);
+        control.play("group-1").await.unwrap();
+        control.pause("group-1").await.unwrap();
+        control.set_group_volume("group-1", 63).await.unwrap();
+        control.set_group_mute("group-1", true).await.unwrap();
+        server.abort();
+    }
+
+    #[tokio::test]
     async fn requires_takeover_then_reuses_the_reitunes_playback_session() {
         #[derive(Clone)]
         struct TestState {
@@ -1067,15 +1264,11 @@ mod tests {
         };
 
         assert!(matches!(
-            control
-                .play_cloud_queue("group-1", &queue, 0, true)
-                .await,
+            control.play_cloud_queue("group-1", &queue, 0, true).await,
             Err(SonosPlaybackError::SessionEnded(_))
         ));
         assert!(matches!(
-            control
-                .play_cloud_queue("group-1", &queue, 0, false)
-                .await,
+            control.play_cloud_queue("group-1", &queue, 0, false).await,
             Err(SonosPlaybackError::TakeoverRequired)
         ));
         server.abort();

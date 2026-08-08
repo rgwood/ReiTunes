@@ -97,6 +97,8 @@ pub struct ItemWindow {
 
 #[derive(Debug, Clone, Serialize)]
 struct QueueItem {
+    #[serde(skip_serializing)]
+    source_id: Uuid,
     id: String,
     track: TrackMetadata,
 }
@@ -302,6 +304,24 @@ impl CloudQueueStore {
         })
     }
 
+    pub fn source_item_id(
+        &self,
+        queue_version: Option<&str>,
+        queue_item_id: Option<&str>,
+    ) -> Result<Option<Uuid>, CloudQueueError> {
+        let (Some(queue_version), Some(queue_item_id)) = (queue_version, queue_item_id) else {
+            return Ok(None);
+        };
+        let queues = self.queues.read().map_err(|_| {
+            CloudQueueError::Internal(anyhow::anyhow!("Cloud Queue lock was poisoned"))
+        })?;
+        Ok(queues
+            .values()
+            .find(|queue| queue.queue_version == queue_version)
+            .and_then(|queue| queue.items.iter().find(|item| item.id == queue_item_id))
+            .map(|item| item.source_id))
+    }
+
     pub fn version(
         &self,
         queue_id: Uuid,
@@ -418,6 +438,7 @@ impl CloudQueueStore {
 impl From<QueueTrack> for QueueItem {
     fn from(track: QueueTrack) -> Self {
         Self {
+            source_id: track.source_id,
             id: track.queue_item_id.to_string(),
             track: TrackMetadata {
                 track_type: "track",
@@ -475,6 +496,12 @@ mod tests {
         assert_eq!(playback.item_id, Uuid::from_u128(102).to_string());
         assert!(playback.http_authorization.starts_with("Bearer "));
         assert_eq!(prepared.item_count, 2);
+        assert_eq!(
+            store
+                .source_item_id(Some(&prepared.queue_version), Some(&playback.item_id))
+                .unwrap(),
+            Some(Uuid::from_u128(2))
+        );
     }
 
     #[test]

@@ -189,7 +189,7 @@ function AppContent() {
     <div className="h-screen flex flex-col bg-solarized-base03 text-solarized-base1 font-mono overflow-hidden">
       {/* Header - sticky at top */}
       <div className="flex-shrink-0 bg-solarized-base03 z-10 border-b border-solarized-base02">
-        <AudioPlayer onChooseOutput={() => setIsSonosOpen(true)} />
+        <AudioPlayer items={items} onChooseOutput={() => setIsSonosOpen(true)} />
         <div className="flex justify-between items-center px-4 pb-2">
           <div className="flex items-center gap-1">
             <button

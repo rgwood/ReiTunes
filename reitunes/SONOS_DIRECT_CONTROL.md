@@ -14,6 +14,8 @@ ReiTunes can use either the current browser or a Sonos speaker group as its play
 - bookmark playback positions, passed to Sonos as `positionMillis`
 - reuse of ReiTunes's existing playback session for later song choices
 - a persisted browser/Sonos output selector in the web UI
+- play, pause, mute, and group-volume controls
+- current track and playhead tracking, with local interpolation between Sonos status polls
 
 The Cloud Queue snapshots use a separate random bearer token. The public endpoints do not accept the ReiTunes session cookie and do not reveal queue metadata without that token.
 
@@ -46,14 +48,19 @@ If Sonos rejects a cached sessionâ€”for example, because another app took overâ€
 
 Switching back to browser output only changes where future ReiTunes play actions go. It does not stop whatever Sonos is already doing.
 
+## Playback status
+
+ReiTunes polls the Sonos playback status every two seconds and advances the visible playhead locally while the group is playing. Sonos does not send status events as the playhead advances normally, so even an event-driven implementation still needs a local timer.
+
+Volume is polled less frequently and sent when the user releases the slider, rather than on every fractional movement. This avoids flooding a multi-speaker group with volume transactions.
+
 ## Still missing
 
-The first playback version deliberately leaves Sonos transport controls in the Sonos app. The next useful work is:
+The next useful work is:
 
 1. Subscribe to playback, playback metadata, and session events.
-2. Reflect the actual Sonos play/pause state and playhead in ReiTunes.
-3. Add remote pause, skip, seek, and volume controls once that state stays in sync.
-4. Refresh an active Cloud Queue when the ReiTunes queue changes.
+2. Add remote skip and seek controls.
+3. Refresh an active Cloud Queue when the ReiTunes queue changes.
 
 The queue sends direct `mediaUrl` values, which the Cloud Queue API supports as an alternative to Sonos music object IDs. The media URLs do not use the Cloud Queue bearer token; that token only protects the queue metadata endpoints.
 

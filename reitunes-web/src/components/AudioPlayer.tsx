@@ -3,7 +3,9 @@ import { usePlayerStore } from '../stores/playerStore';
 import { useQueueStore } from '../hooks/useQueue';
 import { getItemUrl, markPlayed, addBookmark } from '../hooks/useLibrary';
 import { usePlayback } from '../hooks/usePlayback';
+import { useSonosControls } from '../hooks/useSonosControls';
 import { usePlaybackTargetStore } from '../stores/playbackTargetStore';
+import type { LibraryItem } from '../types';
 
 // Minimal SVG icons - consistent 16px size, 1.5px stroke
 const Icons = {
@@ -85,9 +87,10 @@ function formatTime(seconds: number): string {
 
 interface AudioPlayerProps {
   onChooseOutput: () => void;
+  items: LibraryItem[];
 }
 
-export function AudioPlayer({ onChooseOutput }: AudioPlayerProps) {
+export function AudioPlayer({ onChooseOutput, items }: AudioPlayerProps) {
   const audioRef = useRef<HTMLAudioElement>(null);
   const progressRef = useRef<HTMLDivElement>(null);
   const lastPlayedIdRef = useRef<string | null>(null);
@@ -97,6 +100,7 @@ export function AudioPlayer({ onChooseOutput }: AudioPlayerProps) {
 
   const [currentTime, setCurrentTimeLocal] = useState(0);
   const [duration, setDurationLocal] = useState(0);
+  const [sonosVolumeDraft, setSonosVolumeDraft] = useState<number | null>(null);
   const [bookmarkFeedback, setBookmarkFeedback] = useState<'idle' | 'success' | 'error'>('idle');
 
   const {
@@ -110,25 +114,48 @@ export function AudioPlayer({ onChooseOutput }: AudioPlayerProps) {
     setResumePosition,
     setVolume,
     setMuted,
+    selectRemoteItem,
   } = usePlayerStore();
   const play = usePlayback();
   const { target, isSending, error: playbackError, takeoverRequired } =
     usePlaybackTargetStore();
+  const sonos = useSonosControls(target.kind === 'sonos' ? target.groupId : null);
   const { playNext, playPrevious, shuffleEnabled, repeatMode, toggleShuffle, cycleRepeatMode } = useQueueStore();
 
   // Handle song changes
   useEffect(() => {
     const audio = audioRef.current;
-    if (!audio || !currentItem || target.kind !== 'browser') return;
+    if (!audio || !currentItem) return;
 
     const isNewSong = currentItem.id !== lastItemIdRef.current;
     if (isNewSong) {
       lastItemIdRef.current = currentItem.id;
       lastCheckpointRef.current = -1;
-      isChangingSourceRef.current = true;
+      isChangingSourceRef.current = target.kind === 'browser';
       audio.src = getItemUrl(currentItem);
     }
   }, [currentItem, target.kind]);
+
+  useEffect(() => {
+    if (
+      target.kind !== 'sonos' ||
+      !sonos.playback?.reitunesSessionActive ||
+      !sonos.playback.sourceItemId ||
+      sonos.playback.sourceItemId === currentItem?.id
+    ) {
+      return;
+    }
+    const item = items.find((candidate) => candidate.id === sonos.playback?.sourceItemId);
+    if (item) selectRemoteItem(item, sonos.positionMillis / 1000);
+  }, [
+    currentItem?.id,
+    items,
+    selectRemoteItem,
+    sonos.playback?.reitunesSessionActive,
+    sonos.playback?.sourceItemId,
+    sonos.positionMillis,
+    target.kind,
+  ]);
 
   // Restored tracks remain paused. Tracks selected by the user set isPlaying
   // and start through this effect.
@@ -201,6 +228,10 @@ export function AudioPlayer({ onChooseOutput }: AudioPlayerProps) {
     }
   }, []);
 
+  const handleLoadStart = useCallback(() => {
+    setDurationLocal(0);
+  }, []);
+
   const handleEnded = useCallback(() => {
     setResumePosition(0);
     if (repeatMode === 'one' && audioRef.current) {
@@ -271,6 +302,19 @@ export function AudioPlayer({ onChooseOutput }: AudioPlayerProps) {
       setTimeout(() => setBookmarkFeedback('idle'), 1500);
     }
   }, [currentItem]);
+
+  const handleAddSonosBookmark = useCallback(async () => {
+    if (!currentItem || !sonos.playback?.reitunesSessionActive) return;
+    try {
+      await addBookmark(currentItem.id, sonos.positionMillis / 1000);
+      setBookmarkFeedback('success');
+      setTimeout(() => setBookmarkFeedback('idle'), 1500);
+    } catch (err) {
+      console.error('Failed to add Sonos bookmark:', err);
+      setBookmarkFeedback('error');
+      setTimeout(() => setBookmarkFeedback('idle'), 1500);
+    }
+  }, [currentItem, sonos.playback?.reitunesSessionActive, sonos.positionMillis]);
 
   const handlePrevious = useCallback(() => {
     const prevItem = playPrevious();
@@ -402,11 +446,28 @@ export function AudioPlayer({ onChooseOutput }: AudioPlayerProps) {
 
   const progress = duration > 0 ? (currentTime / duration) * 100 : 0;
   const bookmarks = currentItem?.bookmarks ? Object.values(currentItem.bookmarks) : [];
+  const sonosSessionActive = sonos.playback?.reitunesSessionActive === true;
+  const sonosIsPlaying =
+    sonos.playback?.playbackState === 'PLAYBACK_STATE_PLAYING' ||
+    sonos.playback?.playbackState === 'PLAYBACK_STATE_BUFFERING';
+  const sonosPosition = sonosSessionActive ? sonos.positionMillis / 1000 : 0;
+  const sonosProgress = duration > 0 ? Math.min(100, (sonosPosition / duration) * 100) : 0;
+  const displayedSonosVolume = sonosVolumeDraft ?? sonos.volume?.volume ?? 0;
+  const sonosTransportDisabled =
+    !sonosSessionActive ||
+    !currentItem ||
+    sonos.isTransportPending ||
+    (sonosIsPlaying && sonos.playback?.availablePlaybackActions?.canPause === false);
 
   if (target.kind === 'sonos') {
     return (
       <div className="px-4 pt-3 pb-2">
-        <audio ref={audioRef} />
+        <audio
+          ref={audioRef}
+          preload="metadata"
+          onLoadStart={handleLoadStart}
+          onLoadedMetadata={handleLoadedMetadata}
+        />
         <div className="flex items-start justify-between gap-4">
           <div className="min-w-0">
             <div className="text-sm text-solarized-base1 truncate">
@@ -429,9 +490,17 @@ export function AudioPlayer({ onChooseOutput }: AudioPlayerProps) {
                   {playbackError}
                   {takeoverRequired && ' Open Sonos output and choose the group again.'}
                 </span>
+              ) : sonos.error ? (
+                <span className="text-solarized-red">{sonos.error}</span>
+              ) : !sonos.playback ? (
+                <span className="text-solarized-yellow">Reading {target.groupName}…</span>
+              ) : !sonosSessionActive ? (
+                <span className="text-solarized-base0">
+                  Sonos · {target.groupName}. Choose a song to start a ReiTunes session.
+                </span>
               ) : (
                 <span className="text-solarized-base0">
-                  Sonos · {target.groupName}. Choose a song below to play it there.
+                  Sonos · {target.groupName} · {sonosIsPlaying ? 'Playing' : 'Paused'}
                 </span>
               )}
             </div>
@@ -444,8 +513,100 @@ export function AudioPlayer({ onChooseOutput }: AudioPlayerProps) {
             Change output
           </button>
         </div>
-        <div className="text-[11px] text-solarized-base00 mt-2">
-          Pause, skip and volume remain available in the Sonos app for now.
+
+        <div className="flex items-center gap-3 mt-3 mb-2">
+          <span className="text-xs text-solarized-base0 w-10 text-right tabular-nums">
+            {formatTime(sonosPosition)}
+          </span>
+          <div className="flex-grow h-1 bg-solarized-base02 rounded-full relative">
+            <div
+              className="h-full bg-solarized-cyan rounded-full relative transition-[width] duration-200"
+              style={{ width: `${sonosProgress}%` }}
+            >
+              <div className="absolute right-0 top-1/2 -translate-y-1/2 w-2.5 h-2.5 bg-solarized-cyan rounded-full" />
+            </div>
+            {bookmarks.map((bookmark, idx) => {
+              const position = duration > 0 ? (bookmark.position / duration) * 100 : 0;
+              return (
+                <div
+                  key={idx}
+                  className="absolute top-1/2 -translate-y-1/2 w-1 h-3 bg-solarized-blue/70 rounded-sm"
+                  style={{ left: `${position}%` }}
+                  title={`${bookmark.emoji || '🔖'} ${bookmark.label ? `${bookmark.label} · ` : ''}${formatTime(bookmark.position)}`}
+                />
+              );
+            })}
+          </div>
+          <span className="text-xs text-solarized-base0 w-10 tabular-nums">
+            {duration > 0 ? formatTime(duration) : '—:—'}
+          </span>
+        </div>
+
+        <div className="flex items-center justify-between gap-4">
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => void (sonosIsPlaying ? sonos.pause() : sonos.play())}
+              disabled={sonosTransportDisabled}
+              className="w-9 h-9 flex items-center justify-center rounded-full bg-solarized-cyan text-solarized-base03 hover:bg-solarized-blue disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+              aria-label={sonosIsPlaying ? 'Pause Sonos' : 'Play Sonos'}
+              title={sonosIsPlaying ? 'Pause Sonos' : 'Play Sonos'}
+            >
+              {sonosIsPlaying ? Icons.pause : Icons.play}
+            </button>
+            <button
+              type="button"
+              onClick={() => void handleAddSonosBookmark()}
+              disabled={!sonosSessionActive || !currentItem}
+              className={`p-2 rounded transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
+                bookmarkFeedback === 'success'
+                  ? 'text-solarized-green bg-solarized-base02'
+                  : bookmarkFeedback === 'error'
+                    ? 'text-solarized-red bg-solarized-base02'
+                    : 'text-solarized-base0 hover:text-solarized-cyan hover:bg-solarized-base02'
+              }`}
+              aria-label="Bookmark current Sonos time"
+              title="Bookmark current Sonos time"
+            >
+              {Icons.bookmark}
+            </button>
+          </div>
+
+          <div className="flex items-center gap-2 min-w-0 max-w-64 flex-1 justify-end">
+            <button
+              type="button"
+              onClick={() => void sonos.setMuted(!sonos.volume?.muted)}
+              disabled={!sonos.volume || sonos.volume.fixed || sonos.isVolumePending}
+              className="p-1.5 text-solarized-base0 hover:text-solarized-cyan disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+              aria-label={sonos.volume?.muted ? 'Unmute Sonos' : 'Mute Sonos'}
+              title={sonos.volume?.muted ? 'Unmute Sonos' : 'Mute Sonos'}
+            >
+              {sonos.volume?.muted ? Icons.volumeMute : Icons.volume}
+            </button>
+            <input
+              type="range"
+              min="0"
+              max="100"
+              value={displayedSonosVolume}
+              onChange={(event) => setSonosVolumeDraft(Number(event.target.value))}
+              onPointerUp={() =>
+                void sonos
+                  .setGroupVolume(displayedSonosVolume)
+                  .then(() => setSonosVolumeDraft(null))
+              }
+              onKeyUp={() =>
+                void sonos
+                  .setGroupVolume(displayedSonosVolume)
+                  .then(() => setSonosVolumeDraft(null))
+              }
+              disabled={!sonos.volume || sonos.volume.fixed || sonos.isVolumePending}
+              className="w-full min-w-20 accent-solarized-cyan disabled:opacity-40"
+              aria-label="Sonos group volume"
+            />
+            <span className="text-xs text-solarized-base0 w-8 text-right tabular-nums">
+              {sonos.volume ? displayedSonosVolume : '—'}
+            </span>
+          </div>
         </div>
       </div>
     );
@@ -456,6 +617,7 @@ export function AudioPlayer({ onChooseOutput }: AudioPlayerProps) {
       {/* Hidden audio element */}
       <audio
         ref={audioRef}
+        onLoadStart={handleLoadStart}
         onTimeUpdate={handleTimeUpdate}
         onLoadedMetadata={handleLoadedMetadata}
         onEnded={handleEnded}

@@ -242,6 +242,26 @@ async fn main() -> Result<()> {
                 .route("/sonos/cloud-queues", post(prepare_cloud_queue_handler))
                 .route("/sonos/play", post(sonos_play_handler))
                 .route(
+                    "/sonos/groups/{group_id}/playback",
+                    get(sonos_group_playback_handler),
+                )
+                .route(
+                    "/sonos/groups/{group_id}/playback/play",
+                    post(sonos_group_play_handler),
+                )
+                .route(
+                    "/sonos/groups/{group_id}/playback/pause",
+                    post(sonos_group_pause_handler),
+                )
+                .route(
+                    "/sonos/groups/{group_id}/volume",
+                    get(sonos_group_volume_handler).post(sonos_set_group_volume_handler),
+                )
+                .route(
+                    "/sonos/groups/{group_id}/mute",
+                    post(sonos_set_group_mute_handler),
+                )
+                .route(
                     "/sonos/households/{household_id}/groups",
                     get(sonos_groups_handler),
                 )
@@ -595,6 +615,151 @@ async fn sonos_play_handler(
         .await
         .map_err(sonos_playback_failure)?;
     Ok(Json(status))
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SonosGroupPlaybackResponse {
+    #[serde(flatten)]
+    playback: sonos::SonosGroupPlayback,
+    source_item_id: Option<Uuid>,
+    reitunes_session_active: bool,
+}
+
+async fn sonos_group_playback_handler(
+    State(app_state): State<AppState>,
+    Path(group_id): Path<String>,
+) -> SonosApiResult<Json<SonosGroupPlaybackResponse>> {
+    let control = app_state.sonos.ok_or_else(sonos_unavailable)?;
+    let playback = control
+        .group_playback(&group_id)
+        .await
+        .map_err(sonos_failure)?;
+    let source_item_id = app_state
+        .cloud_queues
+        .source_item_id(
+            playback.queue_version.as_deref(),
+            playback.item_id.as_deref(),
+        )
+        .map_err(cloud_queue_failure)?;
+    let reitunes_session_active = source_item_id.is_some()
+        && control
+            .has_playback_session(&group_id)
+            .map_err(sonos_failure)?;
+    Ok(Json(SonosGroupPlaybackResponse {
+        playback,
+        source_item_id,
+        reitunes_session_active,
+    }))
+}
+
+async fn active_sonos_control(
+    app_state: &AppState,
+    group_id: &str,
+) -> Result<Arc<sonos::SonosControl>, sonos::SonosPlaybackError> {
+    let control = app_state.sonos.clone().ok_or_else(|| {
+        sonos::SonosPlaybackError::Control(anyhow::anyhow!(
+            "Sonos Direct Control is not configured"
+        ))
+    })?;
+    if !control.has_playback_session(group_id)? {
+        return Err(sonos::SonosPlaybackError::TakeoverRequired);
+    }
+    let playback = control.group_playback(group_id).await?;
+    let source_item_id = app_state
+        .cloud_queues
+        .source_item_id(
+            playback.queue_version.as_deref(),
+            playback.item_id.as_deref(),
+        )
+        .map_err(|error| sonos::SonosPlaybackError::Control(error.into()))?;
+    if source_item_id.is_none() {
+        return Err(sonos::SonosPlaybackError::TakeoverRequired);
+    }
+    Ok(control)
+}
+
+async fn sonos_group_play_handler(
+    State(app_state): State<AppState>,
+    Path(group_id): Path<String>,
+) -> SonosApiResult<StatusCode> {
+    let control = active_sonos_control(&app_state, &group_id)
+        .await
+        .map_err(sonos_playback_failure)?;
+    control
+        .play(&group_id)
+        .await
+        .map_err(sonos_failure)?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn sonos_group_pause_handler(
+    State(app_state): State<AppState>,
+    Path(group_id): Path<String>,
+) -> SonosApiResult<StatusCode> {
+    let control = active_sonos_control(&app_state, &group_id)
+        .await
+        .map_err(sonos_playback_failure)?;
+    control
+        .pause(&group_id)
+        .await
+        .map_err(sonos_failure)?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn sonos_group_volume_handler(
+    State(app_state): State<AppState>,
+    Path(group_id): Path<String>,
+) -> SonosApiResult<Json<sonos::SonosGroupVolume>> {
+    let control = app_state.sonos.ok_or_else(sonos_unavailable)?;
+    control
+        .group_volume(&group_id)
+        .await
+        .map(Json)
+        .map_err(sonos_failure)
+}
+
+#[derive(Debug, Deserialize)]
+struct SonosSetVolumeRequest {
+    volume: u8,
+}
+
+async fn sonos_set_group_volume_handler(
+    State(app_state): State<AppState>,
+    Path(group_id): Path<String>,
+    JsonExtractor(request): JsonExtractor<SonosSetVolumeRequest>,
+) -> SonosApiResult<StatusCode> {
+    if request.volume > 100 {
+        return Err(cloud_queue_failure(
+            cloud_queue::CloudQueueError::InvalidRequest(
+                "Sonos volume must be between 0 and 100".to_string(),
+            ),
+        ));
+    }
+    let control = app_state.sonos.ok_or_else(sonos_unavailable)?;
+    control
+        .set_group_volume(&group_id, request.volume)
+        .await
+        .map_err(sonos_failure)?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+#[derive(Debug, Deserialize)]
+struct SonosSetMuteRequest {
+    muted: bool,
+}
+
+async fn sonos_set_group_mute_handler(
+    State(app_state): State<AppState>,
+    Path(group_id): Path<String>,
+    JsonExtractor(request): JsonExtractor<SonosSetMuteRequest>,
+) -> SonosApiResult<StatusCode> {
+    let control = app_state.sonos.ok_or_else(sonos_unavailable)?;
+    control
+        .set_group_mute(&group_id, request.muted)
+        .await
+        .map_err(sonos_failure)?;
+    Ok(StatusCode::NO_CONTENT)
 }
 
 async fn prepare_cloud_queue_handler(
