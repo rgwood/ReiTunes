@@ -22,7 +22,8 @@ pub async fn smapi_soap_handler(
         .get("User-Agent")
         .and_then(|value| value.to_str().ok())
         .unwrap_or("unknown");
-    info!(action, user_agent, "Handling SMAPI request");
+    let request_id = request_value(&body, "id").unwrap_or_default();
+    info!(action, user_agent, request_id, "Handling SMAPI request");
     debug!(body, "SMAPI request body");
 
     let response_body = match action {
@@ -30,6 +31,7 @@ pub async fn smapi_soap_handler(
         "search" => search(&state, &body).await?,
         "getMediaURI" => get_media_uri(&state, &body).await?,
         "getMediaMetadata" => get_media_metadata(&state, &body).await?,
+        "getExtendedMetadata" => get_extended_metadata(&state, &body).await?,
         "getLastUpdate" => get_last_update(&state).await,
         _ => return Err(SoapError::UnsupportedOperation(action.to_string())),
     };
@@ -46,21 +48,8 @@ async fn get_metadata(state: &crate::AppState, body: &str) -> Result<String, Soa
     let index = request_number(body, "index").unwrap_or(0);
     let requested_count = request_number(body, "count").unwrap_or(100).min(500);
 
-    let items = match id.as_str() {
-        "" | "root" => vec![BrowseItem::Collection {
-            id: "tracks".to_string(),
-            item_type: "trackList",
-            title: "All songs".to_string(),
-        }],
-        "tracks" => {
-            let library = state.library.read().await;
-            sorted_tracks(&library)
-                .into_iter()
-                .map(BrowseItem::from)
-                .collect()
-        }
-        _ => return Err(SoapError::NotFound(id)),
-    };
+    let library = state.library.read().await;
+    let items = browse_items(&library, &id)?;
 
     Ok(metadata_response(
         "getMetadata",
@@ -71,21 +60,56 @@ async fn get_metadata(state: &crate::AppState, body: &str) -> Result<String, Soa
 }
 
 async fn search(state: &crate::AppState, body: &str) -> Result<String, SoapError> {
+    let id = request_value(body, "id").unwrap_or_else(|| "all".to_string());
     let term = request_value(body, "term")
         .unwrap_or_default()
         .to_lowercase();
     let index = request_number(body, "index").unwrap_or(0);
     let requested_count = request_number(body, "count").unwrap_or(100).min(500);
     let library = state.library.read().await;
-    let items: Vec<_> = sorted_tracks(&library)
-        .into_iter()
-        .filter(|track| {
-            track.name.to_lowercase().contains(&term)
-                || track.artist.to_lowercase().contains(&term)
-                || track.album.to_lowercase().contains(&term)
-        })
-        .map(BrowseItem::from)
-        .collect();
+    let matching_tracks = || {
+        sorted_tracks(&library)
+            .into_iter()
+            .filter(|track| {
+                track.name.to_lowercase().contains(&term)
+                    || track.artist.to_lowercase().contains(&term)
+                    || track.album.to_lowercase().contains(&term)
+            })
+            .map(BrowseItem::from)
+            .collect::<Vec<_>>()
+    };
+    let matching_artists = || {
+        artists(&library)
+            .into_iter()
+            .filter(|artist| artist.to_lowercase().contains(&term))
+            .map(artist_item)
+            .collect::<Vec<_>>()
+    };
+    let matching_albums = || {
+        albums(&library)
+            .into_iter()
+            .filter(|(artist, album)| {
+                artist.to_lowercase().contains(&term) || album.to_lowercase().contains(&term)
+            })
+            .map(|(artist, album)| album_item(&artist, &album))
+            .collect::<Vec<_>>()
+    };
+    let items = match id.as_str() {
+        "all" | "search:all" => {
+            let mut items = matching_artists();
+            items.extend(matching_albums());
+            items.extend(matching_tracks());
+            items
+        }
+        "artist" | "artists" | "search:artists" => matching_artists(),
+        "album" | "albums" | "search:albums" => matching_albums(),
+        "track" | "tracks" | "search:tracks" => matching_tracks(),
+        _ => {
+            return Err(SoapError::InvalidRequest(format!(
+                "unknown search category: {id}"
+            )))
+        }
+    };
 
     Ok(metadata_response("search", index, requested_count, &items))
 }
@@ -108,8 +132,14 @@ async fn get_media_uri(state: &crate::AppState, body: &str) -> Result<String, So
 
 async fn get_media_metadata(state: &crate::AppState, body: &str) -> Result<String, SoapError> {
     let id = required_request_value(body, "id")?;
-    let track_id = track_uuid(&id)?;
     let library = state.library.read().await;
+    if let Some((item_type, title)) = collection_details(&library, &id) {
+        return Ok(soap_envelope(&format!(
+            "<getMediaMetadataResponse xmlns=\"{SONOS_NAMESPACE}\"><getMediaMetadataResult>{}</getMediaMetadataResult></getMediaMetadataResponse>",
+            collection_inner_xml(&id, item_type, &title)
+        )));
+    }
+    let track_id = track_uuid(&id)?;
     let track = library
         .items
         .get(&track_id)
@@ -118,6 +148,28 @@ async fn get_media_metadata(state: &crate::AppState, body: &str) -> Result<Strin
     Ok(soap_envelope(&format!(
         "<getMediaMetadataResponse xmlns=\"{SONOS_NAMESPACE}\"><getMediaMetadataResult>{}</getMediaMetadataResult></getMediaMetadataResponse>",
         track_xml(track)
+    )))
+}
+
+async fn get_extended_metadata(state: &crate::AppState, body: &str) -> Result<String, SoapError> {
+    let id = required_request_value(body, "id")?;
+    let library = state.library.read().await;
+    let result = if let Some((item_type, title)) = collection_details(&library, &id) {
+        format!(
+            "<mediaCollection>{}</mediaCollection>",
+            collection_inner_xml(&id, item_type, &title)
+        )
+    } else {
+        let track_id = track_uuid(&id)?;
+        let track = library
+            .items
+            .get(&track_id)
+            .ok_or_else(|| SoapError::NotFound(id))?;
+        format!("<mediaMetadata>{}</mediaMetadata>", track_xml(track))
+    };
+
+    Ok(soap_envelope(&format!(
+        "<getExtendedMetadataResponse xmlns=\"{SONOS_NAMESPACE}\"><getExtendedMetadataResult>{result}</getExtendedMetadataResult></getExtendedMetadataResponse>"
     )))
 }
 
@@ -155,6 +207,140 @@ enum BrowseItem {
     Track(LibraryItem),
 }
 
+fn browse_items(library: &Library, id: &str) -> Result<Vec<BrowseItem>, SoapError> {
+    match id {
+        "" | "root" => Ok(vec![
+            collection_item("tracks", "trackList", "All songs"),
+            collection_item("artists", "container", "Artists"),
+            collection_item("albums", "container", "Albums"),
+        ]),
+        "tracks" => Ok(sorted_tracks(library)
+            .into_iter()
+            .map(BrowseItem::from)
+            .collect()),
+        "artists" => Ok(artists(library).into_iter().map(artist_item).collect()),
+        "albums" => Ok(albums(library)
+            .into_iter()
+            .map(|(artist, album)| album_item(&artist, &album))
+            .collect()),
+        "search" => Ok(vec![
+            collection_item("search:all", "search", "All"),
+            collection_item("search:artists", "search", "Artists"),
+            collection_item("search:albums", "search", "Albums"),
+            collection_item("search:tracks", "search", "Songs"),
+        ]),
+        _ if id.starts_with("artist:") => {
+            let artist = artists(library)
+                .into_iter()
+                .find(|artist| stable_id("artist", &[artist]) == id)
+                .ok_or_else(|| SoapError::NotFound(id.to_string()))?;
+            Ok(sorted_tracks(library)
+                .into_iter()
+                .filter(|track| track.artist == artist)
+                .map(BrowseItem::from)
+                .collect())
+        }
+        _ if id.starts_with("album:") => {
+            let (artist, album) = albums(library)
+                .into_iter()
+                .find(|(artist, album)| stable_id("album", &[artist, album]) == id)
+                .ok_or_else(|| SoapError::NotFound(id.to_string()))?;
+            Ok(sorted_tracks(library)
+                .into_iter()
+                .filter(|track| track.artist == artist && track.album == album)
+                .map(BrowseItem::from)
+                .collect())
+        }
+        _ => Err(SoapError::NotFound(id.to_string())),
+    }
+}
+
+fn collection_details(library: &Library, id: &str) -> Option<(&'static str, String)> {
+    match id {
+        "tracks" => Some(("trackList", "All songs".to_string())),
+        "artists" => Some(("container", "Artists".to_string())),
+        "albums" => Some(("container", "Albums".to_string())),
+        "search" => Some(("container", "Search".to_string())),
+        "search:all" => Some(("search", "All".to_string())),
+        "search:artists" => Some(("search", "Artists".to_string())),
+        "search:albums" => Some(("search", "Albums".to_string())),
+        "search:tracks" => Some(("search", "Songs".to_string())),
+        _ if id.starts_with("artist:") => artists(library)
+            .into_iter()
+            .find(|artist| stable_id("artist", &[artist]) == id)
+            .map(|artist| ("artist", artist)),
+        _ if id.starts_with("album:") => albums(library)
+            .into_iter()
+            .find(|(artist, album)| stable_id("album", &[artist, album]) == id)
+            .map(|(artist, album)| ("album", album_title(&artist, &album))),
+        _ => None,
+    }
+}
+
+fn collection_item(id: &str, item_type: &'static str, title: &str) -> BrowseItem {
+    BrowseItem::Collection {
+        id: id.to_string(),
+        item_type,
+        title: title.to_string(),
+    }
+}
+
+fn artist_item(artist: String) -> BrowseItem {
+    collection_item(&stable_id("artist", &[&artist]), "artist", &artist)
+}
+
+fn album_item(artist: &str, album: &str) -> BrowseItem {
+    collection_item(
+        &stable_id("album", &[artist, album]),
+        "album",
+        &album_title(artist, album),
+    )
+}
+
+fn album_title(artist: &str, album: &str) -> String {
+    if artist.is_empty() {
+        album.to_string()
+    } else {
+        format!("{album} — {artist}")
+    }
+}
+
+fn artists(library: &Library) -> Vec<String> {
+    let mut artists: Vec<_> = library
+        .items
+        .values()
+        .map(|track| track.artist.clone())
+        .filter(|artist| !artist.is_empty())
+        .collect();
+    artists.sort_by_key(|artist| artist.to_lowercase());
+    artists.dedup();
+    artists
+}
+
+fn albums(library: &Library) -> Vec<(String, String)> {
+    let mut albums: Vec<_> = library
+        .items
+        .values()
+        .filter(|track| !track.album.is_empty())
+        .map(|track| (track.artist.clone(), track.album.clone()))
+        .collect();
+    albums.sort_by_key(|(artist, album)| (album.to_lowercase(), artist.to_lowercase()));
+    albums.dedup();
+    albums
+}
+
+fn stable_id(prefix: &str, values: &[&str]) -> String {
+    // FNV-1a gives Sonos compact, deterministic IDs without relying on Rust's hash seed.
+    let mut hash = 0xcbf29ce484222325_u64;
+    for value in values {
+        for byte in value.as_bytes().iter().chain(std::iter::once(&0)) {
+            hash ^= u64::from(*byte);
+            hash = hash.wrapping_mul(0x100000001b3);
+        }
+    }
+    format!("{prefix}:{hash:016x}")
+}
+
 impl From<LibraryItem> for BrowseItem {
     fn from(track: LibraryItem) -> Self {
         Self::Track(track)
@@ -169,13 +355,21 @@ impl BrowseItem {
                 item_type,
                 title,
             } => format!(
-                "<mediaCollection><id>{}</id><itemType>{item_type}</itemType><title>{}</title><canPlay>false</canPlay><canEnumerate>true</canEnumerate></mediaCollection>",
-                escape_xml(id),
-                escape_xml(title)
+                "<mediaCollection>{}</mediaCollection>",
+                collection_inner_xml(id, item_type, title)
             ),
             Self::Track(track) => format!("<mediaMetadata>{}</mediaMetadata>", track_xml(track)),
         }
     }
+}
+
+fn collection_inner_xml(id: &str, item_type: &str, title: &str) -> String {
+    format!(
+        "<id>{}</id><itemType>{}</itemType><title>{}</title><canPlay>false</canPlay><canEnumerate>true</canEnumerate>",
+        escape_xml(id),
+        escape_xml(item_type),
+        escape_xml(title)
+    )
 }
 
 fn track_xml(track: &LibraryItem) -> String {
@@ -411,6 +605,36 @@ mod tests {
         assert!(metadata.contains("<artist>A &lt;B</artist>"));
         assert!(metadata.contains(&format!("<id>track:{track_id}</id>")));
 
+        let root = get_metadata(
+            &state,
+            "<getMetadata><id>root</id><index>0</index><count>10</count></getMetadata>",
+        )
+        .await
+        .unwrap();
+        assert!(root.contains("<id>tracks</id>"));
+        assert!(root.contains("<id>artists</id>"));
+        assert!(root.contains("<id>albums</id>"));
+
+        let artist_id = stable_id("artist", &["A <B"]);
+        let artist_tracks = get_metadata(
+            &state,
+            &format!(
+                "<getMetadata><id>{artist_id}</id><index>0</index><count>10</count></getMetadata>"
+            ),
+        )
+        .await
+        .unwrap();
+        assert!(artist_tracks.contains("<title>One &amp; Only</title>"));
+
+        let results = search(
+            &state,
+            "<search><id>all</id><term>only</term><index>0</index><count>10</count></search>",
+        )
+        .await
+        .unwrap();
+        assert!(results.contains("<searchResponse"));
+        assert!(results.contains("<title>One &amp; Only</title>"));
+
         let media_uri = get_media_uri(
             &state,
             &format!("<getMediaURI><id>track:{track_id}</id></getMediaURI>"),
@@ -420,5 +644,22 @@ mod tests {
         assert!(media_uri.contains(
             "<getMediaURIResult>https://reitunes.s3.example.com/music/one%20and%20only.mp3</getMediaURIResult>"
         ));
+
+        let collection_metadata = get_media_metadata(
+            &state,
+            "<getMediaMetadata><id>tracks</id></getMediaMetadata>",
+        )
+        .await
+        .unwrap();
+        assert!(collection_metadata.contains("<itemType>trackList</itemType>"));
+
+        let extended_metadata = get_extended_metadata(
+            &state,
+            &format!("<getExtendedMetadata><id>track:{track_id}</id></getExtendedMetadata>"),
+        )
+        .await
+        .unwrap();
+        assert!(extended_metadata.contains("<getExtendedMetadataResult><mediaMetadata>"));
+        assert!(extended_metadata.contains("<title>One &amp; Only</title>"));
     }
 }
