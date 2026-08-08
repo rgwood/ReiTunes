@@ -8,6 +8,7 @@ use std::collections::HashSet;
 use tracing::{info, instrument};
 
 use crate::library::{EventRow, EventWithMetadata};
+use crate::playlist::PlaylistEventWithMetadata;
 
 #[cfg(debug_assertions)]
 const REMOTE_API_KEY: &str = match option_env!("REITUNES_API_KEY") {
@@ -80,6 +81,28 @@ pub fn save_event_to_db(conn: &Connection, event: &EventWithMetadata) -> Result<
     Ok(())
 }
 
+/// Save a playlist event to the database.
+pub fn save_playlist_event_to_db(
+    conn: &Connection,
+    event: &PlaylistEventWithMetadata,
+) -> Result<()> {
+    let mut stmt = conn.prepare_cached(
+        "INSERT INTO events (Id, AggregateId, AggregateType, CreatedTimeUtc, MachineName, Serialized)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+    )?;
+
+    stmt.execute(params![
+        event.id.to_string(),
+        event.aggregate_id.to_string(),
+        event.aggregate_type,
+        event.created_time_utc.to_string(),
+        event.machine_name,
+        serde_json::to_string(&event.event)?,
+    ])?;
+
+    Ok(())
+}
+
 /// Load all events from the database
 #[instrument(skip(conn))]
 pub fn load_all_events_from_db(conn: &Connection) -> Result<Vec<EventWithMetadata>> {
@@ -101,6 +124,28 @@ pub fn load_all_events_from_db(conn: &Connection) -> Result<Vec<EventWithMetadat
 
     info!(event_count = events.len(), "Loaded all events from db");
 
+    Ok(events)
+}
+
+/// Load all playlist events from the database.
+#[instrument(skip(conn))]
+pub fn load_all_playlist_events_from_db(
+    conn: &Connection,
+) -> Result<Vec<PlaylistEventWithMetadata>> {
+    let mut stmt = conn.prepare_cached(
+        "SELECT * FROM events e WHERE e.AggregateType == 'Playlist' ORDER BY CreatedTimeUtc, rowid",
+    )?;
+
+    let rows = from_rows::<EventRow>(stmt.query([])?);
+    let mut events = Vec::new();
+    for row in rows {
+        events.push(PlaylistEventWithMetadata::from_row(row?)?);
+    }
+
+    info!(
+        event_count = events.len(),
+        "Loaded all playlist events from db"
+    );
     Ok(events)
 }
 

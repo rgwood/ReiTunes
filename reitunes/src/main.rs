@@ -141,6 +141,7 @@ async fn main() -> Result<()> {
             // Start the web server
             let conn = DB.get()?;
             let library = load_library_from_db(&conn)?;
+            let playlists = load_playlists_from_db(&conn)?;
             // important to drop after using to return the connection to the pool
             // leaving this connection open slows writes down ~100x (from 0.2 ms to 20 ms)
             drop(conn);
@@ -184,7 +185,7 @@ async fn main() -> Result<()> {
 
             let app_state = AppState {
                 library: Arc::new(RwLock::new(library)),
-                playlists: Arc::new(RwLock::new(PlaylistStore::new())),
+                playlists: Arc::new(RwLock::new(playlists)),
                 update_tx: broadcast::channel(100).0,
                 storage: Arc::new(storage),
             };
@@ -557,21 +558,8 @@ async fn create_playlist_handler(
     };
     let event_with_metadata = PlaylistEventWithMetadata::new(playlist_id, event)?;
 
-    // Save to database
-    // Note: We're using the same events table with aggregate_type = "Playlist"
-    let serialized = serde_json::to_string(&event_with_metadata.event)?;
     let conn = DB.get()?;
-    conn.execute(
-        "INSERT INTO events (Id, AggregateId, AggregateType, CreatedTimeUtc, MachineName, Serialized) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-        rusqlite::params![
-            event_with_metadata.id.to_string(),
-            event_with_metadata.aggregate_id.to_string(),
-            event_with_metadata.aggregate_type,
-            event_with_metadata.created_time_utc.to_string(),
-            event_with_metadata.machine_name,
-            serialized,
-        ],
-    )?;
+    save_playlist_event_to_db(&conn, &event_with_metadata)?;
 
     // Apply to in-memory store
     let mut playlists = app_state.playlists.write().await;
@@ -597,20 +585,8 @@ async fn rename_playlist_handler(
     };
     let event_with_metadata = PlaylistEventWithMetadata::new(id, event.clone())?;
 
-    // Save to database
-    let serialized = serde_json::to_string(&event_with_metadata.event)?;
     let conn = DB.get()?;
-    conn.execute(
-        "INSERT INTO events (Id, AggregateId, AggregateType, CreatedTimeUtc, MachineName, Serialized) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-        rusqlite::params![
-            event_with_metadata.id.to_string(),
-            event_with_metadata.aggregate_id.to_string(),
-            event_with_metadata.aggregate_type,
-            event_with_metadata.created_time_utc.to_string(),
-            event_with_metadata.machine_name,
-            serialized,
-        ],
-    )?;
+    save_playlist_event_to_db(&conn, &event_with_metadata)?;
 
     // Apply to in-memory store
     let mut playlists = app_state.playlists.write().await;
@@ -629,20 +605,8 @@ async fn delete_playlist_handler(
     let event = PlaylistEvent::PlaylistDeletedEvent;
     let event_with_metadata = PlaylistEventWithMetadata::new(id, event.clone())?;
 
-    // Save to database
-    let serialized = serde_json::to_string(&event_with_metadata.event)?;
     let conn = DB.get()?;
-    conn.execute(
-        "INSERT INTO events (Id, AggregateId, AggregateType, CreatedTimeUtc, MachineName, Serialized) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-        rusqlite::params![
-            event_with_metadata.id.to_string(),
-            event_with_metadata.aggregate_id.to_string(),
-            event_with_metadata.aggregate_type,
-            event_with_metadata.created_time_utc.to_string(),
-            event_with_metadata.machine_name,
-            serialized,
-        ],
-    )?;
+    save_playlist_event_to_db(&conn, &event_with_metadata)?;
 
     // Apply to in-memory store
     let mut playlists = app_state.playlists.write().await;
@@ -683,20 +647,8 @@ async fn add_playlist_item_handler(
     };
     let event_with_metadata = PlaylistEventWithMetadata::new(id, event.clone())?;
 
-    // Save to database
-    let serialized = serde_json::to_string(&event_with_metadata.event)?;
     let conn = DB.get()?;
-    conn.execute(
-        "INSERT INTO events (Id, AggregateId, AggregateType, CreatedTimeUtc, MachineName, Serialized) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-        rusqlite::params![
-            event_with_metadata.id.to_string(),
-            event_with_metadata.aggregate_id.to_string(),
-            event_with_metadata.aggregate_type,
-            event_with_metadata.created_time_utc.to_string(),
-            event_with_metadata.machine_name,
-            serialized,
-        ],
-    )?;
+    save_playlist_event_to_db(&conn, &event_with_metadata)?;
 
     // Apply to in-memory store
     let mut playlists = app_state.playlists.write().await;
@@ -717,20 +669,8 @@ async fn remove_playlist_item_handler(
     };
     let event_with_metadata = PlaylistEventWithMetadata::new(playlist_id, event.clone())?;
 
-    // Save to database
-    let serialized = serde_json::to_string(&event_with_metadata.event)?;
     let conn = DB.get()?;
-    conn.execute(
-        "INSERT INTO events (Id, AggregateId, AggregateType, CreatedTimeUtc, MachineName, Serialized) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-        rusqlite::params![
-            event_with_metadata.id.to_string(),
-            event_with_metadata.aggregate_id.to_string(),
-            event_with_metadata.aggregate_type,
-            event_with_metadata.created_time_utc.to_string(),
-            event_with_metadata.machine_name,
-            serialized,
-        ],
-    )?;
+    save_playlist_event_to_db(&conn, &event_with_metadata)?;
 
     // Apply to in-memory store
     let mut playlists = app_state.playlists.write().await;
