@@ -190,10 +190,9 @@ async fn main() -> Result<()> {
             let smapi_router =
                 Router::new().route("/v1/soap", post(smapi::smapi_soap_handler));
 
-            let public_items_router = Router::new().route("/items", get(items_handler));
-
             // Private API routes require the same session as the React frontend.
             let protected_api_router = Router::new()
+                .route("/items", get(items_handler))
                 .route("/upload", post(upload_handler))
                 // Allow uploads up to 500MB
                 .layer(DefaultBodyLimit::max(500 * 1024 * 1024))
@@ -221,10 +220,9 @@ async fn main() -> Result<()> {
                 .route_service("/", vite.clone())
                 .route_service("/{*path}", vite)
                 .route_layer(middleware::from_fn(auth))
-                // Service, API-key, and read-only routes stay outside session auth.
+                // Service and API-key routes stay outside session auth.
                 .nest("/api", api_router)
                 .nest("/smapi", smapi_router)
-                .nest("/api", public_items_router)
                 .nest("/api", protected_api_router)
                 // Cookie extraction is used by both frontend and API auth middleware.
                 .layer(CookieManagerLayer::new())
