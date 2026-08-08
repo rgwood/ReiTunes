@@ -274,10 +274,23 @@ test('switches between Sonos and browser playback without playing twice', async 
   let sonosPlaybackState = 'PLAYBACK_STATE_PLAYING';
   let sonosVolume = 37;
   let sonosMuted = false;
+  let rejectNextPlay = false;
   const transportRequests: string[] = [];
   const volumeRequests: Array<Record<string, unknown>> = [];
   await page.route('**/api/sonos/play', async (route) => {
-    sonosPlayRequests.push(route.request().postDataJSON() as Record<string, unknown>);
+    const request = route.request().postDataJSON() as Record<string, unknown>;
+    sonosPlayRequests.push(request);
+    if (rejectNextPlay && request.allowTakeover === false) {
+      rejectNextPlay = false;
+      sonosSessionActive = false;
+      await route.fulfill({
+        status: 409,
+        json: {
+          error: "ReiTunes needs confirmation before replacing this Sonos group's playback",
+        },
+      });
+      return;
+    }
     sonosSessionActive = true;
     sonosPlaybackState = 'PLAYBACK_STATE_PLAYING';
     await route.fulfill({
@@ -421,9 +434,14 @@ test('switches between Sonos and browser playback without playing twice', async 
   await page.getByRole('button', { name: 'Mute Sonos' }).click();
   await expect(page.getByRole('button', { name: 'Unmute Sonos' })).toBeVisible();
 
+  rejectNextPlay = true;
   await trackRow.click();
   await expect.poll(() => sonosPlayRequests.length).toBe(2);
   expect(sonosPlayRequests[1].allowTakeover).toBe(false);
+  await page.getByRole('button', { name: 'Replace Sonos playback and retry' }).click();
+  await expect.poll(() => sonosPlayRequests.length).toBe(3);
+  expect(sonosPlayRequests[2].allowTakeover).toBe(true);
+  await expect(page.getByText('Sonos · Downstairs · Playing')).toBeVisible();
 
   await page.getByRole('button', { name: 'Sonos', exact: true }).click();
   await page.getByRole('dialog', { name: 'Sonos' }).getByRole('button', { name: 'Use browser' }).click();
@@ -434,5 +452,5 @@ test('switches between Sonos and browser playback without playing twice', async 
       page.evaluate(() => (window as typeof window & { __playCalls: number }).__playCalls)
     )
     .toBeGreaterThan(0);
-  expect(sonosPlayRequests).toHaveLength(2);
+  expect(sonosPlayRequests).toHaveLength(3);
 });

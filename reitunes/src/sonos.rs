@@ -210,9 +210,9 @@ pub struct SonosGroupVolume {
 
 #[derive(Debug, thiserror::Error)]
 pub enum SonosPlaybackError {
-    #[error("Choose this Sonos group again to confirm that ReiTunes may replace its playback")]
+    #[error("ReiTunes needs confirmation before replacing this Sonos group's playback")]
     TakeoverRequired,
-    #[error("The ReiTunes Sonos session ended; choose the group again before playing: {0}")]
+    #[error("The ReiTunes Sonos session ended; confirm before replacing the group's playback: {0}")]
     SessionEnded(#[source] anyhow::Error),
     #[error(transparent)]
     Control(#[from] anyhow::Error),

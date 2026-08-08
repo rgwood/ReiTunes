@@ -48,7 +48,7 @@ With those settings present, open the Sonos panel in the ReiTunes toolbar and us
 
 Sonos's `createSession` command unconditionally replaces any existing session. ReiTunes therefore refuses to create one unless the web UI has recorded an explicit group selection. It caches the resulting session and reuses it for later queues.
 
-If Sonos rejects a cached session—for example, because another app took over—ReiTunes forgets it and requires another confirmation. It never automatically creates a replacement session and fights the other controller.
+If Sonos rejects a cached session—for example, because another app took over—ReiTunes forgets it and offers a direct `Replace Sonos playback and retry` action. The selected group stays selected; recovery does not require reopening the output picker. ReiTunes still waits for that explicit retry instead of automatically creating replacement sessions and fighting another controller.
 
 Switching back to browser output only changes where future ReiTunes play actions go. It does not stop whatever Sonos is already doing.
 

@@ -112,6 +112,7 @@ export function AudioPlayer({ onChooseOutput, items }: AudioPlayerProps) {
     isMuted,
     setIsPlaying,
     clearPendingSeek,
+    resumePosition,
     setResumePosition,
     setVolume,
     setMuted,
@@ -498,7 +499,15 @@ export function AudioPlayer({ onChooseOutput, items }: AudioPlayerProps) {
               ) : playbackError ? (
                 <span className="text-solarized-red">
                   {playbackError}
-                  {takeoverRequired && ' Open Sonos output and choose the group again.'}
+                  {takeoverRequired && currentItem && (
+                    <button
+                      type="button"
+                      className="ml-2 text-solarized-cyan hover:underline"
+                      onClick={() => void play(currentItem, resumePosition)}
+                    >
+                      Replace Sonos playback and retry
+                    </button>
+                  )}
                 </span>
               ) : sonos.error ? (
                 <span className="text-solarized-red">{sonos.error}</span>
