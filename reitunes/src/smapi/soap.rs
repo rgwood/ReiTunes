@@ -18,7 +18,11 @@ pub async fn smapi_soap_handler(
     body: String,
 ) -> Result<Response, SoapError> {
     let action = soap_action(&headers)?;
-    info!(action, "Handling SMAPI request");
+    let user_agent = headers
+        .get("User-Agent")
+        .and_then(|value| value.to_str().ok())
+        .unwrap_or("unknown");
+    info!(action, user_agent, "Handling SMAPI request");
     debug!(body, "SMAPI request body");
 
     let response_body = match action {
