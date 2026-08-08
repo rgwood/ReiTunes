@@ -23,13 +23,13 @@ dirs.workspace = true
 axum = { version = "0.8.3", features = ["ws"] }
 axum-extra = { version = "0.10.1", features = ["multipart"] }
 askama = {version = "0.13.0", features = ["serde_json"]  }
-rig-core = { version = "0.14.0", features = ["derive"] }
+rig-core = { version = "0.31.0", features = ["derive"] }
 vite-rs = "0.2"
 vite-rs-axum-0-8 = "0.2"
 tower-cookies = "0.11.0"
 axum-macros = "0.5.0"
 openssl = { version = "0.10.72", features = ["vendored"] }
-schemars = "0.8.22"
+schemars = "1.0"
 lofty = "0.22"
 tempfile = "3.0"
 aws-sdk-s3 = "1.76"
