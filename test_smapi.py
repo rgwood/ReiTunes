@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 import argparse
+import re
 import xml.etree.ElementTree as ET
 
 import requests
@@ -57,20 +58,71 @@ def test_service(base_url: str) -> None:
         "<id>root</id><index>0</index><count>100</count>"
         "</getMetadata>",
     )
-    collection_id = required_text(root, ".//sonos:mediaCollection/sonos:id")
-    print(f"Root browse works: {collection_id}")
+    collection_ids = {
+        text
+        for element in root.findall(".//sonos:mediaCollection/sonos:id", NAMESPACES)
+        if (text := element.text) is not None
+    }
+    expected_collections = {"tracks", "artists", "albums"}
+    if not expected_collections.issubset(collection_ids):
+        raise RuntimeError(
+            f"Root browse returned {collection_ids}, expected {expected_collections}"
+        )
+    print(f"Root browse works: {', '.join(sorted(collection_ids))}")
 
     tracks = post_smapi(
         base_url,
         "getMetadata",
         f'<getMetadata xmlns="{SONOS_NAMESPACE}">'
-        f"<id>{collection_id}</id><index>0</index><count>100</count>"
+        "<id>tracks</id><index>0</index><count>100</count>"
         "</getMetadata>",
     )
     total = int(required_text(tracks, ".//sonos:getMetadataResult/sonos:total"))
     track_id = required_text(tracks, ".//sonos:mediaMetadata/sonos:id")
     title = required_text(tracks, ".//sonos:mediaMetadata/sonos:title")
     print(f"Track browse works: {total} songs; first is {title!r}")
+
+    for category in ("artists", "albums"):
+        category_response = post_smapi(
+            base_url,
+            "getMetadata",
+            f'<getMetadata xmlns="{SONOS_NAMESPACE}">'
+            f"<id>{category}</id><index>0</index><count>100</count>"
+            "</getMetadata>",
+        )
+        category_total = int(
+            required_text(
+                category_response, ".//sonos:getMetadataResult/sonos:total"
+            )
+        )
+        child_id = required_text(
+            category_response, ".//sonos:mediaCollection/sonos:id"
+        )
+        child_response = post_smapi(
+            base_url,
+            "getMetadata",
+            f'<getMetadata xmlns="{SONOS_NAMESPACE}">'
+            f"<id>{child_id}</id><index>0</index><count>1</count>"
+            "</getMetadata>",
+        )
+        required_text(child_response, ".//sonos:mediaMetadata/sonos:id")
+        print(f"{category.capitalize()} browse works: {category_total} entries")
+
+    search_term = next(
+        (word for word in re.findall(r"[A-Za-z0-9]+", title) if len(word) >= 3),
+        title,
+    )
+    results = post_smapi(
+        base_url,
+        "search",
+        f'<search xmlns="{SONOS_NAMESPACE}">'
+        f"<id>all</id><term>{search_term}</term><index>0</index><count>100</count>"
+        "</search>",
+    )
+    result_total = int(required_text(results, ".//sonos:searchResult/sonos:total"))
+    if result_total == 0:
+        raise RuntimeError(f"Search returned no results for {search_term!r}")
+    print(f"Search works: {result_total} results for {search_term!r}")
 
     media = post_smapi(
         base_url,
