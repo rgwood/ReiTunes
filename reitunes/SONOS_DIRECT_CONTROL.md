@@ -1,15 +1,19 @@
 # Sonos Direct Control
 
-This is the groundwork for choosing a Sonos speaker in the ReiTunes web UI and sending its queue there. It does not currently create a Sonos playback session or load anything onto a speaker.
+ReiTunes can use either the current browser or a Sonos speaker group as its playback output. Browser playback remains the default. Choosing a Sonos group does not start anything by itself; the next explicit play action creates a playback session and sends the current ReiTunes queue to that group.
 
 ## What works
 
 - Sonos OAuth with one-time, 10-minute `state` values
 - encrypted access and refresh token storage in SQLite
 - automatic access token refresh
-- read-only household, group, and player discovery
+- household, group, and player discovery
 - authenticated Cloud Queue v2.3 `context`, `version`, `itemWindow`, and `timePlayed` endpoints
 - creation of queue snapshots from ReiTunes library item IDs
+- explicit `createSession` takeover followed by `loadCloudQueue`
+- bookmark playback positions, passed to Sonos as `positionMillis`
+- reuse of ReiTunes's existing playback session for later song choices
+- a persisted browser/Sonos output selector in the web UI
 
 The Cloud Queue snapshots use a separate random bearer token. The public endpoints do not accept the ReiTunes session cookie and do not reveal queue metadata without that token.
 
@@ -32,21 +36,26 @@ SONOS_TOKEN_ENCRYPTION_SECRET=<a unique random value of at least 32 characters>
 
 `REITUNES_HOSTNAME` and `URL_SCHEME` also need to describe the public ReiTunes address. Sonos speakers only call Cloud Queue servers over HTTPS.
 
-With those settings present, open the Sonos panel in the ReiTunes toolbar and use `Connect Sonos`. Once the OAuth redirect completes, the panel should list the household's groups and players.
+With those settings present, open the Sonos panel in the ReiTunes toolbar and use `Connect Sonos`. Once the OAuth redirect completes, the panel lists the household's groups and players. Choose a group, close the panel, and select a song. Use `This browser` in the same panel to route later play actions back to the browser.
 
-## Deliberately missing
+## Playback safety
 
-The first request that could disturb a real speaker is creating a playback session; `loadCloudQueue` can then replace its queue and start playback. Neither call exists yet.
+Sonos's `createSession` command unconditionally replaces any existing session. ReiTunes therefore refuses to create one unless the web UI has recorded an explicit group selection. It caches the resulting session and reuses it for later queues.
 
-The remaining work is roughly:
+If Sonos rejects a cached session—for example, because another app took over—ReiTunes forgets it and requires another confirmation. It never automatically creates a replacement session and fights the other controller.
 
-1. Confirm that the ReiTunes Control integration is associated with the existing Sonos content integration.
-2. Add an explicit user-triggered endpoint that creates or joins a playback session for the selected group.
-3. Pass a prepared queue's base URL and bearer token to `loadCloudQueue`.
-4. Subscribe to playback and session events so the web UI can stay in sync and report errors.
-5. Decide how taking over a busy speaker should work before using `createSession`, which unconditionally replaces an existing session.
+Switching back to browser output only changes where future ReiTunes play actions go. It does not stop whatever Sonos is already doing.
 
-The initial queue implementation sends direct `mediaUrl` values, which the Cloud Queue API supports as an alternative to Sonos music object IDs. That may let the first prototype avoid account matching, but it needs testing with the real integration before relying on it.
+## Still missing
+
+The first playback version deliberately leaves Sonos transport controls in the Sonos app. The next useful work is:
+
+1. Subscribe to playback, playback metadata, and session events.
+2. Reflect the actual Sonos play/pause state and playhead in ReiTunes.
+3. Add remote pause, skip, seek, and volume controls once that state stays in sync.
+4. Refresh an active Cloud Queue when the ReiTunes queue changes.
+
+The queue sends direct `mediaUrl` values, which the Cloud Queue API supports as an alternative to Sonos music object IDs. The media URLs do not use the Cloud Queue bearer token; that token only protects the queue metadata endpoints.
 
 Useful Sonos references:
 

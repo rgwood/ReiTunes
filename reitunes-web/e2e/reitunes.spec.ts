@@ -205,7 +205,7 @@ test('offers Sonos authorization when the server is not connected', async ({ pag
   await page.getByRole('button', { name: 'Sonos' }).click();
 
   await expect(page.getByRole('heading', { name: 'Sonos' })).toBeVisible();
-  await expect(page.getByText('Speaker discovery only')).toBeVisible();
+  await expect(page.getByText('Choose where new play actions go.')).toBeVisible();
   await expect(page.getByRole('link', { name: 'Connect Sonos' })).toHaveAttribute(
     'href',
     '/api/sonos/authorize'
@@ -224,7 +224,25 @@ test('opens Sonos after the OAuth callback without sending the marker to the ser
   await expect(page).toHaveURL(/\/$/);
 });
 
-test('shows Sonos households and groups without playback controls', async ({ page }) => {
+test('switches between Sonos and browser playback without playing twice', async ({ page }) => {
+  await page.addInitScript(() => {
+    const testWindow = window as typeof window & { __playCalls: number };
+    testWindow.__playCalls = 0;
+    Object.defineProperty(HTMLMediaElement.prototype, 'play', {
+      configurable: true,
+      value() {
+        testWindow.__playCalls += 1;
+        this.dispatchEvent(new Event('play'));
+        return Promise.resolve();
+      },
+    });
+    Object.defineProperty(HTMLMediaElement.prototype, 'pause', {
+      configurable: true,
+      value() {
+        this.dispatchEvent(new Event('pause'));
+      },
+    });
+  });
   await mockBackend(page);
   await page.route('**/api/sonos/status', (route) =>
     route.fulfill({ json: { configured: true, connected: true } })
@@ -251,12 +269,51 @@ test('shows Sonos households and groups without playback controls', async ({ pag
       },
     })
   );
+  const sonosPlayRequests: Array<Record<string, unknown>> = [];
+  await page.route('**/api/sonos/play', async (route) => {
+    sonosPlayRequests.push(route.request().postDataJSON() as Record<string, unknown>);
+    await route.fulfill({
+      json: { groupId: 'group-1', sessionCreated: sonosPlayRequests.length === 1 },
+    });
+  });
 
   await page.goto('/');
+  const trackRow = page.getByRole('row').filter({ hasText: 'Northern Sky' });
   await page.getByRole('button', { name: 'Sonos' }).click();
 
   const dialog = page.getByRole('dialog', { name: 'Sonos' });
   await expect(dialog.getByText('Downstairs')).toBeVisible();
   await expect(dialog.getByText('Kitchen + Dining Room')).toBeVisible();
-  await expect(dialog.getByRole('button', { name: /play/i })).toHaveCount(0);
+  await dialog.getByRole('button', { name: 'Use this group' }).click();
+  await expect(dialog.getByRole('button', { name: 'Selected' })).toBeVisible();
+  await dialog.getByRole('button', { name: 'Close', exact: true }).click();
+
+  await trackRow.click();
+  await expect.poll(() => sonosPlayRequests.length).toBe(1);
+  expect(sonosPlayRequests[0]).toEqual({
+    groupId: 'group-1',
+    itemIds: [TRACK_ID],
+    startItemId: TRACK_ID,
+    positionMillis: 0,
+    allowTakeover: true,
+  });
+  await expect(page.getByText('Sonos · Downstairs. Choose a song below to play it there.')).toBeVisible();
+  expect(
+    await page.evaluate(() => (window as typeof window & { __playCalls: number }).__playCalls)
+  ).toBe(0);
+
+  await trackRow.click();
+  await expect.poll(() => sonosPlayRequests.length).toBe(2);
+  expect(sonosPlayRequests[1].allowTakeover).toBe(false);
+
+  await page.getByRole('button', { name: 'Sonos' }).click();
+  await page.getByRole('dialog', { name: 'Sonos' }).getByRole('button', { name: 'Use browser' }).click();
+  await page.getByRole('dialog', { name: 'Sonos' }).getByRole('button', { name: 'Close', exact: true }).click();
+  await trackRow.click();
+  await expect
+    .poll(() =>
+      page.evaluate(() => (window as typeof window & { __playCalls: number }).__playCalls)
+    )
+    .toBeGreaterThan(0);
+  expect(sonosPlayRequests).toHaveLength(2);
 });

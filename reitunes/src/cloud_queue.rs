@@ -38,9 +38,7 @@ pub struct PreparedQueue {
 }
 
 #[derive(Debug, Clone)]
-// These are the exact values a future loadCloudQueue call needs. That call is
-// deliberately not implemented until it can be tested against a real Sonos setup.
-#[allow(dead_code)]
+// These values stay server-side and are passed directly to loadCloudQueue.
 pub struct PlaybackQueueParameters {
     pub queue_base_url: String,
     pub http_authorization: String,
@@ -291,7 +289,6 @@ impl CloudQueueStore {
         })
     }
 
-    #[allow(dead_code)]
     pub fn playback_parameters(
         &self,
         queue_id: Uuid,

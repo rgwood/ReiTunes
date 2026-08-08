@@ -15,8 +15,13 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use tokio::sync::Mutex;
 
+use crate::cloud_queue::PlaybackQueueParameters;
+
 const SONOS_SCOPE: &str = "playback-control-all";
 const SONOS_API_KEY_HEADER: &str = "X-Sonos-Api-Key";
+const SONOS_CORRELATION_ID_HEADER: &str = "X-Sonos-Corr-Id";
+const REITUNES_APP_ID: &str = "com.reillywood.reitunes";
+const REITUNES_APP_CONTEXT: &str = "personal-library";
 const STATE_LIFETIME: Duration = Duration::from_secs(10 * 60);
 const REFRESH_EARLY_BY_SECONDS: u64 = 60;
 const TOKEN_AAD: &[u8] = b"reitunes-sonos-oauth-v1";
@@ -165,6 +170,51 @@ pub struct GroupsResponse {
     pub players: Vec<SonosPlayer>,
 }
 
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct SonosPlaybackStatus {
+    pub group_id: String,
+    pub session_created: bool,
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum SonosPlaybackError {
+    #[error("Choose this Sonos group again to confirm that ReiTunes may replace its playback")]
+    TakeoverRequired,
+    #[error("The ReiTunes Sonos session ended; choose the group again before playing: {0}")]
+    SessionEnded(#[source] anyhow::Error),
+    #[error(transparent)]
+    Control(#[from] anyhow::Error),
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct CreateSessionRequest<'a> {
+    app_id: &'a str,
+    app_context: &'a str,
+    custom_data: &'a str,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SessionStatus {
+    session_id: Option<String>,
+    #[serde(default)]
+    session_created: bool,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct LoadCloudQueueRequest<'a> {
+    queue_base_url: &'a str,
+    http_authorization: &'a str,
+    use_http_authorization_for_media: bool,
+    item_id: &'a str,
+    queue_version: &'a str,
+    position_millis: u32,
+    play_on_completion: bool,
+}
+
 #[derive(Debug, Clone, Deserialize, Serialize)]
 struct StoredTokenSet {
     access_token: String,
@@ -209,6 +259,7 @@ pub struct SonosControl {
     client: reqwest::Client,
     db: Pool<SqliteConnectionManager>,
     pending_states: StdMutex<HashMap<String, Instant>>,
+    playback_sessions: StdMutex<HashMap<String, String>>,
     refresh_lock: Mutex<()>,
 }
 
@@ -232,6 +283,7 @@ impl SonosControl {
                 .expect("ReiTunes Sonos HTTP client should be valid"),
             db,
             pending_states: StdMutex::new(HashMap::new()),
+            playback_sessions: StdMutex::new(HashMap::new()),
             refresh_lock: Mutex::new(()),
         }
     }
@@ -298,16 +350,115 @@ impl SonosControl {
     }
 
     pub async fn groups(&self, household_id: &str) -> Result<GroupsResponse> {
-        let mut url = self.endpoints.control.clone();
-        url.path_segments_mut()
-            .map_err(|_| anyhow::anyhow!("invalid Sonos control API base URL"))?
-            .extend(["households", household_id, "groups"]);
+        let url = self.control_url(&["households", household_id, "groups"])?;
         self.get_url(url).await
+    }
+
+    pub async fn play_cloud_queue(
+        &self,
+        group_id: &str,
+        queue: &PlaybackQueueParameters,
+        position_millis: u32,
+        allow_takeover: bool,
+    ) -> std::result::Result<SonosPlaybackStatus, SonosPlaybackError> {
+        let existing_session = self
+            .playback_sessions
+            .lock()
+            .map_err(|_| anyhow::anyhow!("Sonos playback session lock was poisoned"))?
+            .get(group_id)
+            .cloned();
+
+        let (session_id, session_created) = match existing_session {
+            Some(session_id) => (session_id, false),
+            None if !allow_takeover => return Err(SonosPlaybackError::TakeoverRequired),
+            None => {
+                let session = self.create_session(group_id).await?;
+                let session_id = session
+                    .session_id
+                    .context("Sonos did not return a playback session ID")?;
+                self.playback_sessions
+                    .lock()
+                    .map_err(|_| anyhow::anyhow!("Sonos playback session lock was poisoned"))?
+                    .insert(group_id.to_string(), session_id.clone());
+                (session_id, session.session_created)
+            }
+        };
+
+        if let Err(error) = self
+            .load_cloud_queue(&session_id, queue, position_millis)
+            .await
+        {
+            self.forget_session(group_id, &session_id)?;
+            return Err(SonosPlaybackError::SessionEnded(error));
+        }
+
+        Ok(SonosPlaybackStatus {
+            group_id: group_id.to_string(),
+            session_created,
+        })
     }
 
     pub fn disconnect(&self) -> Result<()> {
         let conn = self.db.get()?;
         conn.execute("DELETE FROM sonos_oauth_tokens WHERE Id = 1", [])?;
+        self.playback_sessions
+            .lock()
+            .map_err(|_| anyhow::anyhow!("Sonos playback session lock was poisoned"))?
+            .clear();
+        Ok(())
+    }
+
+    async fn create_session(&self, group_id: &str) -> Result<SessionStatus> {
+        let url = self.control_url(&["groups", group_id, "playbackSession"])?;
+        self.post_json(
+            url,
+            &CreateSessionRequest {
+                app_id: REITUNES_APP_ID,
+                app_context: REITUNES_APP_CONTEXT,
+                custom_data: "ReiTunes Cloud Queue",
+            },
+        )
+        .await
+    }
+
+    async fn load_cloud_queue(
+        &self,
+        session_id: &str,
+        queue: &PlaybackQueueParameters,
+        position_millis: u32,
+    ) -> Result<()> {
+        let url = self.control_url(&[
+            "playbackSessions",
+            session_id,
+            "playbackSession",
+            "loadCloudQueue",
+        ])?;
+        self.post_empty(
+            url,
+            &LoadCloudQueueRequest {
+                queue_base_url: &queue.queue_base_url,
+                http_authorization: &queue.http_authorization,
+                use_http_authorization_for_media: false,
+                item_id: &queue.item_id,
+                queue_version: &queue.queue_version,
+                position_millis,
+                play_on_completion: true,
+            },
+        )
+        .await
+    }
+
+    fn forget_session(&self, group_id: &str, session_id: &str) -> Result<()> {
+        let mut sessions = self
+            .playback_sessions
+            .lock()
+            .map_err(|_| anyhow::anyhow!("Sonos playback session lock was poisoned"))?;
+        if sessions
+            .get(group_id)
+            .is_some_and(|stored| stored == session_id)
+        {
+            sessions.remove(group_id);
+        }
         Ok(())
     }
 
@@ -321,6 +472,15 @@ impl SonosControl {
             .join(path)
             .context("failed to build Sonos control API URL")?;
         self.get_url(url).await
+    }
+
+    fn control_url(&self, segments: &[&str]) -> Result<Url> {
+        let mut url = self.endpoints.control.clone();
+        url.path_segments_mut()
+            .map_err(|_| anyhow::anyhow!("invalid Sonos control API base URL"))?
+            .pop_if_empty()
+            .extend(segments.iter().copied());
+        Ok(url)
     }
 
     async fn get_url<T>(&self, url: Url) -> Result<T>
@@ -337,6 +497,42 @@ impl SonosControl {
             .await
             .context("failed to reach Sonos control API")?;
         parse_json_response(response).await
+    }
+
+    async fn post_json<B, T>(&self, url: Url, body: &B) -> Result<T>
+    where
+        B: Serialize + ?Sized,
+        T: for<'de> Deserialize<'de>,
+    {
+        let response = self.post_request(url, body).await?;
+        parse_json_response(response).await
+    }
+
+    async fn post_empty<B>(&self, url: Url, body: &B) -> Result<()>
+    where
+        B: Serialize + ?Sized,
+    {
+        let response = self.post_request(url, body).await?;
+        ensure_success_response(response).await
+    }
+
+    async fn post_request<B>(&self, url: Url, body: &B) -> Result<reqwest::Response>
+    where
+        B: Serialize + ?Sized,
+    {
+        let access_token = self.access_token().await?;
+        self.client
+            .post(url)
+            .bearer_auth(access_token)
+            .header(SONOS_API_KEY_HEADER, &self.config.client_id)
+            .header(
+                SONOS_CORRELATION_ID_HEADER,
+                uuid::Uuid::new_v4().to_string(),
+            )
+            .json(body)
+            .send()
+            .await
+            .context("failed to reach Sonos control API")
     }
 
     async fn access_token(&self) -> Result<String> {
@@ -456,6 +652,18 @@ where
         bail!("Sonos returned {status}: {body}");
     }
     serde_json::from_str(&body).context("Sonos returned an unexpected response")
+}
+
+async fn ensure_success_response(response: reqwest::Response) -> Result<()> {
+    let status = response.status();
+    if status.is_success() {
+        return Ok(());
+    }
+    let body = response
+        .text()
+        .await
+        .context("failed to read response from Sonos")?;
+    bail!("Sonos returned {status}: {body}")
 }
 
 fn random_state() -> String {
@@ -697,6 +905,179 @@ mod tests {
 
         let households = control.households().await.unwrap();
         assert_eq!(households.households[0].id, "Sonos_household");
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn requires_takeover_then_reuses_the_reitunes_playback_session() {
+        #[derive(Clone)]
+        struct TestState {
+            sessions_created: Arc<AtomicUsize>,
+            queues_loaded: Arc<AtomicUsize>,
+        }
+
+        async fn create_session(
+            State(state): State<TestState>,
+            headers: HeaderMap,
+            Json(body): Json<serde_json::Value>,
+        ) -> Json<serde_json::Value> {
+            assert_eq!(headers.get("authorization").unwrap(), "Bearer access-token");
+            assert_eq!(headers.get(SONOS_API_KEY_HEADER).unwrap(), "test-client");
+            uuid::Uuid::parse_str(
+                headers
+                    .get(SONOS_CORRELATION_ID_HEADER)
+                    .unwrap()
+                    .to_str()
+                    .unwrap(),
+            )
+            .unwrap();
+            assert_eq!(body["appId"], REITUNES_APP_ID);
+            assert_eq!(body["appContext"], REITUNES_APP_CONTEXT);
+            state.sessions_created.fetch_add(1, Ordering::SeqCst);
+            Json(serde_json::json!({
+                "sessionId": "session-1",
+                "sessionState": "SESSION_STATE_CONNECTED",
+                "sessionCreated": true
+            }))
+        }
+
+        async fn load_queue(
+            State(state): State<TestState>,
+            headers: HeaderMap,
+            Json(body): Json<serde_json::Value>,
+        ) -> Json<serde_json::Value> {
+            assert_eq!(headers.get("authorization").unwrap(), "Bearer access-token");
+            assert_eq!(headers.get(SONOS_API_KEY_HEADER).unwrap(), "test-client");
+            assert_eq!(body["queueBaseUrl"], "https://reitunes.example/queue/v2.3");
+            assert_eq!(body["httpAuthorization"], "Bearer cloud-queue-secret");
+            assert_eq!(body["useHttpAuthorizationForMedia"], false);
+            assert_eq!(body["itemId"], "queue-item-1");
+            assert_eq!(body["queueVersion"], "queue-version-1");
+            assert_eq!(body["positionMillis"], 42_000);
+            assert_eq!(body["playOnCompletion"], true);
+            state.queues_loaded.fetch_add(1, Ordering::SeqCst);
+            Json(serde_json::json!({ "success": true }))
+        }
+
+        let sessions_created = Arc::new(AtomicUsize::new(0));
+        let queues_loaded = Arc::new(AtomicUsize::new(0));
+        let router = Router::new()
+            .route(
+                "/control/api/v1/groups/group-1/playbackSession",
+                axum::routing::post(create_session),
+            )
+            .route(
+                "/control/api/v1/playbackSessions/session-1/playbackSession/loadCloudQueue",
+                axum::routing::post(load_queue),
+            )
+            .fallback(|request: axum::extract::Request| async move {
+                (
+                    axum::http::StatusCode::NOT_FOUND,
+                    request.uri().path().to_string(),
+                )
+            })
+            .with_state(TestState {
+                sessions_created: sessions_created.clone(),
+                queues_loaded: queues_loaded.clone(),
+            });
+        let (control, _temp_dir, server) = test_control_with_server(router).await;
+        control
+            .save_tokens(&StoredTokenSet {
+                access_token: "access-token".to_string(),
+                refresh_token: "refresh-token".to_string(),
+                token_type: "Bearer".to_string(),
+                scope: Some(SONOS_SCOPE.to_string()),
+                expires_at_unix: u64::MAX,
+            })
+            .unwrap();
+        let queue = PlaybackQueueParameters {
+            queue_base_url: "https://reitunes.example/queue/v2.3".to_string(),
+            http_authorization: "Bearer cloud-queue-secret".to_string(),
+            item_id: "queue-item-1".to_string(),
+            queue_version: "queue-version-1".to_string(),
+        };
+
+        assert!(matches!(
+            control
+                .play_cloud_queue("group-1", &queue, 42_000, false)
+                .await,
+            Err(SonosPlaybackError::TakeoverRequired)
+        ));
+        assert_eq!(sessions_created.load(Ordering::SeqCst), 0);
+
+        let first = control
+            .play_cloud_queue("group-1", &queue, 42_000, true)
+            .await
+            .unwrap();
+        assert!(first.session_created);
+        let second = control
+            .play_cloud_queue("group-1", &queue, 42_000, false)
+            .await
+            .unwrap();
+        assert!(!second.session_created);
+        assert_eq!(sessions_created.load(Ordering::SeqCst), 1);
+        assert_eq!(queues_loaded.load(Ordering::SeqCst), 2);
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn does_not_recreate_an_evicted_session_without_user_approval() {
+        async fn create_session() -> Json<serde_json::Value> {
+            Json(serde_json::json!({
+                "sessionId": "evicted-session",
+                "sessionState": "SESSION_STATE_CONNECTED",
+                "sessionCreated": true
+            }))
+        }
+
+        async fn reject_queue() -> (axum::http::StatusCode, Json<serde_json::Value>) {
+            (
+                axum::http::StatusCode::NOT_FOUND,
+                Json(serde_json::json!({
+                    "errorCode": "ERROR_INVALID_OBJECT_ID",
+                    "reason": "The playback session ended"
+                })),
+            )
+        }
+
+        let router = Router::new()
+            .route(
+                "/control/api/v1/groups/group-1/playbackSession",
+                axum::routing::post(create_session),
+            )
+            .route(
+                "/control/api/v1/playbackSessions/evicted-session/playbackSession/loadCloudQueue",
+                axum::routing::post(reject_queue),
+            );
+        let (control, _temp_dir, server) = test_control_with_server(router).await;
+        control
+            .save_tokens(&StoredTokenSet {
+                access_token: "access-token".to_string(),
+                refresh_token: "refresh-token".to_string(),
+                token_type: "Bearer".to_string(),
+                scope: Some(SONOS_SCOPE.to_string()),
+                expires_at_unix: u64::MAX,
+            })
+            .unwrap();
+        let queue = PlaybackQueueParameters {
+            queue_base_url: "https://reitunes.example/queue/v2.3".to_string(),
+            http_authorization: "Bearer cloud-queue-secret".to_string(),
+            item_id: "queue-item-1".to_string(),
+            queue_version: "queue-version-1".to_string(),
+        };
+
+        assert!(matches!(
+            control
+                .play_cloud_queue("group-1", &queue, 0, true)
+                .await,
+            Err(SonosPlaybackError::SessionEnded(_))
+        ));
+        assert!(matches!(
+            control
+                .play_cloud_queue("group-1", &queue, 0, false)
+                .await,
+            Err(SonosPlaybackError::TakeoverRequired)
+        ));
         server.abort();
     }
 

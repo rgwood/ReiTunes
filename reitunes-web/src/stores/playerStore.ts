@@ -22,6 +22,7 @@ interface PlayerState extends PersistedPlayerState {
   setVolume: (volume: number) => void;
   setMuted: (muted: boolean) => void;
   play: (item: LibraryItem, startPosition?: number) => void;
+  selectRemoteItem: (item: LibraryItem, startPosition?: number) => void;
   restoreCurrentItem: (item: LibraryItem) => void;
   refreshCurrentItem: (item: LibraryItem) => void;
   clearCurrentItem: () => void;
@@ -56,6 +57,17 @@ export const usePlayerStore = create<PlayerState>()(
           currentItemId: item.id,
           isPlaying: true,
           pendingSeek: position,
+          resumePosition: position,
+        });
+      },
+
+      selectRemoteItem: (item, startPosition = 0) => {
+        const position = normalizePosition(startPosition);
+        set({
+          currentItem: item,
+          currentItemId: item.id,
+          isPlaying: false,
+          pendingSeek: null,
           resumePosition: position,
         });
       },

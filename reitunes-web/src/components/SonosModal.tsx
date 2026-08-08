@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
+import { usePlaybackTargetStore } from '../stores/playbackTargetStore';
+import { usePlayerStore } from '../stores/playerStore';
 
 interface SonosStatus {
   configured: boolean;
@@ -58,6 +60,14 @@ export function SonosModal({ isOpen, onClose }: SonosModalProps) {
   const [households, setHouseholds] = useState<DiscoveredHousehold[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const {
+    target,
+    takeoverRequired,
+    error: playbackError,
+    setBrowserTarget,
+    setSonosTarget,
+  } =
+    usePlaybackTargetStore();
 
   const discover = useCallback(async () => {
     setIsLoading(true);
@@ -104,12 +114,51 @@ export function SonosModal({ isOpen, onClose }: SonosModalProps) {
       if (!response.ok) throw new Error(await responseError(response));
       setStatus({ configured: true, connected: false });
       setHouseholds([]);
+      setBrowserTarget();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not disconnect Sonos');
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [setBrowserTarget]);
+
+  const chooseBrowser = useCallback(() => {
+    usePlayerStore.getState().setIsPlaying(false);
+    setBrowserTarget();
+  }, [setBrowserTarget]);
+
+  const chooseGroup = useCallback(
+    (
+      household: SonosHousehold,
+      group: SonosGroup,
+      players: Map<string, SonosPlayer>
+    ) => {
+      const playerNames = group.playerIds.map(
+        (playerId) => players.get(playerId)?.name || playerId
+      );
+      const isAlreadySelected = target.kind === 'sonos' && target.groupId === group.id;
+      const isBusy =
+        group.playbackState !== undefined &&
+        group.playbackState !== 'PLAYBACK_STATE_IDLE';
+      if (
+        (isBusy || (isAlreadySelected && takeoverRequired && playbackError !== null)) &&
+        !window.confirm(
+          `${group.name} may already be in use. Playing from ReiTunes will replace its current Sonos queue. Continue?`
+        )
+      ) {
+        return;
+      }
+
+      usePlayerStore.getState().setIsPlaying(false);
+      setSonosTarget({
+        householdId: household.id,
+        groupId: group.id,
+        groupName: group.name,
+        playerNames,
+      });
+    },
+    [playbackError, setSonosTarget, takeoverRequired, target]
+  );
 
   if (!isOpen) return null;
 
@@ -127,7 +176,7 @@ export function SonosModal({ isOpen, onClose }: SonosModalProps) {
               Sonos
             </h2>
             <p className="text-xs text-solarized-base0 mt-1">
-              Speaker discovery only — playback is not wired up yet.
+              Choose where new play actions go. Changing output does not start or stop audio.
             </p>
           </div>
           <button
@@ -140,6 +189,29 @@ export function SonosModal({ isOpen, onClose }: SonosModalProps) {
         </div>
 
         <div className="overflow-y-auto">
+          <div
+            className={`border rounded p-3 mb-4 flex items-center justify-between gap-4 ${
+              target.kind === 'browser'
+                ? 'border-solarized-cyan bg-solarized-base03'
+                : 'border-solarized-base01'
+            }`}
+          >
+            <div>
+              <div className="text-solarized-base1">This browser</div>
+              <div className="text-xs text-solarized-base0 mt-1">
+                Play through this device as usual.
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={chooseBrowser}
+              disabled={target.kind === 'browser'}
+              className="shrink-0 px-3 py-1.5 text-xs bg-solarized-base01 text-solarized-base2 rounded hover:bg-solarized-base00 disabled:text-solarized-cyan disabled:bg-solarized-base02 transition-colors"
+            >
+              {target.kind === 'browser' ? 'Selected' : 'Use browser'}
+            </button>
+          </div>
+
           {isLoading && !status && (
             <div className="text-solarized-base0 py-6 text-center">Discovering Sonos…</div>
           )}
@@ -190,19 +262,43 @@ export function SonosModal({ isOpen, onClose }: SonosModalProps) {
                       </h3>
                     )}
                     <div className="space-y-2">
-                      {discovery.groups.map((group) => (
-                        <div
-                          key={group.id}
-                          className="border border-solarized-base01 rounded p-3"
-                        >
-                          <div className="text-solarized-base1">{group.name}</div>
-                          <div className="text-xs text-solarized-base0 mt-1">
-                            {group.playerIds
-                              .map((playerId) => players.get(playerId)?.name || playerId)
-                              .join(' + ')}
+                      {discovery.groups.map((group) => {
+                        const isSelected =
+                          target.kind === 'sonos' && target.groupId === group.id;
+                        const needsConfirmation =
+                          isSelected && takeoverRequired && playbackError !== null;
+                        return (
+                          <div
+                            key={group.id}
+                            className={`border rounded p-3 flex items-center justify-between gap-4 ${
+                              isSelected
+                                ? 'border-solarized-cyan bg-solarized-base03'
+                                : 'border-solarized-base01'
+                            }`}
+                          >
+                            <div className="min-w-0">
+                              <div className="text-solarized-base1">{group.name}</div>
+                              <div className="text-xs text-solarized-base0 mt-1 truncate">
+                                {group.playerIds
+                                  .map((playerId) => players.get(playerId)?.name || playerId)
+                                  .join(' + ')}
+                              </div>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => chooseGroup(household, group, players)}
+                              disabled={isSelected && !needsConfirmation}
+                              className="shrink-0 px-3 py-1.5 text-xs bg-solarized-base01 text-solarized-base2 rounded hover:bg-solarized-base00 disabled:text-solarized-cyan disabled:bg-solarized-base02 transition-colors"
+                            >
+                              {isSelected
+                                ? needsConfirmation
+                                  ? 'Confirm takeover'
+                                  : 'Selected'
+                                : 'Use this group'}
+                            </button>
                           </div>
-                        </div>
-                      ))}
+                        );
+                      })}
                       {discovery.groups.length === 0 && (
                         <div className="text-sm text-solarized-base0">
                           No speaker groups were found.

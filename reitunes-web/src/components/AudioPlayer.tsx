@@ -2,6 +2,8 @@ import { useEffect, useRef, useCallback, useState } from 'react';
 import { usePlayerStore } from '../stores/playerStore';
 import { useQueueStore } from '../hooks/useQueue';
 import { getItemUrl, markPlayed, addBookmark } from '../hooks/useLibrary';
+import { usePlayback } from '../hooks/usePlayback';
+import { usePlaybackTargetStore } from '../stores/playbackTargetStore';
 
 // Minimal SVG icons - consistent 16px size, 1.5px stroke
 const Icons = {
@@ -81,7 +83,11 @@ function formatTime(seconds: number): string {
   return `${mins}:${secs.toString().padStart(2, '0')}`;
 }
 
-export function AudioPlayer() {
+interface AudioPlayerProps {
+  onChooseOutput: () => void;
+}
+
+export function AudioPlayer({ onChooseOutput }: AudioPlayerProps) {
   const audioRef = useRef<HTMLAudioElement>(null);
   const progressRef = useRef<HTMLDivElement>(null);
   const lastPlayedIdRef = useRef<string | null>(null);
@@ -101,17 +107,19 @@ export function AudioPlayer() {
     isMuted,
     setIsPlaying,
     clearPendingSeek,
-    play,
     setResumePosition,
     setVolume,
     setMuted,
   } = usePlayerStore();
+  const play = usePlayback();
+  const { target, isSending, error: playbackError, takeoverRequired } =
+    usePlaybackTargetStore();
   const { playNext, playPrevious, shuffleEnabled, repeatMode, toggleShuffle, cycleRepeatMode } = useQueueStore();
 
   // Handle song changes
   useEffect(() => {
     const audio = audioRef.current;
-    if (!audio || !currentItem) return;
+    if (!audio || !currentItem || target.kind !== 'browser') return;
 
     const isNewSong = currentItem.id !== lastItemIdRef.current;
     if (isNewSong) {
@@ -120,13 +128,18 @@ export function AudioPlayer() {
       isChangingSourceRef.current = true;
       audio.src = getItemUrl(currentItem);
     }
-  }, [currentItem]);
+  }, [currentItem, target.kind]);
 
   // Restored tracks remain paused. Tracks selected by the user set isPlaying
   // and start through this effect.
   useEffect(() => {
     const audio = audioRef.current;
     if (!audio || !currentItem) return;
+
+    if (target.kind === 'sonos') {
+      if (!audio.paused) audio.pause();
+      return;
+    }
 
     if (isPlaying && audio.paused) {
       audio.play().catch((error) => {
@@ -136,12 +149,12 @@ export function AudioPlayer() {
     } else if (!isPlaying && !audio.paused) {
       audio.pause();
     }
-  }, [currentItem, isPlaying, setIsPlaying]);
+  }, [currentItem, isPlaying, setIsPlaying, target.kind]);
 
   // Handle pending seek
   useEffect(() => {
     const audio = audioRef.current;
-    if (!audio || pendingSeek === null) return;
+    if (!audio || pendingSeek === null || target.kind !== 'browser') return;
 
     const doSeek = () => {
       audio.currentTime = pendingSeek;
@@ -159,7 +172,7 @@ export function AudioPlayer() {
       audio.addEventListener('canplay', handleCanPlay);
       return () => audio.removeEventListener('canplay', handleCanPlay);
     }
-  }, [pendingSeek, clearPendingSeek]);
+  }, [pendingSeek, clearPendingSeek, target.kind]);
 
   // Sync volume
   useEffect(() => {
@@ -196,7 +209,7 @@ export function AudioPlayer() {
       return;
     }
     const nextItem = playNext();
-    if (nextItem) play(nextItem);
+    if (nextItem) void play(nextItem);
   }, [playNext, play, repeatMode, setResumePosition]);
 
   const handlePlayPause = useCallback(() => {
@@ -261,12 +274,12 @@ export function AudioPlayer() {
 
   const handlePrevious = useCallback(() => {
     const prevItem = playPrevious();
-    if (prevItem) play(prevItem);
+    if (prevItem) void play(prevItem);
   }, [playPrevious, play]);
 
   const handleNext = useCallback(() => {
     const nextItem = playNext();
-    if (nextItem) play(nextItem);
+    if (nextItem) void play(nextItem);
   }, [playNext, play]);
 
   const handleAudioPause = useCallback(() => {
@@ -295,7 +308,7 @@ export function AudioPlayer() {
   useEffect(() => {
     if (!('mediaSession' in navigator)) return;
 
-    navigator.mediaSession.metadata = currentItem
+    navigator.mediaSession.metadata = currentItem && target.kind === 'browser'
       ? new MediaMetadata({
           title: currentItem.name,
           artist: currentItem.artist,
@@ -306,17 +319,22 @@ export function AudioPlayer() {
     return () => {
       navigator.mediaSession.metadata = null;
     };
-  }, [currentItem]);
+  }, [currentItem, target.kind]);
 
   useEffect(() => {
     if (!('mediaSession' in navigator)) return;
-    navigator.mediaSession.playbackState = currentItem
+    navigator.mediaSession.playbackState = currentItem && target.kind === 'browser'
       ? isPlaying ? 'playing' : 'paused'
       : 'none';
-  }, [currentItem, isPlaying]);
+  }, [currentItem, isPlaying, target.kind]);
 
   useEffect(() => {
-    if (!('mediaSession' in navigator) || !duration || !Number.isFinite(duration)) return;
+    if (
+      !('mediaSession' in navigator) ||
+      target.kind !== 'browser' ||
+      !duration ||
+      !Number.isFinite(duration)
+    ) return;
 
     try {
       navigator.mediaSession.setPositionState({
@@ -327,10 +345,10 @@ export function AudioPlayer() {
     } catch (error) {
       console.debug('Could not update media session position:', error);
     }
-  }, [currentTime, duration]);
+  }, [currentTime, duration, target.kind]);
 
   useEffect(() => {
-    if (!('mediaSession' in navigator)) return;
+    if (!('mediaSession' in navigator) || target.kind !== 'browser') return;
 
     const handlers: Array<[MediaSessionAction, MediaSessionActionHandler]> = [
       ['play', () => {
@@ -380,10 +398,58 @@ export function AudioPlayer() {
         }
       }
     };
-  }, [handleNext, handlePrevious, setResumePosition]);
+  }, [handleNext, handlePrevious, setResumePosition, target.kind]);
 
   const progress = duration > 0 ? (currentTime / duration) * 100 : 0;
   const bookmarks = currentItem?.bookmarks ? Object.values(currentItem.bookmarks) : [];
+
+  if (target.kind === 'sonos') {
+    return (
+      <div className="px-4 pt-3 pb-2">
+        <audio ref={audioRef} />
+        <div className="flex items-start justify-between gap-4">
+          <div className="min-w-0">
+            <div className="text-sm text-solarized-base1 truncate">
+              {currentItem ? (
+                <>
+                  <span className="text-solarized-cyan">{currentItem.name}</span>
+                  {currentItem.artist && (
+                    <span className="text-solarized-base0 ml-2">— {currentItem.artist}</span>
+                  )}
+                </>
+              ) : (
+                <span className="text-solarized-base0">No song selected</span>
+              )}
+            </div>
+            <div className="text-xs mt-1">
+              {isSending ? (
+                <span className="text-solarized-yellow">Sending to {target.groupName}…</span>
+              ) : playbackError ? (
+                <span className="text-solarized-red">
+                  {playbackError}
+                  {takeoverRequired && ' Open Sonos output and choose the group again.'}
+                </span>
+              ) : (
+                <span className="text-solarized-base0">
+                  Sonos · {target.groupName}. Choose a song below to play it there.
+                </span>
+              )}
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={onChooseOutput}
+            className="shrink-0 px-3 py-1.5 text-xs border border-solarized-cyan text-solarized-cyan rounded hover:bg-solarized-base02 transition-colors"
+          >
+            Change output
+          </button>
+        </div>
+        <div className="text-[11px] text-solarized-base00 mt-2">
+          Pause, skip and volume remain available in the Sonos app for now.
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="px-4 pt-3 pb-2">

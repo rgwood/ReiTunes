@@ -240,6 +240,7 @@ async fn main() -> Result<()> {
                 .route("/sonos/callback", get(sonos_callback_handler))
                 .route("/sonos/households", get(sonos_households_handler))
                 .route("/sonos/cloud-queues", post(prepare_cloud_queue_handler))
+                .route("/sonos/play", post(sonos_play_handler))
                 .route(
                     "/sonos/households/{household_id}/groups",
                     get(sonos_groups_handler),
@@ -403,7 +404,7 @@ async fn items_handler(State(app_state): State<AppState>) -> Result<impl IntoRes
 }
 
 // ============================================================================
-// Sonos Direct Control (authorization and read-only discovery only)
+// Sonos Direct Control
 // ============================================================================
 
 #[derive(Debug, Serialize)]
@@ -430,6 +431,18 @@ fn sonos_failure(error: anyhow::Error) -> (StatusCode, Json<SonosApiError>) {
             error: error.to_string(),
         }),
     )
+}
+
+fn sonos_playback_failure(
+    error: sonos::SonosPlaybackError,
+) -> (StatusCode, Json<SonosApiError>) {
+    let status = match error {
+        sonos::SonosPlaybackError::TakeoverRequired
+        | sonos::SonosPlaybackError::SessionEnded(_) => StatusCode::CONFLICT,
+        sonos::SonosPlaybackError::Control(_) => StatusCode::BAD_GATEWAY,
+    };
+    warn!(error = %error, "Sonos playback request failed");
+    (status, Json(SonosApiError { error: error.to_string() }))
 }
 
 fn cloud_queue_failure(
@@ -534,10 +547,66 @@ struct PrepareCloudQueueRequest {
     start_item_id: Option<Uuid>,
 }
 
+#[derive(Debug, Deserialize)]
+struct SonosPlayRequest {
+    group_id: String,
+    item_ids: Vec<Uuid>,
+    start_item_id: Uuid,
+    #[serde(default)]
+    position_millis: u32,
+    #[serde(default)]
+    allow_takeover: bool,
+}
+
+async fn sonos_play_handler(
+    State(app_state): State<AppState>,
+    JsonExtractor(request): JsonExtractor<SonosPlayRequest>,
+) -> SonosApiResult<Json<sonos::SonosPlaybackStatus>> {
+    if request.group_id.trim().is_empty() {
+        return Err(cloud_queue_failure(
+            cloud_queue::CloudQueueError::InvalidRequest(
+                "A Sonos speaker group is required".to_string(),
+            ),
+        ));
+    }
+
+    let control = app_state.sonos.clone().ok_or_else(sonos_unavailable)?;
+    let prepared = prepare_cloud_queue(
+        &app_state,
+        &PrepareCloudQueueRequest {
+            item_ids: request.item_ids,
+            start_item_id: Some(request.start_item_id),
+        },
+    )
+    .await?;
+    let playback = app_state
+        .cloud_queues
+        .playback_parameters(prepared.queue_id)
+        .map_err(cloud_queue_failure)?;
+    let status = control
+        .play_cloud_queue(
+            &request.group_id,
+            &playback,
+            request.position_millis,
+            request.allow_takeover,
+        )
+        .await
+        .map_err(sonos_playback_failure)?;
+    Ok(Json(status))
+}
+
 async fn prepare_cloud_queue_handler(
     State(app_state): State<AppState>,
     JsonExtractor(request): JsonExtractor<PrepareCloudQueueRequest>,
 ) -> SonosApiResult<(StatusCode, Json<cloud_queue::PreparedQueue>)> {
+    let prepared = prepare_cloud_queue(&app_state, &request).await?;
+    Ok((StatusCode::CREATED, Json(prepared)))
+}
+
+async fn prepare_cloud_queue(
+    app_state: &AppState,
+    request: &PrepareCloudQueueRequest,
+) -> SonosApiResult<cloud_queue::PreparedQueue> {
     if request.item_ids.len() > 500 {
         return Err(cloud_queue_failure(
             cloud_queue::CloudQueueError::InvalidRequest(
@@ -574,7 +643,7 @@ async fn prepare_cloud_queue_handler(
         .cloud_queues
         .prepare(tracks, request.start_item_id)
         .map_err(cloud_queue_failure)?;
-    Ok((StatusCode::CREATED, Json(prepared)))
+    Ok(prepared)
 }
 
 async fn cloud_queue_context_handler(
