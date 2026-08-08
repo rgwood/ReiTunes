@@ -5,7 +5,7 @@ publish:
     set -euo pipefail
     if [[ ! -f ./prod.env ]]; then echo "ERROR: prod.env not found, refusing to build a secretless binary" >&2; exit 1; fi
     set -a && source ./prod.env && set +a
-    if [[ -z "${S3_ENDPOINT:-}" || -z "${REITUNES_PASSWORD:-}" ]]; then echo "ERROR: prod.env is missing required values" >&2; exit 1; fi
+    if [[ -z "${S3_ENDPOINT:-}" || -z "${REITUNES_PASSWORD:-}" || -z "${OPENAI_API_KEY:-}" ]]; then echo "ERROR: prod.env is missing required values" >&2; exit 1; fi
     cargo build -p reitunes --target x86_64-unknown-linux-musl --release
     rsync ../target/x86_64-unknown-linux-musl/release/reitunes spudnik.reillywood.com:bin/
     ssh spudnik.reillywood.com -t "systemctl --user restart reitunes"
