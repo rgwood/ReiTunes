@@ -100,12 +100,19 @@ enum Commands {
 }
 
 #[derive(Debug, Clone, Serialize)]
-#[serde(tag = "type")]
-enum LibraryUpdate {
+#[serde(tag = "type", rename_all_fields = "camelCase")]
+enum FrontendUpdate {
     #[serde(rename = "update")]
     Update { item: Box<LibraryItemResponse> },
     #[serde(rename = "delete")]
     Delete { id: Uuid },
+    #[serde(rename = "sonos")]
+    Sonos {
+        namespace: String,
+        event_type: String,
+        target_id: String,
+        payload: serde_json::Value,
+    },
 }
 
 #[derive(Clone)]
@@ -113,7 +120,7 @@ struct AppState {
     library: Arc<RwLock<Library>>,
     playlists: Arc<RwLock<PlaylistStore>>,
     // used to broadcast updates to all connected clients
-    update_tx: broadcast::Sender<LibraryUpdate>,
+    update_tx: broadcast::Sender<FrontendUpdate>,
     storage: Arc<S3Storage>,
     sonos: Option<Arc<sonos::SonosControl>>,
     cloud_queues: Arc<cloud_queue::CloudQueueStore>,
@@ -194,7 +201,7 @@ async fn main() -> Result<()> {
                 update_tx: broadcast::channel(100).0,
                 storage: Arc::new(storage),
                 sonos: sonos::SonosControl::from_env(DB.clone())?,
-                cloud_queues: Arc::new(cloud_queue::CloudQueueStore::from_env()?),
+                cloud_queues: Arc::new(cloud_queue::CloudQueueStore::from_env(DB.clone())?),
             };
 
             if app_state.sonos.is_some() {
@@ -293,6 +300,7 @@ async fn main() -> Result<()> {
                 .route_service("/{*path}", vite)
                 .route_layer(middleware::from_fn(auth))
                 // Service and API-key routes stay outside session auth.
+                .route("/api/sonos/events", post(sonos_event_handler))
                 .nest("/api", api_router)
                 .nest("/smapi", smapi_router)
                 .nest("/sonos/cloud-queue", cloud_queue_router)
@@ -325,7 +333,7 @@ async fn updates_handler(
 
 async fn handle_websocket(
     mut socket: axum::extract::ws::WebSocket,
-    tx: broadcast::Sender<LibraryUpdate>,
+    tx: broadcast::Sender<FrontendUpdate>,
     addr: SocketAddr,
 ) {
     info!(addr = ?addr, "WebSocket connected");
@@ -536,6 +544,77 @@ async fn sonos_callback_handler(
     Ok(Redirect::to("/#sonos=connected"))
 }
 
+fn sonos_event_rejection(reason: &str) -> (StatusCode, Json<SonosApiError>) {
+    warn!(reason, "Rejected Sonos event callback");
+    (
+        StatusCode::UNAUTHORIZED,
+        Json(SonosApiError {
+            error: "Sonos event authentication failed".to_string(),
+        }),
+    )
+}
+
+fn sonos_event_header<'a>(headers: &'a HeaderMap, name: &str) -> Option<&'a str> {
+    headers.get(name).and_then(|value| value.to_str().ok())
+}
+
+async fn sonos_event_handler(
+    State(app_state): State<AppState>,
+    headers: HeaderMap,
+    JsonExtractor(payload): JsonExtractor<serde_json::Value>,
+) -> SonosApiResult<StatusCode> {
+    let control = app_state.sonos.clone().ok_or_else(sonos_unavailable)?;
+    let sequence_id = sonos_event_header(&headers, "X-Sonos-Event-Seq-Id")
+        .ok_or_else(|| sonos_event_rejection("missing event sequence ID"))?;
+    let namespace = sonos_event_header(&headers, "X-Sonos-Namespace")
+        .ok_or_else(|| sonos_event_rejection("missing namespace"))?;
+    let event_type = sonos_event_header(&headers, "X-Sonos-Type")
+        .ok_or_else(|| sonos_event_rejection("missing event type"))?;
+    let target_type = sonos_event_header(&headers, "X-Sonos-Target-Type")
+        .ok_or_else(|| sonos_event_rejection("missing target type"))?;
+    let target_id = sonos_event_header(&headers, "X-Sonos-Target-Value")
+        .ok_or_else(|| sonos_event_rejection("missing target value"))?;
+    let signature = sonos_event_header(&headers, "X-Sonos-Event-Signature")
+        .ok_or_else(|| sonos_event_rejection("missing event signature"))?;
+
+    let is_new = control
+        .accept_event(
+            sequence_id,
+            namespace,
+            event_type,
+            target_type,
+            target_id,
+            signature,
+        )
+        .map_err(|error| sonos_event_rejection(&error.to_string()))?;
+    if !is_new {
+        return Ok(StatusCode::OK);
+    }
+    info!(namespace, event_type, target_id, sequence_id, "Accepted Sonos event callback");
+
+    let frontend_payload = if namespace == "playback" && event_type == "playbackStatus" {
+        let playback: sonos::SonosGroupPlayback = serde_json::from_value(payload)
+            .map_err(|error| sonos_event_rejection(&error.to_string()))?;
+        let response =
+            sonos_group_playback_response(&app_state, &control, target_id, playback)?;
+        serde_json::to_value(response).map_err(|error| sonos_failure(error.into()))?
+    } else if namespace == "groupVolume" && event_type == "groupVolume" {
+        let volume: sonos::SonosGroupVolume = serde_json::from_value(payload)
+            .map_err(|error| sonos_event_rejection(&error.to_string()))?;
+        serde_json::to_value(volume).map_err(|error| sonos_failure(error.into()))?
+    } else {
+        payload
+    };
+
+    let _ = app_state.update_tx.send(FrontendUpdate::Sonos {
+        namespace: namespace.to_string(),
+        event_type: event_type.to_string(),
+        target_id: target_id.to_string(),
+        payload: frontend_payload,
+    });
+    Ok(StatusCode::OK)
+}
+
 async fn sonos_households_handler(
     State(app_state): State<AppState>,
 ) -> SonosApiResult<Json<sonos::HouseholdsResponse>> {
@@ -630,11 +709,26 @@ async fn sonos_group_playback_handler(
     State(app_state): State<AppState>,
     Path(group_id): Path<String>,
 ) -> SonosApiResult<Json<SonosGroupPlaybackResponse>> {
-    let control = app_state.sonos.ok_or_else(sonos_unavailable)?;
+    let control = app_state.sonos.clone().ok_or_else(sonos_unavailable)?;
     let playback = control
         .group_playback(&group_id)
         .await
         .map_err(sonos_failure)?;
+    let response = sonos_group_playback_response(&app_state, &control, &group_id, playback)?;
+    if response.reitunes_session_active {
+        if let Err(error) = control.ensure_event_subscriptions(&group_id).await {
+            warn!(error = %error, group_id, "Could not renew Sonos event subscriptions");
+        }
+    }
+    Ok(Json(response))
+}
+
+fn sonos_group_playback_response(
+    app_state: &AppState,
+    control: &sonos::SonosControl,
+    group_id: &str,
+    playback: sonos::SonosGroupPlayback,
+) -> SonosApiResult<SonosGroupPlaybackResponse> {
     let source_item_id = app_state
         .cloud_queues
         .source_item_id(
@@ -644,13 +738,13 @@ async fn sonos_group_playback_handler(
         .map_err(cloud_queue_failure)?;
     let reitunes_session_active = source_item_id.is_some()
         && control
-            .has_playback_session(&group_id)
+            .has_playback_session(group_id)
             .map_err(sonos_failure)?;
-    Ok(Json(SonosGroupPlaybackResponse {
+    Ok(SonosGroupPlaybackResponse {
         playback,
         source_item_id,
         reitunes_session_active,
-    }))
+    })
 }
 
 async fn active_sonos_control(
@@ -978,7 +1072,7 @@ async fn upload_handler(
             let response = LibraryItemResponse::from_item(updated_item, &app_state.storage);
             let _ = app_state
                 .update_tx
-                .send(LibraryUpdate::Update { item: Box::new(response) });
+                .send(FrontendUpdate::Update { item: Box::new(response) });
         }
 
         return Ok(Json(UploadResponse {
@@ -1227,7 +1321,7 @@ async fn save_and_broadcast_event(event: EventWithMetadata, app_state: AppState)
     match &event.event {
         Event::LibraryItemDeletedEvent => {
             info!(id = ?event.id, "Broadcasting item deletion");
-            let _ = app_state.update_tx.send(LibraryUpdate::Delete {
+            let _ = app_state.update_tx.send(FrontendUpdate::Delete {
                 id: event.aggregate_id,
             });
         }
@@ -1237,7 +1331,7 @@ async fn save_and_broadcast_event(event: EventWithMetadata, app_state: AppState)
                 let response = LibraryItemResponse::from_item(updated_item, &app_state.storage);
                 let _ = app_state
                     .update_tx
-                    .send(LibraryUpdate::Update { item: Box::new(response) });
+                    .send(FrontendUpdate::Update { item: Box::new(response) });
             }
         }
     }
@@ -1294,7 +1388,7 @@ async fn add_item_handler(
         let response = LibraryItemResponse::from_item(updated_item, &app_state.storage);
         let _ = app_state
             .update_tx
-            .send(LibraryUpdate::Update { item: Box::new(response) });
+            .send(FrontendUpdate::Update { item: Box::new(response) });
     }
 
     Ok(StatusCode::CREATED)
@@ -1325,7 +1419,7 @@ async fn play_handler(
         let response = LibraryItemResponse::from_item(updated_item, &app_state.storage);
         let _ = app_state
             .update_tx
-            .send(LibraryUpdate::Update { item: Box::new(response) });
+            .send(FrontendUpdate::Update { item: Box::new(response) });
     } else {
         warn!(id=?request.id, "Received play event for unknown item");
     }
@@ -1605,5 +1699,26 @@ mod tests {
         assert_eq!(request.start_item_id, item_id);
         assert_eq!(request.position_millis, 42_000);
         assert!(request.allow_takeover);
+    }
+
+    #[test]
+    fn serializes_sonos_events_for_the_browser() {
+        let update = FrontendUpdate::Sonos {
+            namespace: "playback".to_string(),
+            event_type: "playbackStatus".to_string(),
+            target_id: "group-1".to_string(),
+            payload: serde_json::json!({ "positionMillis": 42_000 }),
+        };
+
+        assert_eq!(
+            serde_json::to_value(update).unwrap(),
+            serde_json::json!({
+                "type": "sonos",
+                "namespace": "playback",
+                "eventType": "playbackStatus",
+                "targetId": "group-1",
+                "payload": { "positionMillis": 42_000 }
+            })
+        );
     }
 }

@@ -1,13 +1,16 @@
 use std::{
     collections::HashMap,
     sync::RwLock,
-    time::{Duration, Instant},
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
 use anyhow::{bail, Context, Result};
 use openssl::memcmp;
+use r2d2::Pool;
+use r2d2_sqlite::SqliteConnectionManager;
 use rand::{rngs::OsRng, RngCore};
 use reqwest::Url;
+use rusqlite::params;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -82,6 +85,8 @@ struct PlaybackPolicies {
     can_repeat_one: bool,
     can_crossfade: bool,
     can_shuffle: bool,
+    play_ttl_sec: u32,
+    pause_ttl_sec: u32,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -176,17 +181,42 @@ struct QueueSnapshot {
     context_version: String,
     queue_version: String,
     start_item_id: String,
-    created_at: Instant,
+    created_at_unix: u64,
     items: Vec<QueueItem>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct StoredQueueSnapshot {
+    id: Uuid,
+    queue_base_url: String,
+    authorization: String,
+    context_version: String,
+    queue_version: String,
+    start_item_id: String,
+    created_at_unix: u64,
+    items: Vec<StoredQueueItem>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct StoredQueueItem {
+    source_id: Uuid,
+    id: String,
+    name: String,
+    media_url: String,
+    content_type: String,
+    artist: Option<String>,
+    album: Option<String>,
+    track_number: Option<u32>,
 }
 
 pub struct CloudQueueStore {
     public_base_url: Option<Url>,
     queues: RwLock<HashMap<Uuid, QueueSnapshot>>,
+    db: Option<Pool<SqliteConnectionManager>>,
 }
 
 impl CloudQueueStore {
-    pub fn from_env() -> Result<Self> {
+    pub fn from_env(db: Pool<SqliteConnectionManager>) -> Result<Self> {
         let scheme = configured_value("URL_SCHEME", option_env!("URL_SCHEME"));
         let hostname = configured_value("REITUNES_HOSTNAME", option_env!("REITUNES_HOSTNAME"));
         let public_base_url = match (scheme, hostname) {
@@ -204,9 +234,11 @@ impl CloudQueueStore {
             }
         };
 
+        let queues = load_queues(&db)?;
         Ok(Self {
             public_base_url,
-            queues: RwLock::new(HashMap::new()),
+            queues: RwLock::new(queues),
+            db: Some(db),
         })
     }
 
@@ -215,7 +247,21 @@ impl CloudQueueStore {
         Self {
             public_base_url: Some(Url::parse(public_base_url).unwrap()),
             queues: RwLock::new(HashMap::new()),
+            db: None,
         }
+    }
+
+    #[cfg(test)]
+    fn with_base_url_and_db(
+        public_base_url: &str,
+        db: Pool<SqliteConnectionManager>,
+    ) -> Result<Self> {
+        let queues = load_queues(&db)?;
+        Ok(Self {
+            public_base_url: Some(Url::parse(public_base_url)?),
+            queues: RwLock::new(queues),
+            db: Some(db),
+        })
     }
 
     pub fn prepare(
@@ -263,23 +309,33 @@ impl CloudQueueStore {
             context_version,
             queue_version: queue_version.clone(),
             start_item_id: start_queue_item_id.clone(),
-            created_at: Instant::now(),
+            created_at_unix: unix_timestamp(),
             items,
         };
 
         let mut queues = self.queues.write().map_err(|_| {
             CloudQueueError::Internal(anyhow::anyhow!("Cloud Queue lock was poisoned"))
         })?;
-        queues.retain(|_, queue| queue.created_at.elapsed() < QUEUE_LIFETIME);
+        let expired = queues
+            .iter()
+            .filter(|(_, queue)| queue_is_expired(queue))
+            .map(|(id, _)| *id)
+            .collect::<Vec<_>>();
+        let mut removed = expired.clone();
+        for id in expired {
+            queues.remove(&id);
+        }
         if queues.len() >= MAX_QUEUES {
             if let Some(oldest) = queues
                 .values()
-                .min_by_key(|queue| queue.created_at)
+                .min_by_key(|queue| queue.created_at_unix)
                 .map(|queue| queue.id)
             {
                 queues.remove(&oldest);
+                removed.push(oldest);
             }
         }
+        self.persist_snapshot(&snapshot, &removed)?;
         queues.insert(queue_id, snapshot);
 
         Ok(PreparedQueue {
@@ -317,6 +373,7 @@ impl CloudQueueStore {
         })?;
         Ok(queues
             .values()
+            .filter(|queue| !queue_is_expired(queue))
             .find(|queue| queue.queue_version == queue_version)
             .and_then(|queue| queue.items.iter().find(|item| item.id == queue_item_id))
             .map(|item| item.source_id))
@@ -369,6 +426,9 @@ impl CloudQueueStore {
                 can_repeat_one: true,
                 can_crossfade: true,
                 can_shuffle: false,
+                // Zero means no inactivity or continuous-play expiry.
+                play_ttl_sec: 0,
+                pause_ttl_sec: 0,
             },
         })
     }
@@ -428,10 +488,99 @@ impl CloudQueueStore {
         })?;
         let snapshot = queues
             .get(&queue_id)
-            .filter(|queue| queue.created_at.elapsed() < QUEUE_LIFETIME)
+            .filter(|queue| !queue_is_expired(queue))
             .cloned()
             .ok_or(CloudQueueError::NotFound)?;
         Ok(snapshot)
+    }
+
+    fn persist_snapshot(&self, snapshot: &QueueSnapshot, removed: &[Uuid]) -> Result<()> {
+        let Some(db) = &self.db else {
+            return Ok(());
+        };
+        let serialized = serde_json::to_string(&StoredQueueSnapshot::from(snapshot))?;
+        let mut conn = db.get()?;
+        let tx = conn.transaction()?;
+        for id in removed {
+            tx.execute(
+                "DELETE FROM sonos_cloud_queues WHERE Id = ?1",
+                params![id.to_string()],
+            )?;
+        }
+        tx.execute(
+            "INSERT OR REPLACE INTO sonos_cloud_queues (Id, CreatedAtUnix, Serialized)
+             VALUES (?1, ?2, ?3)",
+            params![
+                snapshot.id.to_string(),
+                snapshot.created_at_unix as i64,
+                serialized
+            ],
+        )?;
+        tx.commit()?;
+        Ok(())
+    }
+}
+
+impl From<&QueueSnapshot> for StoredQueueSnapshot {
+    fn from(snapshot: &QueueSnapshot) -> Self {
+        Self {
+            id: snapshot.id,
+            queue_base_url: snapshot.queue_base_url.clone(),
+            authorization: snapshot.authorization.clone(),
+            context_version: snapshot.context_version.clone(),
+            queue_version: snapshot.queue_version.clone(),
+            start_item_id: snapshot.start_item_id.clone(),
+            created_at_unix: snapshot.created_at_unix,
+            items: snapshot.items.iter().map(StoredQueueItem::from).collect(),
+        }
+    }
+}
+
+impl From<&QueueItem> for StoredQueueItem {
+    fn from(item: &QueueItem) -> Self {
+        Self {
+            source_id: item.source_id,
+            id: item.id.clone(),
+            name: item.track.name.clone(),
+            media_url: item.track.media_url.clone(),
+            content_type: item.track.content_type.clone(),
+            artist: item.track.artist.as_ref().map(|artist| artist.name.clone()),
+            album: item.track.album.as_ref().map(|album| album.name.clone()),
+            track_number: item.track.track_number,
+        }
+    }
+}
+
+impl From<StoredQueueSnapshot> for QueueSnapshot {
+    fn from(snapshot: StoredQueueSnapshot) -> Self {
+        Self {
+            id: snapshot.id,
+            queue_base_url: snapshot.queue_base_url,
+            authorization: snapshot.authorization,
+            context_version: snapshot.context_version,
+            queue_version: snapshot.queue_version,
+            start_item_id: snapshot.start_item_id,
+            created_at_unix: snapshot.created_at_unix,
+            items: snapshot.items.into_iter().map(QueueItem::from).collect(),
+        }
+    }
+}
+
+impl From<StoredQueueItem> for QueueItem {
+    fn from(item: StoredQueueItem) -> Self {
+        Self {
+            source_id: item.source_id,
+            id: item.id,
+            track: TrackMetadata {
+                track_type: "track",
+                name: item.name,
+                media_url: item.media_url,
+                content_type: item.content_type,
+                artist: item.artist.map(|name| NamedMetadata { name }),
+                album: item.album.map(|name| NamedMetadata { name }),
+                track_number: item.track_number,
+            },
+        }
     }
 }
 
@@ -453,6 +602,45 @@ impl From<QueueTrack> for QueueItem {
     }
 }
 
+fn load_queues(db: &Pool<SqliteConnectionManager>) -> Result<HashMap<Uuid, QueueSnapshot>> {
+    let conn = db.get()?;
+    let cutoff = unix_timestamp().saturating_sub(QUEUE_LIFETIME.as_secs()) as i64;
+    conn.execute(
+        "DELETE FROM sonos_cloud_queues WHERE CreatedAtUnix < ?1",
+        params![cutoff],
+    )?;
+    let mut statement = conn.prepare(
+        "SELECT Serialized FROM sonos_cloud_queues
+         WHERE CreatedAtUnix >= ?1 ORDER BY CreatedAtUnix DESC LIMIT ?2",
+    )?;
+    let serialized = statement
+        .query_map(params![cutoff, MAX_QUEUES as i64], |row| {
+            row.get::<_, String>(0)
+        })?
+        .collect::<std::result::Result<Vec<_>, _>>()?;
+
+    serialized
+        .into_iter()
+        .map(|serialized| {
+            let stored: StoredQueueSnapshot = serde_json::from_str(&serialized)
+                .context("failed to deserialize a persisted Sonos Cloud Queue")?;
+            let snapshot = QueueSnapshot::from(stored);
+            Ok((snapshot.id, snapshot))
+        })
+        .collect()
+}
+
+fn unix_timestamp() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs()
+}
+
+fn queue_is_expired(queue: &QueueSnapshot) -> bool {
+    unix_timestamp().saturating_sub(queue.created_at_unix) >= QUEUE_LIFETIME.as_secs()
+}
+
 fn configured_value(name: &str, compile_time_value: Option<&'static str>) -> Option<String> {
     compile_time_value
         .filter(|value| !value.trim().is_empty())
@@ -470,6 +658,7 @@ fn random_secret() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use reitunes_workspace::open_connection_pool;
 
     fn track(number: u128) -> QueueTrack {
         QueueTrack {
@@ -574,6 +763,46 @@ mod tests {
 
         assert_eq!(context["container"]["name"], "ReiTunes queue");
         assert_eq!(context["playbackPolicies"]["canSeek"], true);
+        assert_eq!(context["playbackPolicies"]["playTtlSec"], 0);
+        assert_eq!(context["playbackPolicies"]["pauseTtlSec"], 0);
         assert_eq!(version["queueVersion"], prepared.queue_version);
+    }
+
+    #[test]
+    fn restores_an_active_queue_after_a_restart() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db_path = temp_dir.path().join("test.db");
+        let db = open_connection_pool(db_path.to_str().unwrap()).unwrap();
+        let store =
+            CloudQueueStore::with_base_url_and_db("https://reitunes.example.com/", db.clone())
+                .unwrap();
+        let prepared = store.prepare(vec![track(1), track(2)], None).unwrap();
+        let playback = store.playback_parameters(prepared.queue_id).unwrap();
+        drop(store);
+
+        let restored =
+            CloudQueueStore::with_base_url_and_db("https://reitunes.example.com/", db).unwrap();
+        let restored_playback = restored.playback_parameters(prepared.queue_id).unwrap();
+
+        assert_eq!(restored_playback.queue_base_url, playback.queue_base_url);
+        assert_eq!(
+            restored_playback.http_authorization,
+            playback.http_authorization
+        );
+        assert_eq!(
+            restored
+                .source_item_id(
+                    Some(&prepared.queue_version),
+                    Some(&restored_playback.item_id),
+                )
+                .unwrap(),
+            Some(Uuid::from_u128(1))
+        );
+        restored
+            .context(
+                prepared.queue_id,
+                Some(&restored_playback.http_authorization),
+            )
+            .unwrap();
     }
 }

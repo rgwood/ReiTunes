@@ -97,6 +97,7 @@ export function AudioPlayer({ onChooseOutput, items }: AudioPlayerProps) {
   const lastItemIdRef = useRef<string | null>(null);
   const lastCheckpointRef = useRef(-1);
   const isChangingSourceRef = useRef(false);
+  const wasSonosSendingRef = useRef(false);
 
   const [currentTime, setCurrentTimeLocal] = useState(0);
   const [duration, setDurationLocal] = useState(0);
@@ -120,7 +121,16 @@ export function AudioPlayer({ onChooseOutput, items }: AudioPlayerProps) {
   const { target, isSending, error: playbackError, takeoverRequired } =
     usePlaybackTargetStore();
   const sonos = useSonosControls(target.kind === 'sonos' ? target.groupId : null);
+  const refreshSonosPlayback = sonos.refreshPlayback;
   const { playNext, playPrevious, shuffleEnabled, repeatMode, toggleShuffle, cycleRepeatMode } = useQueueStore();
+
+  useEffect(() => {
+    const wasSending = wasSonosSendingRef.current;
+    wasSonosSendingRef.current = isSending;
+    if (target.kind === 'sonos' && wasSending && !isSending && !playbackError) {
+      void refreshSonosPlayback().catch(() => undefined);
+    }
+  }, [isSending, playbackError, refreshSonosPlayback, target.kind]);
 
   // Handle song changes
   useEffect(() => {

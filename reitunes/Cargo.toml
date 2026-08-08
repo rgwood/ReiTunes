@@ -42,6 +42,7 @@ jiff.workspace = true
 indexmap.workspace = true
 rand.workspace = true
 sha2.workspace = true
+base64 = "0.22"
 
 [dev-dependencies]
 pretty_assertions = "1.4.1"

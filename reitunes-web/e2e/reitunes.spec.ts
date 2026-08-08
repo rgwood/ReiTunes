@@ -349,14 +349,72 @@ test('switches between Sonos and browser playback without playing twice', async 
     await page.evaluate(() => (window as typeof window & { __playCalls: number }).__playCalls)
   ).toBe(0);
 
+  await page.evaluate((trackId) => {
+    window.dispatchEvent(
+      new CustomEvent('reitunes:sonos', {
+        detail: {
+          type: 'sonos',
+          namespace: 'playback',
+          eventType: 'playbackStatus',
+          targetId: 'group-1',
+          payload: {
+            playbackState: 'PLAYBACK_STATE_PAUSED',
+            positionMillis: 55_000,
+            itemId: 'queue-item-1',
+            queueVersion: 'queue-version-1',
+            sourceItemId: trackId,
+            reitunesSessionActive: true,
+            availablePlaybackActions: { canPause: true },
+          },
+        },
+      })
+    );
+    window.dispatchEvent(
+      new CustomEvent('reitunes:sonos', {
+        detail: {
+          type: 'sonos',
+          namespace: 'groupVolume',
+          eventType: 'groupVolume',
+          targetId: 'group-1',
+          payload: { volume: 51, muted: false, fixed: false },
+        },
+      })
+    );
+  }, TRACK_ID);
+  await expect(page.getByRole('button', { name: 'Play Sonos' })).toBeVisible();
+  await expect(page.getByText('0:55')).toBeVisible();
+
+  const sonosVolumeSlider = page.getByRole('slider', { name: 'Sonos group volume' });
+  await expect(sonosVolumeSlider).toHaveValue('51');
+  await page.evaluate((trackId) => {
+    window.dispatchEvent(
+      new CustomEvent('reitunes:sonos', {
+        detail: {
+          type: 'sonos',
+          namespace: 'playback',
+          eventType: 'playbackStatus',
+          targetId: 'group-1',
+          payload: {
+            playbackState: 'PLAYBACK_STATE_PLAYING',
+            positionMillis: 55_000,
+            itemId: 'queue-item-1',
+            queueVersion: 'queue-version-1',
+            sourceItemId: trackId,
+            reitunesSessionActive: true,
+            availablePlaybackActions: { canPause: true },
+          },
+        },
+      })
+    );
+  }, TRACK_ID);
+  await expect(page.getByRole('button', { name: 'Pause Sonos' })).toBeVisible();
+
   await page.getByRole('button', { name: 'Pause Sonos' }).click();
   await expect.poll(() => transportRequests).toContain('pause');
   await expect(page.getByRole('button', { name: 'Play Sonos' })).toBeVisible();
   await page.getByRole('button', { name: 'Play Sonos' }).click();
   await expect.poll(() => transportRequests).toEqual(['pause', 'play']);
 
-  const sonosVolumeSlider = page.getByRole('slider', { name: 'Sonos group volume' });
-  await expect(sonosVolumeSlider).toHaveValue('37');
   await sonosVolumeSlider.fill('63');
   await sonosVolumeSlider.dispatchEvent('pointerup');
   await expect.poll(() => volumeRequests).toContainEqual({ volume: 63 });

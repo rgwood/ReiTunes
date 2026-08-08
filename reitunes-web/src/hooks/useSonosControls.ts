@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { SONOS_REALTIME_EVENT } from './useLibrary';
 import { usePlaybackTargetStore } from '../stores/playbackTargetStore';
+import type { SonosRealtimeUpdate } from '../types';
 
-const PLAYBACK_POLL_MILLIS = 2_000;
-const VOLUME_POLL_MILLIS = 10_000;
+const PLAYBACK_POLL_MILLIS = 30_000;
+const VOLUME_POLL_MILLIS = 60_000;
 
 export interface SonosPlaybackStatus {
   playbackState: string;
@@ -47,6 +49,21 @@ export function useSonosControls(groupId: string | null) {
   const [isTransportPending, setIsTransportPending] = useState(false);
   const [isVolumePending, setIsVolumePending] = useState(false);
 
+  const applyPlayback = useCallback((next: SonosPlaybackStatus, requestedGroup: string) => {
+    if (activeGroupRef.current !== requestedGroup) return;
+    const observed = { ...next, observedAt: Date.now() };
+    setPlayback(observed);
+    positionRef.current = next.positionMillis;
+    setPositionMillis(next.positionMillis);
+    setPollError(null);
+  }, []);
+
+  const applyVolume = useCallback((next: SonosGroupVolume, requestedGroup: string) => {
+    if (activeGroupRef.current !== requestedGroup) return;
+    setVolumeState(next);
+    setPollError(null);
+  }, []);
+
   const refreshPlayback = useCallback(async () => {
     if (!groupId) return;
     const requestedGroup = groupId;
@@ -56,13 +73,8 @@ export function useSonosControls(groupId: string | null) {
     );
     if (!response.ok) throw new Error(await responseError(response));
     const next = (await response.json()) as SonosPlaybackStatus;
-    if (activeGroupRef.current !== requestedGroup) return;
-    const observed = { ...next, observedAt: Date.now() };
-    setPlayback(observed);
-    positionRef.current = next.positionMillis;
-    setPositionMillis(next.positionMillis);
-    setPollError(null);
-  }, [groupId]);
+    applyPlayback(next, requestedGroup);
+  }, [applyPlayback, groupId]);
 
   const refreshVolume = useCallback(async () => {
     if (!groupId) return;
@@ -73,10 +85,32 @@ export function useSonosControls(groupId: string | null) {
     );
     if (!response.ok) throw new Error(await responseError(response));
     const next = (await response.json()) as SonosGroupVolume;
-    if (activeGroupRef.current !== requestedGroup) return;
-    setVolumeState(next);
-    setPollError(null);
-  }, [groupId]);
+    applyVolume(next, requestedGroup);
+  }, [applyVolume, groupId]);
+
+  useEffect(() => {
+    if (!groupId) return;
+    const handleSonosEvent = (event: Event) => {
+      const update = (event as CustomEvent<SonosRealtimeUpdate>).detail;
+      if (update.targetId !== groupId) return;
+
+      if (update.namespace === 'playback' && update.eventType === 'playbackStatus') {
+        applyPlayback(update.payload as SonosPlaybackStatus, groupId);
+      } else if (
+        update.namespace === 'groupVolume' &&
+        update.eventType === 'groupVolume'
+      ) {
+        applyVolume(update.payload as SonosGroupVolume, groupId);
+      } else if (update.eventType.endsWith('Error')) {
+        const payload = update.payload as { errorCode?: string; reason?: string };
+        setCommandError(
+          payload.reason || payload.errorCode || `Sonos reported ${update.eventType}`
+        );
+      }
+    };
+    window.addEventListener(SONOS_REALTIME_EVENT, handleSonosEvent);
+    return () => window.removeEventListener(SONOS_REALTIME_EVENT, handleSonosEvent);
+  }, [applyPlayback, applyVolume, groupId]);
 
   useEffect(() => {
     if (!groupId) {
@@ -236,5 +270,6 @@ export function useSonosControls(groupId: string | null) {
     pause: () => sendTransport('pause'),
     setGroupVolume,
     setMuted,
+    refreshPlayback,
   };
 }

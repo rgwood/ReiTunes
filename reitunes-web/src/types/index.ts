@@ -25,6 +25,16 @@ export type LibraryUpdate =
   | { type: 'update'; item: LibraryItem }
   | { type: 'delete'; id: string };
 
+export interface SonosRealtimeUpdate {
+  type: 'sonos';
+  namespace: string;
+  eventType: string;
+  targetId: string;
+  payload: unknown;
+}
+
+export type RealtimeUpdate = LibraryUpdate | SonosRealtimeUpdate;
+
 // Queue item for playback queue
 export interface QueueItem {
   id: string;

@@ -5,6 +5,7 @@ use std::{
 };
 
 use anyhow::{bail, Context, Result};
+use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use openssl::symm::{Cipher, Crypter, Mode};
 use r2d2::Pool;
 use r2d2_sqlite::SqliteConnectionManager;
@@ -14,6 +15,7 @@ use rusqlite::{params, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use tokio::sync::Mutex;
+use tracing::warn;
 
 use crate::cloud_queue::PlaybackQueueParameters;
 
@@ -23,6 +25,7 @@ const SONOS_CORRELATION_ID_HEADER: &str = "X-Sonos-Corr-Id";
 const REITUNES_APP_ID: &str = "com.reillywood.reitunes";
 const REITUNES_APP_CONTEXT: &str = "personal-library";
 const STATE_LIFETIME: Duration = Duration::from_secs(10 * 60);
+const EVENT_SUBSCRIPTION_RENEW_AFTER: Duration = Duration::from_secs(2 * 24 * 60 * 60);
 const REFRESH_EARLY_BY_SECONDS: u64 = 60;
 const TOKEN_AAD: &[u8] = b"reitunes-sonos-oauth-v1";
 
@@ -298,21 +301,30 @@ pub struct SonosControl {
     db: Pool<SqliteConnectionManager>,
     pending_states: StdMutex<HashMap<String, Instant>>,
     playback_sessions: StdMutex<HashMap<String, String>>,
+    event_subscriptions: StdMutex<HashMap<String, Instant>>,
+    event_sequences: StdMutex<HashMap<String, u64>>,
     refresh_lock: Mutex<()>,
 }
 
 impl SonosControl {
     pub fn from_env(db: Pool<SqliteConnectionManager>) -> Result<Option<Arc<Self>>> {
-        Ok(SonosConfig::from_env()?
-            .map(|config| Arc::new(Self::new(config, SonosEndpoints::default(), db))))
+        let Some(config) = SonosConfig::from_env()? else {
+            return Ok(None);
+        };
+        Ok(Some(Arc::new(Self::new(
+            config,
+            SonosEndpoints::default(),
+            db,
+        )?)))
     }
 
     fn new(
         config: SonosConfig,
         endpoints: SonosEndpoints,
         db: Pool<SqliteConnectionManager>,
-    ) -> Self {
-        Self {
+    ) -> Result<Self> {
+        let playback_sessions = load_playback_sessions(&db)?;
+        Ok(Self {
             config,
             endpoints,
             client: reqwest::Client::builder()
@@ -321,9 +333,11 @@ impl SonosControl {
                 .expect("ReiTunes Sonos HTTP client should be valid"),
             db,
             pending_states: StdMutex::new(HashMap::new()),
-            playback_sessions: StdMutex::new(HashMap::new()),
+            playback_sessions: StdMutex::new(playback_sessions),
+            event_subscriptions: StdMutex::new(HashMap::new()),
+            event_sequences: StdMutex::new(HashMap::new()),
             refresh_lock: Mutex::new(()),
-        }
+        })
     }
 
     pub fn status(&self) -> Result<SonosStatus> {
@@ -414,10 +428,7 @@ impl SonosControl {
                 let session_id = session
                     .session_id
                     .context("Sonos did not return a playback session ID")?;
-                self.playback_sessions
-                    .lock()
-                    .map_err(|_| anyhow::anyhow!("Sonos playback session lock was poisoned"))?
-                    .insert(group_id.to_string(), session_id.clone());
+                self.remember_session(group_id, &session_id)?;
                 (session_id, session.session_created)
             }
         };
@@ -428,6 +439,10 @@ impl SonosControl {
         {
             self.forget_session(group_id, &session_id)?;
             return Err(SonosPlaybackError::SessionEnded(error));
+        }
+
+        if let Err(error) = self.ensure_event_subscriptions(group_id).await {
+            warn!(error = %error, group_id, "Sonos playback started without event subscriptions");
         }
 
         Ok(SonosPlaybackStatus {
@@ -474,14 +489,108 @@ impl SonosControl {
             .contains_key(group_id))
     }
 
+    pub async fn ensure_event_subscriptions(&self, group_id: &str) -> Result<()> {
+        let is_fresh = self
+            .event_subscriptions
+            .lock()
+            .map_err(|_| anyhow::anyhow!("Sonos event subscription lock was poisoned"))?
+            .get(group_id)
+            .is_some_and(|created| created.elapsed() < EVENT_SUBSCRIPTION_RENEW_AFTER);
+        if is_fresh {
+            return Ok(());
+        }
+
+        for namespace in ["playback", "groupVolume"] {
+            let url = self.control_url(&["groups", group_id, namespace, "subscription"])?;
+            self.post_empty(url, &serde_json::json!({})).await?;
+        }
+        self.event_subscriptions
+            .lock()
+            .map_err(|_| anyhow::anyhow!("Sonos event subscription lock was poisoned"))?
+            .insert(group_id.to_string(), Instant::now());
+        Ok(())
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn accept_event(
+        &self,
+        sequence_id: &str,
+        namespace: &str,
+        event_type: &str,
+        target_type: &str,
+        target_value: &str,
+        supplied_signature: &str,
+    ) -> Result<bool> {
+        let expected_signature = self.event_signature(
+            sequence_id,
+            namespace,
+            event_type,
+            target_type,
+            target_value,
+        );
+        if expected_signature.len() != supplied_signature.len()
+            || !openssl::memcmp::eq(expected_signature.as_bytes(), supplied_signature.as_bytes())
+        {
+            bail!("Sonos event signature did not match");
+        }
+
+        let sequence_id = sequence_id
+            .parse::<u64>()
+            .context("Sonos event sequence ID was not an integer")?;
+        let sequence_key = format!("{namespace}\0{target_type}\0{target_value}");
+        let mut sequences = self
+            .event_sequences
+            .lock()
+            .map_err(|_| anyhow::anyhow!("Sonos event sequence lock was poisoned"))?;
+        let is_new = sequences
+            .get(&sequence_key)
+            .is_none_or(|previous| sequence_id > *previous);
+        if is_new {
+            sequences.insert(sequence_key, sequence_id);
+        }
+        Ok(is_new)
+    }
+
     pub fn disconnect(&self) -> Result<()> {
         let conn = self.db.get()?;
         conn.execute("DELETE FROM sonos_oauth_tokens WHERE Id = 1", [])?;
+        conn.execute("DELETE FROM sonos_playback_sessions", [])?;
         self.playback_sessions
             .lock()
             .map_err(|_| anyhow::anyhow!("Sonos playback session lock was poisoned"))?
             .clear();
+        self.event_subscriptions
+            .lock()
+            .map_err(|_| anyhow::anyhow!("Sonos event subscription lock was poisoned"))?
+            .clear();
+        self.event_sequences
+            .lock()
+            .map_err(|_| anyhow::anyhow!("Sonos event sequence lock was poisoned"))?
+            .clear();
         Ok(())
+    }
+
+    fn event_signature(
+        &self,
+        sequence_id: &str,
+        namespace: &str,
+        event_type: &str,
+        target_type: &str,
+        target_value: &str,
+    ) -> String {
+        let mut digest = Sha256::new();
+        for value in [
+            sequence_id,
+            namespace,
+            event_type,
+            target_type,
+            target_value,
+            self.config.client_id.as_str(),
+            self.config.client_secret.as_str(),
+        ] {
+            digest.update(value.as_bytes());
+        }
+        URL_SAFE_NO_PAD.encode(digest.finalize())
     }
 
     async fn create_session(&self, group_id: &str) -> Result<SessionStatus> {
@@ -533,8 +642,28 @@ impl SonosControl {
             .get(group_id)
             .is_some_and(|stored| stored == session_id)
         {
+            let conn = self.db.get()?;
+            conn.execute(
+                "DELETE FROM sonos_playback_sessions
+                 WHERE GroupId = ?1 AND SessionId = ?2",
+                params![group_id, session_id],
+            )?;
             sessions.remove(group_id);
         }
+        Ok(())
+    }
+
+    fn remember_session(&self, group_id: &str, session_id: &str) -> Result<()> {
+        let conn = self.db.get()?;
+        conn.execute(
+            "INSERT OR REPLACE INTO sonos_playback_sessions (GroupId, SessionId)
+             VALUES (?1, ?2)",
+            params![group_id, session_id],
+        )?;
+        self.playback_sessions
+            .lock()
+            .map_err(|_| anyhow::anyhow!("Sonos playback session lock was poisoned"))?
+            .insert(group_id.to_string(), session_id.to_string());
         Ok(())
     }
 
@@ -732,6 +861,16 @@ impl SonosControl {
     }
 }
 
+fn load_playback_sessions(db: &Pool<SqliteConnectionManager>) -> Result<HashMap<String, String>> {
+    let conn = db.get()?;
+    let mut statement = conn.prepare("SELECT GroupId, SessionId FROM sonos_playback_sessions")?;
+    let sessions = statement
+        .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?
+        .collect::<std::result::Result<HashMap<_, _>, _>>()
+        .map_err(anyhow::Error::from)?;
+    Ok(sessions)
+}
+
 async fn parse_token_response(response: reqwest::Response) -> Result<TokenResponse> {
     parse_json_response(response).await
 }
@@ -833,7 +972,7 @@ mod tests {
             token_encryption_key: [42; 32],
         };
         (
-            SonosControl::new(config, SonosEndpoints::default(), db),
+            SonosControl::new(config, SonosEndpoints::default(), db).unwrap(),
             temp_dir,
         )
     }
@@ -890,6 +1029,61 @@ mod tests {
 
         control.consume_state(&state).unwrap();
         assert!(control.consume_state(&state).is_err());
+    }
+
+    #[test]
+    fn verifies_and_deduplicates_sonos_event_signatures() {
+        let (control, _temp_dir) = test_control();
+        let signature = "VoWjzk5Hp7dwBwuDePsf2uy2JkIA53I_Hp7AschNHSM";
+
+        assert!(control
+            .accept_event(
+                "1234",
+                "playback",
+                "playbackStatus",
+                "groupId",
+                "group-1",
+                signature,
+            )
+            .unwrap());
+        assert!(!control
+            .accept_event(
+                "1234",
+                "playback",
+                "playbackStatus",
+                "groupId",
+                "group-1",
+                signature,
+            )
+            .unwrap());
+        assert!(control
+            .accept_event(
+                "1234",
+                "playback",
+                "playbackStatus",
+                "groupId",
+                "group-2",
+                signature,
+            )
+            .is_err());
+    }
+
+    #[test]
+    fn restores_and_forgets_playback_sessions_across_restarts() {
+        let (control, _temp_dir) = test_control();
+        let config = control.config.clone();
+        let endpoints = control.endpoints.clone();
+        let db = control.db.clone();
+        control.remember_session("group-1", "session-1").unwrap();
+        drop(control);
+
+        let restored = SonosControl::new(config.clone(), endpoints.clone(), db.clone()).unwrap();
+        assert!(restored.has_playback_session("group-1").unwrap());
+        restored.forget_session("group-1", "session-1").unwrap();
+        drop(restored);
+
+        let restarted = SonosControl::new(config, endpoints, db).unwrap();
+        assert!(!restarted.has_playback_session("group-1").unwrap());
     }
 
     #[test]
@@ -1111,6 +1305,7 @@ mod tests {
         struct TestState {
             sessions_created: Arc<AtomicUsize>,
             queues_loaded: Arc<AtomicUsize>,
+            subscriptions: Arc<AtomicUsize>,
         }
 
         async fn create_session(
@@ -1156,8 +1351,21 @@ mod tests {
             Json(serde_json::json!({ "success": true }))
         }
 
+        async fn subscribe(
+            State(state): State<TestState>,
+            headers: HeaderMap,
+            Json(body): Json<serde_json::Value>,
+        ) -> Json<serde_json::Value> {
+            assert_eq!(headers.get("authorization").unwrap(), "Bearer access-token");
+            assert_eq!(headers.get(SONOS_API_KEY_HEADER).unwrap(), "test-client");
+            assert_eq!(body, serde_json::json!({}));
+            state.subscriptions.fetch_add(1, Ordering::SeqCst);
+            Json(serde_json::json!({}))
+        }
+
         let sessions_created = Arc::new(AtomicUsize::new(0));
         let queues_loaded = Arc::new(AtomicUsize::new(0));
+        let subscriptions = Arc::new(AtomicUsize::new(0));
         let router = Router::new()
             .route(
                 "/control/api/v1/groups/group-1/playbackSession",
@@ -1166,6 +1374,14 @@ mod tests {
             .route(
                 "/control/api/v1/playbackSessions/session-1/playbackSession/loadCloudQueue",
                 axum::routing::post(load_queue),
+            )
+            .route(
+                "/control/api/v1/groups/group-1/playback/subscription",
+                axum::routing::post(subscribe),
+            )
+            .route(
+                "/control/api/v1/groups/group-1/groupVolume/subscription",
+                axum::routing::post(subscribe),
             )
             .fallback(|request: axum::extract::Request| async move {
                 (
@@ -1176,6 +1392,7 @@ mod tests {
             .with_state(TestState {
                 sessions_created: sessions_created.clone(),
                 queues_loaded: queues_loaded.clone(),
+                subscriptions: subscriptions.clone(),
             });
         let (control, _temp_dir, server) = test_control_with_server(router).await;
         control
@@ -1214,6 +1431,7 @@ mod tests {
         assert!(!second.session_created);
         assert_eq!(sessions_created.load(Ordering::SeqCst), 1);
         assert_eq!(queues_loaded.load(Ordering::SeqCst), 2);
+        assert_eq!(subscriptions.load(Ordering::SeqCst), 2);
         server.abort();
     }
 

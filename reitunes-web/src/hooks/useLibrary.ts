@@ -1,6 +1,8 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useRef } from 'react';
-import type { LibraryItem, LibraryUpdate } from '../types';
+import type { LibraryItem, RealtimeUpdate } from '../types';
+
+export const SONOS_REALTIME_EVENT = 'reitunes:sonos';
 
 export function getItemUrl(item: LibraryItem): string {
   // URL is now provided by the backend
@@ -41,7 +43,14 @@ export function useLibrary() {
       wsRef.current = ws;
 
       ws.onmessage = (event) => {
-        const message: LibraryUpdate = JSON.parse(event.data);
+        const message: RealtimeUpdate = JSON.parse(event.data);
+
+        if (message.type === 'sonos') {
+          window.dispatchEvent(
+            new CustomEvent(SONOS_REALTIME_EVENT, { detail: message })
+          );
+          return;
+        }
 
         queryClient.setQueryData<LibraryItem[]>(['library'], (oldItems) => {
           if (!oldItems) return oldItems;

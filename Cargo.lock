@@ -3004,6 +3004,7 @@ dependencies = [
  "axum",
  "axum-extra",
  "axum-macros",
+ "base64 0.22.1",
  "clap",
  "dirs",
  "indexmap",

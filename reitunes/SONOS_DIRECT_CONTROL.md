@@ -10,14 +10,18 @@ ReiTunes can use either the current browser or a Sonos speaker group as its play
 - household, group, and player discovery
 - authenticated Cloud Queue v2.3 `context`, `version`, `itemWindow`, and `timePlayed` endpoints
 - creation of queue snapshots from ReiTunes library item IDs
+- queue snapshots and playback sessions persisted across ReiTunes restarts
 - explicit `createSession` takeover followed by `loadCloudQueue`
 - bookmark playback positions, passed to Sonos as `positionMillis`
 - reuse of ReiTunes's existing playback session for later song choices
 - a persisted browser/Sonos output selector in the web UI
 - play, pause, mute, and group-volume controls
 - current track and playhead tracking, with local interpolation between Sonos status polls
+- signed playback and group-volume event callbacks, pushed to browsers over ReiTunes's WebSocket
 
 The Cloud Queue snapshots use a separate random bearer token. The public endpoints do not accept the ReiTunes session cookie and do not reveal queue metadata without that token.
+
+Queue snapshots live for seven days and are stored in SQLite with their short-lived bearer tokens. This lets a queue URL already handed to a speaker keep working across a ReiTunes deploy. Playback policies explicitly set `playTtlSec` and `pauseTtlSec` to zero, so Sonos does not expire a long-running or paused queue on a timer.
 
 ## Configuration
 
@@ -50,15 +54,19 @@ Switching back to browser output only changes where future ReiTunes play actions
 
 ## Playback status
 
-ReiTunes polls the Sonos playback status every two seconds and advances the visible playhead locally while the group is playing. Sonos does not send status events as the playhead advances normally, so even an event-driven implementation still needs a local timer.
+Register `https://reitunes.reillywood.com/api/sonos/events` as the Event Callback URI for the Sonos client credentials. ReiTunes subscribes to the selected group's `playback` and `groupVolume` namespaces when it starts playback, then renews those subscriptions before Sonos's three-day expiry.
 
-Volume is polled less frequently and sent when the user releases the slider, rather than on every fractional movement. This avoids flooding a multi-speaker group with volume transactions.
+The callback is public because Sonos cannot send the ReiTunes session cookie. ReiTunes verifies every callback's `X-Sonos-Event-Signature` using the client credentials, ignores duplicate or older sequence IDs, and only then broadcasts it to authenticated browser WebSockets.
+
+Sonos does not send events as the playhead advances normally, so the browser advances the visible time locally while playback is active. Playback and volume are also polled every 30 and 60 seconds respectively as recovery for missed events; Sonos does not backlog or replay them.
+
+Volume is sent when the user releases the slider, rather than on every fractional movement. This avoids flooding a multi-speaker group with volume transactions.
 
 ## Still missing
 
 The next useful work is:
 
-1. Subscribe to playback, playback metadata, and session events.
+1. Subscribe to playback metadata and session events.
 2. Add remote skip and seek controls.
 3. Refresh an active Cloud Queue when the ReiTunes queue changes.
 
