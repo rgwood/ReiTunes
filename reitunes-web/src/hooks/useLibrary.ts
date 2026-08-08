@@ -7,6 +7,7 @@ export function getItemUrl(item: LibraryItem): string {
   console.info(`[Audio] Playing "${item.name}" from: ${item.url}`);
   return item.url;
 }
+
 async function fetchLibraryItems(): Promise<LibraryItem[]> {
   // The backend serves items embedded in the HTML, but we'll use the API
   // For now, we'll parse items from the initial HTML data

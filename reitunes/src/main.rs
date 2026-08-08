@@ -39,7 +39,6 @@ mod systemd;
 
 #[derive(vite_rs::Embed)]
 #[root = "../reitunes-web"]
-#[dev_server_port = 21012]
 struct Assets;
 
 const DB_PATH: &str = "reitunes-library.db";
