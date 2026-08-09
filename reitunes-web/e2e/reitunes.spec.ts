@@ -3,8 +3,23 @@ import { expect, test, type Page } from '@playwright/test';
 const TRACK_ID = '11111111-1111-4111-8111-111111111111';
 const BOOKMARK_ID = '22222222-2222-4222-8222-222222222222';
 const UNLABELLED_BOOKMARK_ID = '33333333-3333-4333-8333-333333333333';
+const PREVIOUS_TRACK_ID = '44444444-4444-4444-8444-444444444444';
+const NEXT_TRACK_ID = '55555555-5555-4555-8555-555555555555';
 
 const libraryItems = [
+  {
+    id: PREVIOUS_TRACK_ID,
+    name: 'Pink Moon',
+    artist: 'Nick Drake',
+    album: 'Pink Moon',
+    created_time_utc: '2026-02-01T00:00:00',
+    file_path: 'pink-moon.mp3',
+    track_number: 1,
+    play_count: 8,
+    is_favorite: false,
+    url: '/audio/pink-moon.mp3',
+    bookmarks: {},
+  },
   {
     id: TRACK_ID,
     name: 'Northern Sky',
@@ -30,6 +45,19 @@ const libraryItems = [
         created_time_utc: '2026-07-01T12:00:00',
       },
     },
+  },
+  {
+    id: NEXT_TRACK_ID,
+    name: 'Place To Be',
+    artist: 'Nick Drake',
+    album: 'Pink Moon',
+    created_time_utc: '2025-12-01T00:00:00',
+    file_path: 'place-to-be.mp3',
+    track_number: 2,
+    play_count: 5,
+    is_favorite: false,
+    url: '/audio/place-to-be.mp3',
+    bookmarks: {},
   },
 ];
 
@@ -272,6 +300,7 @@ test('switches between Sonos and browser playback without playing twice', async 
   const sonosPlayRequests: Array<Record<string, unknown>> = [];
   let sonosSessionActive = false;
   let sonosPlaybackState = 'PLAYBACK_STATE_PLAYING';
+  let sonosQueueIndex = 1;
   let sonosPosition = 42_000;
   let sonosVolume = 37;
   let sonosMuted = false;
@@ -295,6 +324,7 @@ test('switches between Sonos and browser playback without playing twice', async 
     }
     sonosSessionActive = true;
     sonosPlaybackState = 'PLAYBACK_STATE_PLAYING';
+    sonosQueueIndex = 1;
     await route.fulfill({
       json: { groupId: 'group-1', sessionCreated: sonosPlayRequests.length === 1 },
     });
@@ -306,9 +336,16 @@ test('switches between Sonos and browser playback without playing twice', async 
         positionMillis: sonosPosition,
         itemId: 'queue-item-1',
         queueVersion: 'queue-version-1',
-        sourceItemId: sonosSessionActive ? TRACK_ID : null,
+        sourceItemId: sonosSessionActive
+          ? [PREVIOUS_TRACK_ID, TRACK_ID, NEXT_TRACK_ID][sonosQueueIndex]
+          : null,
         reitunesSessionActive: sonosSessionActive,
-        availablePlaybackActions: { canPause: true, canSeek: true },
+        availablePlaybackActions: {
+          canPause: true,
+          canSeek: true,
+          canSkip: sonosQueueIndex < 2,
+          canSkipBack: sonosQueueIndex > 0,
+        },
       },
     })
   );
@@ -322,6 +359,8 @@ test('switches between Sonos and browser playback without playing twice', async 
       return;
     }
     transportRequests.push(command);
+    if (command === 'next') sonosQueueIndex = Math.min(2, sonosQueueIndex + 1);
+    if (command === 'previous') sonosQueueIndex = Math.max(0, sonosQueueIndex - 1);
     sonosPlaybackState =
       command === 'pause' ? 'PLAYBACK_STATE_PAUSED' : 'PLAYBACK_STATE_PLAYING';
     await route.fulfill({ status: 204 });
@@ -360,7 +399,7 @@ test('switches between Sonos and browser playback without playing twice', async 
   await expect.poll(() => sonosPlayRequests.length).toBe(1);
   expect(sonosPlayRequests[0]).toEqual({
     groupId: 'group-1',
-    itemIds: [TRACK_ID],
+    itemIds: [PREVIOUS_TRACK_ID, TRACK_ID, NEXT_TRACK_ID],
     startItemId: TRACK_ID,
     positionMillis: 0,
     allowTakeover: true,
@@ -453,6 +492,20 @@ test('switches between Sonos and browser playback without playing twice', async 
   await expect(page.getByRole('button', { name: 'Play Sonos' })).toBeVisible();
   await page.getByRole('button', { name: 'Play Sonos' }).click();
   await expect.poll(() => transportRequests).toEqual(['pause', 'play']);
+
+  await page.getByRole('button', { name: 'Previous Sonos song' }).click();
+  await expect.poll(() => transportRequests).toEqual(['pause', 'play', 'previous']);
+  await expect(page.getByRole('button', { name: 'Previous Sonos song' })).toBeDisabled();
+  await page.getByRole('button', { name: 'Next Sonos song' }).click();
+  await page.getByRole('button', { name: 'Next Sonos song' }).click();
+  await expect.poll(() => transportRequests).toEqual([
+    'pause',
+    'play',
+    'previous',
+    'next',
+    'next',
+  ]);
+  await expect(page.getByRole('button', { name: 'Next Sonos song' })).toBeDisabled();
 
   await sonosVolumeSlider.fill('63');
   await sonosVolumeSlider.dispatchEvent('pointerup');

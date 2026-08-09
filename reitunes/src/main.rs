@@ -265,6 +265,14 @@ async fn main() -> Result<()> {
                     post(sonos_group_seek_handler),
                 )
                 .route(
+                    "/sonos/groups/{group_id}/playback/next",
+                    post(sonos_group_next_handler),
+                )
+                .route(
+                    "/sonos/groups/{group_id}/playback/previous",
+                    post(sonos_group_previous_handler),
+                )
+                .route(
                     "/sonos/groups/{group_id}/volume",
                     get(sonos_group_volume_handler).post(sonos_set_group_volume_handler),
                 )
@@ -800,6 +808,34 @@ async fn sonos_group_pause_handler(
         .map_err(sonos_playback_failure)?;
     control
         .pause(&group_id)
+        .await
+        .map_err(sonos_failure)?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn sonos_group_next_handler(
+    State(app_state): State<AppState>,
+    Path(group_id): Path<String>,
+) -> SonosApiResult<StatusCode> {
+    let control = active_sonos_control(&app_state, &group_id)
+        .await
+        .map_err(sonos_playback_failure)?;
+    control
+        .skip_to_next_track(&group_id)
+        .await
+        .map_err(sonos_failure)?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn sonos_group_previous_handler(
+    State(app_state): State<AppState>,
+    Path(group_id): Path<String>,
+) -> SonosApiResult<StatusCode> {
+    let control = active_sonos_control(&app_state, &group_id)
+        .await
+        .map_err(sonos_playback_failure)?;
+    control
+        .skip_to_previous_track(&group_id)
         .await
         .map_err(sonos_failure)?;
     Ok(StatusCode::NO_CONTENT)

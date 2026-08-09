@@ -5,11 +5,22 @@ import { markPlayed } from './useLibrary';
 import { usePlayerStore } from '../stores/playerStore';
 import { usePlaybackTargetStore } from '../stores/playbackTargetStore';
 
-function sonosQueueFor(item: LibraryItem): LibraryItem[] {
+const MAX_SONOS_QUEUE_ITEMS = 500;
+const MAX_SONOS_HISTORY_ITEMS = 100;
+
+export function sonosQueueFor(item: LibraryItem): LibraryItem[] {
   const queue = useQueueStore.getState();
   const contextIndex = queue.contextItems.findIndex((candidate) => candidate.id === item.id);
+  const previousContext = contextIndex >= 0
+    ? queue.contextItems.slice(Math.max(0, contextIndex - MAX_SONOS_HISTORY_ITEMS), contextIndex)
+    : [];
   const upcomingContext = contextIndex >= 0 ? queue.contextItems.slice(contextIndex + 1) : [];
-  return [item, ...queue.manualQueue, ...upcomingContext].slice(0, 500);
+  return [
+    ...previousContext,
+    item,
+    ...queue.manualQueue,
+    ...upcomingContext,
+  ].slice(0, MAX_SONOS_QUEUE_ITEMS);
 }
 
 async function responseError(response: Response): Promise<string> {

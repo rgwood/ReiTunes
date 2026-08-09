@@ -15,7 +15,7 @@ ReiTunes can use either the current browser or a Sonos speaker group as its play
 - bookmark playback positions, passed to Sonos as `positionMillis`
 - reuse of ReiTunes's existing playback session for later song choices
 - a persisted browser/Sonos output selector in the web UI
-- play, pause, seek, mute, and group-volume controls
+- play, pause, previous, next, seek, mute, and group-volume controls
 - current track and playhead tracking, with local interpolation between Sonos status polls
 - signed playback and group-volume event callbacks, pushed to browsers over ReiTunes's WebSocket
 
@@ -67,8 +67,7 @@ Volume is sent when the user releases the slider, rather than on every fractiona
 The next useful work is:
 
 1. Subscribe to playback metadata and session events.
-2. Add remote skip controls.
-3. Refresh an active Cloud Queue when the ReiTunes queue changes.
+2. Refresh an active Cloud Queue when the ReiTunes queue changes.
 
 The queue sends direct `mediaUrl` values, which the Cloud Queue API supports as an alternative to Sonos music object IDs. The media URLs do not use the Cloud Queue bearer token; that token only protects the queue metadata endpoints.
 

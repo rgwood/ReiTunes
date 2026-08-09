@@ -16,6 +16,8 @@ export interface SonosPlaybackStatus {
   availablePlaybackActions?: {
     canPause?: boolean;
     canSeek?: boolean;
+    canSkip?: boolean;
+    canSkipBack?: boolean;
   };
 }
 
@@ -258,6 +260,50 @@ export function useSonosControls(groupId: string | null) {
     [groupId, isTransportPending, playback, refreshPlayback]
   );
 
+  const skip = useCallback(
+    async (direction: 'next' | 'previous') => {
+      const actions = playback?.availablePlaybackActions;
+      const unavailable = direction === 'next'
+        ? actions?.canSkip === false
+        : actions?.canSkipBack === false;
+      if (
+        !groupId ||
+        !playback?.reitunesSessionActive ||
+        unavailable ||
+        isTransportPending
+      ) {
+        return;
+      }
+
+      setIsTransportPending(true);
+      setCommandError(null);
+      try {
+        const response = await fetch(
+          `/api/sonos/groups/${encodeURIComponent(groupId)}/playback/${direction}`,
+          { method: 'POST', credentials: 'include' }
+        );
+        if (!response.ok) {
+          const message = await responseError(response);
+          if (response.status === 409) {
+            usePlaybackTargetStore.getState().failSending(message, true);
+          }
+          throw new Error(message);
+        }
+        await refreshPlayback();
+      } catch (nextError) {
+        setCommandError(
+          nextError instanceof Error
+            ? nextError.message
+            : `Could not skip to the ${direction} Sonos song`
+        );
+        await refreshPlayback().catch(() => undefined);
+      } finally {
+        setIsTransportPending(false);
+      }
+    },
+    [groupId, isTransportPending, playback, refreshPlayback]
+  );
+
   const setGroupVolume = useCallback(
     async (nextVolume: number) => {
       if (!groupId || isVolumePending || volume?.fixed) return;
@@ -326,6 +372,8 @@ export function useSonosControls(groupId: string | null) {
     isVolumePending,
     play: () => sendTransport('play'),
     pause: () => sendTransport('pause'),
+    skipNext: () => skip('next'),
+    skipPrevious: () => skip('previous'),
     seek,
     setGroupVolume,
     setMuted,

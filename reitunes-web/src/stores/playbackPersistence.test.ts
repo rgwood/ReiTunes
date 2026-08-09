@@ -17,6 +17,7 @@ Object.defineProperty(globalThis, 'localStorage', { value: storage });
 
 const { PLAYER_STORAGE_KEY, usePlayerStore } = await import('./playerStore');
 const { QUEUE_STORAGE_KEY, reconcileLibraryItems, useQueueStore } = await import('../hooks/useQueue');
+const { sonosQueueFor } = await import('../hooks/usePlayback');
 
 function item(id: string, name = id): LibraryItem {
   return {
@@ -115,5 +116,32 @@ describe('playback persistence', () => {
     expect(saved.state.manualQueue.map((entry: LibraryItem) => entry.id)).toEqual(['three']);
     expect(saved.state.contextName).toBe('Favourites');
     expect(saved.state.shuffleEnabled).toBe(true);
+  });
+
+  it('keeps earlier context in Sonos queues without changing Play Next order', () => {
+    const previous = item('previous');
+    const current = item('current');
+    const next = item('next');
+    const manuallyQueued = item('manual');
+    useQueueStore.getState().setContext([previous, current, next], 1, 'Library');
+    useQueueStore.getState().addNext(manuallyQueued);
+
+    expect(sonosQueueFor(current).map((entry) => entry.id)).toEqual([
+      'previous',
+      'current',
+      'manual',
+      'next',
+    ]);
+  });
+
+  it('bounds Sonos history while retaining the selected song and queue limit', () => {
+    const context = Array.from({ length: 700 }, (_, index) => item(`track-${index}`));
+    useQueueStore.getState().setContext(context, 150, 'Library');
+
+    const sonosQueue = sonosQueueFor(context[150]);
+    expect(sonosQueue).toHaveLength(500);
+    expect(sonosQueue[0].id).toBe('track-50');
+    expect(sonosQueue[100].id).toBe('track-150');
+    expect(sonosQueue.at(-1)?.id).toBe('track-549');
   });
 });

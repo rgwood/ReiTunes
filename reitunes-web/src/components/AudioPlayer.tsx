@@ -483,6 +483,14 @@ export function AudioPlayer({ onChooseOutput, items }: AudioPlayerProps) {
     !duration ||
     sonos.isTransportPending ||
     sonos.playback.availablePlaybackActions?.canSeek === false;
+  const sonosPreviousDisabled =
+    !sonosSessionActive ||
+    sonos.isTransportPending ||
+    sonos.playback?.availablePlaybackActions?.canSkipBack === false;
+  const sonosNextDisabled =
+    !sonosSessionActive ||
+    sonos.isTransportPending ||
+    sonos.playback?.availablePlaybackActions?.canSkip === false;
 
   const commitSonosSeek = useCallback(
     async (position: number) => {
@@ -615,6 +623,16 @@ export function AudioPlayer({ onChooseOutput, items }: AudioPlayerProps) {
           <div className="flex items-center gap-2">
             <button
               type="button"
+              onClick={() => void sonos.skipPrevious()}
+              disabled={sonosPreviousDisabled}
+              className="p-2 text-solarized-base1 hover:text-solarized-base2 hover:bg-solarized-base02 rounded disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+              aria-label="Previous Sonos song"
+              title={sonosPreviousDisabled ? 'No previous song' : 'Previous song'}
+            >
+              {Icons.skipBack}
+            </button>
+            <button
+              type="button"
               onClick={() => void (sonosIsPlaying ? sonos.pause() : sonos.play())}
               disabled={sonosTransportDisabled}
               className="w-9 h-9 flex items-center justify-center rounded-full bg-solarized-cyan text-solarized-base03 hover:bg-solarized-blue disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
@@ -622,6 +640,16 @@ export function AudioPlayer({ onChooseOutput, items }: AudioPlayerProps) {
               title={sonosIsPlaying ? 'Pause Sonos' : 'Play Sonos'}
             >
               {sonosIsPlaying ? Icons.pause : Icons.play}
+            </button>
+            <button
+              type="button"
+              onClick={() => void sonos.skipNext()}
+              disabled={sonosNextDisabled}
+              className="p-2 text-solarized-base1 hover:text-solarized-base2 hover:bg-solarized-base02 rounded disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+              aria-label="Next Sonos song"
+              title={sonosNextDisabled ? 'No next song' : 'Next song'}
+            >
+              {Icons.skipForward}
             </button>
             <button
               type="button"

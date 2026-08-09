@@ -201,6 +201,10 @@ pub struct SonosPlaybackActions {
     pub can_pause: Option<bool>,
     #[serde(default)]
     pub can_seek: Option<bool>,
+    #[serde(default)]
+    pub can_skip: Option<bool>,
+    #[serde(default)]
+    pub can_skip_back: Option<bool>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
@@ -472,6 +476,16 @@ impl SonosControl {
 
     pub async fn pause(&self, group_id: &str) -> Result<()> {
         let url = self.control_url(&["groups", group_id, "playback", "pause"])?;
+        self.post_command(url).await
+    }
+
+    pub async fn skip_to_next_track(&self, group_id: &str) -> Result<()> {
+        let url = self.control_url(&["groups", group_id, "playback", "skipToNextTrack"])?;
+        self.post_command(url).await
+    }
+
+    pub async fn skip_to_previous_track(&self, group_id: &str) -> Result<()> {
+        let url = self.control_url(&["groups", group_id, "playback", "skipToPreviousTrack"])?;
         self.post_command(url).await
     }
 
@@ -1242,7 +1256,12 @@ mod tests {
                 "positionMillis": 42_000,
                 "itemId": "queue-item-1",
                 "queueVersion": "queue-version-1",
-                "availablePlaybackActions": { "canPause": true, "canSeek": true }
+                "availablePlaybackActions": {
+                    "canPause": true,
+                    "canSeek": true,
+                    "canSkip": true,
+                    "canSkipBack": true
+                }
             }))
         }
 
@@ -1300,6 +1319,14 @@ mod tests {
                 axum::routing::post(command),
             )
             .route(
+                "/control/api/v1/groups/group-1/playback/skipToNextTrack",
+                axum::routing::post(command),
+            )
+            .route(
+                "/control/api/v1/groups/group-1/playback/skipToPreviousTrack",
+                axum::routing::post(command),
+            )
+            .route(
                 "/control/api/v1/groups/group-1/playback/seek",
                 axum::routing::post(seek),
             )
@@ -1328,9 +1355,13 @@ mod tests {
         let actions = playback.available_playback_actions.as_ref().unwrap();
         assert_eq!(actions.can_pause, Some(true));
         assert_eq!(actions.can_seek, Some(true));
+        assert_eq!(actions.can_skip, Some(true));
+        assert_eq!(actions.can_skip_back, Some(true));
         assert_eq!(control.group_volume("group-1").await.unwrap().volume, 37);
         control.play("group-1").await.unwrap();
         control.pause("group-1").await.unwrap();
+        control.skip_to_next_track("group-1").await.unwrap();
+        control.skip_to_previous_track("group-1").await.unwrap();
         control
             .seek("group-1", 123_000, "queue-item-1")
             .await
