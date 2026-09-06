@@ -73,8 +73,8 @@ export function SearchBar({ value, onChange, onRandomBookmark }: SearchBarProps)
   }, []);
 
   return (
-    <div className="flex items-center gap-1">
-      <div className="relative">
+    <div className="flex items-center gap-1 min-w-0 flex-1 sm:flex-none">
+      <div className="relative min-w-0 flex-1">
         <span className="absolute left-2 top-1/2 -translate-y-1/2 text-solarized-base0">
           {SearchIcon}
         </span>
@@ -84,7 +84,8 @@ export function SearchBar({ value, onChange, onRandomBookmark }: SearchBarProps)
           value={localValue}
           onChange={handleChange}
           placeholder="Search..."
-          className="w-72 pl-8 pr-2 py-1 bg-solarized-base02 text-solarized-base1 text-sm rounded border border-transparent focus:border-solarized-blue focus:outline-none placeholder-solarized-base01"
+          aria-label="Search library"
+          className="w-full sm:w-72 min-w-0 pl-8 pr-2 py-1 bg-solarized-base02 text-solarized-base1 text-sm rounded border border-transparent focus:border-solarized-blue focus:outline-none placeholder-solarized-base01"
           autoComplete="off"
         />
       </div>

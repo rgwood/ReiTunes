@@ -2,12 +2,6 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useRef } from 'react';
 import type { LibraryItem, LibraryUpdate } from '../types';
 
-export function getItemUrl(item: LibraryItem): string {
-  // URL is now provided by the backend
-  console.info(`[Audio] Playing "${item.name}" from: ${item.url}`);
-  return item.url;
-}
-
 async function fetchLibraryItems(): Promise<LibraryItem[]> {
   // The backend serves items embedded in the HTML, but we'll use the API
   // For now, we'll parse items from the initial HTML data
@@ -157,4 +151,3 @@ export async function toggleFavorite(id: string, isFavorite: boolean): Promise<v
     throw new Error('Failed to toggle favorite');
   }
 }
-

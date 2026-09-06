@@ -12,7 +12,7 @@ import {
 import { useQuery } from '@tanstack/react-query';
 import type { LibraryItem, Bookmark } from '../types';
 import { usePlayerStore } from '../stores/playerStore';
-import { useQueueStore } from '../hooks/useQueue';
+import { bookmarkTarget, formatTime, trackTarget } from '../utils/playback';
 import { updateLibraryItem, deleteItem as apiDeleteItem } from '../hooks/useLibrary';
 import { FavoriteButton } from './FavoriteButton';
 import { Tooltip } from './Tooltip';
@@ -25,6 +25,7 @@ interface Playlist {
 }
 
 const columnHelper = createColumnHelper<LibraryItem>();
+const NO_SORTING: SortingState = [];
 
 interface LibraryTableProps {
   items: LibraryItem[];
@@ -73,18 +74,17 @@ function parseSearchQuery(query: string): ParsedSearch {
 
 function formatBookmarks(bookmarks: Record<string, Bookmark>): React.ReactNode {
   return Object.entries(bookmarks).map(([id, bookmark]) => {
-    const minutes = Math.floor(bookmark.position / 60);
-    const seconds = Math.floor(bookmark.position % 60);
-    const timeString = `${minutes}:${seconds.toString().padStart(2, '0')}`;
+    const timeString = formatTime(bookmark.position);
     return (
-      <span
+      <button
         key={id}
         className="bookmark-emoji cursor-pointer hover:underline decoration-solarized-blue decoration-2 rounded"
-        data-position={bookmark.position}
-        title={timeString}
+        data-bookmark-id={id}
+        title={`Play bookmark at ${timeString}`}
+        aria-label={`Play bookmark at ${timeString}`}
       >
         {bookmark.emoji || '\u{1F516}'}
-      </span>
+      </button>
     );
   });
 }
@@ -112,9 +112,11 @@ function formatCreatedTime(value: string, short = false): string {
 }
 
 export function LibraryTable({ items, searchQuery, playlistId, onSearchChange }: LibraryTableProps) {
-  const [sorting, setSorting] = useState<SortingState>([
-    { id: 'created_time_utc', desc: true },
-  ]);
+  const [sortingByView, setSortingByView] = useState<Record<string, SortingState>>({
+    library: [{ id: 'created_time_utc', desc: true }],
+  });
+  const sortingKey = playlistId ?? 'library';
+  const sorting = sortingByView[sortingKey] ?? NO_SORTING;
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
   const [editingCell, setEditingCell] = useState<{ rowId: string; field: string } | null>(null);
   const [editValue, setEditValue] = useState('');
@@ -123,8 +125,11 @@ export function LibraryTable({ items, searchQuery, playlistId, onSearchChange }:
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; item: LibraryItem } | null>(null);
   const [showPlaylistSubmenu, setShowPlaylistSubmenu] = useState(false);
 
-  const { play, currentItem } = usePlayerStore();
-  const { addToQueue, addNext, setContext } = useQueueStore();
+  const play = usePlayerStore(state => state.play);
+  const playFrom = usePlayerStore(state => state.playFrom);
+  const currentItemId = usePlayerStore(state => state.currentEntry?.libraryItemId);
+  const addToQueue = usePlayerStore(state => state.addToQueue);
+  const addNext = usePlayerStore(state => state.addNext);
 
   // Fetch playlists for context menu and filtering
   const { data: playlists = [] } = useQuery<Playlist[]>({
@@ -245,7 +250,10 @@ export function LibraryTable({ items, searchQuery, playlistId, onSearchChange }:
       sorting,
       columnFilters,
     },
-    onSortingChange: setSorting,
+    onSortingChange: updater => setSortingByView(previous => ({
+      ...previous,
+      [sortingKey]: typeof updater === 'function' ? updater(previous[sortingKey] ?? NO_SORTING) : updater,
+    })),
     onColumnFiltersChange: setColumnFilters,
     getCoreRowModel: getCoreRowModel(),
     getSortedRowModel: getSortedRowModel(),
@@ -254,29 +262,30 @@ export function LibraryTable({ items, searchQuery, playlistId, onSearchChange }:
     columnResizeMode: 'onChange',
   });
 
-  const handleRowClick = useCallback((item: LibraryItem, rowIndex: number, e: React.MouseEvent) => {
+  const handleRowClick = useCallback((rowIndex: number, e: React.MouseEvent) => {
     // Don't play if clicking a bookmark or editing
     const target = e.target as HTMLElement;
-    if (target.classList.contains('bookmark-emoji') || editingCell) {
+    if (target.closest('button') || editingCell) {
       return;
     }
     // Get all visible items in their current sorted order
     const sortedItems = table.getRowModel().rows.map(row => row.original);
     // Set the context to the library or playlist name
     const contextName = selectedPlaylist ? selectedPlaylist.name : 'Library';
-    setContext(sortedItems, rowIndex, contextName);
-    play(item);
-  }, [play, editingCell, table, setContext, selectedPlaylist]);
+    playFrom(sortedItems.map(trackTarget), rowIndex, contextName);
+  }, [playFrom, editingCell, table, selectedPlaylist]);
 
-  const handleBookmarkClick = useCallback((item: LibraryItem, position: number, e: React.MouseEvent) => {
+  const handleBookmarkClick = useCallback((item: LibraryItem, bookmarkId: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    play(item, position);
+    if (!item.bookmarks[bookmarkId]) return;
+    play(bookmarkTarget(item, bookmarkId));
   }, [play]);
 
-  const handleCellDoubleClick = useCallback((rowId: string, field: string, currentValue: string) => {
+  const handleEdit = useCallback((rowId: string, field: string, currentValue: string) => {
     if (['name', 'artist', 'album'].includes(field)) {
       setEditingCell({ rowId, field });
       setEditValue(currentValue);
+      setContextMenu(null);
     }
   }, []);
 
@@ -308,7 +317,8 @@ export function LibraryTable({ items, searchQuery, playlistId, onSearchChange }:
 
   const handleContextMenu = useCallback((e: React.MouseEvent, item: LibraryItem) => {
     e.preventDefault();
-    setContextMenu({ x: e.pageX, y: e.pageY, item });
+    setContextMenu({ x: e.clientX, y: e.clientY, item });
+    setShowPlaylistSubmenu(false);
   }, []);
 
   const handleDelete = useCallback(async () => {
@@ -328,14 +338,14 @@ export function LibraryTable({ items, searchQuery, playlistId, onSearchChange }:
 
   const handleAddToQueue = useCallback(() => {
     if (contextMenu) {
-      addToQueue(contextMenu.item);
+      addToQueue(trackTarget(contextMenu.item));
       setContextMenu(null);
     }
   }, [contextMenu, addToQueue]);
 
   const handlePlayNext = useCallback(() => {
     if (contextMenu) {
-      addNext(contextMenu.item);
+      addNext(trackTarget(contextMenu.item));
       setContextMenu(null);
     }
   }, [contextMenu, addNext]);
@@ -415,35 +425,29 @@ export function LibraryTable({ items, searchQuery, playlistId, onSearchChange }:
           </thead>
           <tbody>
             {table.getRowModel().rows.map((row, rowIndex) => {
-              const isCurrentlyPlaying = currentItem?.id === row.original.id;
+              const isCurrentlyPlaying = currentItemId === row.original.id;
               return (
                 <tr
                   key={row.id}
                   className={`hover:bg-solarized-base02 cursor-pointer ${isCurrentlyPlaying ? 'bg-solarized-base02' : ''}`}
-                  onClick={(e) => handleRowClick(row.original, rowIndex, e)}
+                  onClick={(e) => handleRowClick(rowIndex, e)}
                   onContextMenu={(e) => handleContextMenu(e, row.original)}
                 >
                   {row.getVisibleCells().map((cell) => {
                     const field = cell.column.id;
                     const isEditing = editingCell?.rowId === row.id && editingCell?.field === field;
-                    const isEditable = ['name', 'artist', 'album'].includes(field);
 
                     return (
                       <td
                         key={cell.id}
                         className="px-2 py-1 border-b border-solarized-base02 whitespace-nowrap overflow-hidden text-ellipsis max-w-0"
                         style={{ width: cell.column.getSize() }}
-                        onDoubleClick={() => {
-                          if (isEditable) {
-                            handleCellDoubleClick(row.id, field, cell.getValue() as string);
-                          }
-                        }}
                         onClick={(e) => {
                           // Handle bookmark clicks
                           const target = e.target as HTMLElement;
                           if (target.classList.contains('bookmark-emoji')) {
-                            const position = parseFloat(target.getAttribute('data-position') || '0');
-                            handleBookmarkClick(row.original, position, e);
+                            const bookmarkId = target.getAttribute('data-bookmark-id') || '';
+                            handleBookmarkClick(row.original, bookmarkId, e);
                           }
                         }}
                       >
@@ -468,6 +472,11 @@ export function LibraryTable({ items, searchQuery, playlistId, onSearchChange }:
             })}
           </tbody>
         </table>
+        {table.getRowModel().rows.length === 0 && (
+          <p className="px-2 py-4 text-sm text-solarized-base0">
+            No tracks match these filters.
+          </p>
+        )}
       </div>
 
       {/* Context Menu */}
@@ -477,18 +486,23 @@ export function LibraryTable({ items, searchQuery, playlistId, onSearchChange }:
           style={{ left: contextMenu.x, top: contextMenu.y }}
           onClick={(e) => e.stopPropagation()}
         >
-          <div
-            className="px-3 py-2 text-solarized-base1 hover:bg-solarized-blue hover:bg-opacity-30 cursor-pointer"
+          <button
+            className="block w-full text-left px-3 py-2 text-solarized-base1 hover:bg-solarized-blue hover:bg-opacity-30 cursor-pointer"
             onClick={handlePlayNext}
           >
             &#9654; Play Next
-          </div>
-          <div
-            className="px-3 py-2 text-solarized-base1 hover:bg-solarized-blue hover:bg-opacity-30 cursor-pointer"
+          </button>
+          <button
+            className="block w-full text-left px-3 py-2 text-solarized-base1 hover:bg-solarized-blue hover:bg-opacity-30 cursor-pointer"
             onClick={handleAddToQueue}
           >
             &#43; Add to Queue
-          </div>
+          </button>
+          <div className="border-t border-solarized-base01 my-1" />
+          {(['name', 'artist', 'album'] as const).map(field => (
+            <button key={field} className="block w-full text-left px-3 py-2 text-solarized-base1 hover:bg-solarized-base01"
+              onClick={() => handleEdit(contextMenu.item.id, field, contextMenu.item[field])}>Edit {field === 'name' ? 'title' : field}</button>
+          ))}
           <div className="border-t border-solarized-base01 my-1" />
           {onSearchChange && (
             <>

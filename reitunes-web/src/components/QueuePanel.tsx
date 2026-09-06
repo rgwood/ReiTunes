@@ -1,285 +1,95 @@
-import { useCallback } from 'react';
-import {
-  DndContext,
-  closestCenter,
-  KeyboardSensor,
-  PointerSensor,
-  useSensor,
-  useSensors,
-  type DragEndEvent,
-} from '@dnd-kit/core';
-import {
-  SortableContext,
-  sortableKeyboardCoordinates,
-  useSortable,
-  verticalListSortingStrategy,
-} from '@dnd-kit/sortable';
+import { useMemo } from 'react';
+import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
+import { SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { useQueueStore } from '../hooks/useQueue';
+import { useShallow } from 'zustand/react/shallow';
 import { usePlayerStore } from '../stores/playerStore';
-import type { LibraryItem } from '../types';
+import type { LibraryItem, PlaybackEntry } from '../types';
+import { describeTarget, formatTime } from '../utils/playback';
 
-// Minimal icons
-const DragIcon = (
-  <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
-    <circle cx="9" cy="6" r="2" />
-    <circle cx="15" cy="6" r="2" />
-    <circle cx="9" cy="12" r="2" />
-    <circle cx="15" cy="12" r="2" />
-    <circle cx="9" cy="18" r="2" />
-    <circle cx="15" cy="18" r="2" />
-  </svg>
-);
-
-const CloseIcon = (
-  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-    <line x1="18" y1="6" x2="6" y2="18" />
-    <line x1="6" y1="6" x2="18" y2="18" />
-  </svg>
-);
-
-const PlayIcon = (
-  <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor">
-    <polygon points="5 3 19 12 5 21 5 3" />
-  </svg>
-);
-
-const RepeatIcon = (
-  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-    <path d="M17 2l4 4-4 4" />
-    <path d="M3 11v-1a4 4 0 0 1 4-4h14" />
-    <path d="M7 22l-4-4 4-4" />
-    <path d="M21 13v1a4 4 0 0 1-4 4H3" />
-  </svg>
-);
-
-interface SortableItemProps {
-  item: LibraryItem;
-  index: number;
-  onRemove: () => void;
-}
-
-function SortableItem({ item, index, onRemove }: SortableItemProps) {
-  const {
-    attributes,
-    listeners,
-    setNodeRef,
-    transform,
-    transition,
-  } = useSortable({ id: `manual-${index}-${item.id}` });
-
-  const style = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-  };
-
+function EntryLabel({ entry, item }: { entry: PlaybackEntry; item?: LibraryItem }) {
   return (
-    <div
-      ref={setNodeRef}
-      style={style}
-      className="flex items-center gap-2 px-3 py-1.5 hover:bg-solarized-base02 group"
-    >
-      <div
-        {...attributes}
-        {...listeners}
-        className="cursor-grab text-solarized-base01 hover:text-solarized-base1 opacity-0 group-hover:opacity-100"
-      >
-        {DragIcon}
-      </div>
-      <div className="flex-grow min-w-0">
-        <div className="text-xs text-solarized-base1 truncate">{item.name}</div>
-        {item.artist && (
-          <div className="text-[10px] text-solarized-base0 truncate">{item.artist}</div>
-        )}
-      </div>
-      <button
-        onClick={onRemove}
-        className="text-solarized-base01 hover:text-solarized-red opacity-0 group-hover:opacity-100 transition-opacity"
-        title="Remove"
-      >
-        {CloseIcon}
-      </button>
-    </div>
-  );
-}
-
-interface ContextItemProps {
-  item: LibraryItem;
-}
-
-function ContextItem({ item }: ContextItemProps) {
-  return (
-    <div className="flex items-center gap-2 px-3 py-1.5 opacity-60">
-      <div className="w-3" />
-      <div className="flex-grow min-w-0">
-        <div className="text-xs text-solarized-base0 truncate">{item.name}</div>
-        {item.artist && (
-          <div className="text-[10px] text-solarized-base0 truncate">{item.artist}</div>
-        )}
+    <div className="min-w-0 flex-1">
+      <div className="text-xs truncate" title={describeTarget(entry, item)}>{item?.name ?? 'Unavailable track'}</div>
+      <div className="text-xs text-solarized-base0 truncate mt-0.5">
+        {entry.bookmarkId ? `🔖 ${formatTime(entry.startPosition)} · ` : ''}{item?.artist}
       </div>
     </div>
   );
 }
 
-export function QueuePanel() {
-  const {
-    manualQueue,
-    contextName,
-    removeFromManualQueue,
-    clearManualQueue,
-    moveManualQueueItem,
-    getUpcomingContext,
-    repeatMode,
-    shuffleEnabled,
-  } = useQueueStore();
-  const { currentItem } = usePlayerStore();
+function SortableEntry({ entry, item }: { entry: PlaybackEntry; item?: LibraryItem }) {
+  const { attributes, listeners, setNodeRef, transform, transition } = useSortable({ id: entry.id });
+  const remove = usePlayerStore(state => state.removeFromQueue);
+  return (
+    <li ref={setNodeRef} style={{ transform: CSS.Transform.toString(transform), transition }}
+      className="flex items-center gap-2 px-3 py-2 hover:bg-solarized-base02">
+      <button {...attributes} {...listeners} aria-label={`Reorder ${describeTarget(entry, item)}`}
+        className="p-1 text-solarized-base0 cursor-grab touch-none">⠿</button>
+      <EntryLabel entry={entry} item={item} />
+      <button onClick={() => remove(entry.id)} aria-label={`Remove ${describeTarget(entry, item)} from queue`}
+        className="p-2 text-solarized-base0 hover:text-solarized-red">×</button>
+    </li>
+  );
+}
 
-  const upcomingContext = getUpcomingContext();
-
+export function QueuePanel({ itemsById, onClose }: { itemsById: Map<string, LibraryItem>; onClose: () => void }) {
+  const { currentEntry, manualQueue, forwardHistory, contextOrder, contextIndex, contextName, repeatMode, shuffleEnabled } = usePlayerStore(useShallow(state => ({
+    currentEntry: state.currentEntry, manualQueue: state.manualQueue, forwardHistory: state.forwardHistory,
+    contextOrder: state.contextOrder, contextIndex: state.contextIndex, contextName: state.contextName,
+    repeatMode: state.repeatMode, shuffleEnabled: state.shuffleEnabled,
+  })));
+  const clear = usePlayerStore(state => state.clearManualQueue);
+  const move = usePlayerStore(state => state.moveQueueEntry);
+  const next = usePlayerStore(state => state.next);
+  const upcoming = useMemo(() => contextOrder.slice(contextIndex + 1), [contextOrder, contextIndex]);
   const sensors = useSensors(
-    useSensor(PointerSensor),
-    useSensor(KeyboardSensor, {
-      coordinateGetter: sortableKeyboardCoordinates,
-    })
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  );
+  const list = (entries: PlaybackEntry[]) => (
+    <ul>{entries.slice(0, 15).map(entry => (
+      <li key={entry.id} className="flex px-3 py-2 text-solarized-base1"><EntryLabel entry={entry} item={itemsById.get(entry.libraryItemId)} /></li>
+    ))}{entries.length > 15 && <li className="px-3 py-2 text-xs text-solarized-base0">+{entries.length - 15} more</li>}</ul>
   );
 
-  const handleDragEnd = useCallback((event: DragEndEvent) => {
-    const { active, over } = event;
-
-    if (over && active.id !== over.id) {
-      const activeIdParts = String(active.id).split('-');
-      const overIdParts = String(over.id).split('-');
-      const oldIndex = parseInt(activeIdParts[1], 10);
-      const newIndex = parseInt(overIdParts[1], 10);
-      moveManualQueueItem(oldIndex, newIndex);
-    }
-  }, [moveManualQueueItem]);
-
-  const hasManualQueue = manualQueue.length > 0;
-  const hasUpcomingContext = upcomingContext.length > 0;
-
   return (
-    <div className="w-64 flex-shrink-0 bg-solarized-base03 border-l border-solarized-base02 flex flex-col h-full">
-      {/* Header */}
+    <aside aria-label="Playback queue" onKeyDown={event => { if (event.key === 'Escape') onClose(); }}
+      className="absolute inset-y-0 right-0 z-20 w-full max-w-80 md:static md:w-72 flex-shrink-0 bg-solarized-base03 border-l border-solarized-base01 flex flex-col h-full shadow-xl md:shadow-none">
       <div className="flex items-center justify-between px-3 py-2 border-b border-solarized-base02">
-        <span className="text-[10px] text-solarized-base0 uppercase tracking-wider">Queue</span>
-        {hasManualQueue && (
-          <button
-            onClick={clearManualQueue}
-            className="text-[10px] text-solarized-base01 hover:text-solarized-red uppercase"
-          >
-            Clear
-          </button>
-        )}
+        <h2 className="text-sm text-solarized-base2">Queue</h2>
+        <button onClick={onClose} aria-label="Close queue" className="w-10 h-10 text-solarized-base0 hover:text-solarized-base2">×</button>
       </div>
-
-      {/* Queue Content */}
-      <div className="flex-grow overflow-y-auto">
-        {/* Now Playing */}
-        {currentItem && (
-          <div className="border-b border-solarized-base02">
-            <div className="px-3 py-1 text-[10px] text-solarized-base0 uppercase tracking-wider">
-              Now Playing
-            </div>
-            <div className="flex items-center gap-2 px-3 py-1.5 bg-solarized-base02">
-              <span className="text-solarized-blue">{PlayIcon}</span>
-              <div className="flex-grow min-w-0">
-                <div className="text-xs text-solarized-blue truncate">{currentItem.name}</div>
-                {currentItem.artist && (
-                  <div className="text-[10px] text-solarized-base0 truncate">{currentItem.artist}</div>
-                )}
-              </div>
-            </div>
+      <div className="flex-1 overflow-y-auto">
+        {currentEntry && (
+          <div className="border-b border-solarized-base02 pb-2">
+            <h3 className="px-3 pt-3 pb-1 text-xs text-solarized-base0">Now playing</h3>
+            <div className="flex items-center gap-2 px-3 py-2 text-solarized-cyan"><span>▶</span><EntryLabel entry={currentEntry} item={itemsById.get(currentEntry.libraryItemId)} /></div>
+            {repeatMode === 'one' && <p className="px-3 text-xs text-solarized-base0">Repeating this entry. Next skips to the queue.</p>}
           </div>
         )}
-
-        {/* Manual Queue */}
-        {hasManualQueue && (
+        {!!forwardHistory.length && <><h3 className="px-3 pt-3 text-xs text-solarized-base0">Back through your history</h3>{list(forwardHistory)}</>}
+        {!!manualQueue.length && (
           <div className="border-b border-solarized-base02">
-            <div className="px-3 py-1 text-[10px] text-solarized-base0 uppercase tracking-wider">
-              Next Up
+            <div className="flex justify-between items-center px-3 pt-3">
+              <h3 className="text-xs text-solarized-base0">Next up</h3>
+              <button onClick={clear} className="text-xs text-solarized-base0 hover:text-solarized-red">Clear</button>
             </div>
-            <DndContext
-              sensors={sensors}
-              collisionDetection={closestCenter}
-              onDragEnd={handleDragEnd}
-            >
-              <SortableContext
-                items={manualQueue.map((item, index) => `manual-${index}-${item.id}`)}
-                strategy={verticalListSortingStrategy}
-              >
-                {manualQueue.map((item, index) => (
-                  <SortableItem
-                    key={`manual-${index}-${item.id}`}
-                    item={item}
-                    index={index}
-                    onRemove={() => removeFromManualQueue(index)}
-                  />
-                ))}
+            {!currentEntry && <button onClick={() => next()} className="mx-3 mt-2 px-3 py-2 text-xs bg-solarized-cyan text-solarized-base03 rounded">Play queue</button>}
+            <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={({ active, over }) => { if (over) move(String(active.id), String(over.id)); }}>
+              <SortableContext items={manualQueue.map(entry => entry.id)} strategy={verticalListSortingStrategy}>
+                <ul>{manualQueue.map(entry => <SortableEntry key={entry.id} entry={entry} item={itemsById.get(entry.libraryItemId)} />)}</ul>
               </SortableContext>
             </DndContext>
           </div>
         )}
-
-        {/* Context Queue */}
-        {currentItem && (
-          <div>
-            <div className="px-3 py-1 text-[10px] text-solarized-base0 uppercase tracking-wider flex items-center justify-between">
-              <span>
-                {repeatMode === 'one' ? 'Repeating' : shuffleEnabled ? 'Shuffled' : contextName}
-              </span>
-              {repeatMode === 'all' && !shuffleEnabled && (
-                <span className="text-solarized-green">loop</span>
-              )}
-            </div>
-
-            {/* Repeat One */}
-            {repeatMode === 'one' && (
-              <div className="flex items-center gap-2 px-3 py-1.5 opacity-60">
-                <span className="text-solarized-cyan">{RepeatIcon}</span>
-                <div className="flex-grow min-w-0">
-                  <div className="text-xs text-solarized-base0 truncate">{currentItem.name}</div>
-                </div>
-              </div>
-            )}
-
-            {/* Shuffle */}
-            {shuffleEnabled && repeatMode !== 'one' && (
-              <div className="px-3 py-1.5 text-[10px] text-solarized-base0">
-                Random from {upcomingContext.length + 1} tracks
-              </div>
-            )}
-
-            {/* Normal/Repeat All list */}
-            {!shuffleEnabled && repeatMode !== 'one' && hasUpcomingContext && (
-              <>
-                {upcomingContext.slice(0, 15).map((item, index) => (
-                  <ContextItem key={`context-${index}-${item.id}`} item={item} />
-                ))}
-                {upcomingContext.length > 15 && (
-                  <div className="px-3 py-1 text-[10px] text-solarized-base0 text-center">
-                    +{upcomingContext.length - 15} more
-                  </div>
-                )}
-              </>
-            )}
-
-            {/* End of queue */}
-            {!shuffleEnabled && repeatMode === 'off' && !hasUpcomingContext && (
-              <div className="px-3 py-1.5 text-[10px] text-solarized-base0">
-                End of queue
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Empty state */}
-        {!currentItem && !hasManualQueue && (
-          <div className="px-3 py-4 text-xs text-solarized-base0 text-center">
-            Nothing queued
-          </div>
-        )}
+        {currentEntry && <>
+          <h3 className="px-3 pt-3 text-xs text-solarized-base0">{contextName}{shuffleEnabled ? ' · shuffled' : ''}</h3>
+          {list(upcoming)}
+          <p className="px-3 py-3 text-xs text-solarized-base0">{repeatMode === 'all' ? 'Repeat all starts another cycle after this queue.' : !upcoming.length ? 'End of queue' : ''}</p>
+        </>}
+        {!currentEntry && !manualQueue.length && <p className="px-3 py-6 text-sm text-solarized-base0">Queue a track to listen next.</p>}
       </div>
-    </div>
+    </aside>
   );
 }

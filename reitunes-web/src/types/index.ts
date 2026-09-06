@@ -23,10 +23,14 @@ export type LibraryUpdate =
   | { type: 'update'; item: LibraryItem }
   | { type: 'delete'; id: string };
 
-// Queue item for playback queue
-export interface QueueItem {
-  id: string;
+// A track or bookmark, resolved against the live library at playback time.
+export interface PlaybackTarget {
   libraryItemId: string;
-  // Optional bookmark to start from
-  bookmarkPosition?: number;
+  startPosition: number;
+  bookmarkId?: string;
+}
+
+// Each queued occurrence has its own identity, even for the same track.
+export interface PlaybackEntry extends PlaybackTarget {
+  id: string;
 }

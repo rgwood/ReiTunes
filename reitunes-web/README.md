@@ -1,5 +1,18 @@
 # React + TypeScript + Vite
 
+## Playback checks
+
+Run `npm test` with Node 22.18 or newer to type-check and run the playback tests.
+They cover bookmark offsets, same-file playback, manual queues, history, shuffle,
+repeat, and failed audio requests. `npm run build` checks and builds the frontend.
+
+The playback store holds queue entries and explicit play requests. The audio
+element owns playback time, duration, and playing/paused state; those updates stay
+inside `AudioPlayer` so the library does not render on each playback tick.
+
+Bookmark jumps and the random bookmark/favourite button leave the existing track
+queue in place. Next follows that queue; bookmarks do not form a separate playlist.
+
 This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
 
 Currently, two official plugins are available:

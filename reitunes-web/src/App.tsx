@@ -9,7 +9,7 @@ import { DownloadModal } from './components/DownloadModal';
 import { PlaylistSidebar } from './components/PlaylistSidebar';
 import { useLibrary } from './hooks/useLibrary';
 import { usePlayerStore } from './stores/playerStore';
-import type { LibraryItem } from './types';
+import { bookmarkTarget, trackTarget } from './utils/playback';
 
 // Toolbar icons
 const Icons = {
@@ -57,29 +57,18 @@ function AppContent() {
   const [selectedPlaylistId, setSelectedPlaylistId] = useState<string | null>(null);
 
   const { items, isLoading, error } = useLibrary();
-  const { play } = usePlayerStore();
-
-  // Get all random targets: bookmarks + favourited songs (from start)
-  const allRandomTargets = useMemo(() => {
-    const targets: { item: LibraryItem; position: number }[] = [];
-    items.forEach((item) => {
-      Object.values(item.bookmarks).forEach((bookmark) => {
-        targets.push({ item, position: bookmark.position });
-      });
-      if (item.is_favorite) {
-        targets.push({ item, position: 0 });
-      }
-    });
-    return targets;
-  }, [items]);
-
+  const itemsById = useMemo(() => new Map(items.map(item => [item.id, item])), [items]);
+  const play = usePlayerStore(state => state.play);
+  const allRandomTargets = useMemo(() => items.flatMap(item => [
+    ...Object.keys(item.bookmarks).map(id => bookmarkTarget(item, id)),
+    ...(item.is_favorite ? [trackTarget(item)] : []),
+  ]), [items]);
   const handleRandomBookmark = useCallback(() => {
-    if (allRandomTargets.length === 0) {
+    if (!allRandomTargets.length) {
       alert('No bookmarks or favourites found in the library.');
       return;
     }
-    const random = allRandomTargets[Math.floor(Math.random() * allRandomTargets.length)];
-    play(random.item, random.position);
+    play(allRandomTargets[Math.floor(Math.random() * allRandomTargets.length)]);
   }, [allRandomTargets, play]);
 
   const toggleQueue = useCallback(() => {
@@ -110,8 +99,8 @@ function AppContent() {
     <div className="h-screen flex flex-col bg-solarized-base03 text-solarized-base1 font-mono overflow-hidden">
       {/* Header - sticky at top */}
       <div className="flex-shrink-0 bg-solarized-base03 z-10 border-b border-solarized-base02">
-        <AudioPlayer />
-        <div className="flex justify-between items-center px-4 pb-2">
+        <AudioPlayer itemsById={itemsById} />
+        <div className="flex gap-2 justify-between items-center px-4 pb-2">
           <button
             onClick={togglePlaylists}
             className={`p-1.5 rounded transition-colors ${
@@ -123,7 +112,7 @@ function AppContent() {
           >
             {Icons.playlist}
           </button>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-1 min-w-0 justify-end items-center gap-1 sm:gap-2">
             <SearchBar
               value={searchQuery}
               onChange={setSearchQuery}
@@ -159,7 +148,7 @@ function AppContent() {
       </div>
 
       {/* Main content area with sidebars */}
-      <div className="flex-grow flex overflow-hidden">
+      <div className="flex-grow min-h-0 flex overflow-hidden relative">
         {/* Playlist Sidebar - left */}
         {isPlaylistsOpen && (
           <PlaylistSidebar
@@ -169,7 +158,7 @@ function AppContent() {
         )}
 
         {/* Main table - center */}
-        <div className="flex-grow overflow-hidden">
+        <div className="flex-grow min-w-0 overflow-hidden">
           {isLoading ? (
             <div className="flex items-center justify-center h-64 text-solarized-base0">
               Loading...
@@ -185,7 +174,7 @@ function AppContent() {
         </div>
 
         {/* Queue Panel - right */}
-        {isQueueOpen && <QueuePanel />}
+        {isQueueOpen && <QueuePanel itemsById={itemsById} onClose={toggleQueue} />}
       </div>
 
       <UploadModal isOpen={isUploadOpen} onClose={() => setIsUploadOpen(false)} />

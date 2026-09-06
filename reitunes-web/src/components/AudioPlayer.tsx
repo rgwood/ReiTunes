@@ -1,7 +1,9 @@
 import { useEffect, useRef, useCallback, useState } from 'react';
 import { usePlayerStore } from '../stores/playerStore';
-import { useQueueStore } from '../hooks/useQueue';
-import { getItemUrl, markPlayed, addBookmark } from '../hooks/useLibrary';
+import { markPlayed, addBookmark } from '../hooks/useLibrary';
+import type { LibraryItem } from '../types';
+import { bookmarkTarget, formatTime } from '../utils/playback';
+import { playAudio } from '../utils/audioPlayback';
 
 // Minimal SVG icons - consistent 16px size, 1.5px stroke
 const Icons = {
@@ -74,18 +76,9 @@ const Icons = {
   ),
 };
 
-function formatTime(seconds: number): string {
-  if (!isFinite(seconds) || seconds < 0) return '0:00';
-  const mins = Math.floor(seconds / 60);
-  const secs = Math.floor(seconds % 60);
-  return `${mins}:${secs.toString().padStart(2, '0')}`;
-}
-
-export function AudioPlayer() {
+export function AudioPlayer({ itemsById }: { itemsById: Map<string, LibraryItem> }) {
   const audioRef = useRef<HTMLAudioElement>(null);
-  const progressRef = useRef<HTMLDivElement>(null);
   const lastPlayedIdRef = useRef<string | null>(null);
-  const lastItemIdRef = useRef<string | null>(null);
 
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTimeLocal] = useState(0);
@@ -93,43 +86,28 @@ export function AudioPlayer() {
   const [volume, setVolume] = useState(1);
   const [isMuted, setIsMuted] = useState(false);
   const [bookmarkFeedback, setBookmarkFeedback] = useState<'idle' | 'success' | 'error'>('idle');
+  const [isLoading, setIsLoading] = useState(false);
+  const [playbackError, setPlaybackError] = useState<string | null>(null);
 
-  const { currentItem, pendingSeek, setCurrentTime, setDuration, clearPendingSeek, play } = usePlayerStore();
-  const { playNext, playPrevious, shuffleEnabled, repeatMode, toggleShuffle, cycleRepeatMode } = useQueueStore();
+  const currentEntry = usePlayerStore(state => state.currentEntry);
+  const playRequest = usePlayerStore(state => state.playRequest);
+  const shuffleEnabled = usePlayerStore(state => state.shuffleEnabled);
+  const repeatMode = usePlayerStore(state => state.repeatMode);
+  const next = usePlayerStore(state => state.next);
+  const previous = usePlayerStore(state => state.previous);
+  const restart = usePlayerStore(state => state.restart);
+  const play = usePlayerStore(state => state.play);
+  const toggleShuffle = usePlayerStore(state => state.toggleShuffle);
+  const cycleRepeatMode = usePlayerStore(state => state.cycleRepeatMode);
+  const currentItem = currentEntry ? itemsById.get(currentEntry.libraryItemId) : undefined;
+  const url = currentItem?.url;
 
-  // Handle song changes
+  // This is the only adapter between playback requests and the audio element.
   useEffect(() => {
     const audio = audioRef.current;
-    if (!audio || !currentItem) return;
-
-    const isNewSong = currentItem.id !== lastItemIdRef.current;
-    if (isNewSong) {
-      lastItemIdRef.current = currentItem.id;
-      audio.src = getItemUrl(currentItem);
-    }
-  }, [currentItem]);
-
-  // Handle pending seek
-  useEffect(() => {
-    const audio = audioRef.current;
-    if (!audio || pendingSeek === null) return;
-
-    const doSeek = () => {
-      if (pendingSeek > 0) audio.currentTime = pendingSeek;
-      clearPendingSeek();
-    };
-
-    if (audio.readyState >= 2) {
-      doSeek();
-    } else {
-      const handleCanPlay = () => {
-        doSeek();
-        audio.removeEventListener('canplay', handleCanPlay);
-      };
-      audio.addEventListener('canplay', handleCanPlay);
-      return () => audio.removeEventListener('canplay', handleCanPlay);
-    }
-  }, [pendingSeek, clearPendingSeek]);
+    if (!audio || !currentEntry || !url) return;
+    return playAudio(audio, url, currentEntry.startPosition, setPlaybackError);
+  }, [currentEntry, playRequest, url]);
 
   // Mark as played
   useEffect(() => {
@@ -149,42 +127,34 @@ export function AudioPlayer() {
   const handleTimeUpdate = useCallback(() => {
     if (audioRef.current) {
       setCurrentTimeLocal(audioRef.current.currentTime);
-      setCurrentTime(audioRef.current.currentTime);
     }
-  }, [setCurrentTime]);
+  }, []);
 
   const handleLoadedMetadata = useCallback(() => {
     if (audioRef.current) {
       setDurationLocal(audioRef.current.duration);
-      setDuration(audioRef.current.duration);
     }
-  }, [setDuration]);
+  }, []);
 
   const handleEnded = useCallback(() => {
-    if (repeatMode === 'one' && audioRef.current) {
-      audioRef.current.currentTime = 0;
-      audioRef.current.play();
-      return;
-    }
-    const nextItem = playNext();
-    if (nextItem) play(nextItem);
-  }, [playNext, play, repeatMode]);
+    setIsPlaying(false);
+    setIsLoading(false);
+    next('ended');
+  }, [next]);
 
   const handlePlayPause = useCallback(() => {
-    if (!audioRef.current) return;
+    if (!audioRef.current || !currentItem) return;
     if (isPlaying) {
       audioRef.current.pause();
     } else {
-      audioRef.current.play();
+      setPlaybackError(null);
+      if (playbackError || audioRef.current.ended) {
+        restart();
+      } else {
+        void audioRef.current.play().catch(() => setPlaybackError('Playback could not start. Press Play to try again.'));
+      }
     }
-  }, [isPlaying]);
-
-  const handleProgressClick = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
-    if (!progressRef.current || !audioRef.current || !duration) return;
-    const rect = progressRef.current.getBoundingClientRect();
-    const percent = (e.clientX - rect.left) / rect.width;
-    audioRef.current.currentTime = percent * duration;
-  }, [duration]);
+  }, [isPlaying, currentItem, playbackError, restart]);
 
   const seekBack = useCallback(() => {
     if (audioRef.current) {
@@ -193,7 +163,7 @@ export function AudioPlayer() {
   }, []);
 
   const seekForward = useCallback(() => {
-    if (audioRef.current) {
+    if (audioRef.current && Number.isFinite(audioRef.current.duration)) {
       audioRef.current.currentTime = Math.min(audioRef.current.duration, audioRef.current.currentTime + 30);
     }
   }, []);
@@ -222,44 +192,42 @@ export function AudioPlayer() {
     }
   }, [currentItem]);
 
-  const handlePrevious = useCallback(() => {
-    const prevItem = playPrevious();
-    if (prevItem) play(prevItem);
-  }, [playPrevious, play]);
-
-  const handleNext = useCallback(() => {
-    const nextItem = playNext();
-    if (nextItem) play(nextItem);
-  }, [playNext, play]);
-
-  const progress = duration > 0 ? (currentTime / duration) * 100 : 0;
-  const bookmarks = currentItem?.bookmarks ? Object.values(currentItem.bookmarks) : [];
+  const bookmarks = currentItem ? Object.entries(currentItem.bookmarks) : [];
 
   return (
     <div className="px-4 pt-3 pb-2">
       {/* Hidden audio element */}
       <audio
         ref={audioRef}
-        autoPlay
         onTimeUpdate={handleTimeUpdate}
         onLoadedMetadata={handleLoadedMetadata}
+        onSeeking={handleTimeUpdate}
         onEnded={handleEnded}
-        onPlay={() => setIsPlaying(true)}
-        onPause={() => setIsPlaying(false)}
+        onLoadStart={() => { setIsLoading(true); setPlaybackError(null); setCurrentTimeLocal(0); setDurationLocal(0); }}
+        onPlay={() => { setIsPlaying(true); setPlaybackError(null); }}
+        onPlaying={() => setIsLoading(false)}
+        onWaiting={() => setIsLoading(true)}
+        onCanPlay={() => setIsLoading(false)}
+        onPause={() => { setIsPlaying(false); setIsLoading(false); }}
+        onError={() => { setIsPlaying(false); setIsLoading(false); setPlaybackError('Could not load this audio. Press Play to retry, or choose another track.'); }}
       />
 
       {/* Now playing info - compact */}
       <div className="text-sm text-solarized-base1 mb-2 truncate">
         {currentItem ? (
           <>
+            {currentEntry?.bookmarkId && <span className="text-solarized-cyan mr-2">{currentItem.bookmarks[currentEntry.bookmarkId]?.emoji || '🔖'} {formatTime(currentEntry.startPosition)}</span>}
             <span className="text-solarized-blue">{currentItem.name}</span>
             {currentItem.artist && (
               <span className="text-solarized-base0 ml-2">— {currentItem.artist}</span>
             )}
           </>
         ) : (
-          <span className="text-solarized-base0">No song selected</span>
+          <span className="text-solarized-base0">{currentEntry ? 'This track is no longer in your library. Choose another or press Next.' : 'Choose a track to play'}</span>
         )}
+      </div>
+      <div role="status" className="text-xs text-solarized-base0">
+        {playbackError ? <span className="text-solarized-red">{playbackError}</span> : isLoading ? 'Loading audio…' : null}
       </div>
 
       {/* Progress bar */}
@@ -267,33 +235,27 @@ export function AudioPlayer() {
         <span className="text-xs text-solarized-base0 w-10 text-right tabular-nums">
           {formatTime(currentTime)}
         </span>
-        <div
-          ref={progressRef}
-          onClick={handleProgressClick}
-          className="flex-grow h-1 bg-solarized-base02 rounded-full cursor-pointer group relative"
-        >
-          <div
-            className="h-full bg-solarized-blue rounded-full relative"
-            style={{ width: `${progress}%` }}
-          >
-            <div className="absolute right-0 top-1/2 -translate-y-1/2 w-2.5 h-2.5 bg-solarized-blue rounded-full opacity-0 group-hover:opacity-100 transition-opacity" />
-          </div>
+        <div className="flex-grow min-w-0 h-7 relative flex items-center">
+          <input type="range" min={0} max={Number.isFinite(duration) ? duration : 0} step={1}
+            value={currentTime} disabled={!currentItem || !duration} aria-label="Playback position"
+            aria-valuetext={formatTime(currentTime)}
+            onChange={event => { if (audioRef.current) audioRef.current.currentTime = Number(event.target.value); }}
+            className="w-full h-1 accent-solarized-blue cursor-pointer" />
           {/* Bookmark markers */}
-          {bookmarks.map((bookmark, idx) => {
+          {bookmarks.map(([id, bookmark]) => {
             const position = duration > 0 ? (bookmark.position / duration) * 100 : 0;
             return (
               <button
-                key={idx}
+                key={id}
                 onClick={(e) => {
                   e.stopPropagation();
-                  if (audioRef.current) {
-                    audioRef.current.currentTime = bookmark.position;
-                  }
+                  if (currentItem) play(bookmarkTarget(currentItem, id));
                 }}
-                className="absolute top-1/2 -translate-y-1/2 w-1 h-3 bg-solarized-cyan/60 hover:bg-solarized-cyan hover:w-2 hover:h-5 transition-all cursor-pointer rounded-sm"
+                className="absolute top-4 -translate-x-1/2 w-4 h-3 text-solarized-cyan hover:text-solarized-base2 cursor-pointer text-xs"
                 style={{ left: `${position}%` }}
                 title={`${bookmark.emoji || '🔖'} ${formatTime(bookmark.position)}`}
-              />
+                aria-label={`Play bookmark at ${formatTime(bookmark.position)}`}
+              >▴</button>
             );
           })}
         </div>
@@ -303,7 +265,7 @@ export function AudioPlayer() {
       </div>
 
       {/* Controls row - compact, inline */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap gap-y-2 items-center justify-between">
         {/* Left: shuffle */}
         <div className="flex items-center">
           <button
@@ -320,7 +282,7 @@ export function AudioPlayer() {
         {/* Center: transport controls */}
         <div className="flex items-center gap-1">
           <button
-            onClick={handlePrevious}
+            onClick={previous}
             className="p-1.5 text-solarized-base1 hover:text-solarized-base2 hover:bg-solarized-base02 rounded transition-colors"
             title="Previous"
           >
@@ -335,6 +297,7 @@ export function AudioPlayer() {
           </button>
           <button
             onClick={handlePlayPause}
+            disabled={!currentItem}
             className="p-2 mx-1 text-solarized-base2 hover:text-solarized-base3 bg-solarized-base02 hover:bg-solarized-base01 rounded-full transition-colors"
             title={isPlaying ? 'Pause' : 'Play'}
           >
@@ -348,7 +311,7 @@ export function AudioPlayer() {
             {Icons.fastForward}
           </button>
           <button
-            onClick={handleNext}
+            onClick={() => next()}
             className="p-1.5 text-solarized-base1 hover:text-solarized-base2 hover:bg-solarized-base02 rounded transition-colors"
             title="Next"
           >
@@ -372,6 +335,7 @@ export function AudioPlayer() {
           </button>
           <button
             onClick={handleAddBookmark}
+            disabled={!currentItem}
             className={`p-1.5 rounded transition-colors ${
               bookmarkFeedback === 'success'
                 ? 'text-solarized-green bg-solarized-base02'
