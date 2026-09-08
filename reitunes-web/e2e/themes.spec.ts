@@ -29,8 +29,8 @@ const fixtureItems: LibraryItem[] = Array.from({ length: 120 }, (_, index) => ({
 
 async function mockLibrary(page: Page) {
   await page.addInitScript(() => {
-    Object.defineProperty(HTMLMediaElement.prototype, 'play', { configurable: true, value() { this.dispatchEvent(new Event('play')); return Promise.resolve(); } });
-    Object.defineProperty(HTMLMediaElement.prototype, 'pause', { configurable: true, value() { this.dispatchEvent(new Event('pause')); } });
+    Object.defineProperty(HTMLMediaElement.prototype, 'play', { configurable: true, value() { const source = this.src; Object.defineProperty(this, 'paused', { configurable: true, get: () => this.src !== source }); this.dispatchEvent(new Event('play')); return Promise.resolve(); } });
+    Object.defineProperty(HTMLMediaElement.prototype, 'pause', { configurable: true, value() { Object.defineProperty(this, 'paused', { configurable: true, value: true }); this.dispatchEvent(new Event('pause')); } });
   });
   await page.route('**/api/items', route => route.fulfill({ json: fixtureItems }));
   await page.route('**/api/playlists', route => route.fulfill({ json: [] }));

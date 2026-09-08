@@ -18,3 +18,9 @@ This is entirely single-node right now. I'm not sure whether to forge ahead with
 
 Still need to:
 - implement better bookmark functionality (adding bookmarks, at least)
+
+## Playback diagnostics
+
+Production playback traces appear in the server journal with `[Playback]`. Run `just get-logs 100` from this directory. Each batch includes a page session ID, the frontend asset filename, ordered event timestamps, track IDs, command origins (including `ctrl-e`), and the audio element's state. An `oscillation` warning marks six play/pause changes within two seconds.
+
+Traces exclude track titles, audio URLs and credentials. They batch up to 40 events every two seconds while active, report dropped events, and flush on page exit. Failed uploads time out without retries; this is diagnostic evidence, not a guaranteed audit log.

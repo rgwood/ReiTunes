@@ -6,6 +6,7 @@ import { usePlayback } from '../hooks/usePlayback';
 import { useSonosControls } from '../hooks/useSonosControls';
 import { usePlaybackTargetStore } from '../stores/playbackTargetStore';
 import type { LibraryItem } from '../types';
+import { audioDiagnostics, recordPlaybackEvent } from '../utils/playbackDiagnostics';
 
 // Minimal SVG icons - consistent 16px size, 1.5px stroke
 const Icons = {
@@ -108,6 +109,7 @@ export function AudioPlayer({ onChooseOutput, items, onPlaybackPosition }: Audio
 
   const {
     currentItem,
+    currentItemId,
     isPlaying,
     pendingSeek,
     volume,
@@ -126,6 +128,27 @@ export function AudioPlayer({ onChooseOutput, items, onPlaybackPosition }: Audio
   const sonos = useSonosControls(target.kind === 'sonos' ? target.groupId : null);
   const refreshSonosPlayback = sonos.refreshPlayback;
   const { playNext, playPrevious, shuffleEnabled, repeatMode, toggleShuffle, cycleRepeatMode } = useQueueStore();
+
+  useEffect(() => {
+    const audio = audioRef.current;
+    if (!audio) return;
+    const eventNames = ['loadstart', 'loadedmetadata', 'canplay', 'play', 'playing', 'pause', 'waiting', 'stalled', 'seeking', 'seeked', 'ended', 'error', 'abort', 'emptied'];
+    const observe = (event: Event) => recordPlaybackEvent('media', {
+      mediaEvent: event.type,
+      itemId: usePlayerStore.getState().currentItemId,
+      target: usePlaybackTargetStore.getState().target.kind,
+      ...audioDiagnostics(audio),
+    });
+    eventNames.forEach(name => audio.addEventListener(name, observe));
+    return () => eventNames.forEach(name => audio.removeEventListener(name, observe));
+  }, [target.kind]);
+
+  useEffect(() => {
+    recordPlaybackEvent('state', {
+      itemId: currentItem?.id, target: target.kind, isPlaying, pendingSeek,
+      ...(audioRef.current ? audioDiagnostics(audioRef.current) : {}),
+    });
+  }, [currentItem?.id, isPlaying, pendingSeek, target.kind]);
 
   useEffect(() => {
     const wasSending = wasSonosSendingRef.current;
@@ -190,22 +213,32 @@ export function AudioPlayer({ onChooseOutput, items, onPlaybackPosition }: Audio
   // and start through this effect.
   useEffect(() => {
     const audio = audioRef.current;
-    if (!audio || !currentItem) return;
+    if (!audio || !currentItemId) return;
 
     if (target.kind === 'sonos') {
       if (!audio.paused) audio.pause();
       return;
     }
 
+    let superseded = false;
     if (isPlaying && audio.paused) {
+      recordPlaybackEvent('command', { origin: 'sync-play', itemId: currentItemId, ...audioDiagnostics(audio) });
       audio.play().catch((error) => {
-        console.error('Failed to start playback:', error);
-        setIsPlaying(false);
+        // A source switch or newer play/pause intent can settle an older promise.
+        const player = usePlayerStore.getState();
+        const stale = superseded || !audio.paused || !player.isPlaying || player.currentItemId !== currentItemId || usePlaybackTargetStore.getState().target.kind !== 'browser';
+        recordPlaybackEvent('play-rejected', { stale, itemId: currentItemId, errorName: error instanceof Error ? error.name : 'UnknownError', ...audioDiagnostics(audio) });
+        if (!stale) {
+          console.error('Failed to start playback:', error);
+          setIsPlaying(false);
+        }
       });
     } else if (!isPlaying && !audio.paused) {
+      recordPlaybackEvent('command', { origin: 'sync-pause', itemId: currentItemId, ...audioDiagnostics(audio) });
       audio.pause();
     }
-  }, [currentItem, isPlaying, setIsPlaying, target.kind]);
+    return () => { superseded = true; };
+  }, [currentItemId, isPlaying, setIsPlaying, target.kind]);
 
   // Handle pending seek
   useEffect(() => {
@@ -287,10 +320,12 @@ export function AudioPlayer({ onChooseOutput, items, onPlaybackPosition }: Audio
 
   const handlePlayPause = useCallback(() => {
     if (!audioRef.current) return;
+    recordPlaybackEvent('command', { origin: isPlaying ? 'button-pause' : 'button-play', ...audioDiagnostics(audioRef.current) });
     if (isPlaying) {
       audioRef.current.pause();
     } else {
       audioRef.current.play().catch((error) => {
+        recordPlaybackEvent('play-rejected', { origin: 'button-play', errorName: error instanceof Error ? error.name : 'UnknownError' });
         console.error('Failed to resume playback:', error);
       });
     }
@@ -369,12 +404,15 @@ export function AudioPlayer({ onChooseOutput, items, onPlaybackPosition }: Audio
   }, [playNext, play]);
 
   const handleAudioPause = useCallback(() => {
-    if (isChangingSourceRef.current) return;
+    // Media events are queued tasks. An old pause can arrive after play() has
+    // already made the element play again; feeding it back would pause that play.
+    if (isChangingSourceRef.current || !audioRef.current?.paused) return;
     setIsPlaying(false);
     if (audioRef.current) setResumePosition(audioRef.current.currentTime);
   }, [setIsPlaying, setResumePosition]);
 
   const handleAudioPlay = useCallback(() => {
+    if (!audioRef.current || audioRef.current.paused || usePlaybackTargetStore.getState().target.kind !== 'browser') return;
     isChangingSourceRef.current = false;
     setIsPlaying(true);
     if (currentItem && currentItem.id !== lastPlayedIdRef.current) {
@@ -438,11 +476,16 @@ export function AudioPlayer({ onChooseOutput, items, onPlaybackPosition }: Audio
 
     const handlers: Array<[MediaSessionAction, MediaSessionActionHandler]> = [
       ['play', () => {
+        recordPlaybackEvent('command', { origin: 'media-session-play' });
         audioRef.current?.play().catch((error) => {
+          recordPlaybackEvent('play-rejected', { origin: 'media-session-play', errorName: error instanceof Error ? error.name : 'UnknownError' });
           console.error('Failed to resume from media controls:', error);
         });
       }],
-      ['pause', () => audioRef.current?.pause()],
+      ['pause', () => {
+        recordPlaybackEvent('command', { origin: 'media-session-pause' });
+        audioRef.current?.pause();
+      }],
       ['seekbackward', (details) => {
         if (!audioRef.current) return;
         const position = Math.max(0, audioRef.current.currentTime - (details.seekOffset ?? 30));

@@ -77,13 +77,15 @@ async function mockLibrary(page: Page, items = libraryItems) {
     Object.defineProperty(HTMLMediaElement.prototype, 'play', {
       configurable: true,
       value() {
+        const source = this.src;
+        Object.defineProperty(this, 'paused', { configurable: true, get: () => this.src !== source });
         this.dispatchEvent(new Event('play'));
         return Promise.resolve();
       },
     });
     Object.defineProperty(HTMLMediaElement.prototype, 'pause', {
       configurable: true,
-      value() { this.dispatchEvent(new Event('pause')); },
+      value() { Object.defineProperty(this, 'paused', { configurable: true, value: true }); this.dispatchEvent(new Event('pause')); },
     });
   });
 }

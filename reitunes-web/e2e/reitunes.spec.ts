@@ -117,13 +117,15 @@ test('restores a saved track paused and registers media controls', async ({ page
         configurable: true,
         value() {
           testWindow.__playCalls += 1;
+          const source = this.src;
+          Object.defineProperty(this, 'paused', { configurable: true, get: () => this.src !== source });
           this.dispatchEvent(new Event('play'));
           return Promise.resolve();
         },
       });
       Object.defineProperty(HTMLMediaElement.prototype, 'pause', {
         configurable: true,
-        value() {},
+        value() { Object.defineProperty(this, 'paused', { configurable: true, value: true }); this.dispatchEvent(new Event('pause')); },
       });
 
       class TestMediaMetadata {
@@ -232,6 +234,8 @@ test('switches between Sonos and browser playback without playing twice', async 
       configurable: true,
       value() {
         testWindow.__playCalls += 1;
+        const source = this.src;
+        Object.defineProperty(this, 'paused', { configurable: true, get: () => this.src !== source });
         this.dispatchEvent(new Event('play'));
         return Promise.resolve();
       },
@@ -239,6 +243,7 @@ test('switches between Sonos and browser playback without playing twice', async 
     Object.defineProperty(HTMLMediaElement.prototype, 'pause', {
       configurable: true,
       value() {
+        Object.defineProperty(this, 'paused', { configurable: true, value: true });
         this.dispatchEvent(new Event('pause'));
       },
     });

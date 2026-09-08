@@ -194,7 +194,7 @@ function AppContent() {
     ]);
     if (!targets.length) return;
     const next = targets[Math.floor(Math.random() * targets.length)];
-    void play(next.item, next.position);
+    void play(next.item, next.position, 'ctrl-e');
   }, [items, play]);
 
   useEffect(() => {
@@ -218,7 +218,7 @@ function AppContent() {
         !editing
       ) {
         event.preventDefault();
-        randomFavourite();
+        if (!event.repeat) randomFavourite();
       }
     };
     document.addEventListener('keydown', onKeyDown);

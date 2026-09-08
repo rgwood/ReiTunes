@@ -16,4 +16,4 @@ The settings gear opens Appearance and playback output settings. Pick separate l
 
 No backend, database schema or application dependency changes were needed.
 
-The production frontend build, 28 unit tests and 41 browser tests pass. Browser checks include density, search, imports, queue preservation, playlists and Sonos controls. Theme checks cover all 16 light/dark palettes, text contrast, independent light and dark preferences, live system changes, preference migration, persistence, invalid settings, blocked storage and keyboard focus. Existing unrelated repository-wide lint errors remain.
+The production frontend build, 31 unit tests and 44 browser tests pass. Browser checks include density, search, imports, queue preservation, playlists, Sonos controls and stale playback events. Theme checks cover all 16 light/dark palettes, text contrast, independent light and dark preferences, live system changes, preference migration, persistence, invalid settings, blocked storage and keyboard focus. Existing unrelated repository-wide lint errors remain.

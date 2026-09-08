@@ -4,6 +4,7 @@ import { useQueueStore } from './useQueue';
 import { markPlayed } from './useLibrary';
 import { usePlayerStore } from '../stores/playerStore';
 import { usePlaybackTargetStore } from '../stores/playbackTargetStore';
+import { recordPlaybackEvent } from '../utils/playbackDiagnostics';
 
 function sonosQueueFor(item: LibraryItem): LibraryItem[] {
   const queue = useQueueStore.getState();
@@ -22,8 +23,9 @@ async function responseError(response: Response): Promise<string> {
 }
 
 export function usePlayback() {
-  return useCallback(async (item: LibraryItem, startPosition = 0): Promise<void> => {
+  return useCallback(async (item: LibraryItem, startPosition = 0, origin = 'selection'): Promise<void> => {
     const targetState = usePlaybackTargetStore.getState();
+    recordPlaybackEvent('request', { itemId: item.id, position: startPosition, target: targetState.target.kind, origin });
     if (targetState.target.kind === 'browser') {
       targetState.clearError();
       usePlayerStore.getState().play(item, startPosition);
@@ -61,6 +63,7 @@ export function usePlayback() {
         console.error('Sonos playback started, but the play count could not be updated:', error);
       });
     } catch (error) {
+      recordPlaybackEvent('play-rejected', { target: 'sonos', itemId: item.id, errorName: error instanceof Error ? error.name : 'UnknownError' });
       const message = error instanceof Error ? error.message : 'Could not play on Sonos';
       const takeoverRequired =
         targetState.takeoverRequired ||
