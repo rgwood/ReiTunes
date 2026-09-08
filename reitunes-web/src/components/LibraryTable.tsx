@@ -196,7 +196,10 @@ export function LibraryTable({ items, searchQuery, playlistId, onSearchChange }:
           isFavorite={info.getValue() ?? false}
         />
       ),
-      size: 36,
+      size: 28,
+      minSize: 28,
+      maxSize: 28,
+      enableResizing: false,
       enableSorting: true,
     }),
     columnHelper.accessor('name', {
@@ -384,6 +387,17 @@ export function LibraryTable({ items, searchQuery, playlistId, onSearchChange }:
     <div className="px-5 h-full flex flex-col">
       <div className="overflow-auto flex-grow">
         <table aria-label="Tracks" className={`w-full border-collapse table-fixed ${table.getState().columnSizingInfo.isResizingColumn ? 'select-none' : ''}`}>
+          <colgroup>
+            {table.getVisibleLeafColumns().map(column => (
+              <col key={column.id} style={{
+                // Pixel widths on every column get stretched by table layout.
+                // Reserve the heart's space and share the rest among text columns.
+                width: column.id === 'is_favorite'
+                  ? 28
+                  : `${100 * column.getSize() / (table.getTotalSize() - 28)}%`,
+              }} />
+            ))}
+          </colgroup>
           <thead className="sticky top-0 bg-solarized-base02">
             {table.getHeaderGroups().map((headerGroup) => (
               <tr key={headerGroup.id}>
@@ -391,7 +405,6 @@ export function LibraryTable({ items, searchQuery, playlistId, onSearchChange }:
                   <th
                     key={header.id}
                     className="relative text-left px-2 py-1 border-b border-solarized-base01 cursor-pointer hover:bg-solarized-base01 whitespace-nowrap overflow-hidden text-ellipsis"
-                    style={{ width: header.getSize() }}
                   >
                     <button
                       type="button"
@@ -404,14 +417,14 @@ export function LibraryTable({ items, searchQuery, playlistId, onSearchChange }:
                         desc: ' \u25BC',
                       }[header.column.getIsSorted() as string] ?? null}
                     </button>
-                    <div
+                    {header.column.getCanResize() && <div
                       onMouseDown={header.getResizeHandler()}
                       onTouchStart={header.getResizeHandler()}
                       onClick={(e) => e.stopPropagation()}
                       className={`absolute right-0 top-0 h-full w-1 cursor-col-resize hover:bg-solarized-blue ${
                         header.column.getIsResizing() ? 'bg-solarized-blue' : ''
                       }`}
-                    />
+                    />}
                   </th>
                 ))}
               </tr>
@@ -444,7 +457,6 @@ export function LibraryTable({ items, searchQuery, playlistId, onSearchChange }:
                       <td
                         key={cell.id}
                         className="px-2 py-1 border-b border-solarized-base02 whitespace-nowrap overflow-hidden text-ellipsis max-w-0"
-                        style={{ width: cell.column.getSize() }}
                         onDoubleClick={() => {
                           if (isEditable) {
                             handleCellDoubleClick(row.id, field, cell.getValue() as string);
