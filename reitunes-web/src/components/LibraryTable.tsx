@@ -1,4 +1,4 @@
-import { useMemo, useState, useCallback, useEffect } from 'react';
+import { useMemo, useState, useCallback, useEffect, useLayoutEffect, useRef } from 'react';
 import {
   useReactTable,
   getCoreRowModel,
@@ -32,6 +32,8 @@ interface LibraryTableProps {
   searchQuery: string;
   playlistId?: string | null;
   onSearchChange?: (query: string) => void;
+  revealRequest?: { itemId: string } | null;
+  onRevealed?: () => void;
 }
 
 interface ParsedSearch {
@@ -113,7 +115,25 @@ function formatCreatedTime(value: string, short = false): string {
   });
 }
 
-export function LibraryTable({ items, searchQuery, playlistId, onSearchChange }: LibraryTableProps) {
+export function LibraryTable({ items, searchQuery, playlistId, onSearchChange, revealRequest, onRevealed }: LibraryTableProps) {
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const revealRowRef = useRef<HTMLTableRowElement>(null);
+  useLayoutEffect(() => {
+    const scroller = scrollRef.current;
+    const row = revealRowRef.current;
+    if (!revealRequest || !scroller || !row) return;
+    // Wait for deferred search to expose the row, then reveal it just once.
+    // Measuring the sticky header also keeps upward jumps out from under it.
+    const bounds = scroller.getBoundingClientRect();
+    const headerHeight = scroller.querySelector('thead')?.getBoundingClientRect().height ?? 0;
+    const rowBounds = row.getBoundingClientRect();
+    const visibleTop = bounds.top + headerHeight;
+    if (rowBounds.top < visibleTop || rowBounds.bottom > bounds.bottom) {
+      scroller.scrollTop += rowBounds.top - visibleTop -
+        (scroller.clientHeight - headerHeight - rowBounds.height) / 2;
+    }
+    onRevealed?.();
+  }, [revealRequest, items, onRevealed]);
   const [sorting, setSorting] = useState<SortingState>(playlistId ? [] : [
     { id: 'created_time_utc', desc: true },
   ]);
@@ -385,7 +405,7 @@ export function LibraryTable({ items, searchQuery, playlistId, onSearchChange }:
 
   return (
     <div className="px-5 h-full flex flex-col">
-      <div className="overflow-auto flex-grow">
+      <div ref={scrollRef} className="overflow-auto flex-grow">
         <table aria-label="Tracks" className={`w-full border-collapse table-fixed ${table.getState().columnSizingInfo.isResizingColumn ? 'select-none' : ''}`}>
           <colgroup>
             {table.getVisibleLeafColumns().map(column => (
@@ -436,6 +456,7 @@ export function LibraryTable({ items, searchQuery, playlistId, onSearchChange }:
               return (
                 <tr
                   key={row.id}
+                  ref={row.original.id === revealRequest?.itemId ? revealRowRef : undefined}
                   aria-current={isCurrentlyPlaying ? 'true' : undefined}
                   tabIndex={0}
                   onKeyDown={(event) => {

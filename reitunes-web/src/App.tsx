@@ -40,6 +40,8 @@ function AppContent() {
   const [searchQuery, setSearchQuery] = useState('');
   const deferredSearch = useDeferredValue(searchQuery);
   const [collection, setCollection] = useState<Collection>('all');
+  const [revealRequest, setRevealRequest] = useState<{ itemId: string } | null>(null);
+  const finishReveal = useCallback(() => setRevealRequest(null), []);
   const [recentCutoff, setRecentCutoff] = useState(
     () => Date.now() - 30 * 24 * 60 * 60 * 1000
   );
@@ -195,7 +197,13 @@ function AppContent() {
     if (!targets.length) return;
     const next = targets[Math.floor(Math.random() * targets.length)];
     void play(next.item, next.position, 'ctrl-e');
-  }, [items, play]);
+    if (!filteredItems.some((item) => item.id === next.item.id)) {
+      setSearchQuery('');
+      setCollection('all');
+      setSelectedPlaylistId(null);
+    }
+    setRevealRequest({ itemId: next.item.id });
+  }, [items, play, filteredItems]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -436,6 +444,8 @@ function AppContent() {
                   searchQuery=""
                   playlistId={selectedPlaylistId}
                   onSearchChange={setSearchQuery}
+                  revealRequest={revealRequest}
+                  onRevealed={finishReveal}
                 />
               </div>
               {!filteredItems.length && (

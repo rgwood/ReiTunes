@@ -94,6 +94,7 @@ input::placeholder { color: var(--muted); opacity: 1; }
 .song-table tbody tr:nth-child(even) { background: var(--alternate); }
 .song-table tbody tr:hover { background: var(--hover); }
 .song-table tbody tr[aria-current='true'] { background: var(--selection); }
+.song-table tbody tr[aria-current='true'] td:first-child { box-shadow: inset 3px 0 var(--accent); }
 .song-table tbody tr:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 .song-table td:first-child, .song-table th:first-child { text-align: center; padding: 0 2px; }
 .song-table th:first-child > button { justify-content: center; gap: 1px; }

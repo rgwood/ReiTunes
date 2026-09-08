@@ -101,6 +101,77 @@ async function queueTrack(page: Page, name: string) {
   await page.getByText('Add to Queue', { exact: false }).click();
 }
 
+const randomJumpItems = densityItems.map((item, index) => ({
+  ...item,
+  created_time_utc: '2026-09-01T12:00:00',
+  is_favorite: false,
+  bookmarks: index === 60 ? libraryItems[0].bookmarks : {},
+}));
+
+async function playingRowIsRevealed(page: Page) {
+  return page.locator('tbody tr[aria-current="true"]').evaluate(row => {
+    const table = row.closest('table')!;
+    const scroller = table.parentElement!;
+    const bounds = row.getBoundingClientRect();
+    return bounds.top >= table.tHead!.getBoundingClientRect().bottom &&
+      bounds.bottom <= scroller.getBoundingClientRect().bottom;
+  });
+}
+
+test('random jumps reveal the highlighted row in both directions, including the same song', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 600 });
+  await mockLibrary(page, randomJumpItems);
+  await page.goto('/');
+  await expect(page.locator('tbody tr')).toHaveCount(120);
+  await page.keyboard.press('Control+e');
+  await expect(page.locator('tbody tr[aria-current="true"]')).toContainText(randomJumpItems[60].name);
+  await expect.poll(() => playingRowIsRevealed(page)).toBe(true);
+
+  // Browsing while the song plays must not continually snap back to it.
+  await page.locator('table').evaluate(table => {
+    table.parentElement!.scrollTop = table.parentElement!.scrollHeight;
+    document.querySelector('audio')!.dispatchEvent(new Event('timeupdate'));
+  });
+  await expect.poll(() => playingRowIsRevealed(page)).toBe(false);
+  await page.keyboard.press('Control+e');
+  await expect.poll(() => playingRowIsRevealed(page)).toBe(true);
+});
+
+test('random jumps escape hiding filters but preserve a search that includes the song', async ({ page }) => {
+  await mockLibrary(page, randomJumpItems);
+  await page.route('**/api/playlists', route => route.fulfill({ json: [{
+    id: 'random-test-playlist', name: 'Other songs',
+    items: { first: { library_item_id: randomJumpItems[0].id, position: 0 } },
+  }] }));
+  await page.goto('/');
+  const search = page.getByRole('searchbox', { name: 'Search library' });
+  const collection = page.getByRole('combobox', { name: 'Collection', exact: true });
+  await page.getByRole('button', { name: 'Playlists', exact: true }).click();
+  await page.getByText('Other songs', { exact: true }).click();
+  await expect(page.locator('tbody tr')).toHaveCount(1);
+  await search.fill('no matching music');
+  await search.blur();
+  await expect(page.locator('tbody tr')).toHaveCount(0);
+  await page.keyboard.press('Control+e');
+  await expect(search).toHaveValue('');
+  await expect(page.locator('tbody tr')).toHaveCount(120);
+  await expect.poll(() => playingRowIsRevealed(page)).toBe(true);
+
+  await collection.selectOption('favourites');
+  await collection.blur();
+  await expect(page.locator('tbody tr')).toHaveCount(0);
+  await page.keyboard.press('Control+e');
+  await expect(collection).toHaveValue('all');
+  await expect.poll(() => playingRowIsRevealed(page)).toBe(true);
+
+  await search.fill(randomJumpItems[60].name);
+  await search.blur();
+  await expect(page.locator('tbody tr')).toHaveCount(1);
+  await page.keyboard.press('Control+e');
+  await expect(search).toHaveValue(randomJumpItems[60].name);
+  await expect.poll(() => playingRowIsRevealed(page)).toBe(true);
+});
+
 test('searches artists, albums and bookmark labels in one grid', async ({ page }) => {
   await mockLibrary(page);
   await page.goto('/');
