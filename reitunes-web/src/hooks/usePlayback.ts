@@ -25,6 +25,7 @@ async function responseError(response: Response): Promise<string> {
 export function usePlayback() {
   return useCallback(async (item: LibraryItem, startPosition = 0, origin = 'selection'): Promise<void> => {
     const targetState = usePlaybackTargetStore.getState();
+    if (targetState.isSwitchingOutput || targetState.isTransportPending) return;
     recordPlaybackEvent('request', { itemId: item.id, position: startPosition, target: targetState.target.kind, origin });
     if (targetState.target.kind === 'browser') {
       targetState.clearError();

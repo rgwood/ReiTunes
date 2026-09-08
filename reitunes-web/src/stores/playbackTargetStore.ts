@@ -24,6 +24,10 @@ interface PersistedPlaybackTargetState {
 
 interface PlaybackTargetState extends PersistedPlaybackTargetState {
   isSending: boolean;
+  isSwitchingOutput: boolean;
+  setSwitchingOutput: (switching: boolean) => void;
+  isTransportPending: boolean;
+  setTransportPending: (pending: boolean) => void;
   error: string | null;
   setBrowserTarget: () => void;
   setSonosTarget: (target: Omit<SonosPlaybackTarget, 'kind'>) => void;
@@ -39,6 +43,10 @@ export const usePlaybackTargetStore = create<PlaybackTargetState>()(
       target: { kind: 'browser' },
       takeoverRequired: false,
       isSending: false,
+      isSwitchingOutput: false,
+      setSwitchingOutput: (isSwitchingOutput) => set({ isSwitchingOutput }),
+      isTransportPending: false,
+      setTransportPending: (isTransportPending) => set({ isTransportPending }),
       error: null,
 
       setBrowserTarget: () =>

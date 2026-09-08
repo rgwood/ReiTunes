@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { usePlaybackTargetStore } from '../stores/playbackTargetStore';
 import { usePlayerStore } from '../stores/playerStore';
+import type { LibraryItem } from '../types';
+import type { SonosPlaybackStatus } from '../hooks/useSonosControls';
+import { recordPlaybackEvent } from '../utils/playbackDiagnostics';
 import './SonosModal.css';
 
 interface SonosStatus {
@@ -39,6 +42,7 @@ interface DiscoveredHousehold {
 interface SonosModalProps {
   isOpen: boolean;
   onClose: () => void;
+  items: LibraryItem[];
 }
 
 async function responseError(response: Response): Promise<string> {
@@ -51,12 +55,12 @@ async function responseError(response: Response): Promise<string> {
 }
 
 async function fetchJson<T>(url: string): Promise<T> {
-  const response = await fetch(url, { credentials: 'include' });
+  const response = await fetch(url, { credentials: 'include', signal: AbortSignal.timeout(15_000) });
   if (!response.ok) throw new Error(await responseError(response));
   return response.json() as Promise<T>;
 }
 
-export function SonosModal({ isOpen, onClose }: SonosModalProps) {
+export function SonosModal({ isOpen, onClose, items }: SonosModalProps) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   const [status, setStatus] = useState<SonosStatus | null>(null);
   const [households, setHouseholds] = useState<DiscoveredHousehold[]>([]);
@@ -68,6 +72,9 @@ export function SonosModal({ isOpen, onClose }: SonosModalProps) {
     error: playbackError,
     setBrowserTarget,
     setSonosTarget,
+    isSending,
+    isSwitchingOutput,
+    isTransportPending,
   } =
     usePlaybackTargetStore();
 
@@ -131,10 +138,55 @@ export function SonosModal({ isOpen, onClose }: SonosModalProps) {
     }
   }, [setBrowserTarget]);
 
-  const chooseBrowser = useCallback(() => {
-    usePlayerStore.getState().setIsPlaying(false);
-    setBrowserTarget();
-  }, [setBrowserTarget]);
+  const chooseBrowser = useCallback(async () => {
+    const output = usePlaybackTargetStore.getState();
+    if (output.target.kind !== 'sonos' || output.isSending || output.isSwitchingOutput || output.isTransportPending) return;
+    output.setSwitchingOutput(true);
+    setError(null);
+    recordPlaybackEvent('command', { origin: 'handoff-to-browser', target: 'sonos' });
+    try {
+      const url = `/api/sonos/groups/${encodeURIComponent(output.target.groupId)}/playback`;
+      const before = await fetchJson<SonosPlaybackStatus>(url);
+      let playback = before;
+      if (before.reitunesSessionActive) {
+        const response = await fetch(`${url}/pause`, {
+          method: 'POST', credentials: 'include', signal: AbortSignal.timeout(15_000),
+        });
+        if (!response.ok) throw new Error(await responseError(response));
+        // Read the final position after Sonos acknowledges pause. If this read
+        // fails, the pre-pause snapshot is still safe to resume locally.
+        playback = await fetchJson<SonosPlaybackStatus>(url).catch(() => before);
+      }
+      const player = usePlayerStore.getState();
+      const item = playback.reitunesSessionActive
+        ? items.find(candidate => candidate.id === playback.sourceItemId)
+        : undefined;
+      const wasPlaying = before.playbackState === 'PLAYBACK_STATE_PLAYING' ||
+        before.playbackState === 'PLAYBACK_STATE_BUFFERING';
+      // Commit the output only after pause succeeds, so a failed request cannot
+      // leave both outputs playing. A paused Sonos session stays paused locally.
+      if (item) {
+        player.play(item, playback.positionMillis / 1000);
+        player.setIsPlaying(wasPlaying);
+      } else {
+        player.setIsPlaying(false);
+      }
+      setBrowserTarget();
+      recordPlaybackEvent('command', {
+        origin: 'handoff-complete', target: 'browser', itemId: item?.id,
+        position: item ? playback.positionMillis / 1000 : undefined,
+        isPlaying: !!item && wasPlaying,
+      });
+    } catch (err) {
+      setError(`Could not switch to this browser: ${err instanceof Error ? err.message : 'Sonos did not respond'}`);
+      recordPlaybackEvent('play-rejected', {
+        origin: 'handoff-to-browser', target: 'sonos',
+        errorName: err instanceof Error ? err.name : 'UnknownError',
+      });
+    } finally {
+      output.setSwitchingOutput(false);
+    }
+  }, [items, setBrowserTarget]);
 
   const chooseGroup = useCallback(
     (
@@ -191,7 +243,7 @@ export function SonosModal({ isOpen, onClose }: SonosModalProps) {
               Sonos
             </h2>
             <p className="text-xs text-solarized-base0 mt-1">
-              Choose where new play actions go. Changing output does not start or stop audio.
+              Switching to this browser brings the current Sonos track with you.
             </p>
           </div>
           <button
@@ -219,11 +271,11 @@ export function SonosModal({ isOpen, onClose }: SonosModalProps) {
             </div>
             <button
               type="button"
-              onClick={chooseBrowser}
-              disabled={target.kind === 'browser'}
+              onClick={() => void chooseBrowser()}
+              disabled={target.kind === 'browser' || isSending || isSwitchingOutput || isTransportPending}
               className="shrink-0 px-3 py-1.5 text-xs bg-solarized-base01 text-solarized-base2 rounded hover:bg-solarized-base00 disabled:text-solarized-cyan disabled:bg-solarized-base02 transition-colors"
             >
-              {target.kind === 'browser' ? 'Selected' : 'Use browser'}
+              {isSwitchingOutput ? 'Switching…' : target.kind === 'browser' ? 'Selected' : 'Use browser'}
             </button>
           </div>
 
@@ -232,7 +284,7 @@ export function SonosModal({ isOpen, onClose }: SonosModalProps) {
           )}
 
           {error && (
-            <div className="text-sm text-solarized-red border border-solarized-red rounded p-3 mb-4">
+            <div role="alert" className="text-sm text-solarized-red border border-solarized-red rounded p-3 mb-4">
               {error}
             </div>
           )}
@@ -302,7 +354,7 @@ export function SonosModal({ isOpen, onClose }: SonosModalProps) {
                             <button
                               type="button"
                               onClick={() => chooseGroup(household, group, players)}
-                              disabled={isSelected && !needsConfirmation}
+                              disabled={isSending || isSwitchingOutput || isTransportPending || (isSelected && !needsConfirmation)}
                               className="shrink-0 px-3 py-1.5 text-xs bg-solarized-base01 text-solarized-base2 rounded hover:bg-solarized-base00 disabled:text-solarized-cyan disabled:bg-solarized-base02 transition-colors"
                             >
                               {isSelected
@@ -331,7 +383,7 @@ export function SonosModal({ isOpen, onClose }: SonosModalProps) {
           {status?.connected && (
             <button
               onClick={() => void disconnect()}
-              disabled={isLoading}
+              disabled={isLoading || isSending || isSwitchingOutput || isTransportPending}
               className="px-3 py-2 text-sm text-solarized-orange hover:bg-solarized-base03 rounded transition-colors disabled:text-solarized-base00"
             >
               Forget connection

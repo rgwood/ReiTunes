@@ -46,7 +46,7 @@ export function useSonosControls(groupId: string | null) {
   const [volume, setVolumeState] = useState<SonosGroupVolume | null>(null);
   const [pollError, setPollError] = useState<string | null>(null);
   const [commandError, setCommandError] = useState<string | null>(null);
-  const [isTransportPending, setIsTransportPending] = useState(false);
+  const { isTransportPending, setTransportPending: setIsTransportPending } = usePlaybackTargetStore();
   const [isVolumePending, setIsVolumePending] = useState(false);
 
   const applyPlayback = useCallback((next: SonosPlaybackStatus, requestedGroup: string) => {
@@ -165,7 +165,8 @@ export function useSonosControls(groupId: string | null) {
 
   const sendTransport = useCallback(
     async (command: 'play' | 'pause') => {
-      if (!groupId || isTransportPending) return;
+      const output = usePlaybackTargetStore.getState();
+      if (!groupId || output.isTransportPending || output.isSending || output.isSwitchingOutput) return;
       setIsTransportPending(true);
       setCommandError(null);
       if (playback) {
@@ -197,7 +198,7 @@ export function useSonosControls(groupId: string | null) {
         setIsTransportPending(false);
       }
     },
-    [groupId, isTransportPending, playback, refreshPlayback]
+    [groupId, playback, refreshPlayback, setIsTransportPending]
   );
 
   const setGroupVolume = useCallback(

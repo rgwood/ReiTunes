@@ -87,12 +87,11 @@ function formatTime(seconds: number): string {
 }
 
 interface AudioPlayerProps {
-  onChooseOutput: () => void;
   items: LibraryItem[];
   onPlaybackPosition?: (itemId: string, position: number) => void;
 }
 
-export function AudioPlayer({ onChooseOutput, items, onPlaybackPosition }: AudioPlayerProps) {
+export function AudioPlayer({ items, onPlaybackPosition }: AudioPlayerProps) {
   const audioRef = useRef<HTMLAudioElement>(null);
   const progressRef = useRef<HTMLDivElement>(null);
   const lastPlayedIdRef = useRef<string | null>(null);
@@ -123,7 +122,7 @@ export function AudioPlayer({ onChooseOutput, items, onPlaybackPosition }: Audio
     selectRemoteItem,
   } = usePlayerStore();
   const play = usePlayback();
-  const { target, isSending, error: playbackError, takeoverRequired } =
+  const { target, isSending, isSwitchingOutput, error: playbackError, takeoverRequired } =
     usePlaybackTargetStore();
   const sonos = useSonosControls(target.kind === 'sonos' ? target.groupId : null);
   const refreshSonosPlayback = sonos.refreshPlayback;
@@ -539,6 +538,7 @@ export function AudioPlayer({ onChooseOutput, items, onPlaybackPosition }: Audio
   const sonosProgress = duration > 0 ? Math.min(100, (sonosPosition / duration) * 100) : 0;
   const displayedSonosVolume = sonosVolumeDraft ?? sonos.volume?.volume ?? 0;
   const sonosTransportDisabled =
+    isSending || isSwitchingOutput ||
     !sonosSessionActive ||
     !currentItem ||
     sonos.isTransportPending ||
@@ -546,16 +546,16 @@ export function AudioPlayer({ onChooseOutput, items, onPlaybackPosition }: Audio
 
   if (target.kind === 'sonos') {
     return (
-      <div className="sonos-player-layout px-4 pt-3 pb-2">
+      <div className="sonos-player-layout" aria-busy={isSwitchingOutput}>
         <audio
           ref={audioRef}
           preload="metadata"
           onLoadStart={handleLoadStart}
           onLoadedMetadata={handleLoadedMetadata}
         />
-        <div className="flex items-start justify-between gap-4">
-          <div className="min-w-0">
-            <div className="text-sm text-solarized-base1 truncate">
+        <div className="sonos-track">
+          <div className="sonos-track-details">
+            <div className="sonos-track-title truncate">
               {currentItem ? (
                 <>
                   <span className="text-solarized-cyan">{currentItem.name}</span>
@@ -567,8 +567,10 @@ export function AudioPlayer({ onChooseOutput, items, onPlaybackPosition }: Audio
                 <span className="text-solarized-base0">No song selected</span>
               )}
             </div>
-            <div className="text-xs mt-1">
-              {isSending ? (
+            <div role="status" className={`sonos-status ${!isSending && !isSwitchingOutput && !playbackError && !sonos.error && sonosSessionActive ? 'sr-only' : ''}`}>
+              {isSwitchingOutput ? (
+                <span>Moving playback to this browser…</span>
+              ) : isSending ? (
                 <span className="text-solarized-yellow">Sending to {target.groupName}…</span>
               ) : playbackError ? (
                 <span className="text-solarized-red">
@@ -589,7 +591,7 @@ export function AudioPlayer({ onChooseOutput, items, onPlaybackPosition }: Audio
                 <span className="text-solarized-yellow">Reading {target.groupName}…</span>
               ) : !sonosSessionActive ? (
                 <span className="text-solarized-base0">
-                  Sonos · {target.groupName}. Choose a song to start a ReiTunes session.
+                  Choose a song to play on {target.groupName}.
                 </span>
               ) : (
                 <span className="text-solarized-base0">
@@ -598,16 +600,9 @@ export function AudioPlayer({ onChooseOutput, items, onPlaybackPosition }: Audio
               )}
             </div>
           </div>
-          <button
-            type="button"
-            onClick={onChooseOutput}
-            className="shrink-0 px-3 py-1.5 text-xs border border-solarized-cyan text-solarized-cyan rounded hover:bg-solarized-base02 transition-colors"
-          >
-            Change output
-          </button>
         </div>
 
-        <div className="flex items-center gap-3 mt-3 mb-2">
+        <div className="sonos-progress flex items-center gap-3">
           <span className="text-xs text-solarized-base0 w-10 text-right tabular-nums">
             {formatTime(sonosPosition)}
           </span>
@@ -616,7 +611,6 @@ export function AudioPlayer({ onChooseOutput, items, onPlaybackPosition }: Audio
               className="h-full bg-solarized-cyan rounded-full relative transition-[width] duration-200"
               style={{ width: `${sonosProgress}%` }}
             >
-              <div className="absolute right-0 top-1/2 -translate-y-1/2 w-2.5 h-2.5 bg-solarized-cyan rounded-full" />
             </div>
             {bookmarks.map((bookmark, idx) => {
               const position = duration > 0 ? (bookmark.position / duration) * 100 : 0;
@@ -635,13 +629,13 @@ export function AudioPlayer({ onChooseOutput, items, onPlaybackPosition }: Audio
           </span>
         </div>
 
-        <div className="flex items-center justify-between gap-4">
-          <div className="flex items-center gap-2">
+        <div className="sonos-controls">
+          <div className="sonos-transport flex items-center">
             <button
               type="button"
               onClick={() => void (sonosIsPlaying ? sonos.pause() : sonos.play())}
               disabled={sonosTransportDisabled}
-              className="w-9 h-9 flex items-center justify-center rounded-full bg-solarized-cyan text-solarized-base03 hover:bg-solarized-blue disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+              className="sonos-play-toggle flex items-center justify-center"
               aria-label={sonosIsPlaying ? 'Pause Sonos' : 'Play Sonos'}
               title={sonosIsPlaying ? 'Pause Sonos' : 'Play Sonos'}
             >
@@ -650,7 +644,7 @@ export function AudioPlayer({ onChooseOutput, items, onPlaybackPosition }: Audio
             <button
               type="button"
               onClick={() => void handleAddSonosBookmark()}
-              disabled={!sonosSessionActive || !currentItem}
+              disabled={!sonosSessionActive || !currentItem || isSwitchingOutput}
               className={`p-2 rounded transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
                 bookmarkFeedback === 'success'
                   ? 'text-solarized-green bg-solarized-base02'
@@ -665,7 +659,7 @@ export function AudioPlayer({ onChooseOutput, items, onPlaybackPosition }: Audio
             </button>
           </div>
 
-          <div className="flex items-center gap-2 min-w-0 max-w-64 flex-1 justify-end">
+          <div className="sonos-volume flex items-center justify-end">
             <button
               type="button"
               onClick={() => void sonos.setMuted(!sonos.volume?.muted)}

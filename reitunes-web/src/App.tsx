@@ -275,7 +275,6 @@ function AppContent() {
         <AudioPlayer
           onPlaybackPosition={reportPlaybackPosition}
           items={items}
-          onChooseOutput={() => setIsSonosOpen(true)}
         />
         <button
           className="output-button"
@@ -510,7 +509,7 @@ function AppContent() {
           setSearchQuery('');
         }}
       />
-      <SonosModal isOpen={isSonosOpen} onClose={() => setIsSonosOpen(false)} />
+      <SonosModal items={items} isOpen={isSonosOpen} onClose={() => setIsSonosOpen(false)} />
       <SettingsDialog
         isOpen={isSettingsOpen}
         onClose={() => setIsSettingsOpen(false)}

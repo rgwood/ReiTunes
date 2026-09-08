@@ -207,7 +207,7 @@ test('offers Sonos authorization when the server is not connected', async ({ pag
   await page.getByRole('button', { name: 'Sonos', exact: true }).click();
 
   await expect(page.getByRole('heading', { name: 'Sonos' })).toBeVisible();
-  await expect(page.getByText('Choose where new play actions go.')).toBeVisible();
+  await expect(page.getByRole('dialog', { name: 'Sonos' }).getByText('This browser', { exact: true })).toBeVisible();
   await expect(page.getByRole('link', { name: 'Connect Sonos' })).toHaveAttribute(
     'href',
     '/api/sonos/authorize'
@@ -226,7 +226,7 @@ test('opens Sonos after the OAuth callback without sending the marker to the ser
   await expect(page).toHaveURL(/\/$/);
 });
 
-test('switches between Sonos and browser playback without playing twice', async ({ page }) => {
+test('switches between Sonos and browser playback without playing twice', async ({ page }, testInfo) => {
   await page.addInitScript(() => {
     const testWindow = window as typeof window & { __playCalls: number };
     testWindow.__playCalls = 0;
@@ -281,6 +281,8 @@ test('switches between Sonos and browser playback without playing twice', async 
   let sonosMuted = false;
   let rejectNextPlay = false;
   const transportRequests: string[] = [];
+  let rejectPause = false;
+  let pauseGate: Promise<void> | null = null;
   const volumeRequests: Array<Record<string, unknown>> = [];
   await page.route('**/api/sonos/play', async (route) => {
     const request = route.request().postDataJSON() as Record<string, unknown>;
@@ -318,6 +320,12 @@ test('switches between Sonos and browser playback without playing twice', async 
   await page.route('**/api/sonos/groups/group-1/playback/*', async (route) => {
     const command = route.request().url().split('/').at(-1) || '';
     transportRequests.push(command);
+    if (command === 'pause' && rejectPause) {
+      rejectPause = false;
+      await route.fulfill({ status: 503, json: { error: 'Speaker unavailable' } });
+      return;
+    }
+    if (command === 'pause' && pauseGate) await pauseGate;
     sonosPlaybackState =
       command === 'pause' ? 'PLAYBACK_STATE_PAUSED' : 'PLAYBACK_STATE_PLAYING';
     await route.fulfill({ status: 204 });
@@ -448,14 +456,74 @@ test('switches between Sonos and browser playback without playing twice', async 
   expect(sonosPlayRequests[2].allowTakeover).toBe(true);
   await expect(page.getByText('Sonos · Downstairs · Playing')).toBeVisible();
 
+  for (const width of [1440, 2560, 390]) {
+    await page.setViewportSize({ width, height: 900 });
+    const dimensions = await page.evaluate(() => {
+      const rect = (selector: string) => document.querySelector(selector)!.getBoundingClientRect();
+      const transport = rect('.sonos-transport');
+      const title = rect('.sonos-track-title');
+      const progress = rect('.sonos-progress');
+      return {
+        height: rect('.player-bar').height,
+        volumeWidth: rect('.sonos-volume input').width,
+        transportBeforeTitle: transport.right <= title.left,
+        progressBelowTitle: progress.top >= title.bottom,
+        fits: document.documentElement.scrollWidth <= window.innerWidth,
+      };
+    });
+    expect(dimensions.height).toBeLessThanOrEqual(width > 650 ? 44 : 68);
+    expect(dimensions.volumeWidth).toBeLessThanOrEqual(70);
+    expect(dimensions.transportBeforeTitle).toBe(true);
+    expect(dimensions.progressBelowTitle).toBe(true);
+    expect(dimensions.fits).toBe(true);
+    await page.screenshot({ path: testInfo.outputPath(`sonos-${width}.png`) });
+  }
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await expect(page.getByRole('button', { name: 'Change output', exact: true })).toHaveCount(0);
+
+  // A failed pause must not start the browser or claim that output switched.
+  rejectPause = true;
   await page.getByRole('button', { name: 'Sonos', exact: true }).click();
-  await page.getByRole('dialog', { name: 'Sonos' }).getByRole('button', { name: 'Use browser' }).click();
-  await page.getByRole('dialog', { name: 'Sonos' }).getByRole('button', { name: 'Close', exact: true }).click();
-  await trackRow.click();
+  await dialog.getByRole('button', { name: 'Use browser' }).click();
+  await expect(dialog.getByRole('alert')).toContainText('Speaker unavailable');
+  expect(sonosPlaybackState).toBe('PLAYBACK_STATE_PLAYING');
+  expect(await page.evaluate(() => JSON.parse(localStorage.getItem('reitunes-playback-target')!).state.target.kind)).toBe('sonos');
+  expect(await page.evaluate(() => (window as typeof window & { __playCalls: number }).__playCalls)).toBe(0);
+
+  // Hold the acknowledgement to verify ordering and block duplicate handoffs.
+  let releasePause!: () => void;
+  pauseGate = new Promise<void>(resolve => { releasePause = resolve; });
+  await dialog.getByRole('button', { name: 'Use browser' }).click();
+  await expect(dialog.getByRole('button', { name: 'Switching…' })).toBeDisabled();
+  await expect.poll(() => transportRequests).toEqual(['pause', 'play', 'pause', 'pause']);
+  expect(await page.evaluate(() => (window as typeof window & { __playCalls: number }).__playCalls)).toBe(0);
+  releasePause();
+  pauseGate = null;
+  await expect(dialog.getByRole('button', { name: 'Use browser' })).toHaveCount(0);
+  await dialog.getByRole('button', { name: 'Close', exact: true }).click();
   await expect
     .poll(() =>
       page.evaluate(() => (window as typeof window & { __playCalls: number }).__playCalls)
     )
     .toBeGreaterThan(0);
+  expect(sonosPlaybackState).toBe('PLAYBACK_STATE_PAUSED');
+  await page.locator('audio').evaluate(audio => audio.dispatchEvent(new Event('canplay')));
+  await expect.poll(() => page.locator('audio').evaluate(audio => audio.currentTime)).toBe(42);
+  await expect(page.getByRole('button', { name: 'Pause', exact: true })).toBeVisible();
+  await page.evaluate(() => window.dispatchEvent(new CustomEvent('reitunes:sonos', {
+    detail: { targetId: 'group-1', namespace: 'playback', eventType: 'playbackStatus',
+      payload: { playbackState: 'PLAYBACK_STATE_PAUSED', positionMillis: 42_000, reitunesSessionActive: true } },
+  })));
+  await expect(page.getByRole('button', { name: 'Pause', exact: true })).toBeVisible();
+
+  // Moving an already-paused Sonos session back must not autoplay locally.
+  const playCalls = await page.evaluate(() => (window as typeof window & { __playCalls: number }).__playCalls);
+  await page.getByRole('button', { name: 'Sonos', exact: true }).click();
+  await dialog.getByRole('button', { name: 'Use this group' }).click();
+  await dialog.getByRole('button', { name: 'Use browser' }).click();
+  await expect(dialog.getByRole('button', { name: 'Use browser' })).toHaveCount(0);
+  await dialog.getByRole('button', { name: 'Close', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Play', exact: true })).toBeVisible();
+  expect(await page.evaluate(() => (window as typeof window & { __playCalls: number }).__playCalls)).toBe(playCalls);
   expect(sonosPlayRequests).toHaveLength(3);
 });
