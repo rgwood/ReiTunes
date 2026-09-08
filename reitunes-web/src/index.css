@@ -44,14 +44,14 @@ body {
 }
 
 ::-webkit-scrollbar-track {
-  background: #002b36;
+  background: var(--panel, #f0f1f3);
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #586e75;
+  background: var(--scroll-thumb, #a1a7af);
   border-radius: 4px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #839496;
+  background: var(--muted, #60656b);
 }

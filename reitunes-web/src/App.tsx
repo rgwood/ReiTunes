@@ -1,87 +1,74 @@
-import { useState, useCallback, useEffect, useMemo } from 'react';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import {
+  useState,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useDeferredValue,
+} from 'react';
+import {
+  QueryClient,
+  QueryClientProvider,
+  useQuery,
+} from '@tanstack/react-query';
 import { AudioPlayer } from './components/AudioPlayer';
 import { LibraryTable } from './components/LibraryTable';
-import { SearchBar } from './components/SearchBar';
+import { MusicIcon } from './components/MusicIcon';
+import { ImportMusic } from './components/ImportMusic';
 import { QueuePanel } from './components/QueuePanel';
-import { UploadModal } from './components/UploadModal';
-import { DownloadModal } from './components/DownloadModal';
 import { PlaylistSidebar } from './components/PlaylistSidebar';
 import { BookmarkSidebar } from './components/BookmarkSidebar';
 import { SonosModal } from './components/SonosModal';
+import { SettingsDialog } from './components/SettingsDialog';
 import { useLibrary } from './hooks/useLibrary';
 import { useQueueStore } from './hooks/useQueue';
 import { usePlayback } from './hooks/usePlayback';
 import { usePlayerStore } from './stores/playerStore';
 import { usePlaybackTargetStore } from './stores/playbackTargetStore';
-import type { LibraryItem } from './types';
-
-// Toolbar icons
-const Icons = {
-  playlist: (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M9 18V5l12-2v13" />
-      <circle cx="6" cy="18" r="3" />
-      <circle cx="18" cy="16" r="3" />
-    </svg>
-  ),
-  bookmark: (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M6 3h12a1 1 0 0 1 1 1v17l-7-4-7 4V4a1 1 0 0 1 1-1z" />
-    </svg>
-  ),
-  upload: (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-      <polyline points="17 8 12 3 7 8" />
-      <line x1="12" y1="3" x2="12" y2="15" />
-    </svg>
-  ),
-  queue: (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-      <line x1="8" y1="6" x2="21" y2="6" />
-      <line x1="8" y1="12" x2="21" y2="12" />
-      <line x1="8" y1="18" x2="21" y2="18" />
-      <line x1="3" y1="6" x2="3.01" y2="6" />
-      <line x1="3" y1="12" x2="3.01" y2="12" />
-      <line x1="3" y1="18" x2="3.01" y2="18" />
-    </svg>
-  ),
-  download: (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-      <polyline points="7 10 12 15 17 10" />
-      <line x1="12" y1="15" x2="12" y2="3" />
-    </svg>
-  ),
-  sonos: (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M5 8.5a5 5 0 0 1 0 7" />
-      <path d="M8.5 5a10 10 0 0 1 0 14" />
-      <circle cx="3" cy="12" r="1" fill="currentColor" stroke="none" />
-      <rect x="13" y="4" width="8" height="16" rx="2" />
-      <circle cx="17" cy="9" r="1.5" />
-      <circle cx="17" cy="15" r="2.5" />
-    </svg>
-  ),
-};
+import { matchesLibrarySearch } from './utils/libraryBrowser';
+import './App.css';
 
 const queryClient = new QueryClient();
+type Collection = 'all' | 'favourites' | 'recent' | 'unplayed';
+interface Playlist {
+  id: string;
+  name: string;
+  items: Record<string, { library_item_id: string; position: number }>;
+}
 
 function AppContent() {
   const [searchQuery, setSearchQuery] = useState('');
-  const [isQueueOpen, setIsQueueOpen] = useState(false);
-  const [isUploadOpen, setIsUploadOpen] = useState(false);
-  const [isDownloadOpen, setIsDownloadOpen] = useState(false);
-  const [isPlaylistsOpen, setIsPlaylistsOpen] = useState(false);
-  const [isBookmarksOpen, setIsBookmarksOpen] = useState(false);
+  const deferredSearch = useDeferredValue(searchQuery);
+  const [collection, setCollection] = useState<Collection>('all');
+  const [recentCutoff, setRecentCutoff] = useState(
+    () => Date.now() - 30 * 24 * 60 * 60 * 1000
+  );
+  const [panel, setPanel] = useState<
+    'queue' | 'bookmarks' | 'playlists' | null
+  >(null);
+  const [isImportOpen, setIsImportOpen] = useState(false);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [droppedFiles, setDroppedFiles] = useState<File[]>([]);
+  const [isDragging, setIsDragging] = useState(false);
+  const dragDepth = useRef(0);
+  const searchRef = useRef<HTMLInputElement>(null);
+  const playbackPosition = useRef<{ itemId: string; position: number } | null>(
+    null
+  );
+  const reportPlaybackPosition = useCallback(
+    (itemId: string, position: number) => {
+      playbackPosition.current = { itemId, position };
+    },
+    []
+  );
+  const [selectedPlaylistId, setSelectedPlaylistId] = useState<string | null>(
+    null
+  );
   const [isSonosOpen, setIsSonosOpen] = useState(
     () =>
       window.location.hash === '#sonos=connected' ||
       new URLSearchParams(window.location.search).get('sonos') === 'connected'
   );
-  const [selectedPlaylistId, setSelectedPlaylistId] = useState<string | null>(null);
-
   const { items, isLoading, error } = useLibrary();
   const play = usePlayback();
   const {
@@ -92,27 +79,28 @@ function AppContent() {
     clearCurrentItem,
   } = usePlayerStore();
   const playbackTarget = usePlaybackTargetStore((state) => state.target);
-  const { reconcileWithLibrary } = useQueueStore();
+  const { reconcileWithLibrary, setContext, manualQueue } = useQueueStore();
+  const { data: playlists = [] } = useQuery<Playlist[]>({
+    queryKey: ['playlists'],
+    queryFn: async () => {
+      const response = await fetch('/api/playlists');
+      if (!response.ok) throw new Error('Failed to fetch playlists');
+      return response.json();
+    },
+  });
 
-  // Resolve persisted IDs and stale queue snapshots against the current library.
-  // Restored tracks stay paused until the user explicitly resumes playback.
   useEffect(() => {
-    if (isLoading) return;
-
+    if (isLoading || error) return;
     reconcileWithLibrary(items);
-
     if (!currentItemId) return;
     const libraryItem = items.find((item) => item.id === currentItemId);
-    if (!libraryItem) {
-      clearCurrentItem();
-    } else if (!currentItem) {
-      restoreCurrentItem(libraryItem);
-    } else if (currentItem !== libraryItem) {
-      refreshCurrentItem(libraryItem);
-    }
+    if (!libraryItem) clearCurrentItem();
+    else if (!currentItem) restoreCurrentItem(libraryItem);
+    else if (currentItem !== libraryItem) refreshCurrentItem(libraryItem);
   }, [
     items,
     isLoading,
+    error,
     currentItem,
     currentItemId,
     clearCurrentItem,
@@ -121,193 +109,411 @@ function AppContent() {
     restoreCurrentItem,
   ]);
 
-  // Get all random targets: bookmarks + favourited songs (from start)
-  const allRandomTargets = useMemo(() => {
-    const targets: { item: LibraryItem; position: number }[] = [];
-    items.forEach((item) => {
-      Object.values(item.bookmarks).forEach((bookmark) => {
-        targets.push({ item, position: bookmark.position });
-      });
-      if (item.is_favorite) {
-        targets.push({ item, position: 0 });
-      }
-    });
-    return targets;
-  }, [items]);
-
-  const handleRandomBookmark = useCallback(() => {
-    if (allRandomTargets.length === 0) {
-      alert('No bookmarks or favourites found in the library.');
-      return;
-    }
-    const random = allRandomTargets[Math.floor(Math.random() * allRandomTargets.length)];
-    void play(random.item, random.position);
-  }, [allRandomTargets, play]);
-
-  const toggleQueue = useCallback(() => {
-    setIsQueueOpen((prev) => !prev);
-  }, []);
-
-  const toggleUpload = useCallback(() => {
-    setIsUploadOpen((prev) => !prev);
-  }, []);
-
-  const toggleDownload = useCallback(() => {
-    setIsDownloadOpen((prev) => !prev);
-  }, []);
-
-  const togglePlaylists = useCallback(() => {
-    setIsPlaylistsOpen((prev) => !prev);
-    setIsBookmarksOpen(false);
-  }, []);
-
-  const toggleBookmarks = useCallback(() => {
-    setIsBookmarksOpen((prev) => !prev);
-    setIsPlaylistsOpen(false);
-  }, []);
-
   useEffect(() => {
     const url = new URL(window.location.href);
-    const hasSonosQuery = url.searchParams.has('sonos');
-    const hasSonosHash = url.hash === '#sonos=connected';
-    if (hasSonosQuery || hasSonosHash) {
-      url.searchParams.delete('sonos');
-      if (hasSonosHash) url.hash = '';
-      window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`);
-    }
+    // Old experiment links open the same track grid as the home page.
+    url.searchParams.delete('view');
+    url.searchParams.delete('sonos');
+    if (url.hash === '#sonos=connected') url.hash = '';
+    window.history.replaceState(
+      {},
+      '',
+      `${url.pathname}${url.search}${url.hash}`
+    );
   }, []);
 
-  if (error) {
-    return (
-      <div className="flex items-center justify-center h-screen bg-solarized-base03 text-solarized-red">
-        Error loading library: {String(error)}
-      </div>
+  const selectedPlaylist = playlists.find(
+    (playlist) => playlist.id === selectedPlaylistId
+  );
+  const filteredItems = useMemo(() => {
+    const playlistIds = selectedPlaylist
+      ? new Set(
+          Object.values(selectedPlaylist.items).map(
+            (item) => item.library_item_id
+          )
+        )
+      : null;
+    return items.filter((item) => {
+      if (playlistIds && !playlistIds.has(item.id)) return false;
+      if (collection === 'favourites' && !item.is_favorite) return false;
+      if (collection === 'unplayed' && item.play_count !== 0) return false;
+      if (
+        collection === 'recent' &&
+        Date.parse(
+          /Z|[+-]\d\d:\d\d$/.test(item.created_time_utc)
+            ? item.created_time_utc
+            : `${item.created_time_utc}Z`
+        ) < recentCutoff
+      )
+        return false;
+      return matchesLibrarySearch(item, deferredSearch);
+    });
+  }, [items, selectedPlaylist, collection, deferredSearch, recentCutoff]);
+  const moments = useMemo(
+    () =>
+      filteredItems.flatMap((item) =>
+        Object.values(item.bookmarks)
+          .sort((a, b) => a.position - b.position)
+          .map((bookmark) => ({ item, bookmark }))
+      ),
+    [filteredItems]
+  );
+  const nextMoment = useCallback(() => {
+    if (!moments.length) return;
+    const player = usePlayerStore.getState();
+    const position =
+      player.pendingSeek ??
+      (playbackPosition.current?.itemId === currentItemId
+        ? playbackPosition.current.position
+        : player.resumePosition);
+    const inCurrent = moments.find(
+      (entry) =>
+        entry.item.id === currentItemId &&
+        entry.bookmark.position > position + 1
     );
-  }
+    let currentIndex = -1;
+    moments.forEach((entry, index) => {
+      if (entry.item.id === currentItemId) currentIndex = index;
+    });
+    const next = inCurrent || moments[(currentIndex + 1) % moments.length];
+    setContext(
+      filteredItems,
+      filteredItems.findIndex((item) => item.id === next.item.id),
+      'Saved moments',
+      true
+    );
+    void play(next.item, next.bookmark.position);
+  }, [moments, currentItemId, setContext, filteredItems, play]);
+  const randomFavourite = useCallback(() => {
+    const targets = items.flatMap((item) => [
+      ...Object.values(item.bookmarks).map((bookmark) => ({
+        item,
+        position: bookmark.position,
+      })),
+      ...(item.is_favorite ? [{ item, position: 0 }] : []),
+    ]);
+    if (!targets.length) return;
+    const next = targets[Math.floor(Math.random() * targets.length)];
+    void play(next.item, next.position);
+  }, [items, play]);
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (document.querySelector('dialog[open], [role="dialog"]')) return;
+      const editing = (event.target as HTMLElement).closest(
+        'input, textarea, select, [contenteditable="true"]'
+      );
+      if (
+        ((event.metaKey || event.ctrlKey) &&
+          ['k', 'f'].includes(event.key.toLowerCase())) ||
+        (event.key === '/' && !editing)
+      ) {
+        event.preventDefault();
+        searchRef.current?.focus();
+        searchRef.current?.select();
+      }
+      if (
+        (event.ctrlKey || event.metaKey) &&
+        event.key.toLowerCase() === 'e' &&
+        !editing
+      ) {
+        event.preventDefault();
+        randomFavourite();
+      }
+    };
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
+  }, [randomFavourite]);
+
+  const chooseCollection = (next: Collection) => {
+    setCollection(next);
+    setSelectedPlaylistId(null);
+    if (next === 'recent')
+      setRecentCutoff(Date.now() - 30 * 24 * 60 * 60 * 1000);
+  };
+  const togglePanel = (next: typeof panel) =>
+    setPanel(panel === next ? null : next);
 
   return (
-    <div className="h-screen flex flex-col bg-solarized-base03 text-solarized-base1 font-mono overflow-hidden">
-      {/* Header - sticky at top */}
-      <div className="flex-shrink-0 bg-solarized-base03 z-10 border-b border-solarized-base02">
-        <AudioPlayer items={items} onChooseOutput={() => setIsSonosOpen(true)} />
-        <div className="flex justify-between items-center px-4 pb-2">
-          <div className="flex items-center gap-1">
-            <button
-              onClick={togglePlaylists}
-              className={`p-1.5 rounded transition-colors ${
-                isPlaylistsOpen
-                  ? 'text-solarized-cyan bg-solarized-base02'
-                  : 'text-solarized-base0 hover:text-solarized-base1 hover:bg-solarized-base02'
-              }`}
-              title="Playlists"
-              aria-label="Playlists"
-            >
-              {Icons.playlist}
-            </button>
-            <button
-              onClick={toggleBookmarks}
-              className={`p-1.5 rounded transition-colors ${
-                isBookmarksOpen
-                  ? 'text-solarized-cyan bg-solarized-base02'
-                  : 'text-solarized-base0 hover:text-solarized-base1 hover:bg-solarized-base02'
-              }`}
-              title="Bookmarks"
-              aria-label="Bookmarks"
-            >
-              {Icons.bookmark}
-            </button>
-          </div>
-          <div className="flex items-center gap-2">
-            <SearchBar
-              value={searchQuery}
-              onChange={setSearchQuery}
-              onRandomBookmark={handleRandomBookmark}
-            />
-            <button
-              onClick={toggleUpload}
-              className="p-1.5 text-solarized-base0 hover:text-solarized-green hover:bg-solarized-base02 rounded transition-colors"
-              title="Upload"
-            >
-              {Icons.upload}
-            </button>
-            <button
-              onClick={toggleDownload}
-              className="p-1.5 text-solarized-base0 hover:text-solarized-green hover:bg-solarized-base02 rounded transition-colors"
-              title="Download from URL"
-            >
-              {Icons.download}
-            </button>
-            <button
-              onClick={() => setIsSonosOpen(true)}
-              className={`p-1.5 rounded transition-colors flex items-center gap-1.5 max-w-48 ${
-                playbackTarget.kind === 'sonos'
-                  ? 'text-solarized-cyan bg-solarized-base02'
-                  : 'text-solarized-base0 hover:text-solarized-cyan hover:bg-solarized-base02'
-              }`}
-              title={
-                playbackTarget.kind === 'sonos'
-                  ? `Playback output: ${playbackTarget.groupName}`
-                  : 'Playback output: This browser'
+    <div
+      className="music-app"
+      onDragEnter={(event) => {
+        if (isImportOpen || !event.dataTransfer.types.includes('Files')) return;
+        event.preventDefault();
+        dragDepth.current += 1;
+        setIsDragging(true);
+      }}
+      onDragOver={(event) => {
+        if (event.dataTransfer.types.includes('Files')) event.preventDefault();
+      }}
+      onDragLeave={(event) => {
+        if (isImportOpen || !event.dataTransfer.types.includes('Files')) return;
+        dragDepth.current -= 1;
+        if (dragDepth.current <= 0) setIsDragging(false);
+      }}
+      onDrop={(event) => {
+        if (isImportOpen || !event.dataTransfer.types.includes('Files')) return;
+        event.preventDefault();
+        dragDepth.current = 0;
+        setIsDragging(false);
+        if (event.dataTransfer.files.length) {
+          setDroppedFiles(Array.from(event.dataTransfer.files));
+          setIsImportOpen(true);
+        }
+      }}
+    >
+      <header className="player-bar">
+        <span className="app-name">ReiTunes</span>
+        <AudioPlayer
+          onPlaybackPosition={reportPlaybackPosition}
+          items={items}
+          onChooseOutput={() => setIsSonosOpen(true)}
+        />
+        <button
+          className="output-button"
+          onClick={() => setIsSonosOpen(true)}
+          aria-label="Sonos"
+          title="Choose playback output"
+        >
+          <MusicIcon name="speaker" size={14} />
+          <span>
+            {playbackTarget.kind === 'sonos'
+              ? playbackTarget.groupName
+              : 'This browser'}
+          </span>
+        </button>
+        <button
+          className="settings-button"
+          aria-label="Settings"
+          title="Settings"
+          onClick={() => setIsSettingsOpen(true)}
+        >
+          <MusicIcon name="settings" size={16} />
+        </button>
+      </header>
+
+      <div className="library-toolbar">
+        <div className="library-search">
+          <MusicIcon name="search" size={14} />
+          <input
+            ref={searchRef}
+            type="search"
+            aria-label="Search library"
+            placeholder="Search"
+            value={searchQuery}
+            autoComplete="off"
+            onChange={(event) => setSearchQuery(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === 'Escape') {
+                setSearchQuery('');
+                searchRef.current?.blur();
               }
-              aria-label="Sonos"
-            >
-              {Icons.sonos}
-              {playbackTarget.kind === 'sonos' && (
-                <span className="text-xs truncate hidden sm:inline">
-                  {playbackTarget.groupName}
-                </span>
-              )}
-            </button>
-            <button
-              onClick={toggleQueue}
-              className={`p-1.5 rounded transition-colors ${
-                isQueueOpen
-                  ? 'text-solarized-cyan bg-solarized-base02'
-                  : 'text-solarized-base0 hover:text-solarized-base1 hover:bg-solarized-base02'
-              }`}
-              title="Queue"
-            >
-              {Icons.queue}
-            </button>
-          </div>
-        </div>
-      </div>
-
-      {/* Main content area with sidebars */}
-      <div className="flex-grow flex overflow-hidden">
-        {/* Playlist Sidebar - left */}
-        {isPlaylistsOpen && (
-          <PlaylistSidebar
-            selectedPlaylistId={selectedPlaylistId}
-            onSelectPlaylist={setSelectedPlaylistId}
+            }}
           />
-        )}
-
-        {isBookmarksOpen && <BookmarkSidebar items={items} onPlay={play} />}
-
-        {/* Main table - center */}
-        <div className="flex-grow overflow-hidden">
-          {isLoading ? (
-            <div className="flex items-center justify-center h-64 text-solarized-base0">
-              Loading...
-            </div>
+          {searchQuery ? (
+            <button
+              onClick={() => {
+                setSearchQuery('');
+                searchRef.current?.focus();
+              }}
+              aria-label="Clear search"
+            >
+              <MusicIcon name="close" size={13} />
+            </button>
           ) : (
-            <LibraryTable
-              items={items}
-              searchQuery={searchQuery}
-              playlistId={selectedPlaylistId}
-              onSearchChange={setSearchQuery}
-            />
+            <kbd>/</kbd>
           )}
         </div>
-
-        {/* Queue Panel - right */}
-        {isQueueOpen && <QueuePanel />}
+        <select
+          aria-label="Collection"
+          value={
+            selectedPlaylistId ? `playlist:${selectedPlaylistId}` : collection
+          }
+          onChange={(event) =>
+            chooseCollection(event.target.value as Collection)
+          }
+        >
+          <option value="all">All music</option>
+          <option value="favourites">Favourites</option>
+          <option value="recent">Recently added</option>
+          <option value="unplayed">Unplayed</option>
+          {selectedPlaylist && (
+            <option value={`playlist:${selectedPlaylist.id}`}>
+              {selectedPlaylist.name}
+            </option>
+          )}
+        </select>
+        <div className="toolbar-actions">
+          <button onClick={() => setIsImportOpen(true)}>
+            <MusicIcon name="plus" size={14} />
+            Import music
+          </button>
+          <button
+            onClick={() => togglePanel('playlists')}
+            aria-pressed={panel === 'playlists'}
+          >
+            Playlists
+          </button>
+          <button
+            onClick={() => togglePanel('bookmarks')}
+            aria-pressed={panel === 'bookmarks'}
+          >
+            Bookmarks
+          </button>
+          <button
+            onClick={nextMoment}
+            disabled={!moments.length}
+            title="Jump to the next bookmark"
+          >
+            Next saved moment
+          </button>
+          <button
+            aria-label="Queue"
+            aria-pressed={panel === 'queue'}
+            onClick={() => togglePanel('queue')}
+          >
+            Queue{manualQueue.length > 0 && ` (${manualQueue.length})`}
+          </button>
+        </div>
       </div>
 
-      <UploadModal isOpen={isUploadOpen} onClose={() => setIsUploadOpen(false)} />
-      <DownloadModal isOpen={isDownloadOpen} onClose={() => setIsDownloadOpen(false)} />
+      <main className="library-content" aria-label="Music library">
+        {panel === 'playlists' && (
+          <aside className="library-sidepanel">
+            <button
+              className="panel-close"
+              aria-label="Close playlists"
+              onClick={() => setPanel(null)}
+            >
+              <MusicIcon name="close" size={14} />
+            </button>
+            <PlaylistSidebar
+              selectedPlaylistId={selectedPlaylistId}
+              onSelectPlaylist={(id) => {
+                setSelectedPlaylistId(id);
+                setCollection('all');
+              }}
+            />
+          </aside>
+        )}
+        {panel === 'bookmarks' && (
+          <aside className="library-sidepanel">
+            <button
+              className="panel-close"
+              aria-label="Close bookmarks"
+              onClick={() => setPanel(null)}
+            >
+              <MusicIcon name="close" size={14} />
+            </button>
+            <BookmarkSidebar items={filteredItems} onPlay={play} />
+          </aside>
+        )}
+        <div
+          className="library-results"
+          aria-busy={isLoading || searchQuery !== deferredSearch}
+        >
+          {error ? (
+            <div className="library-message" role="alert">
+              Couldn’t load the library.{' '}
+              <button
+                onClick={() =>
+                  void queryClient.invalidateQueries({ queryKey: ['library'] })
+                }
+              >
+                Retry
+              </button>
+            </div>
+          ) : isLoading ? (
+            <div className="library-message" role="status">
+              Loading…
+            </div>
+          ) : (
+            <>
+              <div className="song-table">
+                <LibraryTable
+                  key={selectedPlaylistId || 'library'}
+                  items={filteredItems}
+                  searchQuery=""
+                  playlistId={selectedPlaylistId}
+                  onSearchChange={setSearchQuery}
+                />
+              </div>
+              {!filteredItems.length && (
+                <div className="library-message empty-grid-message">
+                  {items.length === 0 ? (
+                    <>
+                      No music.{' '}
+                      <button onClick={() => setIsImportOpen(true)}>
+                        Import files or a link
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      No matching tracks.{' '}
+                      {searchQuery && (
+                        <button onClick={() => setSearchQuery('')}>
+                          Clear search
+                        </button>
+                      )}
+                    </>
+                  )}
+                </div>
+              )}
+            </>
+          )}
+        </div>
+        {panel === 'queue' && (
+          <aside className="library-sidepanel queue-sidepanel">
+            <button
+              className="panel-close"
+              aria-label="Close queue"
+              onClick={() => setPanel(null)}
+            >
+              <MusicIcon name="close" size={14} />
+            </button>
+            <QueuePanel />
+          </aside>
+        )}
+      </main>
+
+      <footer className="library-status" role="status">
+        <span>
+          {filteredItems.length.toLocaleString()}
+          {filteredItems.length !== items.length &&
+            ` of ${items.length.toLocaleString()}`}{' '}
+          {items.length === 1 ? 'track' : 'tracks'}
+          {selectedPlaylist && ` · ${selectedPlaylist.name}`}
+        </span>
+        {collection === 'recent' && <span>Last 30 days</span>}
+      </footer>
+      {isDragging && (
+        <div className="global-drop-overlay">Drop audio files to import</div>
+      )}
+      <ImportMusic
+        isOpen={isImportOpen}
+        onClose={() => setIsImportOpen(false)}
+        droppedFiles={droppedFiles}
+        onDroppedFilesConsumed={() => setDroppedFiles([])}
+        onImported={() => {
+          setIsImportOpen(false);
+          chooseCollection('recent');
+          setSearchQuery('');
+        }}
+      />
       <SonosModal isOpen={isSonosOpen} onClose={() => setIsSonosOpen(false)} />
+      <SettingsDialog
+        isOpen={isSettingsOpen}
+        onClose={() => setIsSettingsOpen(false)}
+        outputName={
+          playbackTarget.kind === 'sonos'
+            ? playbackTarget.groupName
+            : 'This browser'
+        }
+        onChooseOutput={() => {
+          setIsSettingsOpen(false);
+          setIsSonosOpen(true);
+        }}
+      />
     </div>
   );
 }

@@ -20,7 +20,7 @@ interface QueueState extends PersistedQueueState {
   addNext: (item: LibraryItem) => void;
   removeFromManualQueue: (index: number) => void;
   moveManualQueueItem: (fromIndex: number, toIndex: number) => void;
-  setContext: (items: LibraryItem[], startIndex: number, name: string) => void;
+  setContext: (items: LibraryItem[], startIndex: number, name: string, preserveManualQueue?: boolean) => void;
   playNext: () => LibraryItem | null;
   playPrevious: () => LibraryItem | null;
   clearManualQueue: () => void;
@@ -73,12 +73,12 @@ export const useQueueStore = create<QueueState>()(
         return { manualQueue: newQueue };
       }),
 
-      setContext: (items, startIndex, name) => set({
+      setContext: (items, startIndex, name, preserveManualQueue = false) => set((state) => ({
         contextItems: items,
         contextIndex: startIndex,
         contextName: name,
-        manualQueue: [],
-      }),
+        manualQueue: preserveManualQueue ? state.manualQueue : [],
+      })),
 
       playNext: () => {
         const state = get();

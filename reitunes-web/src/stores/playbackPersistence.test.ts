@@ -89,6 +89,15 @@ describe('playback persistence', () => {
     expect(reconcileLibraryItems(saved, current)).toEqual([current[0]]);
   });
 
+  it('preserves deliberate queue additions when jumping to a saved moment', () => {
+    const queued = item('queued');
+    const mix = item('mix');
+    useQueueStore.getState().addToQueue(queued);
+    useQueueStore.getState().setContext([mix], 0, 'Saved moments', true);
+    expect(useQueueStore.getState().manualQueue).toEqual([queued]);
+    expect(useQueueStore.getState().playNext()).toEqual(queued);
+  });
+
   it('keeps the context index attached to the same track after reconciliation', () => {
     useQueueStore.setState({
       contextItems: [item('deleted'), item('current', 'Old name'), item('next')],

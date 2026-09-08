@@ -1,0 +1,15 @@
+.sonos-dialog {
+  width: min(560px, calc(100vw - 2rem));
+  max-width: none;
+  max-height: 80vh;
+  margin: auto;
+  padding: 0;
+  border: 0;
+  overflow: visible;
+  background: transparent;
+  color: var(--text);
+}
+
+.sonos-dialog::backdrop {
+  background: color-mix(in srgb, var(--surface) 65%, transparent);
+}

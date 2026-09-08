@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { usePlaybackTargetStore } from '../stores/playbackTargetStore';
 import { usePlayerStore } from '../stores/playerStore';
+import './SonosModal.css';
 
 interface SonosStatus {
   configured: boolean;
@@ -56,6 +57,7 @@ async function fetchJson<T>(url: string): Promise<T> {
 }
 
 export function SonosModal({ isOpen, onClose }: SonosModalProps) {
+  const dialogRef = useRef<HTMLDialogElement>(null);
   const [status, setStatus] = useState<SonosStatus | null>(null);
   const [households, setHouseholds] = useState<DiscoveredHousehold[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -102,6 +104,13 @@ export function SonosModal({ isOpen, onClose }: SonosModalProps) {
   useEffect(() => {
     if (isOpen) void discover();
   }, [discover, isOpen]);
+
+  useEffect(() => {
+    const dialog = dialogRef.current;
+    if (!dialog) return;
+    if (isOpen && !dialog.open) dialog.showModal();
+    if (!isOpen && dialog.open) dialog.close();
+  }, [isOpen]);
 
   const disconnect = useCallback(async () => {
     setIsLoading(true);
@@ -160,15 +169,21 @@ export function SonosModal({ isOpen, onClose }: SonosModalProps) {
     [playbackError, setSonosTarget, takeoverRequired, target]
   );
 
-  if (!isOpen) return null;
-
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+    <dialog
+      ref={dialogRef}
+      className="sonos-dialog"
+      aria-labelledby="sonos-heading"
+      onCancel={(event) => {
+        event.preventDefault();
+        onClose();
+      }}
+      onClick={(event) => {
+        if (event.target === event.currentTarget) onClose();
+      }}
+    >
       <div
-        className="bg-solarized-base02 border border-solarized-blue rounded-lg p-6 w-[560px] max-w-[calc(100%_-_2rem)] max-h-[80vh] flex flex-col"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="sonos-heading"
+        className="bg-solarized-base02 border border-solarized-blue rounded-lg p-6 w-full max-h-[80vh] flex flex-col"
       >
         <div className="flex justify-between items-center mb-4">
           <div>
@@ -339,6 +354,6 @@ export function SonosModal({ isOpen, onClose }: SonosModalProps) {
           </button>
         </div>
       </div>
-    </div>
+    </dialog>
   );
 }

@@ -88,9 +88,10 @@ function formatTime(seconds: number): string {
 interface AudioPlayerProps {
   onChooseOutput: () => void;
   items: LibraryItem[];
+  onPlaybackPosition?: (itemId: string, position: number) => void;
 }
 
-export function AudioPlayer({ onChooseOutput, items }: AudioPlayerProps) {
+export function AudioPlayer({ onChooseOutput, items, onPlaybackPosition }: AudioPlayerProps) {
   const audioRef = useRef<HTMLAudioElement>(null);
   const progressRef = useRef<HTMLDivElement>(null);
   const lastPlayedIdRef = useRef<string | null>(null);
@@ -98,6 +99,7 @@ export function AudioPlayer({ onChooseOutput, items }: AudioPlayerProps) {
   const lastCheckpointRef = useRef(-1);
   const isChangingSourceRef = useRef(false);
   const wasSonosSendingRef = useRef(false);
+  const sonosPositionReadyAfterRef = useRef(0);
 
   const [currentTime, setCurrentTimeLocal] = useState(0);
   const [duration, setDurationLocal] = useState(0);
@@ -129,9 +131,25 @@ export function AudioPlayer({ onChooseOutput, items }: AudioPlayerProps) {
     const wasSending = wasSonosSendingRef.current;
     wasSonosSendingRef.current = isSending;
     if (target.kind === 'sonos' && wasSending && !isSending && !playbackError) {
+      // Wait for a fresh observation after a seek, even within the same track.
+      sonosPositionReadyAfterRef.current = Date.now();
       void refreshSonosPlayback().catch(() => undefined);
     }
   }, [isSending, playbackError, refreshSonosPlayback, target.kind]);
+
+  useEffect(() => {
+    if (target.kind === 'sonos' && isSending && currentItem) {
+      onPlaybackPosition?.(currentItem.id, resumePosition);
+      return;
+    }
+    if (
+      target.kind !== 'sonos' || isSending || playbackError || !currentItem ||
+      !sonos.playback?.reitunesSessionActive ||
+      sonos.playback.sourceItemId !== currentItem.id ||
+      sonos.playback.observedAt < sonosPositionReadyAfterRef.current
+    ) return;
+    onPlaybackPosition?.(currentItem.id, sonos.positionMillis / 1000);
+  }, [currentItem, isSending, onPlaybackPosition, playbackError, resumePosition, sonos.playback, sonos.positionMillis, target.kind]);
 
   // Handle song changes
   useEffect(() => {
@@ -198,6 +216,10 @@ export function AudioPlayer({ onChooseOutput, items }: AudioPlayerProps) {
       audio.currentTime = pendingSeek;
       setCurrentTimeLocal(pendingSeek);
       clearPendingSeek();
+      const itemId = usePlayerStore.getState().currentItemId;
+      if (itemId && itemId === lastItemIdRef.current) {
+        onPlaybackPosition?.(itemId, audio.currentTime);
+      }
     };
 
     if (audio.readyState >= 2) {
@@ -210,7 +232,7 @@ export function AudioPlayer({ onChooseOutput, items }: AudioPlayerProps) {
       audio.addEventListener('canplay', handleCanPlay);
       return () => audio.removeEventListener('canplay', handleCanPlay);
     }
-  }, [pendingSeek, clearPendingSeek, target.kind]);
+  }, [pendingSeek, clearPendingSeek, currentItem?.id, onPlaybackPosition, target.kind]);
 
   // Sync volume
   useEffect(() => {
@@ -220,17 +242,26 @@ export function AudioPlayer({ onChooseOutput, items }: AudioPlayerProps) {
   }, [volume, isMuted]);
 
   const handleTimeUpdate = useCallback(() => {
-    if (audioRef.current) {
-      const position = audioRef.current.currentTime;
-      setCurrentTimeLocal(position);
+    const audio = audioRef.current;
+    const player = usePlayerStore.getState();
+    // Ignore the old source while a new track/bookmark seek is still pending.
+    if (
+      !audio || usePlaybackTargetStore.getState().target.kind !== 'browser' ||
+      isChangingSourceRef.current || player.pendingSeek !== null ||
+      !player.currentItemId || player.currentItemId !== lastItemIdRef.current
+    ) return;
 
-      const checkpoint = Math.floor(position / 5);
-      if (checkpoint !== lastCheckpointRef.current) {
-        lastCheckpointRef.current = checkpoint;
-        setResumePosition(position);
-      }
+    const position = audio.currentTime;
+    setCurrentTimeLocal(position);
+    onPlaybackPosition?.(player.currentItemId, position);
+
+    // The live callback does not increase the persistence frequency.
+    const checkpoint = Math.floor(position / 5);
+    if (checkpoint !== lastCheckpointRef.current) {
+      lastCheckpointRef.current = checkpoint;
+      setResumePosition(position);
     }
-  }, [setResumePosition]);
+  }, [onPlaybackPosition, setResumePosition]);
 
   const handleLoadedMetadata = useCallback(() => {
     if (audioRef.current) {
@@ -472,7 +503,7 @@ export function AudioPlayer({ onChooseOutput, items }: AudioPlayerProps) {
 
   if (target.kind === 'sonos') {
     return (
-      <div className="px-4 pt-3 pb-2">
+      <div className="sonos-player-layout px-4 pt-3 pb-2">
         <audio
           ref={audioRef}
           preload="metadata"
@@ -632,7 +663,7 @@ export function AudioPlayer({ onChooseOutput, items }: AudioPlayerProps) {
   }
 
   return (
-    <div className="px-4 pt-3 pb-2">
+    <div className="player-layout px-4 pt-3 pb-2">
       {/* Hidden audio element */}
       <audio
         ref={audioRef}
@@ -645,7 +676,7 @@ export function AudioPlayer({ onChooseOutput, items }: AudioPlayerProps) {
       />
 
       {/* Now playing info - compact */}
-      <div className="text-sm text-solarized-base1 mb-2 truncate">
+      <div className="player-now-playing text-sm text-solarized-base1 mb-2 truncate">
         {currentItem ? (
           <>
             <span className="text-solarized-blue">{currentItem.name}</span>
@@ -659,7 +690,7 @@ export function AudioPlayer({ onChooseOutput, items }: AudioPlayerProps) {
       </div>
 
       {/* Progress bar */}
-      <div className="flex items-center gap-3 mb-2">
+      <div className="player-progress flex items-center gap-3 mb-2">
         <span className="text-xs text-solarized-base0 w-10 text-right tabular-nums">
           {formatTime(currentTime)}
         </span>
@@ -700,7 +731,7 @@ export function AudioPlayer({ onChooseOutput, items }: AudioPlayerProps) {
       </div>
 
       {/* Controls row - compact, inline */}
-      <div className="flex items-center justify-between">
+      <div className="player-controls flex items-center justify-between">
         {/* Left: shuffle */}
         <div className="flex items-center">
           <button

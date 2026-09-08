@@ -78,14 +78,15 @@ function formatBookmarks(bookmarks: Record<string, Bookmark>): React.ReactNode {
     const seconds = Math.floor(bookmark.position % 60);
     const timeString = `${minutes}:${seconds.toString().padStart(2, '0')}`;
     return (
-      <span
+      <button
+        type="button"
         key={id}
         className="bookmark-emoji cursor-pointer hover:underline decoration-solarized-blue decoration-2 rounded"
         data-position={bookmark.position}
         title={bookmark.label ? `${bookmark.label} · ${timeString}` : timeString}
       >
         {bookmark.emoji || '\u{1F516}'}
-      </span>
+      </button>
     );
   });
 }
@@ -113,7 +114,7 @@ function formatCreatedTime(value: string, short = false): string {
 }
 
 export function LibraryTable({ items, searchQuery, playlistId, onSearchChange }: LibraryTableProps) {
-  const [sorting, setSorting] = useState<SortingState>([
+  const [sorting, setSorting] = useState<SortingState>(playlistId ? [] : [
     { id: 'created_time_utc', desc: true },
   ]);
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
@@ -256,7 +257,7 @@ export function LibraryTable({ items, searchQuery, playlistId, onSearchChange }:
     columnResizeMode: 'onChange',
   });
 
-  const handleRowClick = useCallback((item: LibraryItem, rowIndex: number, e: React.MouseEvent) => {
+  const handleRowClick = useCallback((item: LibraryItem, rowIndex: number, e: React.MouseEvent | React.KeyboardEvent) => {
     // Don't play if clicking a bookmark or editing
     const target = e.target as HTMLElement;
     if (target.classList.contains('bookmark-emoji') || editingCell) {
@@ -382,7 +383,7 @@ export function LibraryTable({ items, searchQuery, playlistId, onSearchChange }:
   return (
     <div className="px-5 h-full flex flex-col">
       <div className="overflow-auto flex-grow">
-        <table className={`w-full border-collapse table-fixed ${table.getState().columnSizingInfo.isResizingColumn ? 'select-none' : ''}`}>
+        <table aria-label="Tracks" className={`w-full border-collapse table-fixed ${table.getState().columnSizingInfo.isResizingColumn ? 'select-none' : ''}`}>
           <thead className="sticky top-0 bg-solarized-base02">
             {table.getHeaderGroups().map((headerGroup) => (
               <tr key={headerGroup.id}>
@@ -392,7 +393,8 @@ export function LibraryTable({ items, searchQuery, playlistId, onSearchChange }:
                     className="relative text-left px-2 py-1 border-b border-solarized-base01 cursor-pointer hover:bg-solarized-base01 whitespace-nowrap overflow-hidden text-ellipsis"
                     style={{ width: header.getSize() }}
                   >
-                    <div
+                    <button
+                      type="button"
                       className="flex items-center gap-1"
                       onClick={header.column.getToggleSortingHandler()}
                     >
@@ -401,7 +403,7 @@ export function LibraryTable({ items, searchQuery, playlistId, onSearchChange }:
                         asc: ' \u25B2',
                         desc: ' \u25BC',
                       }[header.column.getIsSorted() as string] ?? null}
-                    </div>
+                    </button>
                     <div
                       onMouseDown={header.getResizeHandler()}
                       onTouchStart={header.getResizeHandler()}
@@ -421,6 +423,14 @@ export function LibraryTable({ items, searchQuery, playlistId, onSearchChange }:
               return (
                 <tr
                   key={row.id}
+                  aria-current={isCurrentlyPlaying ? 'true' : undefined}
+                  tabIndex={0}
+                  onKeyDown={(event) => {
+                    if (event.target === event.currentTarget && (event.key === 'Enter' || event.key === ' ')) {
+                      event.preventDefault();
+                      handleRowClick(row.original, rowIndex, event);
+                    }
+                  }}
                   className={`hover:bg-solarized-base02 cursor-pointer ${isCurrentlyPlaying ? 'bg-solarized-base02' : ''}`}
                   onClick={(e) => handleRowClick(row.original, rowIndex, e)}
                   onContextMenu={(e) => handleContextMenu(e, row.original)}
@@ -475,7 +485,7 @@ export function LibraryTable({ items, searchQuery, playlistId, onSearchChange }:
       {/* Context Menu */}
       {contextMenu && (
         <div
-          className="fixed z-50 bg-solarized-base02 border border-solarized-blue rounded shadow-lg py-1 min-w-32"
+          className="library-context-menu fixed z-50 bg-solarized-base02 border border-solarized-blue rounded shadow-lg py-1 min-w-32"
           style={{ left: contextMenu.x, top: contextMenu.y }}
           onClick={(e) => e.stopPropagation()}
         >

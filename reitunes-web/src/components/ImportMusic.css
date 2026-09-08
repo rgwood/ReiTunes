@@ -1,0 +1,92 @@
+.import-music {
+  width: min(560px, calc(100vw - 24px));
+  max-height: calc(100dvh - 32px);
+  margin: auto;
+  padding: 0;
+  color: var(--text, #252525);
+  background: var(--surface, #fff);
+  border: 1px solid var(--border-strong, #c7c7c7);
+  border-radius: 4px;
+  box-shadow: 0 8px 30px color-mix(in srgb, var(--text, #252525) 20%, transparent);
+  overflow: auto;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.import-music::backdrop { background: color-mix(in srgb, var(--surface, #fff) 65%, transparent); }
+.import-music * { box-sizing: border-box; }
+.import-music svg { width: 14px; height: 14px; flex-shrink: 0; }
+.import-music button { font: inherit; cursor: pointer; }
+.import-music button:disabled, .import-music input:disabled { cursor: not-allowed; opacity: .5; }
+.import-music button:focus-visible, .import-music input:focus-visible { outline: 2px solid var(--accent, #3766a0); outline-offset: 2px; }
+.import-music [hidden] { display: none !important; }
+.import-music__body { padding: 12px 14px 0; }
+.import-music__header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.import-music__header h2 { font-size: 14px; font-weight: 650; line-height: 1.4; margin: 0; }
+.import-music__close, .import-music__remove { display: grid; place-items: center; width: 24px; height: 24px; padding: 4px; border: 0; background: transparent; color: var(--muted, #626262); border-radius: 2px; flex-shrink: 0; }
+.import-music__close:hover, .import-music__remove:hover { background: var(--hover, #dedede); color: var(--text, #252525); }
+.import-music__tabs { display: flex; gap: 16px; margin-top: 8px; border-bottom: 1px solid var(--line, #d3d3d3); }
+.import-music__tabs button { color: var(--muted, #626262); background: none; border: 0; border-bottom: 2px solid transparent; padding: 6px 4px; margin-bottom: -1px; font-size: 12px; font-weight: 600; min-width: 40px; }
+.import-music__tabs button[aria-selected="true"] { color: var(--text, #252525); border-bottom-color: var(--accent, #3766a0); }
+.import-music__panel { padding-top: 12px; }
+.import-music__dropzone { padding: 0; }
+.import-music__dropzone.is-dragging { outline: 1px dashed var(--accent, #3766a0); outline-offset: 4px; background: var(--accent-soft, #eaf0f7); }
+.import-music__dropzone p { font-size: 12px; color: var(--muted, #626262); margin: 8px 0 0; line-height: 1.4; }
+.import-music__choose { display: flex; gap: 6px; flex-wrap: wrap; }
+.import-music__button { display: inline-flex; align-items: center; justify-content: center; gap: 5px; min-height: 28px; padding: 4px 10px; border: 1px solid var(--border-strong, #c7c7c7); border-radius: 3px; background: var(--panel, #f4f4f4); color: var(--text, #252525); font-size: 12px !important; font-weight: 500 !important; line-height: 1.4; white-space: nowrap; }
+.import-music__button:hover:not(:disabled) { background: var(--hover, #dedede); }
+.import-music__button--solid { border-color: var(--accent, #3766a0); color: var(--accent-text, #fff); background: var(--accent, #3766a0); }
+.import-music__button--solid:hover:not(:disabled) { background: color-mix(in srgb, var(--accent, #3766a0), var(--text, #252525) 12%); }
+.import-music__notice { border-left: 2px solid var(--warning, #765315); padding: 4px 8px; font-size: 12px; line-height: 1.4; margin: 8px 0 0; color: var(--warning, #765315); }
+.import-music__selection { margin-top: 12px; }
+.import-music__selection-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 6px; }
+.import-music__selection-heading > div { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.import-music__selection-heading h3 { font-size: 12px; line-height: 1.4; font-weight: 600; margin: 0; }
+.import-music__selection-heading p { font-size: 12px; color: var(--muted, #626262); margin: 0; }
+.import-music__text-button { padding: 2px 0; border: 0; background: none; color: var(--muted, #626262); font-size: 12px !important; text-decoration: underline; text-underline-offset: 2px; flex-shrink: 0; }
+.import-music__file-list { list-style: none; padding: 0; margin: 0; max-height: 280px; overflow: auto; overscroll-behavior: contain; border-bottom: 1px solid var(--line, #ddd); }
+.import-music__file { display: flex; gap: 8px; align-items: center; padding: 2px 4px; min-height: 29px; border-top: 1px solid var(--line, #ddd); }
+.import-music__file:nth-child(even) { background: var(--alternate, #f7f7f7); }
+.import-music__file-detail { min-width: 0; flex: 1; }
+.import-music__file-detail strong { display: block; font-size: 12px; font-weight: 400; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.import-music__file-detail > span { display: block; font-size: 12px; margin-top: 2px; overflow-wrap: anywhere; line-height: 1.4; }
+.import-music__file-size { width: 60px; text-align: right; flex-shrink: 0; color: var(--muted, #626262); font-size: 12px; font-variant-numeric: tabular-nums; }
+.import-music__file-status { display: flex; align-items: center; justify-content: flex-end; gap: 4px; width: 76px; flex-shrink: 0; color: var(--muted, #626262); font-size: 12px; }
+.import-music__file.is-imported { padding-right: 36px; }
+.import-music__file.is-imported .import-music__file-status { color: var(--success, #376548); }
+.import-music__file.is-error .import-music__file-status, .import-music__file.is-error .import-music__file-detail > span { color: var(--error, #a23027); }
+.import-music__file.is-importing .import-music__file-status { color: var(--accent, #3766a0); }
+.import-music__spinner { width: 10px; height: 10px; border: 1px solid var(--line, #ddd); border-top-color: var(--accent, #3766a0); border-radius: 50%; animation: import-spin .7s linear infinite; }
+@keyframes import-spin { to { transform: rotate(360deg); } }
+.import-music__progress { appearance: none; width: 100%; height: 3px; display: block; border: none; margin: 6px 0; background: var(--line, #ddd); overflow: hidden; }
+.import-music__progress::-webkit-progress-bar { background: var(--line, #ddd); }
+.import-music__progress::-webkit-progress-value { background: var(--accent, #3766a0); }
+.import-music__progress::-moz-progress-bar { background: var(--accent, #3766a0); }
+.import-music__footer { display: flex; gap: 8px; align-items: center; justify-content: space-between; border-top: 1px solid var(--line, #ddd); margin: 12px -14px 0; padding: 8px 14px; background: var(--header, #f4f4f4); }
+.import-music__footer > p { font-size: 12px; color: var(--muted, #626262); line-height: 1.4; margin: 0; }
+.import-music__actions { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
+.import-music__label { display: block; font-size: 12px; font-weight: 500; margin-bottom: 4px; }
+.import-music__url { width: 100%; min-height: 28px; padding: 5px 7px; border: 1px solid var(--border-strong, #c7c7c7); border-radius: 2px; background: var(--input, #fff); color: var(--text, #252525); font: inherit; font-size: 13px; }
+.import-music__url::placeholder { color: var(--muted, #626262); }
+.import-music__download-types { padding: 0; margin: 10px 0 0; border: 0; display: flex; gap: 16px; }
+.import-music__download-types legend { float: left; font-size: 12px; font-weight: 500; margin-right: 12px; }
+.import-music__download-types label { display: flex; gap: 5px; align-items: center; font-size: 12px; cursor: pointer; }
+.import-music__download-types input { accent-color: var(--accent, #3766a0); width: 13px; height: 13px; margin: 0; }
+.import-music__download-result { display: flex; gap: 6px; padding: 8px 0; color: var(--success, #376548); border-top: 1px solid var(--line, #ddd); margin-top: 10px; }
+.import-music__download-result > svg { margin-top: 1px; }
+.import-music__download-result strong { display: block; font-size: 12px; font-weight: 600; }
+.import-music__download-result p { margin: 3px 0 0; font-size: 12px; line-height: 1.4; overflow-wrap: anywhere; }
+.import-music__error { color: var(--error, #a23027); border-left: 2px solid currentColor; font-size: 12px; line-height: 1.4; padding: 4px 8px; margin: 10px 0 0; overflow-wrap: anywhere; }
+
+@media (max-width: 480px) {
+  .import-music__footer { flex-wrap: wrap; }
+  .import-music__actions { margin-left: auto; }
+  .import-music__file { gap: 5px; }
+  .import-music__file-size { width: 52px; }
+  .import-music__file-status { width: 68px; }
+  .import-music__file.is-imported { padding-right: 33px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .import-music__spinner { animation-duration: 2s; }
+}

@@ -62,7 +62,7 @@ test('shows, filters, edits and deletes bookmarks', async ({ page }) => {
   });
 
   await page.goto('/');
-  await page.getByRole('button', { name: 'Bookmarks' }).click();
+  await page.locator('.library-toolbar').getByRole('button', { name: 'Bookmarks' }).click();
 
   await expect(page.getByRole('heading', { name: 'Bookmarks' })).toBeVisible();
   await expect(page.getByText('Guitar entrance')).toBeVisible();
@@ -79,7 +79,7 @@ test('shows, filters, edits and deletes bookmarks', async ({ page }) => {
   await editButton.click();
   await page.getByRole('textbox', { name: 'Bookmark label for Northern Sky' }).fill('First chorus');
   await page.getByRole('textbox', { name: 'Bookmark emoji for Northern Sky' }).fill('🔥');
-  await page.getByRole('button', { name: 'Save' }).click();
+  await page.getByRole('button', { name: 'Save', exact: true }).click();
 
   await expect.poll(() => updateBody).toEqual({ label: 'First chorus', emoji: '🔥' });
 

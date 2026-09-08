@@ -1,0 +1,121 @@
+.settings-button {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  padding: 3px 6px;
+  border-radius: 2px;
+  font: inherit;
+  flex-shrink: 0;
+}
+.settings-button:hover {
+  background: var(--hover);
+}
+.settings-dialog {
+  width: min(360px, calc(100vw - 24px));
+  max-height: calc(100dvh - 24px);
+  margin: auto;
+  padding: 0;
+  overflow: auto;
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  background: var(--surface);
+  color: var(--text);
+  font:
+    12px/1.4 Arial,
+    Helvetica,
+    sans-serif;
+  box-shadow: 0 6px 24px #0003;
+}
+.settings-dialog::backdrop {
+  background: color-mix(in srgb, var(--surface) 65%, transparent);
+}
+.settings-content {
+  padding: 10px 12px 0;
+}
+.settings-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.settings-header h2 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+}
+.settings-close {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 2px;
+}
+.settings-close:hover {
+  background: var(--hover);
+}
+.settings-dialog section {
+  margin-top: 12px;
+}
+.settings-dialog h3 {
+  font-size: 12px;
+  font-weight: 600;
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 4px;
+  margin: 0 0 6px;
+}
+.settings-field {
+  display: grid;
+  grid-template-columns: 78px minmax(0, 1fr);
+  gap: 8px;
+  align-items: center;
+  margin: 5px 0;
+}
+.settings-field select {
+  min-width: 0;
+  height: 27px;
+  padding: 2px 5px;
+  color: var(--text);
+  background: var(--input);
+  border: 1px solid var(--border-strong);
+  border-radius: 2px;
+  font: inherit;
+}
+.settings-field select:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+.settings-output {
+  display: grid;
+  grid-template-columns: 62px minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+}
+.settings-output > span:nth-child(2) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.settings-output button,
+.settings-dialog footer button {
+  padding: 4px 8px;
+  min-height: 27px;
+  background: var(--panel);
+  border: 1px solid var(--border-strong);
+  border-radius: 2px;
+  font: inherit;
+}
+.settings-output button:hover,
+.settings-dialog footer button:hover {
+  background: var(--hover);
+}
+.settings-dialog footer {
+  display: flex;
+  justify-content: flex-end;
+  margin: 12px -12px 0;
+  padding: 7px 12px;
+  background: var(--panel);
+  border-top: 1px solid var(--line);
+}
+.settings-dialog footer button {
+  min-width: 60px;
+}

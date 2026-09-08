@@ -1,14 +1,17 @@
-import { StrictMode } from 'react'
-import { createRoot } from 'react-dom/client'
-import './index.css'
-import App from './App.tsx'
-import { enableRemoteLogging } from './utils/remoteLogger'
+import { StrictMode } from 'react';
+import { createRoot } from 'react-dom/client';
+import './index.css';
+import App from './App.tsx';
+import { enableRemoteLogging } from './utils/remoteLogger';
+import { initializeTheme } from './themes';
+
+initializeTheme();
 
 // Enable remote logging in development so frontend logs appear in `just logs`
-enableRemoteLogging()
+enableRemoteLogging();
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <App />
-  </StrictMode>,
-)
+  </StrictMode>
+);
