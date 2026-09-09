@@ -1094,12 +1094,47 @@ struct DownloadRequest {
     dl_type: String,
 }
 
+fn single_video_download_url(input: &str) -> String {
+    let input = input.trim();
+    let Ok(mut url) = reqwest::Url::parse(input) else {
+        return input.to_string();
+    };
+    let host = url.host_str().unwrap_or_default();
+    let is_video = match host {
+        "youtu.be" | "www.youtu.be" => !url.path().trim_matches('/').is_empty(),
+        "youtube.com" | "www.youtube.com" | "m.youtube.com" | "music.youtube.com" => {
+            (url.path() == "/watch"
+                && url.query_pairs().any(|(key, value)| key == "v" && !value.is_empty()))
+                || ["/shorts/", "/live/", "/embed/"]
+                    .iter()
+                    .any(|prefix| url.path().starts_with(prefix))
+        }
+        _ => false,
+    };
+    if !is_video {
+        return input.to_string();
+    }
+    // YouTube's copied video links can include an enormous radio playlist.
+    // Keep the video and its other parameters, but don't import the whole mix.
+    let pairs: Vec<(String, String)> = url
+        .query_pairs()
+        .filter(|(key, _)| !matches!(key.as_ref(), "list" | "index" | "start_radio" | "playnext"))
+        .map(|(key, value)| (key.into_owned(), value.into_owned()))
+        .collect();
+    url.set_query(None);
+    if !pairs.is_empty() {
+        url.query_pairs_mut().extend_pairs(pairs);
+    }
+    url.to_string()
+}
+
 /// Forward a request to the downloader service running on `potato-pi`, which
 /// queues the download and pushes the finished track into ReiTunes itself.
 #[debug_handler]
 async fn download_handler(
-    JsonExtractor(req): JsonExtractor<DownloadRequest>,
+    JsonExtractor(mut req): JsonExtractor<DownloadRequest>,
 ) -> Result<impl IntoResponse, (StatusCode, String)> {
+    req.url = single_video_download_url(&req.url);
     if req.url.trim().is_empty() {
         return Err((StatusCode::BAD_REQUEST, "URL must not be empty".to_string()));
     }
@@ -1135,6 +1170,11 @@ async fn download_handler(
         ));
     }
 
+    info!(
+        source_host = reqwest::Url::parse(&req.url).ok().and_then(|url| url.host_str().map(str::to_owned)),
+        download_type = %req.dl_type,
+        "Download accepted by worker"
+    );
     Ok(body)
 }
 
@@ -1681,6 +1721,47 @@ impl fmt::Debug for AppError {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn youtube_video_imports_do_not_follow_playlists() {
+        for (input, expected) in [
+            (
+                "https://www.youtube.com/watch?v=J6j-iUloB3o&list=RDJ6j-iUloB3o&start_radio=1",
+                "https://www.youtube.com/watch?v=J6j-iUloB3o",
+            ),
+            (
+                " https://m.youtube.com/watch?list=PL123&v=J6j-iUloB3o&index=5&t=30 ",
+                "https://m.youtube.com/watch?v=J6j-iUloB3o&t=30",
+            ),
+            (
+                "https://youtu.be/J6j-iUloB3o?list=RD123&playnext=1",
+                "https://youtu.be/J6j-iUloB3o",
+            ),
+            (
+                "https://www.youtube.com/shorts/J6j-iUloB3o?list=PL123",
+                "https://www.youtube.com/shorts/J6j-iUloB3o",
+            ),
+            (
+                "https://music.youtube.com/watch?v=J6j-iUloB3o&list=PL123",
+                "https://music.youtube.com/watch?v=J6j-iUloB3o",
+            ),
+        ] {
+            assert_eq!(single_video_download_url(input), expected);
+        }
+    }
+
+    #[test]
+    fn other_download_urls_keep_their_query_parameters() {
+        for url in [
+            "https://example.com/watch?v=123&list=456&index=7",
+            "https://youtube.com.example.com/watch?v=123&list=456",
+            "https://www.youtube.com/playlist?list=PL123",
+            "https://www.youtube.com/watch?list=PL123",
+            "https://www.youtube.com/watch?v=J6j-iUloB3o",
+        ] {
+            assert_eq!(single_video_download_url(url), url);
+        }
+    }
 
     #[test]
     fn deserializes_sonos_play_request_from_frontend_json() {
