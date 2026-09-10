@@ -687,7 +687,7 @@ export function AudioPlayer({ items, onPlaybackPosition }: AudioPlayerProps) {
                   .then(() => setSonosVolumeDraft(null))
               }
               disabled={!sonos.volume || sonos.volume.fixed || sonos.isVolumePending}
-              className="w-full min-w-20 accent-solarized-cyan disabled:opacity-40"
+              className="volume-slider disabled:opacity-40"
               aria-label="Sonos group volume"
             />
             <span className="text-xs text-solarized-base0 w-8 text-right tabular-nums">
@@ -769,21 +769,7 @@ export function AudioPlayer({ items, onPlaybackPosition }: AudioPlayerProps) {
 
       {/* Controls row - compact, inline */}
       <div className="player-controls flex items-center justify-between">
-        {/* Left: shuffle */}
-        <div className="flex items-center">
-          <button
-            onClick={toggleShuffle}
-            className={`p-1.5 rounded transition-colors ${
-              shuffleEnabled ? 'text-solarized-green bg-solarized-base02' : 'text-solarized-base0 hover:text-solarized-base1 hover:bg-solarized-base02'
-            }`}
-            title={shuffleEnabled ? 'Shuffle on' : 'Shuffle off'}
-          >
-            {Icons.shuffle}
-          </button>
-        </div>
-
-        {/* Center: transport controls */}
-        <div className="flex items-center gap-1">
+        <div className="player-transport flex items-center">
           <button
             onClick={handlePrevious}
             className="p-1.5 text-solarized-base1 hover:text-solarized-base2 hover:bg-solarized-base02 rounded transition-colors"
@@ -821,8 +807,17 @@ export function AudioPlayer({ items, onPlaybackPosition }: AudioPlayerProps) {
           </button>
         </div>
 
-        {/* Right: repeat, bookmark, volume */}
-        <div className="flex items-center gap-1">
+        <div className="player-options flex items-center">
+          <button
+            onClick={toggleShuffle}
+            className={`p-1.5 rounded transition-colors ${
+              shuffleEnabled ? 'text-solarized-green bg-solarized-base02' : 'text-solarized-base0 hover:text-solarized-base1 hover:bg-solarized-base02'
+            }`}
+            title={shuffleEnabled ? 'Shuffle on' : 'Shuffle off'}
+            aria-pressed={shuffleEnabled}
+          >
+            {Icons.shuffle}
+          </button>
           <button
             onClick={cycleRepeatMode}
             className={`p-1.5 rounded transition-colors relative ${
@@ -865,7 +860,7 @@ export function AudioPlayer({ items, onPlaybackPosition }: AudioPlayerProps) {
               setVolume(parseFloat(e.target.value));
               setMuted(false);
             }}
-            className="w-16 h-1 accent-solarized-blue bg-solarized-base02 rounded-full cursor-pointer"
+            className="volume-slider"
             title="Volume"
           />
         </div>
