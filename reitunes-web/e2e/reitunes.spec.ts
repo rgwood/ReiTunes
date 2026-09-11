@@ -678,3 +678,77 @@ test('Sonos next and previous follow the queue without reverting to stale speake
   expect(requests.map(request => request.startItemId)).toEqual([TRACK_ID, secondId, TRACK_ID, TRACK_ID]);
   expect(requests.every(request => !request.allowTakeover)).toBe(true);
 });
+
+test('Sonos supports 30-second skips and timeline seeking while paused', async ({ page }) => {
+  await mockBackend(page);
+  await page.addInitScript(trackId => {
+    localStorage.setItem('reitunes-playback-target', JSON.stringify({ version: 1, state: {
+      target: { kind: 'sonos', householdId: 'household', groupId: 'group-1', groupName: 'Kitchen + 3', playerNames: [] }, takeoverRequired: false,
+    } }));
+    localStorage.setItem('reitunes-player', JSON.stringify({ version: 1, state: {
+      currentItemId: trackId, resumePosition: 50, volume: 0.5, isMuted: false,
+    } }));
+    Object.defineProperty(HTMLMediaElement.prototype, 'duration', { configurable: true, get: () => 300 });
+  }, TRACK_ID);
+  let positionMillis = 50_000;
+  let failSeek = false;
+  const seeks: Array<{ itemId: string; positionMillis: number }> = [];
+  const otherCommands: string[] = [];
+  await page.route('**/api/sonos/play', route => { otherCommands.push('load queue'); return route.fulfill({ status: 500 }); });
+  await page.route('**/api/sonos/groups/group-1/playback', route => route.fulfill({ json: {
+    playbackState: 'PLAYBACK_STATE_PAUSED', positionMillis, sourceItemId: TRACK_ID,
+    itemId: 'queue-item-1', reitunesSessionActive: true, availablePlaybackActions: { canPause: true },
+  } }));
+  await page.route('**/api/sonos/groups/group-1/volume', route => route.fulfill({ json: { volume: 50, muted: false, fixed: false } }));
+  await page.route('**/api/sonos/groups/group-1/playback/*', async route => {
+    const command = route.request().url().split('/').at(-1)!;
+    if (command !== 'seek') { otherCommands.push(command); await route.fulfill({ status: 500 }); return; }
+    const body = route.request().postDataJSON();
+    seeks.push(body);
+    if (failSeek) { await route.fulfill({ status: 502, json: { error: 'Speaker could not seek' } }); return; }
+    positionMillis = body.positionMillis;
+    await route.fulfill({ status: 204 });
+  });
+  await page.goto('/');
+  await expect(page.locator('.sonos-track-title')).toContainText('Northern Sky');
+  await page.locator('audio').dispatchEvent('loadedmetadata');
+  const back = page.getByRole('button', { name: 'Back 30s on Sonos' });
+  const forward = page.getByRole('button', { name: 'Forward 30s on Sonos' });
+  const timeline = page.getByRole('slider', { name: 'Sonos playback position' });
+  await expect(back).toBeEnabled();
+  await back.click();
+  await expect(timeline).toHaveValue('20');
+  await forward.click();
+  await expect(timeline).toHaveValue('50');
+  expect(seeks.slice(0, 2)).toEqual([
+    { itemId: 'queue-item-1', positionMillis: 20_000 },
+    { itemId: 'queue-item-1', positionMillis: 50_000 },
+  ]);
+  const bounds = (await timeline.boundingBox())!;
+  await timeline.click({ position: { x: bounds.width * .75, y: bounds.height / 2 } });
+  await expect.poll(() => positionMillis).toBeGreaterThan(220_000);
+  expect(positionMillis).toBeLessThan(230_000);
+  await expect(timeline).toBeEnabled();
+  await timeline.focus();
+  await page.keyboard.press('Home');
+  await expect(timeline).toHaveValue('0');
+  await back.click();
+  await expect.poll(() => seeks.at(-1)?.positionMillis).toBe(0);
+  await expect(back).toBeEnabled();
+  await timeline.focus();
+  await page.keyboard.press('End');
+  await expect.poll(() => seeks.at(-1)?.positionMillis).toBe(299_999);
+  await expect(forward).toBeEnabled();
+  await forward.click();
+  await expect.poll(() => seeks.length).toBe(7);
+  expect(seeks.at(-1)?.positionMillis).toBe(299_999);
+  await expect(forward).toBeEnabled();
+  await page.locator('.sonos-progress').getByTitle('🎸 Guitar entrance · 1:10', { exact: true }).click();
+  await expect(timeline).toHaveValue('70');
+  failSeek = true;
+  await forward.click();
+  await expect(page.locator('.sonos-status')).toContainText('Speaker could not seek');
+  await expect(timeline).toHaveValue('70');
+  await expect(page.getByRole('button', { name: 'Play Sonos', exact: true })).toBeVisible();
+  expect(otherCommands).toEqual([]);
+});

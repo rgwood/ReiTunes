@@ -511,6 +511,18 @@ impl SonosControl {
         self.post_command(url).await
     }
 
+    pub async fn seek(&self, group_id: &str, item_id: &str, position_millis: i32) -> Result<()> {
+        let url = self.control_url(&["groups", group_id, "playback", "seek"])?;
+        self.post_empty(
+            url,
+            &serde_json::json!({
+                "itemId": item_id,
+                "positionMillis": position_millis,
+            }),
+        )
+        .await
+    }
+
     pub async fn group_volume(&self, group_id: &str) -> Result<SonosGroupVolume> {
         let url = self.control_url(&["groups", group_id, "groupVolume"])?;
         self.get_url(url).await
@@ -1289,6 +1301,18 @@ mod tests {
             axum::http::StatusCode::OK
         }
 
+        async fn seek(
+            headers: HeaderMap,
+            Json(body): Json<serde_json::Value>,
+        ) -> axum::http::StatusCode {
+            assert_headers(&headers);
+            assert_eq!(
+                body,
+                serde_json::json!({ "itemId": "queue-item-1", "positionMillis": 72_000 })
+            );
+            axum::http::StatusCode::OK
+        }
+
         async fn set_mute(
             headers: HeaderMap,
             Json(body): Json<serde_json::Value>,
@@ -1307,6 +1331,10 @@ mod tests {
             .route(
                 "/control/api/v1/groups/group-1/playback/pause",
                 axum::routing::post(command),
+            )
+            .route(
+                "/control/api/v1/groups/group-1/playback/seek",
+                axum::routing::post(seek),
             )
             .route(
                 "/control/api/v1/groups/group-1/groupVolume",
@@ -1339,6 +1367,7 @@ mod tests {
         assert_eq!(control.group_volume("group-1").await.unwrap().volume, 37);
         control.play("group-1").await.unwrap();
         control.pause("group-1").await.unwrap();
+        control.seek("group-1", "queue-item-1", 72_000).await.unwrap();
         control.set_group_volume("group-1", 63).await.unwrap();
         control.set_group_mute("group-1", true).await.unwrap();
         server.abort();

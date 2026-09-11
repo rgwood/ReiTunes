@@ -104,6 +104,7 @@ export function AudioPlayer({ items, onPlaybackPosition }: AudioPlayerProps) {
   const [currentTime, setCurrentTimeLocal] = useState(0);
   const [duration, setDurationLocal] = useState(0);
   const [sonosVolumeDraft, setSonosVolumeDraft] = useState<number | null>(null);
+  const [sonosSeekDraft, setSonosSeekDraft] = useState<number | null>(null);
   const [bookmarkFeedback, setBookmarkFeedback] = useState<'idle' | 'success' | 'error'>('idle');
 
   const {
@@ -548,7 +549,17 @@ export function AudioPlayer({ items, onPlaybackPosition }: AudioPlayerProps) {
     sonos.playback?.playbackState === 'PLAYBACK_STATE_PLAYING' ||
     sonos.playback?.playbackState === 'PLAYBACK_STATE_BUFFERING';
   const sonosPosition = sonosSessionActive ? sonos.positionMillis / 1000 : 0;
-  const sonosProgress = duration > 0 ? Math.min(100, (sonosPosition / duration) * 100) : 0;
+  const displayedSonosPosition = sonosSeekDraft ?? sonosPosition;
+  const sonosProgress = duration > 0 ? Math.min(100, (displayedSonosPosition / duration) * 100) : 0;
+  const sonosSeekDisabled = isSending || isSwitchingOutput || sonos.isTransportPending ||
+    !sonosSessionActive || !sonos.playback?.itemId || !currentItem || duration <= 0;
+  const seekSonos = async (position: number) => {
+    if (sonosSeekDisabled) return;
+    const clamped = Math.min(Math.max(0, duration - 0.001), Math.max(0, position));
+    setSonosSeekDraft(clamped);
+    await sonos.seek(clamped * 1000);
+    setSonosSeekDraft(null);
+  };
   const displayedSonosVolume = sonosVolumeDraft ?? sonos.volume?.volume ?? 0;
   const sonosTransportDisabled =
     isSending || isSwitchingOutput ||
@@ -617,20 +628,41 @@ export function AudioPlayer({ items, onPlaybackPosition }: AudioPlayerProps) {
 
         <div className="sonos-progress flex items-center gap-3">
           <span className="text-xs text-solarized-base0 w-10 text-right tabular-nums">
-            {formatTime(sonosPosition)}
+            {formatTime(displayedSonosPosition)}
           </span>
-          <div className="flex-grow h-1 bg-solarized-base02 rounded-full relative">
+          <div className="playback-scrubber flex-grow relative">
             <div
-              className="h-full bg-solarized-cyan rounded-full relative transition-[width] duration-200"
+              className="playback-fill bg-solarized-cyan rounded-full"
               style={{ width: `${sonosProgress}%` }}
             >
             </div>
+            <input
+              type="range"
+              className="timeline-slider"
+              aria-label="Sonos playback position"
+              min="0"
+              max={duration || 1}
+              step="0.1"
+              value={Math.min(duration || 1, displayedSonosPosition)}
+              disabled={sonosSeekDisabled}
+              onChange={event => setSonosSeekDraft(Number(event.target.value))}
+              onPointerUp={event => void seekSonos(Number(event.currentTarget.value))}
+              onPointerCancel={() => setSonosSeekDraft(null)}
+              onKeyUp={event => {
+                if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End', 'PageUp', 'PageDown'].includes(event.key)) {
+                  void seekSonos(Number(event.currentTarget.value));
+                }
+              }}
+            />
             {bookmarks.map((bookmark, idx) => {
               const position = duration > 0 ? (bookmark.position / duration) * 100 : 0;
               return (
-                <div
+                <button
+                  type="button"
                   key={idx}
-                  className="absolute top-1/2 -translate-y-1/2 w-1 h-3 bg-solarized-blue/70 rounded-sm"
+                  onClick={() => void seekSonos(bookmark.position)}
+                  disabled={sonosSeekDisabled}
+                  className="timeline-bookmark absolute top-1/2 -translate-y-1/2 w-1 h-3 bg-solarized-blue/70 rounded-sm"
                   style={{ left: `${position}%` }}
                   title={`${bookmark.emoji || '🔖'} ${bookmark.label ? `${bookmark.label} · ` : ''}${formatTime(bookmark.position)}`}
                 />
@@ -653,6 +685,10 @@ export function AudioPlayer({ items, onPlaybackPosition }: AudioPlayerProps) {
             >
               {Icons.skipBack}
             </button>
+            <button type="button" onClick={() => void seekSonos(sonosPosition - 30)}
+              disabled={sonosSeekDisabled} aria-label="Back 30s on Sonos" title="Back 30s">
+              {Icons.rewind}
+            </button>
             <button
               type="button"
               onClick={() => void (sonosIsPlaying ? sonos.pause() : sonos.play())}
@@ -662,6 +698,10 @@ export function AudioPlayer({ items, onPlaybackPosition }: AudioPlayerProps) {
               title={sonosIsPlaying ? 'Pause Sonos' : 'Play Sonos'}
             >
               {sonosIsPlaying ? Icons.pause : Icons.play}
+            </button>
+            <button type="button" onClick={() => void seekSonos(sonosPosition + 30)}
+              disabled={sonosSeekDisabled} aria-label="Forward 30s on Sonos" title="Forward 30s">
+              {Icons.fastForward}
             </button>
             <button
               type="button"
@@ -765,10 +805,10 @@ export function AudioPlayer({ items, onPlaybackPosition }: AudioPlayerProps) {
         <div
           ref={progressRef}
           onClick={handleProgressClick}
-          className="flex-grow h-1 bg-solarized-base02 rounded-full cursor-pointer group relative"
+          className="playback-scrubber flex-grow cursor-pointer group relative"
         >
           <div
-            className="h-full bg-solarized-blue rounded-full relative"
+            className="playback-fill bg-solarized-blue rounded-full"
             style={{ width: `${progress}%` }}
           >
             <div className="absolute right-0 top-1/2 -translate-y-1/2 w-2.5 h-2.5 bg-solarized-blue rounded-full opacity-0 group-hover:opacity-100 transition-opacity" />

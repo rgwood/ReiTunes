@@ -261,6 +261,10 @@ async fn main() -> Result<()> {
                     post(sonos_group_pause_handler),
                 )
                 .route(
+                    "/sonos/groups/{group_id}/playback/seek",
+                    post(sonos_group_seek_handler),
+                )
+                .route(
                     "/sonos/groups/{group_id}/volume",
                     get(sonos_group_volume_handler).post(sonos_set_group_volume_handler),
                 )
@@ -796,6 +800,36 @@ async fn sonos_group_pause_handler(
         .map_err(sonos_playback_failure)?;
     control
         .pause(&group_id)
+        .await
+        .map_err(sonos_failure)?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SonosSeekRequest {
+    item_id: String,
+    position_millis: i32,
+}
+
+async fn sonos_group_seek_handler(
+    State(app_state): State<AppState>,
+    Path(group_id): Path<String>,
+    JsonExtractor(request): JsonExtractor<SonosSeekRequest>,
+) -> SonosApiResult<StatusCode> {
+    if request.position_millis < 0 || request.item_id.is_empty() {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(SonosApiError {
+                error: "A non-negative position and queue item ID are required".to_string(),
+            }),
+        ));
+    }
+    let control = active_sonos_control(&app_state, &group_id)
+        .await
+        .map_err(sonos_playback_failure)?;
+    control
+        .seek(&group_id, &request.item_id, request.position_millis)
         .await
         .map_err(sonos_failure)?;
     Ok(StatusCode::NO_CONTENT)
