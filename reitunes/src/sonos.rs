@@ -235,6 +235,13 @@ impl SonosResponseError {
     }
 }
 
+fn is_command_timeout(error: &anyhow::Error) -> bool {
+    error.downcast_ref::<SonosResponseError>().is_some_and(|response| {
+        response.status == reqwest::StatusCode::GATEWAY_TIMEOUT
+            || response.code.as_deref() == Some("ERROR_COMMAND_TIMEOUT")
+    })
+}
+
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct CreateSessionRequest<'a> {
@@ -450,10 +457,17 @@ impl SonosControl {
             }
         };
 
-        if let Err(error) = self
+        let mut result = self
             .load_cloud_queue(&session_id, queue, position_millis)
-            .await
-        {
+            .await;
+        if let Err(error) = &result {
+            if is_command_timeout(error) {
+                warn!(error = ?error, group_id, "Sonos queue load timed out; retrying once");
+                tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+                result = self.load_cloud_queue(&session_id, queue, position_millis).await;
+            }
+        }
+        if let Err(error) = result {
             // A timeout does not mean that Sonos evicted our session. Keep it
             // for a retry unless Sonos explicitly says the session ID is invalid.
             let session_ended = error.downcast_ref::<SonosResponseError>().is_some_and(|response| {
@@ -464,10 +478,7 @@ impl SonosControl {
                 self.forget_session(group_id, &session_id)?;
                 return Err(SonosPlaybackError::SessionEnded(error));
             }
-            if error.downcast_ref::<SonosResponseError>().is_some_and(|response| {
-                response.status == reqwest::StatusCode::GATEWAY_TIMEOUT
-                    || response.code.as_deref() == Some("ERROR_COMMAND_TIMEOUT")
-            }) {
+            if is_command_timeout(&error) {
                 return Err(SonosPlaybackError::Control(
                     error.context("Sonos took too long to respond. Try again."),
                 ));
@@ -1470,49 +1481,63 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn queue_timeout_keeps_the_session_for_retry_without_takeover() {
+    async fn queue_timeouts_retry_once_without_replacing_the_session() {
         #[derive(Clone, Default)]
         struct Counts {
             sessions: Arc<AtomicUsize>,
             loads: Arc<AtomicUsize>,
+            timeouts: usize,
+            payloads: Arc<StdMutex<Vec<serde_json::Value>>>,
         }
         async fn create_session(State(counts): State<Counts>) -> Json<serde_json::Value> {
             counts.sessions.fetch_add(1, Ordering::SeqCst);
             Json(serde_json::json!({"sessionId": "session-1", "sessionCreated": true}))
         }
-        async fn load_queue(State(counts): State<Counts>) -> axum::response::Response {
+        async fn load_queue(State(counts): State<Counts>, Json(payload): Json<serde_json::Value>) -> axum::response::Response {
             use axum::response::IntoResponse;
-            if counts.loads.fetch_add(1, Ordering::SeqCst) == 0 {
+            counts.payloads.lock().unwrap().push(payload);
+            if counts.loads.fetch_add(1, Ordering::SeqCst) < counts.timeouts {
                 (axum::http::StatusCode::GATEWAY_TIMEOUT,
                     Json(serde_json::json!({"errorCode": "ERROR_COMMAND_TIMEOUT"}))).into_response()
             } else {
                 axum::http::StatusCode::NO_CONTENT.into_response()
             }
         }
-        let counts = Counts::default();
-        let router = Router::new()
-            .route("/control/api/v1/groups/group-1/playbackSession", axum::routing::post(create_session))
-            .route("/control/api/v1/playbackSessions/session-1/playbackSession/loadCloudQueue", axum::routing::post(load_queue))
-            .fallback(|| async { axum::http::StatusCode::NO_CONTENT })
-            .with_state(counts.clone());
-        let (control, _temp_dir, server) = test_control_with_server(router).await;
-        control.save_tokens(&StoredTokenSet {
-            access_token: "access-token".into(), refresh_token: "refresh-token".into(),
-            token_type: "Bearer".into(), scope: Some(SONOS_SCOPE.into()), expires_at_unix: u64::MAX,
-        }).unwrap();
-        let queue = PlaybackQueueParameters {
-            queue_base_url: "https://reitunes.example/queue/v2.3".into(),
-            http_authorization: "Bearer cloud-queue-secret".into(),
-            item_id: "queue-item-1".into(), queue_version: "queue-version-1".into(),
-        };
-        let error = control.play_cloud_queue("group-1", &queue, 42_000, true).await.unwrap_err();
-        assert!(matches!(error, SonosPlaybackError::Control(_)));
-        assert_eq!(error.to_string(), "Sonos took too long to respond. Try again.");
-        assert!(control.has_playback_session("group-1").unwrap());
-        control.play_cloud_queue("group-1", &queue, 42_000, false).await.unwrap();
-        assert_eq!(counts.sessions.load(Ordering::SeqCst), 1);
-        assert_eq!(counts.loads.load(Ordering::SeqCst), 2);
-        server.abort();
+        for timeouts in [1, 2] {
+            let counts = Counts { timeouts, ..Counts::default() };
+            let router = Router::new()
+                .route("/control/api/v1/groups/group-1/playbackSession", axum::routing::post(create_session))
+                .route("/control/api/v1/playbackSessions/session-1/playbackSession/loadCloudQueue", axum::routing::post(load_queue))
+                .fallback(|| async { axum::http::StatusCode::NO_CONTENT })
+                .with_state(counts.clone());
+            let (control, _temp_dir, server) = test_control_with_server(router).await;
+            control.save_tokens(&StoredTokenSet {
+                access_token: "access-token".into(), refresh_token: "refresh-token".into(),
+                token_type: "Bearer".into(), scope: Some(SONOS_SCOPE.into()), expires_at_unix: u64::MAX,
+            }).unwrap();
+            let queue = PlaybackQueueParameters {
+                queue_base_url: "https://reitunes.example/queue/v2.3".into(),
+                http_authorization: "Bearer cloud-queue-secret".into(),
+                item_id: "queue-item-1".into(), queue_version: "queue-version-1".into(),
+            };
+            let result = control.play_cloud_queue("group-1", &queue, 42_000, true).await;
+            if timeouts == 1 {
+                assert!(result.is_ok());
+            } else {
+                let error = result.unwrap_err();
+                assert!(matches!(error, SonosPlaybackError::Control(_)));
+                assert_eq!(error.to_string(), "Sonos took too long to respond. Try again.");
+            }
+            // Stop after two attempts, keeping the same queue, track and position.
+            assert_eq!(counts.loads.load(Ordering::SeqCst), 2);
+            let payloads = counts.payloads.lock().unwrap().clone();
+            assert_eq!(payloads[0], payloads[1]);
+            assert!(control.has_playback_session("group-1").unwrap());
+            control.play_cloud_queue("group-1", &queue, 42_000, false).await.unwrap();
+            assert_eq!(counts.sessions.load(Ordering::SeqCst), 1);
+            assert_eq!(counts.loads.load(Ordering::SeqCst), 3);
+            server.abort();
+        }
     }
 
     #[tokio::test]
