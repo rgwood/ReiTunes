@@ -218,6 +218,23 @@ pub enum SonosPlaybackError {
     Control(#[from] anyhow::Error),
 }
 
+#[derive(Debug, thiserror::Error)]
+#[error("Sonos returned {status}: {body}")]
+struct SonosResponseError {
+    status: reqwest::StatusCode,
+    body: String,
+    code: Option<String>,
+}
+
+impl SonosResponseError {
+    fn new(status: reqwest::StatusCode, body: String) -> Self {
+        let code = serde_json::from_str::<serde_json::Value>(&body)
+            .ok()
+            .and_then(|value| value.get("errorCode")?.as_str().map(str::to_owned));
+        Self { status, body, code }
+    }
+}
+
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct CreateSessionRequest<'a> {
@@ -437,8 +454,25 @@ impl SonosControl {
             .load_cloud_queue(&session_id, queue, position_millis)
             .await
         {
-            self.forget_session(group_id, &session_id)?;
-            return Err(SonosPlaybackError::SessionEnded(error));
+            // A timeout does not mean that Sonos evicted our session. Keep it
+            // for a retry unless Sonos explicitly says the session ID is invalid.
+            let session_ended = error.downcast_ref::<SonosResponseError>().is_some_and(|response| {
+                response.status == reqwest::StatusCode::NOT_FOUND
+                    && response.code.as_deref() == Some("ERROR_INVALID_OBJECT_ID")
+            });
+            if session_ended {
+                self.forget_session(group_id, &session_id)?;
+                return Err(SonosPlaybackError::SessionEnded(error));
+            }
+            if error.downcast_ref::<SonosResponseError>().is_some_and(|response| {
+                response.status == reqwest::StatusCode::GATEWAY_TIMEOUT
+                    || response.code.as_deref() == Some("ERROR_COMMAND_TIMEOUT")
+            }) {
+                return Err(SonosPlaybackError::Control(
+                    error.context("Sonos took too long to respond. Try again."),
+                ));
+            }
+            return Err(SonosPlaybackError::Control(error));
         }
 
         if let Err(error) = self.ensure_event_subscriptions(group_id).await {
@@ -885,7 +919,7 @@ where
         .await
         .context("failed to read response from Sonos")?;
     if !status.is_success() {
-        bail!("Sonos returned {status}: {body}");
+        return Err(SonosResponseError::new(status, body).into());
     }
     serde_json::from_str(&body).context("Sonos returned an unexpected response")
 }
@@ -899,7 +933,7 @@ async fn ensure_success_response(response: reqwest::Response) -> Result<()> {
         .text()
         .await
         .context("failed to read response from Sonos")?;
-    bail!("Sonos returned {status}: {body}")
+    Err(SonosResponseError::new(status, body).into())
 }
 
 fn random_state() -> String {
@@ -1432,6 +1466,52 @@ mod tests {
         assert_eq!(sessions_created.load(Ordering::SeqCst), 1);
         assert_eq!(queues_loaded.load(Ordering::SeqCst), 2);
         assert_eq!(subscriptions.load(Ordering::SeqCst), 2);
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn queue_timeout_keeps_the_session_for_retry_without_takeover() {
+        #[derive(Clone, Default)]
+        struct Counts {
+            sessions: Arc<AtomicUsize>,
+            loads: Arc<AtomicUsize>,
+        }
+        async fn create_session(State(counts): State<Counts>) -> Json<serde_json::Value> {
+            counts.sessions.fetch_add(1, Ordering::SeqCst);
+            Json(serde_json::json!({"sessionId": "session-1", "sessionCreated": true}))
+        }
+        async fn load_queue(State(counts): State<Counts>) -> axum::response::Response {
+            use axum::response::IntoResponse;
+            if counts.loads.fetch_add(1, Ordering::SeqCst) == 0 {
+                (axum::http::StatusCode::GATEWAY_TIMEOUT,
+                    Json(serde_json::json!({"errorCode": "ERROR_COMMAND_TIMEOUT"}))).into_response()
+            } else {
+                axum::http::StatusCode::NO_CONTENT.into_response()
+            }
+        }
+        let counts = Counts::default();
+        let router = Router::new()
+            .route("/control/api/v1/groups/group-1/playbackSession", axum::routing::post(create_session))
+            .route("/control/api/v1/playbackSessions/session-1/playbackSession/loadCloudQueue", axum::routing::post(load_queue))
+            .fallback(|| async { axum::http::StatusCode::NO_CONTENT })
+            .with_state(counts.clone());
+        let (control, _temp_dir, server) = test_control_with_server(router).await;
+        control.save_tokens(&StoredTokenSet {
+            access_token: "access-token".into(), refresh_token: "refresh-token".into(),
+            token_type: "Bearer".into(), scope: Some(SONOS_SCOPE.into()), expires_at_unix: u64::MAX,
+        }).unwrap();
+        let queue = PlaybackQueueParameters {
+            queue_base_url: "https://reitunes.example/queue/v2.3".into(),
+            http_authorization: "Bearer cloud-queue-secret".into(),
+            item_id: "queue-item-1".into(), queue_version: "queue-version-1".into(),
+        };
+        let error = control.play_cloud_queue("group-1", &queue, 42_000, true).await.unwrap_err();
+        assert!(matches!(error, SonosPlaybackError::Control(_)));
+        assert_eq!(error.to_string(), "Sonos took too long to respond. Try again.");
+        assert!(control.has_playback_session("group-1").unwrap());
+        control.play_cloud_queue("group-1", &queue, 42_000, false).await.unwrap();
+        assert_eq!(counts.sessions.load(Ordering::SeqCst), 1);
+        assert_eq!(counts.loads.load(Ordering::SeqCst), 2);
         server.abort();
     }
 

@@ -67,10 +67,9 @@ export function usePlayback() {
       recordPlaybackEvent('play-rejected', { target: 'sonos', itemId: item.id, errorName: error instanceof Error ? error.name : 'UnknownError' });
       const message = error instanceof Error ? error.message : 'Could not play on Sonos';
       const takeoverRequired =
-        targetState.takeoverRequired ||
-        (error instanceof Error &&
-          'takeoverRequired' in error &&
-          error.takeoverRequired === true);
+        error instanceof Error && 'takeoverRequired' in error
+          ? error.takeoverRequired === true
+          : targetState.takeoverRequired;
       usePlaybackTargetStore.getState().failSending(message, takeoverRequired);
     }
   }, []);

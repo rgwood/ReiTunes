@@ -472,7 +472,7 @@ test('switches between Sonos and browser playback without playing twice', async 
       };
     });
     expect(dimensions.height).toBeLessThanOrEqual(width > 650 ? 44 : 68);
-    expect(dimensions.volumeWidth).toBeLessThanOrEqual(70);
+    expect(dimensions.volumeWidth).toBe(110);
     expect(dimensions.transportBeforeTitle).toBe(true);
     expect(dimensions.progressBelowTitle).toBe(true);
     expect(dimensions.fits).toBe(true);
@@ -526,4 +526,58 @@ test('switches between Sonos and browser playback without playing twice', async 
   await expect(page.getByRole('button', { name: 'Play', exact: true })).toBeVisible();
   expect(await page.evaluate(() => (window as typeof window & { __playCalls: number }).__playCalls)).toBe(playCalls);
   expect(sonosPlayRequests).toHaveLength(3);
+});
+
+test('Sonos status messages keep controls aligned and timeouts offer a normal retry', async ({ page }, testInfo) => {
+  await mockBackend(page);
+  await page.addInitScript(() => localStorage.setItem('reitunes-playback-target', JSON.stringify({
+    version: 1, state: { target: { kind: 'sonos', householdId: 'household', groupId: 'group-1', groupName: 'Kitchen + 3', playerNames: [] }, takeoverRequired: true },
+  })));
+  await page.route('**/api/sonos/groups/group-1/playback', route => route.fulfill({ json: {
+    playbackState: 'PLAYBACK_STATE_PLAYING', positionMillis: 0, sourceItemId: TRACK_ID,
+    reitunesSessionActive: true, availablePlaybackActions: { canPause: true },
+  } }));
+  await page.route('**/api/sonos/groups/group-1/volume', route => route.fulfill({ json: { volume: 50, muted: false, fixed: false } }));
+  let release!: () => void;
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  const requests: Array<{ allowTakeover: boolean }> = [];
+  await page.route('**/api/sonos/play', async route => {
+    requests.push(route.request().postDataJSON());
+    if (requests.length === 1) {
+      await gate;
+      await route.fulfill({ status: 502, json: { error: 'Sonos took too long to respond. Try again.' } });
+    } else {
+      await route.fulfill({ json: { groupId: 'group-1', sessionCreated: false } });
+    }
+  });
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto('/');
+  await expect(page.locator('tbody tr')).toHaveCount(1);
+  const controls = () => page.evaluate(() => {
+    const center = (selector: string) => {
+      const box = document.querySelector(selector)!.getBoundingClientRect();
+      return box.top + box.height / 2;
+    };
+    return [center('.sonos-transport'), center('.output-button'), center('.settings-button')];
+  });
+  const initial = await controls();
+  expect(Math.max(...initial) - Math.min(...initial)).toBeLessThanOrEqual(1);
+  await page.getByRole('row').filter({ hasText: 'Northern Sky' }).click();
+  await expect(page.getByText('Sending to Kitchen + 3…')).toBeVisible();
+  expect(await controls()).toEqual(initial);
+  await page.screenshot({ path: testInfo.outputPath('sonos-sending.png') });
+  release();
+  await expect(page.getByRole('button', { name: 'Retry sending to Sonos', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Replace Sonos playback and retry' })).toHaveCount(0);
+  expect(await controls()).toEqual(initial);
+  await page.screenshot({ path: testInfo.outputPath('sonos-timeout.png') });
+  await page.setViewportSize({ width: 390, height: 844 });
+  const mobile = await controls();
+  expect(Math.max(...mobile) - Math.min(...mobile)).toBeLessThanOrEqual(1);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  await page.screenshot({ path: testInfo.outputPath('sonos-timeout-mobile.png') });
+  await page.getByRole('button', { name: 'Retry sending to Sonos', exact: true }).click();
+  await expect.poll(() => requests.length).toBe(2);
+  expect(requests.map(request => request.allowTakeover)).toEqual([true, false]);
+  await expect(page.getByRole('button', { name: 'Retry sending to Sonos', exact: true })).toHaveCount(0);
 });

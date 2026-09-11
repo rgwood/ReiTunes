@@ -469,7 +469,7 @@ fn sonos_playback_failure(
         | sonos::SonosPlaybackError::SessionEnded(_) => StatusCode::CONFLICT,
         sonos::SonosPlaybackError::Control(_) => StatusCode::BAD_GATEWAY,
     };
-    warn!(error = %error, "Sonos playback request failed");
+    warn!(error = ?error, "Sonos playback request failed");
     (status, Json(SonosApiError { error: error.to_string() }))
 }
 

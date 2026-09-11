@@ -575,13 +575,13 @@ export function AudioPlayer({ items, onPlaybackPosition }: AudioPlayerProps) {
               ) : playbackError ? (
                 <span className="text-solarized-red">
                   {playbackError}
-                  {takeoverRequired && currentItem && (
+                  {currentItem && (
                     <button
                       type="button"
                       className="ml-2 text-solarized-cyan hover:underline"
                       onClick={() => void play(currentItem, resumePosition)}
                     >
-                      Replace Sonos playback and retry
+                      {takeoverRequired ? 'Replace Sonos playback and retry' : 'Retry sending to Sonos'}
                     </button>
                   )}
                 </span>

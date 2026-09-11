@@ -42,7 +42,7 @@ input::placeholder { color: var(--muted); opacity: 1; }
 
 .player-bar { display: flex; align-items: center; flex-shrink: 0; gap: 10px; min-height: 44px; padding: 0 8px; background: var(--panel); border-bottom: 1px solid var(--line); }
 .app-name { font-size: 12px; font-weight: 600; flex-shrink: 0; }
-.player-layout { flex: 1; min-width: 0; display: grid; grid-template-columns: 124px minmax(100px, 1fr) 174px; grid-template-rows: 18px 14px; gap: 0 12px; align-content: center; height: 43px; padding: 0 !important; }
+.player-layout { flex: 1; min-width: 0; display: grid; grid-template-columns: 124px minmax(100px, 1fr) 219px; grid-template-rows: 18px 14px; gap: 0 12px; align-content: center; height: 43px; padding: 0 !important; }
 .player-now-playing { grid-column: 2; grid-row: 1; margin: 0 !important; text-align: center; font-size: 12px; line-height: 18px; }
 .player-progress { grid-column: 2; grid-row: 2; margin: 0 !important; gap: 6px; }
 .player-progress > span { font-size: 10px; width: auto; line-height: 14px; }
@@ -53,7 +53,7 @@ input::placeholder { color: var(--muted); opacity: 1; }
 .player-controls button { padding: 4px; border-radius: 2px; }
 .player-controls button[title='Play'], .player-controls button[title='Pause'] { display: grid; place-items: center; width: 26px; height: 26px; margin: 0 2px; background: var(--header); }
 .player-controls button svg { width: 15px; height: 15px; }
-.player-controls input { width: 65px; }
+.player-controls input { width: 110px; }
 .player-bar .volume-slider { appearance: none; -webkit-appearance: none; display: block; flex-shrink: 0; height: 20px; margin: 0; padding: 0; border: 0; background: transparent; cursor: pointer; }
 .volume-slider::-webkit-slider-runnable-track { height: 4px; border-radius: 2px; background: var(--muted); }
 .volume-slider::-moz-range-track { height: 4px; border-radius: 2px; background: var(--muted); }
@@ -65,7 +65,11 @@ input::placeholder { color: var(--muted); opacity: 1; }
 .output-button span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .output-button svg { flex-shrink: 0; }
 .output-button:hover { background: var(--hover); }
-.sonos-player-layout { flex: 1; min-width: 0; display: grid; grid-template-columns: 60px minmax(100px, 1fr) 112px; grid-template-rows: 18px 14px; align-content: center; gap: 0 12px; min-height: 43px; padding: 5px 0; }
+.player-bar:has(.sonos-player-layout) { align-items: flex-start; }
+.player-bar:has(.sonos-player-layout) > .app-name { margin-top: 13px; }
+.player-bar:has(.sonos-player-layout) > .output-button,
+.player-bar:has(.sonos-player-layout) > .settings-button { margin-top: 8px; height: 26px; }
+.sonos-player-layout { flex: 1; min-width: 0; display: grid; grid-template-columns: 60px minmax(100px, 1fr) 157px; grid-template-rows: 18px 14px; align-content: start; gap: 0 12px; min-height: 43px; padding: 5px 0; }
 .sonos-track, .sonos-track-details, .sonos-controls { display: contents; }
 .sonos-track-title { grid-column: 2; grid-row: 1; text-align: center; font-size: 12px; line-height: 18px; }
 .sonos-progress { grid-column: 2; grid-row: 2; min-width: 0; gap: 6px; }
@@ -73,7 +77,7 @@ input::placeholder { color: var(--muted); opacity: 1; }
 .sonos-progress > div { background: var(--border-strong); }
 .sonos-transport { grid-column: 1; grid-row: 1 / 3; align-self: center; gap: 2px; }
 .sonos-volume { grid-column: 3; grid-row: 1 / 3; align-self: center; gap: 2px; min-width: 0; }
-.sonos-volume input { width: 65px; min-width: 0; }
+.sonos-volume input { width: 110px; min-width: 0; }
 .sonos-volume > span { width: 22px; font-size: 10px; }
 .sonos-player-layout button { padding: 4px; border-radius: 2px; }
 .sonos-player-layout button svg { width: 15px; height: 15px; }
