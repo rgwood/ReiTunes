@@ -40,16 +40,18 @@ input::placeholder { color: var(--muted); opacity: 1; }
 .music-app ::-webkit-scrollbar-track { background: var(--panel); }
 .music-app ::-webkit-scrollbar-thumb { background: var(--scroll-thumb); border: 2px solid var(--panel); border-radius: 4px; }
 
-.player-bar { display: flex; align-items: center; flex-shrink: 0; gap: 10px; min-height: 44px; padding: 0 8px; background: var(--panel); border-bottom: 1px solid var(--line); }
-.app-name { font-size: 12px; font-weight: 600; flex-shrink: 0; }
-.player-layout { flex: 1; min-width: 0; display: grid; grid-template-columns: 124px minmax(100px, 1fr) 219px; grid-template-rows: 18px 14px; gap: 0 12px; align-content: center; height: 43px; padding: 0 !important; }
+.player-bar { display: grid; grid-template-columns: auto minmax(100px, 1fr) auto; grid-template-rows: 18px 26px; align-items: center; flex-shrink: 0; gap: 3px 10px; min-height: 56px; padding: 4px 8px; background: var(--panel); border-bottom: 1px solid var(--line); }
+.app-name { grid-column: 1; grid-row: 1; font-size: 12px; font-weight: 600; }
+.player-layout, .sonos-player-layout { display: contents; }
+.player-output { grid-column: 3; grid-row: 1; display: flex; align-items: center; justify-content: flex-end; gap: 5px; min-width: 0; }
+.player-output .output-button, .player-output .settings-button { height: 18px; padding-top: 0; padding-bottom: 0; }
 .player-now-playing { grid-column: 2; grid-row: 1; margin: 0 !important; text-align: center; font-size: 12px; line-height: 18px; }
 .player-progress { grid-column: 2; grid-row: 2; margin: 0 !important; gap: 6px; }
 .player-progress > span { font-size: 10px; width: auto; line-height: 14px; }
 .player-progress > div { background: var(--border-strong); }
 .player-controls { display: contents; }
-.player-transport { grid-column: 1; grid-row: 1 / 3; align-self: center; gap: 0; }
-.player-options { grid-column: 3; grid-row: 1 / 3; align-self: center; justify-self: end; gap: 1px; }
+.player-transport { grid-column: 1; grid-row: 2; align-self: center; gap: 0; }
+.player-options { grid-column: 3; grid-row: 2; align-self: center; justify-self: end; gap: 1px; }
 .player-controls button { padding: 4px; border-radius: 2px; }
 .player-controls button[title='Play'], .player-controls button[title='Pause'] { display: grid; place-items: center; width: 26px; height: 26px; margin: 0 2px; background: var(--header); }
 .player-controls button svg { width: 15px; height: 15px; }
@@ -65,18 +67,13 @@ input::placeholder { color: var(--muted); opacity: 1; }
 .output-button span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .output-button svg { flex-shrink: 0; }
 .output-button:hover { background: var(--hover); }
-.player-bar:has(.sonos-player-layout) { align-items: flex-start; }
-.player-bar:has(.sonos-player-layout) > .app-name { margin-top: 13px; }
-.player-bar:has(.sonos-player-layout) > .output-button,
-.player-bar:has(.sonos-player-layout) > .settings-button { margin-top: 8px; height: 26px; }
-.sonos-player-layout { flex: 1; min-width: 0; display: grid; grid-template-columns: 60px minmax(100px, 1fr) 157px; grid-template-rows: 18px 14px; align-content: start; gap: 0 12px; min-height: 43px; padding: 5px 0; }
 .sonos-track, .sonos-track-details, .sonos-controls { display: contents; }
 .sonos-track-title { grid-column: 2; grid-row: 1; text-align: center; font-size: 12px; line-height: 18px; }
 .sonos-progress { grid-column: 2; grid-row: 2; min-width: 0; gap: 6px; }
 .sonos-progress > span { flex-shrink: 0; font-size: 10px; width: auto; line-height: 14px; }
 .sonos-progress > div { background: var(--border-strong); }
-.sonos-transport { grid-column: 1; grid-row: 1 / 3; align-self: center; gap: 2px; }
-.sonos-volume { grid-column: 3; grid-row: 1 / 3; align-self: center; gap: 2px; min-width: 0; }
+.sonos-transport { grid-column: 1; grid-row: 2; align-self: center; gap: 2px; }
+.sonos-volume { grid-column: 3; grid-row: 2; align-self: center; gap: 2px; min-width: 0; }
 .sonos-volume input { width: 110px; min-width: 0; }
 .sonos-volume > span { width: 22px; font-size: 10px; }
 .sonos-player-layout button { padding: 4px; border-radius: 2px; }
@@ -139,14 +136,18 @@ input::placeholder { color: var(--muted); opacity: 1; }
 
 @media (max-width: 950px) {
   .app-name { display: none; }
-  .player-bar { gap: 5px; }
+  .player-bar { column-gap: 5px; }
   .output-button { max-width: 110px; }
   .library-toolbar { flex-wrap: wrap; }
   .toolbar-actions { flex: 1; justify-content: flex-end; }
 }
 @media (max-width: 650px) {
-  .player-layout { grid-template-columns: 124px minmax(60px, 1fr); grid-template-rows: 18px 14px 24px; height: 62px; gap: 0 6px; }
-  .player-options { grid-column: 1 / 3; grid-row: 3; }
+  .player-bar { grid-template-columns: minmax(0, 1fr) auto; grid-template-rows: 18px 18px 26px; }
+  .player-now-playing, .sonos-track-title { grid-column: 1; text-align: left; }
+  .player-output { grid-column: 2; }
+  .player-progress, .sonos-progress { grid-column: 1 / -1; grid-row: 2; }
+  .player-transport, .sonos-transport { grid-column: 1; grid-row: 3; }
+  .player-options, .sonos-volume { grid-column: 2; grid-row: 3; justify-self: end; }
   .output-button { width: 25px; padding: 3px; }
   .output-button span { display: none; }
   .library-search { min-width: 180px; }
@@ -155,9 +156,11 @@ input::placeholder { color: var(--muted); opacity: 1; }
   .toolbar-actions button { font-size: 11px; padding: 3px 6px; }
   .library-sidepanel { position: absolute; top: 0; bottom: 0; left: 0; z-index: 3; box-shadow: 2px 0 5px #0002; max-width: 100%; }
   .queue-sidepanel { left: auto; right: 0; }
-  .sonos-player-layout { grid-template-columns: 60px minmax(60px, 1fr); grid-template-rows: 18px 14px 24px; min-height: 62px; gap: 0 6px; }
-  .sonos-volume { grid-column: 1 / 3; grid-row: 3; justify-self: end; }
   .sonos-status:not(.sr-only) { grid-row: 4; }
+}
+@media (max-width: 380px) {
+  .player-bar:has(.player-layout) { grid-template-rows: 18px 18px 26px 24px; }
+  .player-options { grid-column: 1 / -1; grid-row: 4; }
 }
 @media (prefers-reduced-motion: reduce) {
   .music-app *, .music-app *::before, .music-app *::after { transition: none !important; animation: none !important; }

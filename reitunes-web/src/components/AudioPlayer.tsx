@@ -190,20 +190,29 @@ export function AudioPlayer({ items, onPlaybackPosition }: AudioPlayerProps) {
   useEffect(() => {
     if (
       target.kind !== 'sonos' ||
+      isSending || playbackError ||
       !sonos.playback?.reitunesSessionActive ||
+      sonos.playback.observedAt < sonosPositionReadyAfterRef.current ||
       !sonos.playback.sourceItemId ||
       sonos.playback.sourceItemId === currentItem?.id
     ) {
       return;
     }
+    const contextIndex = useQueueStore.getState().contextItems.findIndex(
+      (candidate) => candidate.id === sonos.playback?.sourceItemId
+    );
+    if (contextIndex >= 0) useQueueStore.setState({ contextIndex });
     const item = items.find((candidate) => candidate.id === sonos.playback?.sourceItemId);
     if (item) selectRemoteItem(item, sonos.positionMillis / 1000);
   }, [
     currentItem?.id,
+    isSending,
+    playbackError,
     items,
     selectRemoteItem,
     sonos.playback?.reitunesSessionActive,
     sonos.playback?.sourceItemId,
+    sonos.playback?.observedAt,
     sonos.positionMillis,
     target.kind,
   ]);
@@ -393,11 +402,15 @@ export function AudioPlayer({ items, onPlaybackPosition }: AudioPlayerProps) {
   }, [currentItem, sonos.playback?.reitunesSessionActive, sonos.positionMillis]);
 
   const handlePrevious = useCallback(() => {
+    const output = usePlaybackTargetStore.getState();
+    if (output.isSending || output.isSwitchingOutput || output.isTransportPending) return;
     const prevItem = playPrevious();
     if (prevItem) void play(prevItem);
   }, [playPrevious, play]);
 
   const handleNext = useCallback(() => {
+    const output = usePlaybackTargetStore.getState();
+    if (output.isSending || output.isSwitchingOutput || output.isTransportPending) return;
     const nextItem = playNext();
     if (nextItem) void play(nextItem);
   }, [playNext, play]);
@@ -633,6 +646,15 @@ export function AudioPlayer({ items, onPlaybackPosition }: AudioPlayerProps) {
           <div className="sonos-transport flex items-center">
             <button
               type="button"
+              onClick={handlePrevious}
+              disabled={isSending || isSwitchingOutput || sonos.isTransportPending || !sonosSessionActive}
+              aria-label="Previous on Sonos"
+              title="Previous"
+            >
+              {Icons.skipBack}
+            </button>
+            <button
+              type="button"
               onClick={() => void (sonosIsPlaying ? sonos.pause() : sonos.play())}
               disabled={sonosTransportDisabled}
               className="sonos-play-toggle flex items-center justify-center"
@@ -640,6 +662,15 @@ export function AudioPlayer({ items, onPlaybackPosition }: AudioPlayerProps) {
               title={sonosIsPlaying ? 'Pause Sonos' : 'Play Sonos'}
             >
               {sonosIsPlaying ? Icons.pause : Icons.play}
+            </button>
+            <button
+              type="button"
+              onClick={handleNext}
+              disabled={isSending || isSwitchingOutput || sonos.isTransportPending || !sonosSessionActive}
+              aria-label="Next on Sonos"
+              title="Next"
+            >
+              {Icons.skipForward}
             </button>
             <button
               type="button"
@@ -805,9 +836,6 @@ export function AudioPlayer({ items, onPlaybackPosition }: AudioPlayerProps) {
           >
             {Icons.skipForward}
           </button>
-        </div>
-
-        <div className="player-options flex items-center">
           <button
             onClick={toggleShuffle}
             className={`p-1.5 rounded transition-colors ${
@@ -843,6 +871,9 @@ export function AudioPlayer({ items, onPlaybackPosition }: AudioPlayerProps) {
           >
             {Icons.bookmark}
           </button>
+        </div>
+
+        <div className="player-options flex items-center">
           <button
             onClick={() => setMuted(!isMuted)}
             className="p-1.5 text-solarized-base0 hover:text-solarized-base1 hover:bg-solarized-base02 rounded transition-colors"

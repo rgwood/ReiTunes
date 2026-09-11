@@ -468,12 +468,16 @@ test('switches between Sonos and browser playback without playing twice', async 
         volumeWidth: rect('.sonos-volume input').width,
         transportBeforeTitle: transport.right <= title.left,
         progressBelowTitle: progress.top >= title.bottom,
+        sliderOffset: progress.top + progress.height / 2 - (rect('.sonos-volume input').top + rect('.sonos-volume input').height / 2),
         fits: document.documentElement.scrollWidth <= window.innerWidth,
       };
     });
-    expect(dimensions.height).toBeLessThanOrEqual(width > 650 ? 44 : 68);
+    expect(dimensions.height).toBe(width > 650 ? 56 : 77);
     expect(dimensions.volumeWidth).toBe(110);
-    expect(dimensions.transportBeforeTitle).toBe(true);
+    if (width > 650) {
+      expect(dimensions.transportBeforeTitle).toBe(true);
+      expect(Math.abs(dimensions.sliderOffset)).toBeLessThanOrEqual(1);
+    }
     expect(dimensions.progressBelowTitle).toBe(true);
     expect(dimensions.fits).toBe(true);
     await page.screenshot({ path: testInfo.outputPath(`sonos-${width}.png`) });
@@ -558,10 +562,15 @@ test('Sonos status messages keep controls aligned and timeouts offer a normal re
       const box = document.querySelector(selector)!.getBoundingClientRect();
       return box.top + box.height / 2;
     };
-    return [center('.sonos-transport'), center('.output-button'), center('.settings-button')];
+    return {
+      upper: [center('.output-button'), center('.settings-button')],
+      lower: [center('.sonos-transport'), center('.sonos-volume input')],
+      progress: center('.sonos-progress'),
+    };
   });
   const initial = await controls();
-  expect(Math.max(...initial) - Math.min(...initial)).toBeLessThanOrEqual(1);
+  expect(Math.abs(initial.upper[0] - initial.upper[1])).toBeLessThanOrEqual(1);
+  expect(Math.max(...initial.lower, initial.progress) - Math.min(...initial.lower, initial.progress)).toBeLessThanOrEqual(1);
   await page.getByRole('row').filter({ hasText: 'Northern Sky' }).click();
   await expect(page.getByText('Sending to Kitchen + 3…')).toBeVisible();
   expect(await controls()).toEqual(initial);
@@ -573,11 +582,99 @@ test('Sonos status messages keep controls aligned and timeouts offer a normal re
   await page.screenshot({ path: testInfo.outputPath('sonos-timeout.png') });
   await page.setViewportSize({ width: 390, height: 844 });
   const mobile = await controls();
-  expect(Math.max(...mobile) - Math.min(...mobile)).toBeLessThanOrEqual(1);
+  expect(Math.abs(mobile.upper[0] - mobile.upper[1])).toBeLessThanOrEqual(1);
+  expect(Math.abs(mobile.lower[0] - mobile.lower[1])).toBeLessThanOrEqual(1);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   await page.screenshot({ path: testInfo.outputPath('sonos-timeout-mobile.png') });
   await page.getByRole('button', { name: 'Retry sending to Sonos', exact: true }).click();
   await expect.poll(() => requests.length).toBe(2);
   expect(requests.map(request => request.allowTakeover)).toEqual([true, false]);
   await expect(page.getByRole('button', { name: 'Retry sending to Sonos', exact: true })).toHaveCount(0);
+});
+
+test('player keeps its transport buttons and aligns the desktop sliders', async ({ page }, testInfo) => {
+  await mockBackend(page);
+  await page.goto('/');
+  await page.getByRole('row').filter({ hasText: 'Northern Sky' }).click();
+  for (const width of [1440, 736, 390, 320]) {
+    await page.setViewportSize({ width, height: 900 });
+    for (const title of ['Previous', 'Back 30s', 'Forward 30s', 'Next', 'Shuffle off', 'Repeat off', 'Add bookmark']) {
+      await expect(page.getByTitle(title, { exact: true })).toBeVisible();
+    }
+    const layout = await page.evaluate(() => {
+      const rect = (selector: string) => document.querySelector(selector)!.getBoundingClientRect();
+      const progress = rect('.player-progress');
+      const volume = rect('.volume-slider');
+      const transport = rect('.player-transport');
+      return {
+        height: rect('.player-bar').height,
+        offset: progress.top + progress.height / 2 - volume.top - volume.height / 2,
+        controlsFit: transport.right <= volume.left || transport.bottom <= volume.top,
+        fits: document.documentElement.scrollWidth <= innerWidth,
+      };
+    });
+    if (width > 650) {
+      expect(layout.height).toBe(56);
+      expect(Math.abs(layout.offset)).toBeLessThanOrEqual(1);
+    }
+    expect(layout.controlsFit).toBe(true);
+    expect(layout.fits).toBe(true);
+    await page.screenshot({ path: testInfo.outputPath(`player-${width}.png`) });
+  }
+});
+
+test('Sonos next and previous follow the queue without reverting to stale speaker status', async ({ page }) => {
+  await mockBackend(page);
+  const secondId = '44444444-4444-4444-8444-444444444444';
+  const tracks = [...libraryItems, { ...libraryItems[0], id: secondId, name: 'Pink Moon', bookmarks: {} }];
+  await page.route('**/api/items', route => route.fulfill({ json: tracks }));
+  await page.addInitScript(() => localStorage.setItem('reitunes-playback-target', JSON.stringify({
+    version: 1, state: { target: { kind: 'sonos', householdId: 'household', groupId: 'group-1', groupName: 'Kitchen + 3', playerNames: [] }, takeoverRequired: false },
+  })));
+  let playingId = TRACK_ID;
+  const status = () => ({ playbackState: 'PLAYBACK_STATE_PLAYING', positionMillis: 0, sourceItemId: playingId,
+    reitunesSessionActive: true, availablePlaybackActions: { canPause: true } });
+  await page.route('**/api/sonos/groups/group-1/playback', route => route.fulfill({ json: status() }));
+  await page.route('**/api/sonos/groups/group-1/volume', route => route.fulfill({ json: { volume: 50, muted: false, fixed: false } }));
+  let release!: () => void;
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  const requests: Array<{ startItemId: string; allowTakeover: boolean }> = [];
+  await page.route('**/api/sonos/play', async route => {
+    const request = route.request().postDataJSON();
+    requests.push(request);
+    if (requests.length === 2) await gate;
+    playingId = request.startItemId;
+    await route.fulfill({ json: { groupId: 'group-1', sessionCreated: false } });
+  });
+  await page.goto('/');
+  await page.getByRole('row').filter({ hasText: 'Northern Sky' }).click();
+  const next = page.getByRole('button', { name: 'Next on Sonos', exact: true });
+  const previous = page.getByRole('button', { name: 'Previous on Sonos', exact: true });
+  await expect.poll(() => requests.length).toBe(1);
+  await expect(next).toBeEnabled();
+  await next.click();
+  await expect.poll(() => requests.length).toBe(2);
+  await expect(next).toBeDisabled();
+  await expect(previous).toBeDisabled();
+  await page.evaluate(payload => window.dispatchEvent(new CustomEvent('reitunes:sonos', { detail: {
+    type: 'sonos', namespace: 'playback', eventType: 'playbackStatus', targetId: 'group-1', payload,
+  } })), status());
+  await expect(page.locator('.sonos-track-title')).toContainText('Pink Moon');
+  release();
+  await expect(previous).toBeEnabled();
+  await expect(page.locator('.sonos-track-title')).toContainText('Pink Moon');
+  await previous.click();
+  await expect.poll(() => requests.length).toBe(3);
+  await expect(page.locator('.sonos-track-title')).toContainText('Northern Sky');
+  await expect(next).toBeEnabled();
+  // The speakers can also advance without a browser click.
+  playingId = secondId;
+  await page.evaluate(payload => window.dispatchEvent(new CustomEvent('reitunes:sonos', { detail: {
+    type: 'sonos', namespace: 'playback', eventType: 'playbackStatus', targetId: 'group-1', payload,
+  } })), status());
+  await expect(page.locator('.sonos-track-title')).toContainText('Pink Moon');
+  await previous.click();
+  await expect.poll(() => requests.length).toBe(4);
+  expect(requests.map(request => request.startItemId)).toEqual([TRACK_ID, secondId, TRACK_ID, TRACK_ID]);
+  expect(requests.every(request => !request.allowTakeover)).toBe(true);
 });

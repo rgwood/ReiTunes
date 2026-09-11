@@ -270,7 +270,7 @@ for (const theme of themeIds) for (const mode of ['light', 'dark'] as const) {
     const originalDensity = await density(page);
     await chooseTheme(page, theme, mode);
     expect(await density(page)).toEqual(originalDensity);
-    expect(originalDensity).toEqual({ top: 78, rowHeight: 24, visibleRows: 32 });
+    expect(originalDensity).toEqual({ top: 90, rowHeight: 24, visibleRows: 31 });
     const samples = [];
     const row = page.locator('tbody tr').first();
     const nameCell = row.locator('td').nth(1);

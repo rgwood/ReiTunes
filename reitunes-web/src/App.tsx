@@ -276,27 +276,29 @@ function AppContent() {
           onPlaybackPosition={reportPlaybackPosition}
           items={items}
         />
-        <button
-          className="output-button"
-          onClick={() => setIsSonosOpen(true)}
-          aria-label="Sonos"
-          title="Choose playback output"
-        >
-          <MusicIcon name="speaker" size={14} />
-          <span>
-            {playbackTarget.kind === 'sonos'
-              ? playbackTarget.groupName
-              : 'This browser'}
-          </span>
-        </button>
-        <button
-          className="settings-button"
-          aria-label="Settings"
-          title="Settings"
-          onClick={() => setIsSettingsOpen(true)}
-        >
-          <MusicIcon name="settings" size={16} />
-        </button>
+        <div className="player-output">
+          <button
+            className="output-button"
+            onClick={() => setIsSonosOpen(true)}
+            aria-label="Sonos"
+            title="Choose playback output"
+          >
+            <MusicIcon name="speaker" size={14} />
+            <span>
+              {playbackTarget.kind === 'sonos'
+                ? playbackTarget.groupName
+                : 'This browser'}
+            </span>
+          </button>
+          <button
+            className="settings-button"
+            aria-label="Settings"
+            title="Settings"
+            onClick={() => setIsSettingsOpen(true)}
+          >
+            <MusicIcon name="settings" size={16} />
+          </button>
+        </div>
       </header>
 
       <div className="library-toolbar">
