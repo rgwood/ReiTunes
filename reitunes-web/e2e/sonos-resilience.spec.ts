@@ -1,6 +1,65 @@
 import { expect } from '@playwright/test';
 import { test, deferred, SonosSimulator } from './fixtures/sonos';
 
+for (const failed of [false, true]) {
+  test(`Sonos rapid volume clicks ${failed ? 'reconcile a failure without sending queued changes' : 'respond immediately and coalesce while a request is pending'}`, async ({ page }) => {
+    const sonos = new SonosSimulator(page);
+    await sonos.open();
+    const arrived = deferred();
+    const release = deferred();
+    const values: number[] = [];
+    await page.route('**/api/sonos/groups/group-1/volume', async route => {
+      if (route.request().method() !== 'POST') return route.fallback();
+      const value = route.request().postDataJSON().volume;
+      values.push(value);
+      if (values.length === 1) { arrived.resolve(); await release.promise; }
+      if (failed) return route.fulfill({ status: 502, json: { error: 'Volume change failed' } });
+      sonos.speaker.volume = value;
+      return route.fulfill({ status: 204 });
+    });
+    try {
+      const up = page.getByRole('button', { name: 'Volume up', exact: true });
+      const volume = page.getByRole('slider', { name: 'Sonos group volume' });
+      await up.click();
+      await arrived.promise;
+      await expect(volume).toHaveValue('51');
+      await expect(up).toBeEnabled();
+      for (let i = 0; i < 4; i++) await up.click();
+      await expect(volume).toHaveValue('55');
+      expect(values).toEqual([51]);
+      release.resolve();
+      if (failed) {
+        await expect(page.getByText('Volume change failed', { exact: true })).toBeVisible();
+        await expect(volume).toHaveValue('50');
+        await expect(page.getByRole('button', { name: 'Mute Sonos', exact: true })).toBeEnabled();
+        expect(values).toEqual([51]);
+      } else {
+        await expect.poll(() => sonos.speaker.volume).toBe(55);
+        await expect(page.getByRole('button', { name: 'Mute Sonos', exact: true })).toBeEnabled();
+        await expect(volume).toHaveValue('55');
+        expect(values).toEqual([51, 55]);
+      }
+    } finally { release.resolve(); }
+  });
+}
+
+test('Sonos volume clicks during readback preserve the latest requested level', async ({ page }) => {
+  const sonos = new SonosSimulator(page);
+  await sonos.open();
+  await expect(page.getByRole('slider', { name: 'Sonos group volume' })).toHaveValue('50');
+  const held = { arrived: deferred(), release: deferred() };
+  sonos.delayedVolume = held;
+  await page.getByRole('button', { name: 'Volume up', exact: true }).click();
+  await held.arrived.promise;
+  await page.getByRole('button', { name: 'Volume up', exact: true }).click();
+  await page.getByRole('button', { name: 'Volume up', exact: true }).click();
+  await expect(page.getByRole('slider', { name: 'Sonos group volume' })).toHaveValue('53');
+  held.release.resolve();
+  await expect.poll(() => sonos.speaker.volume).toBe(53);
+  await expect(page.getByRole('button', { name: 'Mute Sonos', exact: true })).toBeEnabled();
+  await expect(page.getByRole('slider', { name: 'Sonos group volume' })).toHaveValue('53');
+});
+
 test('Sonos rejected pause keeps the actual playing state and allows another attempt', async ({ page }) => {
   const sonos = new SonosSimulator(page);
   sonos.pauseResult = 'rejected';

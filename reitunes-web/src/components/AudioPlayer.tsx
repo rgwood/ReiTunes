@@ -560,8 +560,8 @@ export function AudioPlayer({ items, onPlaybackPosition }: AudioPlayerProps) {
     await sonos.seek(clamped * 1000);
     setSonosSeekDraft(null);
   };
-  const displayedSonosVolume = sonosVolumeDraft ?? sonos.volume?.volume ?? 0;
-  const sonosVolumeDisabled = !sonos.volume || sonos.volume.fixed || sonos.isVolumePending || isSending || isSwitchingOutput;
+  const displayedSonosVolume = sonosVolumeDraft ?? sonos.requestedVolume ?? sonos.volume?.volume ?? 0;
+  const sonosVolumeDisabled = !sonos.volume || sonos.volume.fixed || (sonos.isVolumePending && sonos.requestedVolume === null) || isSending || isSwitchingOutput;
   const adjustBrowserVolume = (step: number) => {
     setVolume(Math.min(100, Math.max(0, Math.round((isMuted ? 0 : volume) * 100) + step)) / 100);
     setMuted(false);
@@ -739,7 +739,7 @@ export function AudioPlayer({ items, onPlaybackPosition }: AudioPlayerProps) {
             <button
               type="button"
               onClick={() => void sonos.setMuted(!sonos.volume?.muted)}
-              disabled={sonosVolumeDisabled}
+              disabled={sonosVolumeDisabled || sonos.isVolumePending}
               className="p-1.5 text-solarized-base0 hover:text-solarized-cyan disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
               aria-label={sonos.volume?.muted ? 'Unmute Sonos' : 'Mute Sonos'}
               title={sonos.volume?.muted ? 'Unmute Sonos' : 'Mute Sonos'}
@@ -755,16 +755,8 @@ export function AudioPlayer({ items, onPlaybackPosition }: AudioPlayerProps) {
               max="100"
               value={displayedSonosVolume}
               onChange={(event) => setSonosVolumeDraft(Number(event.target.value))}
-              onPointerUp={() =>
-                void sonos
-                  .setGroupVolume(displayedSonosVolume)
-                  .then(() => setSonosVolumeDraft(null))
-              }
-              onKeyUp={() =>
-                void sonos
-                  .setGroupVolume(displayedSonosVolume)
-                  .then(() => setSonosVolumeDraft(null))
-              }
+              onPointerUp={() => { setSonosVolumeDraft(null); void sonos.setGroupVolume(displayedSonosVolume); }}
+              onKeyUp={() => { setSonosVolumeDraft(null); void sonos.setGroupVolume(displayedSonosVolume); }}
               disabled={sonosVolumeDisabled}
               className="volume-slider disabled:opacity-40"
               aria-label="Sonos group volume"
@@ -772,7 +764,7 @@ export function AudioPlayer({ items, onPlaybackPosition }: AudioPlayerProps) {
             <button type="button" className="volume-step" aria-label="Volume up" title="Volume up by 1%"
               disabled={sonosVolumeDisabled || displayedSonosVolume >= 100}
               onClick={() => { setSonosVolumeDraft(null); void sonos.setGroupVolume(displayedSonosVolume + 1); }}>+</button>
-            <span className="text-xs text-solarized-base0 w-8 text-right tabular-nums">
+            <span className="text-xs text-solarized-base0 w-8 text-right tabular-nums" title={sonos.requestedVolume !== null ? "Updating Sonos volume…" : undefined}>
               {sonos.volume ? displayedSonosVolume : '—'}
             </span>
           </div>

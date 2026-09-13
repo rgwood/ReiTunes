@@ -42,7 +42,9 @@ The browser fixtures do not exercise Rust. The route tests bridge real handlers 
 
 A timeout leaves the outcome uncertain. Success requires the expected queue version and item to be playing. If readback is unavailable, stop without resending. Otherwise, allow at most one retry on the same session. Another app taking over requires fresh confirmation.
 
-Controls reflect observed playback. Newer observations invalidate old polls, and output changes invalidate old command completions. Playback and volume errors recover independently. Subscription failures do not turn successful playback into failure; polling remains available.
+Transport controls reflect observed playback. Newer observations invalidate old polls, and output changes invalidate old command completions. Playback and volume errors recover independently. Subscription failures do not turn successful playback into failure; polling remains available.
+
+Volume controls immediately display the requested level and remain usable while Sonos responds. Only one volume request runs at a time; additional clicks replace the next requested level. A final status read confirms the speaker volume. Clicks during that read still take effect afterward. Failure discards pending changes, reads back the speaker when possible and shows an error. Output changes discard pending changes for the previous output. Browser scenarios hold command replies and status reads to check coalescing, responsive controls and failure recovery.
 
 Sonos HTTP requests have a 5-second connection deadline and a 15-second total deadline. Queue operations have a 45-second server budget; the browser waits at most 50 seconds. Other browser commands wait at most 35 seconds, followed by at most one 20-second status read. A browser abort does not prove the speaker cancelled the command.
 
