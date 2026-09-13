@@ -39,6 +39,10 @@ mod sonos;
 mod cloud_queue;
 mod storage;
 mod systemd;
+mod discovery;
+
+#[cfg(test)]
+mod sonos_route_tests;
 
 #[derive(vite_rs::Embed)]
 #[root = "../reitunes-web"]
@@ -204,6 +208,9 @@ async fn main() -> Result<()> {
                 cloud_queues: Arc::new(cloud_queue::CloudQueueStore::from_env(DB.clone())?),
             };
 
+            let discovery = discovery::Discovery::new(DB.clone(), app_state.library.clone())?;
+            discovery.start_refresh_loop();
+
             if app_state.sonos.is_some() {
                 info!("Sonos Direct Control is configured");
             } else {
@@ -232,6 +239,7 @@ async fn main() -> Result<()> {
 
             // Private API routes require the same session as the React frontend.
             let protected_api_router = Router::new()
+                .merge(discovery::router(discovery))
                 .route("/items", get(items_handler))
                 .route("/upload", post(upload_handler))
                 // Allow uploads up to 500MB
@@ -460,7 +468,7 @@ fn sonos_failure(error: anyhow::Error) -> (StatusCode, Json<SonosApiError>) {
     (
         StatusCode::BAD_GATEWAY,
         Json(SonosApiError {
-            error: error.to_string(),
+            error: sonos::user_error_message(&error),
         }),
     )
 }
@@ -474,7 +482,11 @@ fn sonos_playback_failure(
         sonos::SonosPlaybackError::Control(_) => StatusCode::BAD_GATEWAY,
     };
     warn!(error = ?error, "Sonos playback request failed");
-    (status, Json(SonosApiError { error: error.to_string() }))
+    let message = match &error {
+        sonos::SonosPlaybackError::Control(error) => sonos::user_error_message(error),
+        _ => error.to_string(),
+    };
+    (status, Json(SonosApiError { error: message }))
 }
 
 fn cloud_queue_failure(
@@ -667,6 +679,29 @@ async fn sonos_play_handler(
     State(app_state): State<AppState>,
     JsonExtractor(request): JsonExtractor<SonosPlayRequest>,
 ) -> SonosApiResult<Json<sonos::SonosPlaybackStatus>> {
+    // Bound the whole operation, including token refresh, status checks and
+    // subscriptions. Each individual Sonos HTTP request also has a deadline.
+    with_sonos_deadline(
+        std::time::Duration::from_secs(45),
+        send_sonos_queue(app_state, request),
+    )
+    .await
+}
+
+async fn with_sonos_deadline<T>(
+    budget: Duration,
+    operation: impl std::future::Future<Output = SonosApiResult<T>>,
+) -> SonosApiResult<T> {
+    tokio::time::timeout(budget, operation).await
+    .unwrap_or_else(|_| Err(sonos_failure(anyhow::anyhow!(
+        "Sonos did not confirm playback in time. Check the speakers before retrying."
+    ))))
+}
+
+async fn send_sonos_queue(
+    app_state: AppState,
+    request: SonosPlayRequest,
+) -> SonosApiResult<Json<sonos::SonosPlaybackStatus>> {
     if request.group_id.trim().is_empty() {
         return Err(cloud_queue_failure(
             cloud_queue::CloudQueueError::InvalidRequest(
@@ -676,6 +711,21 @@ async fn sonos_play_handler(
     }
 
     let control = app_state.sonos.clone().ok_or_else(sonos_unavailable)?;
+    let current_playback = control
+        .group_playback(&request.group_id)
+        .await
+        .map_err(sonos_failure)?;
+    let current_playback = sonos_group_playback_response(
+        &app_state,
+        &control,
+        &request.group_id,
+        current_playback,
+    )?;
+    if !current_playback.reitunes_session_active && !request.allow_takeover {
+        return Err(sonos_playback_failure(
+            sonos::SonosPlaybackError::TakeoverRequired,
+        ));
+    }
     let prepared = prepare_cloud_queue(
         &app_state,
         &PrepareCloudQueueRequest {
@@ -694,6 +744,7 @@ async fn sonos_play_handler(
             &playback,
             request.position_millis,
             request.allow_takeover,
+            current_playback.reitunes_session_active,
         )
         .await
         .map_err(sonos_playback_failure)?;
@@ -1166,8 +1217,12 @@ fn single_video_download_url(input: &str) -> String {
 /// queues the download and pushes the finished track into ReiTunes itself.
 #[debug_handler]
 async fn download_handler(
-    JsonExtractor(mut req): JsonExtractor<DownloadRequest>,
+    JsonExtractor(req): JsonExtractor<DownloadRequest>,
 ) -> Result<impl IntoResponse, (StatusCode, String)> {
+    queue_download(req).await
+}
+
+async fn queue_download(mut req: DownloadRequest) -> Result<String, (StatusCode, String)> {
     req.url = single_video_download_url(&req.url);
     if req.url.trim().is_empty() {
         return Err((StatusCode::BAD_REQUEST, "URL must not be empty".to_string()));
@@ -1182,6 +1237,7 @@ async fn download_handler(
     let client = reqwest::Client::new();
     let response = client
         .post(downloader_url())
+        .timeout(Duration::from_secs(30))
         .json(&req)
         .send()
         .await
@@ -1202,6 +1258,13 @@ async fn download_handler(
             StatusCode::BAD_GATEWAY,
             format!("Downloader service error ({status}): {body}"),
         ));
+    }
+
+    // The worker currently returns a JSON string with HTTP 200 even when its
+    // queue is unavailable. Surface that as a failure in both import flows.
+    let message = serde_json::from_str::<String>(&body).unwrap_or_else(|_| body.clone());
+    if message.starts_with("Failed to queue download:") {
+        return Err((StatusCode::BAD_GATEWAY, message));
     }
 
     info!(
@@ -1415,6 +1478,8 @@ async fn save_and_broadcast_event(event: EventWithMetadata, app_state: AppState)
 #[derive(Debug, Deserialize, Serialize)]
 struct AddItemRequest {
     file_path: String,
+    #[serde(default)]
+    source_url: Option<String>,
 }
 
 #[debug_handler]
@@ -1450,8 +1515,18 @@ async fn add_item_handler(
     let event_with_metadata = EventWithMetadata::new(item_id, event)?;
 
     // Save the event to the database
-    let conn = DB.get()?;
-    save_event_to_db(&conn, &event_with_metadata)?;
+    {
+        let mut conn = DB.get()?;
+        let transaction = conn.transaction()?;
+        save_event_to_db(&transaction, &event_with_metadata)?;
+        if let Some(id) = request.source_url.as_deref().and_then(discovery::item_identifier) {
+            transaction.execute(
+                "INSERT INTO discovery_imports(SourceId, LibraryItemId) VALUES (?1, ?2) ON CONFLICT(SourceId) DO UPDATE SET LibraryItemId=excluded.LibraryItemId",
+                rusqlite::params![id, item_id.to_string()],
+            )?;
+        }
+        transaction.commit()?;
+    }
 
     // Apply the event to the library
     let mut library = app_state.library.write().await;
@@ -1755,6 +1830,22 @@ impl fmt::Debug for AppError {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn sonos_total_budget_bounds_multiple_individually_fast_steps() {
+        let completed = std::sync::atomic::AtomicUsize::new(0);
+        let result = with_sonos_deadline(Duration::from_millis(300), async {
+            for _ in 0..3 {
+                tokio::time::sleep(Duration::from_millis(200)).await;
+                completed.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            }
+            Ok(StatusCode::NO_CONTENT)
+        }).await;
+        let (status, Json(error)) = result.unwrap_err();
+        assert_eq!(status, StatusCode::BAD_GATEWAY);
+        assert!(error.error.contains("did not confirm playback in time"));
+        assert_eq!(completed.load(std::sync::atomic::Ordering::SeqCst), 1);
+    }
 
     #[test]
     fn youtube_video_imports_do_not_follow_playlists() {

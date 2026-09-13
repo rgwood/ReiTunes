@@ -5,21 +5,13 @@ import { markPlayed } from './useLibrary';
 import { usePlayerStore } from '../stores/playerStore';
 import { usePlaybackTargetStore } from '../stores/playbackTargetStore';
 import { recordPlaybackEvent } from '../utils/playbackDiagnostics';
+import { sonosRequest, SonosRequestError } from '../utils/sonosRequest';
 
 function sonosQueueFor(item: LibraryItem): LibraryItem[] {
   const queue = useQueueStore.getState();
   const contextIndex = queue.contextItems.findIndex((candidate) => candidate.id === item.id);
   const upcomingContext = contextIndex >= 0 ? queue.contextItems.slice(contextIndex + 1) : [];
   return [item, ...queue.manualQueue, ...upcomingContext].slice(0, 500);
-}
-
-async function responseError(response: Response): Promise<string> {
-  try {
-    const body = (await response.json()) as { error?: string };
-    return body.error || `Request failed (${response.status})`;
-  } catch {
-    return `Request failed (${response.status})`;
-  }
 }
 
 export function usePlayback() {
@@ -41,7 +33,7 @@ export function usePlayback() {
     targetState.beginSending();
 
     try {
-      const response = await fetch('/api/sonos/play', {
+      await sonosRequest('/api/sonos/play', {
         method: 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
@@ -52,24 +44,20 @@ export function usePlayback() {
           positionMillis: Math.round(Math.max(0, startPosition) * 1000),
           allowTakeover: targetState.takeoverRequired,
         }),
-      });
-      if (!response.ok) {
-        throw Object.assign(new Error(await responseError(response)), {
-          takeoverRequired: response.status === 409,
-        });
-      }
+      }, 50_000);
+      if (usePlaybackTargetStore.getState().target !== target) return;
 
       usePlaybackTargetStore.getState().finishSending();
       void markPlayed(item.id).catch((error) => {
         console.error('Sonos playback started, but the play count could not be updated:', error);
       });
     } catch (error) {
+      if (usePlaybackTargetStore.getState().target !== target) return;
       recordPlaybackEvent('play-rejected', { target: 'sonos', itemId: item.id, errorName: error instanceof Error ? error.name : 'UnknownError' });
       const message = error instanceof Error ? error.message : 'Could not play on Sonos';
-      const takeoverRequired =
-        error instanceof Error && 'takeoverRequired' in error
-          ? error.takeoverRequired === true
-          : targetState.takeoverRequired;
+      // An uncertain result must not carry permission to replace another app
+      // into a later retry. Only a fresh conflict requests confirmation.
+      const takeoverRequired = error instanceof SonosRequestError && error.status === 409;
       usePlaybackTargetStore.getState().failSending(message, takeoverRequired);
     }
   }, []);

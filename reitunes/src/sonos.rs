@@ -19,6 +19,9 @@ use tracing::warn;
 
 use crate::cloud_queue::PlaybackQueueParameters;
 
+#[cfg(test)]
+pub(crate) mod test_support;
+
 const SONOS_SCOPE: &str = "playback-control-all";
 const SONOS_API_KEY_HEADER: &str = "X-Sonos-Api-Key";
 const SONOS_CORRELATION_ID_HEADER: &str = "X-Sonos-Corr-Id";
@@ -27,6 +30,7 @@ const REITUNES_APP_CONTEXT: &str = "personal-library";
 const STATE_LIFETIME: Duration = Duration::from_secs(10 * 60);
 const EVENT_SUBSCRIPTION_RENEW_AFTER: Duration = Duration::from_secs(2 * 24 * 60 * 60);
 const REFRESH_EARLY_BY_SECONDS: u64 = 60;
+const CONTROL_REQUEST_TIMEOUT: Duration = Duration::from_secs(15);
 const TOKEN_AAD: &[u8] = b"reitunes-sonos-oauth-v1";
 
 #[derive(Clone)]
@@ -230,12 +234,30 @@ impl SonosResponseError {
     fn new(status: reqwest::StatusCode, body: String) -> Self {
         let code = serde_json::from_str::<serde_json::Value>(&body)
             .ok()
-            .and_then(|value| value.get("errorCode")?.as_str().map(str::to_owned));
+            .and_then(|value| value.get("errorCode").or_else(|| value.get("error"))?.as_str().map(str::to_owned));
         Self { status, body, code }
     }
 }
 
+pub(crate) fn user_error_message(error: &anyhow::Error) -> String {
+    if is_command_timeout(error) {
+        return "Sonos did not confirm the request. Check the speakers before retrying.".into();
+    }
+    if let Some(response) = error.downcast_ref::<SonosResponseError>() {
+        return match response.status {
+            reqwest::StatusCode::NOT_FOUND => "This Sonos group is no longer available. Open the output picker and choose a current group.",
+            reqwest::StatusCode::UNAUTHORIZED | reqwest::StatusCode::FORBIDDEN => "Sonos authorization failed. Open the output picker and reconnect to Sonos.",
+            reqwest::StatusCode::TOO_MANY_REQUESTS => "Sonos is busy. Wait a moment before trying again.",
+            _ => "Sonos could not complete the request. Try again.",
+        }.into();
+    }
+    error.to_string()
+}
+
 fn is_command_timeout(error: &anyhow::Error) -> bool {
+    if error.downcast_ref::<reqwest::Error>().is_some_and(reqwest::Error::is_timeout) {
+        return true;
+    }
     error.downcast_ref::<SonosResponseError>().is_some_and(|response| {
         response.status == reqwest::StatusCode::GATEWAY_TIMEOUT
             || response.code.as_deref() == Some("ERROR_COMMAND_TIMEOUT")
@@ -353,6 +375,8 @@ impl SonosControl {
             endpoints,
             client: reqwest::Client::builder()
                 .user_agent(concat!("ReiTunes/", env!("CARGO_PKG_VERSION")))
+                .connect_timeout(Duration::from_secs(5))
+                .timeout(CONTROL_REQUEST_TIMEOUT)
                 .build()
                 .expect("ReiTunes Sonos HTTP client should be valid"),
             db,
@@ -436,6 +460,7 @@ impl SonosControl {
         queue: &PlaybackQueueParameters,
         position_millis: u32,
         allow_takeover: bool,
+        current_queue_is_ours: bool,
     ) -> std::result::Result<SonosPlaybackStatus, SonosPlaybackError> {
         let existing_session = self
             .playback_sessions
@@ -444,10 +469,13 @@ impl SonosControl {
             .get(group_id)
             .cloned();
 
+        // Another source can evict a persisted session without Sonos rejecting
+        // its ID: loadCloudQueue then times out forever. Only reuse a session
+        // when the group's latest playback status still identifies our queue.
         let (session_id, session_created) = match existing_session {
-            Some(session_id) => (session_id, false),
-            None if !allow_takeover => return Err(SonosPlaybackError::TakeoverRequired),
-            None => {
+            Some(session_id) if current_queue_is_ours => (session_id, false),
+            _ if !allow_takeover => return Err(SonosPlaybackError::TakeoverRequired),
+            _ => {
                 let session = self.create_session(group_id).await?;
                 let session_id = session
                     .session_id
@@ -462,9 +490,22 @@ impl SonosControl {
             .await;
         if let Err(error) = &result {
             if is_command_timeout(error) {
-                warn!(error = ?error, group_id, "Sonos queue load timed out; retrying once");
-                tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-                result = self.load_cloud_queue(&session_id, queue, position_millis).await;
+                warn!(error = ?error, group_id, "Sonos queue load timed out; checking playback before retrying");
+                match self.queue_is_playing(group_id, queue).await {
+                    Ok(true) => result = Ok(()),
+                    Ok(false) => {
+                        tokio::time::sleep(Duration::from_secs(1)).await;
+                        result = self.load_cloud_queue(&session_id, queue, position_millis).await;
+                        if result.as_ref().err().is_some_and(is_command_timeout)
+                            && self.queue_is_playing(group_id, queue).await.unwrap_or(false)
+                        {
+                            result = Ok(());
+                        }
+                    }
+                    Err(error) => {
+                        warn!(group_id, error = %error, "Sonos state is unknown; not resending the queue");
+                    }
+                }
             }
         }
         if let Err(error) = result {
@@ -486,8 +527,10 @@ impl SonosControl {
             return Err(SonosPlaybackError::Control(error));
         }
 
-        if let Err(error) = self.ensure_event_subscriptions(group_id).await {
-            warn!(error = %error, group_id, "Sonos playback started without event subscriptions");
+        match tokio::time::timeout(Duration::from_secs(3), self.ensure_event_subscriptions(group_id)).await {
+            Ok(Ok(())) => {}
+            Ok(Err(error)) => warn!(error = %error, group_id, "Sonos playback started without event subscriptions"),
+            Err(_) => warn!(group_id, "Sonos subscription timed out; polling will track playback"),
         }
 
         Ok(SonosPlaybackStatus {
@@ -499,6 +542,26 @@ impl SonosControl {
     pub async fn group_playback(&self, group_id: &str) -> Result<SonosGroupPlayback> {
         let url = self.control_url(&["groups", group_id, "playback"])?;
         self.get_url(url).await
+    }
+
+    async fn queue_is_playing(&self, group_id: &str, queue: &PlaybackQueueParameters) -> Result<bool> {
+        // Match both identifiers: another song playing is not evidence that
+        // this command succeeded. Never seek back after a lost acknowledgement.
+        match self.group_playback(group_id).await {
+            Ok(playback) => {
+                let confirmed = playback.queue_version.as_deref() == Some(&queue.queue_version)
+                    && playback.item_id.as_deref() == Some(&queue.item_id)
+                    && playback.playback_state == "PLAYBACK_STATE_PLAYING";
+                if confirmed {
+                    tracing::info!(group_id, "Sonos playback confirmed after a lost response");
+                }
+                Ok(confirmed)
+            }
+            Err(error) => {
+                warn!(group_id, error = %error, "Could not confirm Sonos playback after timeout");
+                Err(error)
+            }
+        }
     }
 
     pub async fn play(&self, group_id: &str) -> Result<()> {
@@ -779,6 +842,8 @@ impl SonosControl {
         let response = self
             .client
             .post(url)
+            // Sonos requires this header even when the command has no body.
+            .header(reqwest::header::CONTENT_LENGTH, "0")
             .bearer_auth(access_token)
             .header(SONOS_API_KEY_HEADER, &self.config.client_id)
             .header(
@@ -821,7 +886,7 @@ impl SonosControl {
     async fn access_token(&self) -> Result<String> {
         let token = self
             .load_tokens()?
-            .context("ReiTunes is not connected to Sonos")?;
+            .context("Open the output picker and reconnect to Sonos")?;
         if !token.should_refresh() {
             return Ok(token.access_token);
         }
@@ -829,7 +894,7 @@ impl SonosControl {
         let _refresh_guard = self.refresh_lock.lock().await;
         let token = self
             .load_tokens()?
-            .context("ReiTunes is not connected to Sonos")?;
+            .context("Open the output picker and reconnect to Sonos")?;
         if !token.should_refresh() {
             return Ok(token.access_token);
         }
@@ -845,7 +910,21 @@ impl SonosControl {
             .send()
             .await
             .context("failed to refresh Sonos access token")?;
-        let refreshed = parse_token_response(response).await?;
+        let refreshed = match parse_token_response(response).await {
+            Ok(refreshed) => refreshed,
+            Err(error) => {
+                // A revoked refresh token cannot recover by polling. Leave
+                // credentials intact for temporary failures such as 503.
+                if error.downcast_ref::<SonosResponseError>().is_some_and(|response| {
+                    response.status == reqwest::StatusCode::BAD_REQUEST
+                        && response.code.as_deref() == Some("invalid_grant")
+                }) {
+                    self.forget_rejected_tokens(&token)?;
+                    bail!("Sonos authorization expired. Open the output picker and reconnect to Sonos.");
+                }
+                return Err(error);
+            }
+        };
         let stored = StoredTokenSet {
             access_token: refreshed.access_token,
             refresh_token: refreshed.refresh_token.unwrap_or(token.refresh_token),
@@ -887,6 +966,26 @@ impl SonosControl {
                 encrypted.authentication_tag
             ],
         )?;
+        Ok(())
+    }
+
+    fn forget_rejected_tokens(&self, attempted: &StoredTokenSet) -> Result<()> {
+        // OAuth completion may have saved a newer login while this refresh was
+        // in flight. Compare and delete in one transaction so it cannot be lost.
+        let mut conn = self.db.get()?;
+        let transaction = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+        let encrypted = transaction.query_row(
+            "SELECT Nonce, Ciphertext, AuthenticationTag FROM sonos_oauth_tokens WHERE Id = 1",
+            [],
+            |row| Ok(EncryptedTokens { nonce: row.get(0)?, ciphertext: row.get(1)?, authentication_tag: row.get(2)? }),
+        ).optional()?;
+        if let Some(encrypted) = encrypted {
+            let current: StoredTokenSet = serde_json::from_slice(&decrypt_tokens(&self.config.token_encryption_key, &encrypted)?)?;
+            if current.access_token == attempted.access_token && current.refresh_token == attempted.refresh_token {
+                transaction.execute("DELETE FROM sonos_oauth_tokens WHERE Id = 1", [])?;
+            }
+        }
+        transaction.commit()?;
         Ok(())
     }
 
@@ -1287,8 +1386,13 @@ mod tests {
             Json(serde_json::json!({ "volume": 37, "muted": false, "fixed": false }))
         }
 
-        async fn command(headers: HeaderMap) -> axum::http::StatusCode {
+        async fn command(headers: HeaderMap, body: axum::body::Bytes) -> axum::http::StatusCode {
             assert_headers(&headers);
+            // Sonos rejects bodyless POSTs without an explicit Content-Length.
+            if headers.get(reqwest::header::CONTENT_LENGTH).and_then(|value| value.to_str().ok()) != Some("0") {
+                return axum::http::StatusCode::LENGTH_REQUIRED;
+            }
+            assert!(body.is_empty());
             axum::http::StatusCode::OK
         }
 
@@ -1399,9 +1503,9 @@ mod tests {
             .unwrap();
             assert_eq!(body["appId"], REITUNES_APP_ID);
             assert_eq!(body["appContext"], REITUNES_APP_CONTEXT);
-            state.sessions_created.fetch_add(1, Ordering::SeqCst);
+            let session_number = state.sessions_created.fetch_add(1, Ordering::SeqCst) + 1;
             Json(serde_json::json!({
-                "sessionId": "session-1",
+                "sessionId": format!("session-{session_number}"),
                 "sessionState": "SESSION_STATE_CONNECTED",
                 "sessionCreated": true
             }))
@@ -1409,6 +1513,7 @@ mod tests {
 
         async fn load_queue(
             State(state): State<TestState>,
+            axum::extract::Path(session_id): axum::extract::Path<String>,
             headers: HeaderMap,
             Json(body): Json<serde_json::Value>,
         ) -> Json<serde_json::Value> {
@@ -1421,6 +1526,10 @@ mod tests {
             assert_eq!(body["queueVersion"], "queue-version-1");
             assert_eq!(body["positionMillis"], 42_000);
             assert_eq!(body["playOnCompletion"], true);
+            assert_eq!(
+                session_id,
+                format!("session-{}", state.sessions_created.load(Ordering::SeqCst))
+            );
             state.queues_loaded.fetch_add(1, Ordering::SeqCst);
             Json(serde_json::json!({ "success": true }))
         }
@@ -1446,7 +1555,7 @@ mod tests {
                 axum::routing::post(create_session),
             )
             .route(
-                "/control/api/v1/playbackSessions/session-1/playbackSession/loadCloudQueue",
+                "/control/api/v1/playbackSessions/{session_id}/playbackSession/loadCloudQueue",
                 axum::routing::post(load_queue),
             )
             .route(
@@ -1487,25 +1596,41 @@ mod tests {
 
         assert!(matches!(
             control
-                .play_cloud_queue("group-1", &queue, 42_000, false)
+                .play_cloud_queue("group-1", &queue, 42_000, false, false)
                 .await,
             Err(SonosPlaybackError::TakeoverRequired)
         ));
         assert_eq!(sessions_created.load(Ordering::SeqCst), 0);
 
         let first = control
-            .play_cloud_queue("group-1", &queue, 42_000, true)
+            .play_cloud_queue("group-1", &queue, 42_000, true, false)
             .await
             .unwrap();
         assert!(first.session_created);
         let second = control
-            .play_cloud_queue("group-1", &queue, 42_000, false)
+            .play_cloud_queue("group-1", &queue, 42_000, false, true)
             .await
             .unwrap();
         assert!(!second.session_created);
         assert_eq!(sessions_created.load(Ordering::SeqCst), 1);
         assert_eq!(queues_loaded.load(Ordering::SeqCst), 2);
         assert_eq!(subscriptions.load(Ordering::SeqCst), 2);
+
+        // Spotify took over, but our saved session ID remains. Never send a
+        // queue to that stale session or replace Spotify without confirmation.
+        assert!(matches!(
+            control.play_cloud_queue("group-1", &queue, 42_000, false, false).await,
+            Err(SonosPlaybackError::TakeoverRequired)
+        ));
+        assert_eq!(sessions_created.load(Ordering::SeqCst), 1);
+        assert_eq!(queues_loaded.load(Ordering::SeqCst), 2);
+        let takeover = control
+            .play_cloud_queue("group-1", &queue, 42_000, true, false)
+            .await
+            .unwrap();
+        assert!(takeover.session_created);
+        assert_eq!(sessions_created.load(Ordering::SeqCst), 2);
+        assert_eq!(queues_loaded.load(Ordering::SeqCst), 3);
         server.abort();
     }
 
@@ -1537,6 +1662,9 @@ mod tests {
             let router = Router::new()
                 .route("/control/api/v1/groups/group-1/playbackSession", axum::routing::post(create_session))
                 .route("/control/api/v1/playbackSessions/session-1/playbackSession/loadCloudQueue", axum::routing::post(load_queue))
+                .route("/control/api/v1/groups/group-1/playback", get(|| async {
+                    Json(serde_json::json!({"playbackState": "PLAYBACK_STATE_PAUSED", "positionMillis": 0}))
+                }))
                 .fallback(|| async { axum::http::StatusCode::NO_CONTENT })
                 .with_state(counts.clone());
             let (control, _temp_dir, server) = test_control_with_server(router).await;
@@ -1549,7 +1677,7 @@ mod tests {
                 http_authorization: "Bearer cloud-queue-secret".into(),
                 item_id: "queue-item-1".into(), queue_version: "queue-version-1".into(),
             };
-            let result = control.play_cloud_queue("group-1", &queue, 42_000, true).await;
+            let result = control.play_cloud_queue("group-1", &queue, 42_000, true, false).await;
             if timeouts == 1 {
                 assert!(result.is_ok());
             } else {
@@ -1562,11 +1690,204 @@ mod tests {
             let payloads = counts.payloads.lock().unwrap().clone();
             assert_eq!(payloads[0], payloads[1]);
             assert!(control.has_playback_session("group-1").unwrap());
-            control.play_cloud_queue("group-1", &queue, 42_000, false).await.unwrap();
+            control.play_cloud_queue("group-1", &queue, 42_000, false, true).await.unwrap();
             assert_eq!(counts.sessions.load(Ordering::SeqCst), 1);
             assert_eq!(counts.loads.load(Ordering::SeqCst), 3);
             server.abort();
         }
+    }
+
+    #[tokio::test]
+    async fn lost_queue_replies_are_reconciled_without_restarting_confirmed_playback() {
+        #[derive(Clone)]
+        struct Scenario {
+            loads: Arc<AtomicUsize>,
+            confirm_after: usize,
+            queue_version: &'static str,
+            item_id: &'static str,
+            state: &'static str,
+            status_unavailable: bool,
+        }
+        async fn load(State(scenario): State<Scenario>) -> (axum::http::StatusCode, Json<serde_json::Value>) {
+            scenario.loads.fetch_add(1, Ordering::SeqCst);
+            (axum::http::StatusCode::GATEWAY_TIMEOUT, Json(serde_json::json!({"errorCode": "ERROR_COMMAND_TIMEOUT"})))
+        }
+        async fn playback(State(scenario): State<Scenario>) -> axum::response::Response {
+            use axum::response::IntoResponse;
+            if scenario.status_unavailable {
+                return axum::http::StatusCode::SERVICE_UNAVAILABLE.into_response();
+            }
+            let state = if scenario.loads.load(Ordering::SeqCst) >= scenario.confirm_after {
+                scenario.state
+            } else { "PLAYBACK_STATE_PAUSED" };
+            Json(serde_json::json!({
+                "playbackState": state, "positionMillis": 47_000,
+                "queueVersion": scenario.queue_version, "itemId": scenario.item_id,
+            })).into_response()
+        }
+        // Lost first reply, lost retry reply, unrelated queue, unrelated track,
+        // still paused, and no way to read the speaker's state.
+        for (confirm_after, version, item, state, unavailable, expected_loads, success) in [
+            (1, "queue-1", "item-1", "PLAYBACK_STATE_PLAYING", false, 1, true),
+            (2, "queue-1", "item-1", "PLAYBACK_STATE_PLAYING", false, 2, true),
+            (1, "other-queue", "item-1", "PLAYBACK_STATE_PLAYING", false, 2, false),
+            (1, "queue-1", "other-item", "PLAYBACK_STATE_PLAYING", false, 2, false),
+            (1, "queue-1", "item-1", "PLAYBACK_STATE_PAUSED", false, 2, false),
+            (1, "queue-1", "item-1", "PLAYBACK_STATE_PLAYING", true, 1, false),
+        ] {
+            let loads = Arc::new(AtomicUsize::new(0));
+            let router = Router::new()
+                .route("/control/api/v1/groups/group-1/playback", get(playback))
+                .route("/control/api/v1/playbackSessions/session-1/playbackSession/loadCloudQueue", axum::routing::post(load))
+                .fallback(|| async { axum::http::StatusCode::NO_CONTENT })
+                .with_state(Scenario { loads: loads.clone(), confirm_after, queue_version: version, item_id: item, state, status_unavailable: unavailable });
+            let (control, _temp_dir, server) = test_control_with_server(router).await;
+            control.save_tokens(&StoredTokenSet {
+                access_token: "access-token".into(), refresh_token: "refresh-token".into(),
+                token_type: "Bearer".into(), scope: None, expires_at_unix: u64::MAX,
+            }).unwrap();
+            control.remember_session("group-1", "session-1").unwrap();
+            let queue = PlaybackQueueParameters {
+                queue_base_url: "https://example.com/queue/v2.3".into(), http_authorization: "Bearer test".into(),
+                item_id: "item-1".into(), queue_version: "queue-1".into(),
+            };
+            let result = control.play_cloud_queue("group-1", &queue, 42_000, false, true).await;
+            assert_eq!(result.is_ok(), success, "{confirm_after}, {version}, {item}, {state}, {unavailable}");
+            assert_eq!(loads.load(Ordering::SeqCst), expected_loads);
+            assert!(control.has_playback_session("group-1").unwrap());
+            server.abort();
+        }
+    }
+
+    #[tokio::test]
+    async fn stalled_sonos_requests_have_a_deadline() {
+        let router = Router::new().fallback(|| async {
+            std::future::pending::<axum::http::StatusCode>().await
+        });
+        let (control, _temp_dir, server) = test_control_with_server(router).await;
+        control.save_tokens(&StoredTokenSet {
+            access_token: "access-token".into(), refresh_token: "refresh-token".into(),
+            token_type: "Bearer".into(), scope: None, expires_at_unix: u64::MAX,
+        }).unwrap();
+        let result = tokio::time::timeout(CONTROL_REQUEST_TIMEOUT + Duration::from_secs(2), control.group_playback("group-1"))
+            .await.expect("Sonos client must not hang indefinitely");
+        assert!(is_command_timeout(&result.unwrap_err()));
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn sonos_deadline_also_covers_a_stalled_response_body() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let (headers_sent, received_headers) = tokio::sync::oneshot::channel();
+        let server = tokio::spawn(async move {
+            let (mut socket, _) = listener.accept().await.unwrap();
+            let mut request = Vec::new();
+            let mut byte = [0];
+            while !request.ends_with(b"\r\n\r\n") {
+                socket.read_exact(&mut byte).await.unwrap();
+                request.push(byte[0]);
+            }
+            socket.write_all(b"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 100\r\n\r\n{").await.unwrap();
+            headers_sent.send(()).unwrap();
+            std::future::pending::<()>().await;
+        });
+        let (mut control, _database) = test_control();
+        control.endpoints.control = Url::parse(&format!("http://{address}/")).unwrap();
+        control.client = reqwest::Client::builder().timeout(Duration::from_millis(250)).build().unwrap();
+        control.save_tokens(&StoredTokenSet {
+            access_token: "test-token".into(), refresh_token: "test-refresh".into(),
+            token_type: "Bearer".into(), scope: None, expires_at_unix: u64::MAX,
+        }).unwrap();
+        let request = tokio::spawn(async move { control.group_playback("group-1").await });
+        tokio::time::timeout(Duration::from_secs(2), received_headers).await.unwrap().unwrap();
+        let result = tokio::time::timeout(Duration::from_secs(2), request).await.unwrap().unwrap();
+        assert!(is_command_timeout(&result.unwrap_err()));
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn rejected_refresh_tokens_require_reconnection_without_a_refresh_loop() {
+        async fn token(State(count): State<Arc<AtomicUsize>>) -> (axum::http::StatusCode, Json<serde_json::Value>) {
+            count.fetch_add(1, Ordering::SeqCst);
+            (axum::http::StatusCode::BAD_REQUEST, Json(serde_json::json!({"error": "invalid_grant"})))
+        }
+        let count = Arc::new(AtomicUsize::new(0));
+        let router = Router::new().route("/token", axum::routing::post(token)).with_state(count.clone());
+        let (control, _database, server) = test_control_with_server(router).await;
+        control.save_tokens(&StoredTokenSet {
+            access_token: "expired".into(), refresh_token: "revoked".into(),
+            token_type: "Bearer".into(), scope: None, expires_at_unix: 0,
+        }).unwrap();
+        for _ in 0..3 {
+            let error = control.group_playback("group-1").await.unwrap_err();
+            assert!(user_error_message(&error).contains("reconnect to Sonos"));
+        }
+        assert_eq!(count.load(Ordering::SeqCst), 1);
+        assert!(!control.status().unwrap().connected);
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn temporary_refresh_failure_preserves_credentials_for_recovery() {
+        async fn token(State(count): State<Arc<AtomicUsize>>) -> axum::response::Response {
+            use axum::response::IntoResponse;
+            if count.fetch_add(1, Ordering::SeqCst) == 0 {
+                return axum::http::StatusCode::SERVICE_UNAVAILABLE.into_response();
+            }
+            Json(serde_json::json!({"access_token": "renewed", "expires_in": 86400, "token_type": "Bearer"})).into_response()
+        }
+        let count = Arc::new(AtomicUsize::new(0));
+        let router = Router::new().route("/token", axum::routing::post(token)).with_state(count.clone());
+        let (control, _database, server) = test_control_with_server(router).await;
+        control.save_tokens(&StoredTokenSet {
+            access_token: "expired".into(), refresh_token: "still-valid".into(),
+            token_type: "Bearer".into(), scope: None, expires_at_unix: 0,
+        }).unwrap();
+        assert!(control.access_token().await.is_err());
+        assert!(control.status().unwrap().connected);
+        assert_eq!(count.load(Ordering::SeqCst), 1);
+        assert_eq!(control.access_token().await.unwrap(), "renewed");
+        assert_eq!(control.load_tokens().unwrap().unwrap().refresh_token, "still-valid");
+        assert_eq!(count.load(Ordering::SeqCst), 2);
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn failed_old_refresh_does_not_erase_a_new_login() {
+        let arrived = Arc::new(tokio::sync::Notify::new());
+        let release = Arc::new(tokio::sync::Notify::new());
+        let router = Router::new().route("/token", axum::routing::post({
+            let arrived = arrived.clone();
+            let release = release.clone();
+            move || {
+                let arrived = arrived.clone();
+                let release = release.clone();
+                async move {
+                    arrived.notify_one();
+                    release.notified().await;
+                    (axum::http::StatusCode::BAD_REQUEST, Json(serde_json::json!({"error": "invalid_grant"})))
+                }
+            }
+        }));
+        let (control, _database, server) = test_control_with_server(router).await;
+        let control = Arc::new(control);
+        control.save_tokens(&StoredTokenSet {
+            access_token: "old-access".into(), refresh_token: "old-refresh".into(),
+            token_type: "Bearer".into(), scope: None, expires_at_unix: 0,
+        }).unwrap();
+        let request = tokio::spawn({ let control = control.clone(); async move { control.access_token().await } });
+        tokio::time::timeout(Duration::from_secs(2), arrived.notified()).await.unwrap();
+        control.save_tokens(&StoredTokenSet {
+            access_token: "new-access".into(), refresh_token: "new-refresh".into(),
+            token_type: "Bearer".into(), scope: None, expires_at_unix: u64::MAX,
+        }).unwrap();
+        release.notify_one();
+        assert!(request.await.unwrap().is_err());
+        assert!(control.status().unwrap().connected);
+        assert_eq!(control.access_token().await.unwrap(), "new-access");
+        server.abort();
     }
 
     #[tokio::test]
@@ -1616,11 +1937,11 @@ mod tests {
         };
 
         assert!(matches!(
-            control.play_cloud_queue("group-1", &queue, 0, true).await,
+            control.play_cloud_queue("group-1", &queue, 0, true, false).await,
             Err(SonosPlaybackError::SessionEnded(_))
         ));
         assert!(matches!(
-            control.play_cloud_queue("group-1", &queue, 0, false).await,
+            control.play_cloud_queue("group-1", &queue, 0, false, false).await,
             Err(SonosPlaybackError::TakeoverRequired)
         ));
         server.abort();

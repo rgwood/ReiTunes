@@ -36,3 +36,15 @@ sonos_playback_sessions(
     GroupId TEXT PRIMARY KEY NOT NULL,
     SessionId TEXT NOT NULL
 );
+
+-- Discovery is a personal feed, separate from the library's event history.
+-- Keep dismissed URLs too, so refreshing a source cannot resurrect them.
+CREATE TABLE IF NOT EXISTS discovery_state (
+    Id INTEGER PRIMARY KEY CHECK (Id = 1),
+    Serialized TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS discovery_imports (
+    SourceId TEXT PRIMARY KEY NOT NULL,
+    LibraryItemId TEXT NOT NULL
+);

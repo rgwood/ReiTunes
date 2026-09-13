@@ -20,6 +20,8 @@ import { PlaylistSidebar } from './components/PlaylistSidebar';
 import { BookmarkSidebar } from './components/BookmarkSidebar';
 import { SonosModal } from './components/SonosModal';
 import { SettingsDialog } from './components/SettingsDialog';
+import { Discover } from './components/Discover';
+import { isInboxEntry, useDiscovery } from './hooks/useDiscovery';
 import { useLibrary } from './hooks/useLibrary';
 import { useQueueStore } from './hooks/useQueue';
 import { usePlayback } from './hooks/usePlayback';
@@ -29,7 +31,7 @@ import { matchesLibrarySearch } from './utils/libraryBrowser';
 import './App.css';
 
 const queryClient = new QueryClient();
-type Collection = 'all' | 'favourites' | 'recent' | 'unplayed';
+type Collection = 'all' | 'favourites' | 'recent' | 'unplayed' | 'discover';
 interface Playlist {
   id: string;
   name: string;
@@ -72,6 +74,8 @@ function AppContent() {
       new URLSearchParams(window.location.search).get('sonos') === 'connected'
   );
   const { items, isLoading, error } = useLibrary();
+  const { data: discovery } = useDiscovery();
+  const discoveryCount = discovery?.entries.filter(isInboxEntry).length ?? 0;
   const play = usePlayback();
   const {
     currentItem,
@@ -234,13 +238,18 @@ function AppContent() {
   }, [randomFavourite]);
 
   const chooseCollection = (next: Collection) => {
+    if (next === 'discover' || collection === 'discover') setSearchQuery('');
     setCollection(next);
     setSelectedPlaylistId(null);
     if (next === 'recent')
       setRecentCutoff(Date.now() - 30 * 24 * 60 * 60 * 1000);
   };
-  const togglePanel = (next: typeof panel) =>
-    setPanel(panel === next ? null : next);
+  const togglePanel = (next: typeof panel) => {
+    if (collection === 'discover' && (next === 'playlists' || next === 'bookmarks')) {
+      chooseCollection('all');
+      setPanel(next);
+    } else setPanel(panel === next ? null : next);
+  };
 
   return (
     <div
@@ -307,8 +316,8 @@ function AppContent() {
           <input
             ref={searchRef}
             type="search"
-            aria-label="Search library"
-            placeholder="Search"
+            aria-label={collection === 'discover' ? 'Search discovery' : 'Search library'}
+            placeholder={collection === 'discover' ? 'Search sets and sources' : 'Search'}
             value={searchQuery}
             autoComplete="off"
             onChange={(event) => setSearchQuery(event.target.value)}
@@ -346,6 +355,7 @@ function AppContent() {
           <option value="favourites">Favourites</option>
           <option value="recent">Recently added</option>
           <option value="unplayed">Unplayed</option>
+          <option value="discover">Discover{discoveryCount > 0 ? ` (${discoveryCount})` : ''}</option>
           {selectedPlaylist && (
             <option value={`playlist:${selectedPlaylist.id}`}>
               {selectedPlaylist.name}
@@ -353,6 +363,10 @@ function AppContent() {
           )}
         </select>
         <div className="toolbar-actions">
+          <button onClick={() => chooseCollection(collection === 'discover' ? 'all' : 'discover')}
+            aria-pressed={collection === 'discover'}>
+            {collection === 'discover' ? 'All music' : `Discover${discoveryCount > 0 ? ` (${discoveryCount})` : ''}`}
+          </button>
           <button onClick={() => setIsImportOpen(true)}>
             <MusicIcon name="plus" size={14} />
             Import music
@@ -386,8 +400,8 @@ function AppContent() {
         </div>
       </div>
 
-      <main className="library-content" aria-label="Music library">
-        {panel === 'playlists' && (
+      <main className="library-content" aria-label={collection === 'discover' ? 'Music discovery' : 'Music library'}>
+        {panel === 'playlists' && collection !== 'discover' && (
           <aside className="library-sidepanel">
             <button
               className="panel-close"
@@ -405,7 +419,7 @@ function AppContent() {
             />
           </aside>
         )}
-        {panel === 'bookmarks' && (
+        {panel === 'bookmarks' && collection !== 'discover' && (
           <aside className="library-sidepanel">
             <button
               className="panel-close"
@@ -419,9 +433,14 @@ function AppContent() {
         )}
         <div
           className="library-results"
-          aria-busy={isLoading || searchQuery !== deferredSearch}
+          aria-busy={(collection !== 'discover' && isLoading) || searchQuery !== deferredSearch}
         >
-          {error ? (
+          {collection === 'discover' ? (
+            <Discover searchQuery={deferredSearch} onOpenLibrary={(id) => {
+              chooseCollection('all');
+              setRevealRequest({ itemId: id });
+            }} />
+          ) : error ? (
             <div className="library-message" role="alert">
               Couldn’t load the library.{' '}
               <button
@@ -488,13 +507,13 @@ function AppContent() {
       </main>
 
       <footer className="library-status" role="status">
-        <span>
+        {collection === 'discover' ? <span>{discoveryCount} sets in inbox · {discovery?.sources.length ?? 0} sources</span> : <span>
           {filteredItems.length.toLocaleString()}
           {filteredItems.length !== items.length &&
             ` of ${items.length.toLocaleString()}`}{' '}
           {items.length === 1 ? 'track' : 'tracks'}
           {selectedPlaylist && ` · ${selectedPlaylist.name}`}
-        </span>
+        </span>}
         {collection === 'recent' && <span>Last 30 days</span>}
       </footer>
       {isDragging && (

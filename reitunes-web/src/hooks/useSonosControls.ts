@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { SONOS_REALTIME_EVENT } from './useLibrary';
 import { usePlaybackTargetStore } from '../stores/playbackTargetStore';
 import type { SonosRealtimeUpdate } from '../types';
+import { sonosRequest, SonosRequestError } from '../utils/sonosRequest';
 
 const PLAYBACK_POLL_MILLIS = 30_000;
 const VOLUME_POLL_MILLIS = 60_000;
@@ -28,64 +29,65 @@ interface ObservedPlayback extends SonosPlaybackStatus {
   observedAt: number;
 }
 
-async function responseError(response: Response): Promise<string> {
-  try {
-    const body = (await response.json()) as { error?: string };
-    return body.error || `Request failed (${response.status})`;
-  } catch {
-    return `Request failed (${response.status})`;
-  }
-}
-
 export function useSonosControls(groupId: string | null) {
   const activeGroupRef = useRef(groupId);
   activeGroupRef.current = groupId;
-  const positionRef = useRef(0);
+  const playbackRevision = useRef(0);
+  const volumeRevision = useRef(0);
+  const latestPlayback = useRef<SonosPlaybackStatus | null>(null);
   const [playback, setPlayback] = useState<ObservedPlayback | null>(null);
   const [positionMillis, setPositionMillis] = useState(0);
   const [volume, setVolumeState] = useState<SonosGroupVolume | null>(null);
-  const [pollError, setPollError] = useState<string | null>(null);
+  const [playbackPollError, setPlaybackPollError] = useState<string | null>(null);
+  const [volumePollError, setVolumePollError] = useState<string | null>(null);
   const [commandError, setCommandError] = useState<string | null>(null);
-  const { isTransportPending, setTransportPending: setIsTransportPending } = usePlaybackTargetStore();
+  const { target: activeTarget, isTransportPending, setTransportPending: setIsTransportPending } = usePlaybackTargetStore();
   const [isVolumePending, setIsVolumePending] = useState(false);
 
   const applyPlayback = useCallback((next: SonosPlaybackStatus, requestedGroup: string) => {
     if (activeGroupRef.current !== requestedGroup) return;
+    playbackRevision.current += 1;
+    latestPlayback.current = next;
     const observed = { ...next, observedAt: Date.now() };
     setPlayback(observed);
-    positionRef.current = next.positionMillis;
     setPositionMillis(next.positionMillis);
-    setPollError(null);
+    setPlaybackPollError(null);
   }, []);
 
   const applyVolume = useCallback((next: SonosGroupVolume, requestedGroup: string) => {
     if (activeGroupRef.current !== requestedGroup) return;
+    volumeRevision.current += 1;
     setVolumeState(next);
-    setPollError(null);
+    setVolumePollError(null);
   }, []);
 
   const refreshPlayback = useCallback(async () => {
     if (!groupId) return;
     const requestedGroup = groupId;
-    const response = await fetch(
+    const revision = ++playbackRevision.current;
+    const next = await sonosRequest<SonosPlaybackStatus>(
       `/api/sonos/groups/${encodeURIComponent(requestedGroup)}/playback`,
-      { credentials: 'include' }
-    );
-    if (!response.ok) throw new Error(await responseError(response));
-    const next = (await response.json()) as SonosPlaybackStatus;
-    applyPlayback(next, requestedGroup);
+      {}, 20_000,
+    ).catch(error => {
+      if (revision === playbackRevision.current && activeGroupRef.current === requestedGroup) throw error;
+      return null;
+    });
+    if (next && revision === playbackRevision.current) applyPlayback(next, requestedGroup);
+    return activeGroupRef.current === requestedGroup ? latestPlayback.current : null;
   }, [applyPlayback, groupId]);
 
   const refreshVolume = useCallback(async () => {
     if (!groupId) return;
     const requestedGroup = groupId;
-    const response = await fetch(
+    const revision = ++volumeRevision.current;
+    const next = await sonosRequest<SonosGroupVolume>(
       `/api/sonos/groups/${encodeURIComponent(requestedGroup)}/volume`,
-      { credentials: 'include' }
-    );
-    if (!response.ok) throw new Error(await responseError(response));
-    const next = (await response.json()) as SonosGroupVolume;
-    applyVolume(next, requestedGroup);
+      {}, 20_000,
+    ).catch(error => {
+      if (revision === volumeRevision.current && activeGroupRef.current === requestedGroup) throw error;
+      return null;
+    });
+    if (next && revision === volumeRevision.current) applyVolume(next, requestedGroup);
   }, [applyVolume, groupId]);
 
   useEffect(() => {
@@ -113,50 +115,69 @@ export function useSonosControls(groupId: string | null) {
   }, [applyPlayback, applyVolume, groupId]);
 
   useEffect(() => {
-    if (!groupId) {
-      setPlayback(null);
-      setPositionMillis(0);
-      setVolumeState(null);
-      setPollError(null);
-      setCommandError(null);
-      return;
-    }
+    playbackRevision.current += 1;
+    volumeRevision.current += 1;
+    latestPlayback.current = null;
+    setPlayback(null);
+    setPositionMillis(0);
+    setVolumeState(null);
+    setPlaybackPollError(null);
+    setVolumePollError(null);
+    setCommandError(null);
+    setIsVolumePending(false);
+    if (!groupId) return;
 
+    let pending = false;
     const refresh = () => {
+      if (pending || document.visibilityState === 'hidden') return;
+      pending = true;
       void refreshPlayback().catch((nextError) => {
         if (activeGroupRef.current === groupId) {
-          setPollError(nextError instanceof Error ? nextError.message : 'Could not read Sonos playback');
+          setPlaybackPollError(nextError instanceof Error ? nextError.message : 'Could not read Sonos playback');
         }
-      });
+      }).finally(() => { pending = false; });
     };
     refresh();
     const interval = window.setInterval(refresh, PLAYBACK_POLL_MILLIS);
-    return () => window.clearInterval(interval);
-  }, [groupId, refreshPlayback]);
+    window.addEventListener('online', refresh);
+    document.addEventListener('visibilitychange', refresh);
+    return () => {
+      window.clearInterval(interval);
+      window.removeEventListener('online', refresh);
+      document.removeEventListener('visibilitychange', refresh);
+    };
+  }, [activeTarget, groupId, refreshPlayback]);
 
   useEffect(() => {
     if (!groupId) return;
+    let pending = false;
     const refresh = () => {
+      if (pending || document.visibilityState === 'hidden') return;
+      pending = true;
       void refreshVolume().catch((nextError) => {
         if (activeGroupRef.current === groupId) {
-          setPollError(nextError instanceof Error ? nextError.message : 'Could not read Sonos volume');
+          setVolumePollError(nextError instanceof Error ? nextError.message : 'Could not read Sonos volume');
         }
-      });
+      }).finally(() => { pending = false; });
     };
     refresh();
     const interval = window.setInterval(refresh, VOLUME_POLL_MILLIS);
-    return () => window.clearInterval(interval);
+    window.addEventListener('online', refresh);
+    document.addEventListener('visibilitychange', refresh);
+    return () => {
+      window.clearInterval(interval);
+      window.removeEventListener('online', refresh);
+      document.removeEventListener('visibilitychange', refresh);
+    };
   }, [groupId, refreshVolume]);
 
   useEffect(() => {
     if (!playback) return;
-    positionRef.current = playback.positionMillis;
     setPositionMillis(playback.positionMillis);
     if (playback.playbackState !== 'PLAYBACK_STATE_PLAYING') return;
 
     const update = () => {
       const position = playback.positionMillis + Date.now() - playback.observedAt;
-      positionRef.current = position;
       setPositionMillis(position);
     };
     const interval = window.setInterval(update, 250);
@@ -169,36 +190,34 @@ export function useSonosControls(groupId: string | null) {
       if (!groupId || output.isTransportPending || output.isSending || output.isSwitchingOutput) return;
       setIsTransportPending(true);
       setCommandError(null);
-      if (playback) {
-        setPlayback({
-          ...playback,
-          playbackState:
-            command === 'play' ? 'PLAYBACK_STATE_PLAYING' : 'PLAYBACK_STATE_PAUSED',
-          positionMillis: positionRef.current,
-          observedAt: Date.now(),
-        });
-      }
+      playbackRevision.current += 1;
+      const isCurrent = () => usePlaybackTargetStore.getState().target === output.target;
 
+      let readAttempted = false;
       try {
-        const response = await fetch(
+        await sonosRequest(
           `/api/sonos/groups/${encodeURIComponent(groupId)}/playback/${command}`,
           { method: 'POST', credentials: 'include' }
         );
-        if (!response.ok) {
-          const message = await responseError(response);
-          if (response.status === 409) {
-            usePlaybackTargetStore.getState().failSending(message, true);
-          }
-          throw new Error(message);
-        }
+        readAttempted = true;
         await refreshPlayback();
       } catch (nextError) {
+        if (!isCurrent()) return;
+        if (nextError instanceof SonosRequestError && nextError.status === 409) {
+          usePlaybackTargetStore.getState().failSending(nextError.message, true);
+        }
+        // A lost reply is ambiguous: ask the speaker before showing a failure.
+        const observed = readAttempted ? null : await refreshPlayback().catch(() => null);
+        if (!isCurrent()) return;
+        const desiredState = command === 'play' ? 'PLAYBACK_STATE_PLAYING' : 'PLAYBACK_STATE_PAUSED';
+        if (observed?.reitunesSessionActive && observed.playbackState === desiredState &&
+          !(nextError instanceof SonosRequestError && nextError.status === 409)) return;
         setCommandError(nextError instanceof Error ? nextError.message : `Could not ${command} Sonos`);
       } finally {
-        setIsTransportPending(false);
+        if (isCurrent()) setIsTransportPending(false);
       }
     },
-    [groupId, playback, refreshPlayback, setIsTransportPending]
+    [groupId, refreshPlayback, setIsTransportPending]
   );
 
   const setGroupVolume = useCallback(
@@ -207,11 +226,12 @@ export function useSonosControls(groupId: string | null) {
       const rounded = Math.min(100, Math.max(0, Math.round(nextVolume)));
       setIsVolumePending(true);
       setCommandError(null);
-      setVolumeState((current) =>
-        current ? { ...current, volume: rounded, muted: false } : current
-      );
+      volumeRevision.current += 1;
+      const target = usePlaybackTargetStore.getState().target;
+      const isCurrent = () => usePlaybackTargetStore.getState().target === target;
+      let readAttempted = false;
       try {
-        const response = await fetch(
+        await sonosRequest(
           `/api/sonos/groups/${encodeURIComponent(groupId)}/volume`,
           {
             method: 'POST',
@@ -220,13 +240,14 @@ export function useSonosControls(groupId: string | null) {
             body: JSON.stringify({ volume: rounded }),
           }
         );
-        if (!response.ok) throw new Error(await responseError(response));
+        readAttempted = true;
         await refreshVolume();
       } catch (nextError) {
+        if (!isCurrent()) return;
         setCommandError(nextError instanceof Error ? nextError.message : 'Could not change Sonos volume');
-        await refreshVolume().catch(() => undefined);
+        if (!readAttempted) await refreshVolume().catch(() => undefined);
       } finally {
-        setIsVolumePending(false);
+        if (isCurrent()) setIsVolumePending(false);
       }
     },
     [groupId, isVolumePending, refreshVolume, volume?.fixed]
@@ -239,8 +260,11 @@ export function useSonosControls(groupId: string | null) {
       !Number.isFinite(position)) return;
     setIsTransportPending(true);
     setCommandError(null);
+    playbackRevision.current += 1;
+    const isCurrent = () => usePlaybackTargetStore.getState().target === output.target;
+    let readAttempted = false;
     try {
-      const response = await fetch(
+      await sonosRequest(
         `/api/sonos/groups/${encodeURIComponent(groupId)}/playback/seek`,
         {
           method: 'POST', credentials: 'include',
@@ -248,17 +272,17 @@ export function useSonosControls(groupId: string | null) {
           body: JSON.stringify({ itemId: playback.itemId, positionMillis: Math.min(2_147_483_647, Math.max(0, Math.round(position))) }),
         }
       );
-      if (!response.ok) {
-        const message = await responseError(response);
-        if (response.status === 409) usePlaybackTargetStore.getState().failSending(message, true);
-        throw new Error(message);
-      }
+      readAttempted = true;
       await refreshPlayback();
     } catch (nextError) {
+      if (!isCurrent()) return;
+      if (nextError instanceof SonosRequestError && nextError.status === 409) {
+        usePlaybackTargetStore.getState().failSending(nextError.message, true);
+      }
       setCommandError(nextError instanceof Error ? nextError.message : 'Could not seek on Sonos');
-      await refreshPlayback().catch(() => undefined);
+      if (!readAttempted) await refreshPlayback().catch(() => undefined);
     } finally {
-      setIsTransportPending(false);
+      if (isCurrent()) setIsTransportPending(false);
     }
   }, [groupId, playback, refreshPlayback, setIsTransportPending]);
 
@@ -267,9 +291,12 @@ export function useSonosControls(groupId: string | null) {
       if (!groupId || isVolumePending || volume?.fixed) return;
       setIsVolumePending(true);
       setCommandError(null);
-      setVolumeState((current) => (current ? { ...current, muted } : current));
+      volumeRevision.current += 1;
+      const target = usePlaybackTargetStore.getState().target;
+      const isCurrent = () => usePlaybackTargetStore.getState().target === target;
+      let readAttempted = false;
       try {
-        const response = await fetch(
+        await sonosRequest(
           `/api/sonos/groups/${encodeURIComponent(groupId)}/mute`,
           {
             method: 'POST',
@@ -278,13 +305,14 @@ export function useSonosControls(groupId: string | null) {
             body: JSON.stringify({ muted }),
           }
         );
-        if (!response.ok) throw new Error(await responseError(response));
+        readAttempted = true;
         await refreshVolume();
       } catch (nextError) {
+        if (!isCurrent()) return;
         setCommandError(nextError instanceof Error ? nextError.message : 'Could not change Sonos mute');
-        await refreshVolume().catch(() => undefined);
+        if (!readAttempted) await refreshVolume().catch(() => undefined);
       } finally {
-        setIsVolumePending(false);
+        if (isCurrent()) setIsVolumePending(false);
       }
     },
     [groupId, isVolumePending, refreshVolume, volume?.fixed]
@@ -294,7 +322,7 @@ export function useSonosControls(groupId: string | null) {
     playback,
     positionMillis,
     volume,
-    error: commandError ?? pollError,
+    error: commandError ?? playbackPollError ?? volumePollError,
     isTransportPending,
     isVolumePending,
     play: () => sendTransport('play'),

@@ -4,6 +4,7 @@ import { usePlayerStore } from '../stores/playerStore';
 import type { LibraryItem } from '../types';
 import type { SonosPlaybackStatus } from '../hooks/useSonosControls';
 import { recordPlaybackEvent } from '../utils/playbackDiagnostics';
+import { sonosRequest } from '../utils/sonosRequest';
 import './SonosModal.css';
 
 interface SonosStatus {
@@ -45,19 +46,8 @@ interface SonosModalProps {
   items: LibraryItem[];
 }
 
-async function responseError(response: Response): Promise<string> {
-  try {
-    const body = (await response.json()) as { error?: string };
-    return body.error || `Request failed (${response.status})`;
-  } catch {
-    return `Request failed (${response.status})`;
-  }
-}
-
 async function fetchJson<T>(url: string): Promise<T> {
-  const response = await fetch(url, { credentials: 'include', signal: AbortSignal.timeout(15_000) });
-  if (!response.ok) throw new Error(await responseError(response));
-  return response.json() as Promise<T>;
+  return sonosRequest<T>(url, {}, 20_000);
 }
 
 export function SonosModal({ isOpen, onClose, items }: SonosModalProps) {
@@ -123,11 +113,10 @@ export function SonosModal({ isOpen, onClose, items }: SonosModalProps) {
     setIsLoading(true);
     setError(null);
     try {
-      const response = await fetch('/api/sonos/connection', {
+      await sonosRequest('/api/sonos/connection', {
         method: 'DELETE',
         credentials: 'include',
       });
-      if (!response.ok) throw new Error(await responseError(response));
       setStatus({ configured: true, connected: false });
       setHouseholds([]);
       setBrowserTarget();
@@ -149,10 +138,9 @@ export function SonosModal({ isOpen, onClose, items }: SonosModalProps) {
       const before = await fetchJson<SonosPlaybackStatus>(url);
       let playback = before;
       if (before.reitunesSessionActive) {
-        const response = await fetch(`${url}/pause`, {
-          method: 'POST', credentials: 'include', signal: AbortSignal.timeout(15_000),
+        await sonosRequest(`${url}/pause`, {
+          method: 'POST', credentials: 'include',
         });
-        if (!response.ok) throw new Error(await responseError(response));
         // Read the final position after Sonos acknowledges pause. If this read
         // fails, the pre-pause snapshot is still safe to resume locally.
         playback = await fetchJson<SonosPlaybackStatus>(url).catch(() => before);

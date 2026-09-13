@@ -54,6 +54,7 @@ export const usePlaybackTargetStore = create<PlaybackTargetState>()(
           target: { kind: 'browser' },
           takeoverRequired: false,
           isSending: false,
+          isTransportPending: false,
           error: null,
         }),
       setSonosTarget: (target) =>
@@ -61,6 +62,7 @@ export const usePlaybackTargetStore = create<PlaybackTargetState>()(
           target: { kind: 'sonos', ...target },
           takeoverRequired: true,
           isSending: false,
+          isTransportPending: false,
           error: null,
         }),
       beginSending: () => set({ isSending: true, error: null }),
