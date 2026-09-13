@@ -321,7 +321,7 @@ test('queues a link and distinguishes acceptance from completed import', async (
   let downloadBody: unknown;
   await page.route('**/api/download', async (route) => {
     downloadBody = route.request().postDataJSON();
-    await route.fulfill({ status: 200, body: 'Download queued.' });
+    await route.fulfill({ status: 202, json: { id: 1, url: 'https://example.com/a-review-mix', dl_type: 'Audio', stage: 'queued', download_percent: null, error: null } });
   });
   await page.goto('/');
   await page.getByRole('button', { name: 'Import music', exact: true }).click();
@@ -329,10 +329,10 @@ test('queues a link and distinguishes acceptance from completed import', async (
   await dialog.getByRole('tab', { name: 'Link', exact: true }).click();
   await dialog.getByRole('textbox', { name: 'Music or video link', exact: true }).fill('https://example.com/a-review-mix');
   await dialog.getByRole('button', { name: 'Queue download' }).click();
-  await expect(dialog.getByText('Added to the download queue', { exact: true })).toBeVisible();
+  await expect(dialog.getByText('Queued', { exact: true })).toBeVisible();
   expect(downloadBody).toEqual({ url: 'https://example.com/a-review-mix', dl_type: 'Audio' });
-  await expect(dialog.getByText('The track will appear in your library after processing.', { exact: true })).toBeVisible();
-  await expect(dialog.getByRole('button', { name: 'Queued', exact: true })).toBeDisabled();
+  await expect(dialog.getByRole('progressbar', { name: 'File download progress' })).toBeVisible();
+  await expect(dialog.getByText('Added to library', { exact: true })).toHaveCount(0);
 });
 
 test('shows at least thirty compact rows even with an old visual-view preference', async ({ page }, testInfo) => {

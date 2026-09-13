@@ -1,0 +1,17 @@
+.download-progress { display: grid; gap: 6px; min-width: 0; font-size: 0.875rem; }
+.download-progress__heading { color: var(--text); font-variant-numeric: tabular-nums; }
+.download-progress progress { width: 100%; height: 5px; accent-color: var(--accent); }
+.download-progress small { color: var(--muted); }
+.download-progress__error { color: var(--error); margin: 0; overflow-wrap: anywhere; white-space: pre-wrap; }
+.download-progress__actions { display: flex; flex-wrap: wrap; gap: 12px; }
+.download-progress__actions button { color: var(--text); background: none; border: 1px solid var(--border-strong); padding: 5px 9px; border-radius: 4px; cursor: pointer; font: inherit; }
+.download-progress__actions button:disabled { opacity: 0.5; cursor: default; }
+.import-downloads { border-top: 1px solid var(--border-strong); margin-top: 18px; padding-top: 14px; }
+.import-downloads h3 { margin: 0 0 6px; font-size: 1rem; }
+.import-downloads > p { color: var(--muted); font-size: 0.8rem; }
+.import-downloads ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 18px; }
+.import-downloads li { min-width: 0; }
+.import-downloads a { display: block; overflow-wrap: anywhere; font-size: 0.85rem; margin-bottom: 6px; color: var(--muted); }
+
+.discovery-entry-actions .download-progress { width: min(300px, 100%); }
+.discovery .download-progress__error { color: var(--error); }

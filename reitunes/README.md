@@ -37,8 +37,18 @@ Sources, entries, dismissals and import history persist in SQLite. History lets 
 
 ### Downloader setup
 
-Deploy the accompanying `~/source/Downloader` changes before using discovery. They add `POST /metadata` for metadata-only yt-dlp lookups and include the original source URL in successful import callbacks. No additional yt-dlp installation is needed on the ReiTunes host.
+Deploy the accompanying `~/source/Downloader` changes before using discovery. They add `POST /metadata` for metadata-only yt-dlp lookups, `POST /jobs` and `GET /jobs/{id}` for download progress, and include the original source URL in successful import callbacks. No additional yt-dlp installation is needed on the ReiTunes host.
 
 ReiTunes derives the metadata endpoint from `DOWNLOADER_URL`: `http://potato-pi:3000/download` becomes `http://potato-pi:3000/metadata`. Set `DISCOVERY_METADATA_URL` to override it, at build time or runtime. The worker uses its existing yt-dlp executable; its optional `DISCOVERY_YTDLP` setting overrides that path for metadata lookups. Metadata requests are restricted to YouTube and SoundCloud, have time/output limits, and run at most 2 processes concurrently.
 
-“Sent to downloader” means the request was queued, not that it finished. Completed imports are matched to library items by their source URL; older imports can also be recognized by yt-dlp's default `[id]` filename. The downloader does not report background job failures to discovery. Imported files remain in the library when you unfollow a source.
+Completed imports are matched to library items by their source URL; older imports can also be recognized by yt-dlp's default `[id]` filename. Imported files remain in the library when you unfollow a source.
+
+### Download progress
+
+Import music → Link shows recent downloads. Discover → History shows the job attached to each imported set. The UI follows queued, downloading, converting, uploading, adding to the library, completed and failed stages. The percentage describes the current file transfer, so it can reset for another file; conversion and upload have no percentage. Audio is only marked complete after the worker's library callback succeeds. Video downloads do not claim to have added music to the library.
+
+ReiTunes submits to the worker's `/jobs` endpoint and returns its job object from `POST /api/download`. The authenticated `GET /api/downloads/{id}` endpoint proxies status with caching disabled. Visible progress polls every 2 seconds, backs off after temporary errors, and stops on completion or failure. A failed status request never submits a download. Failed jobs offer an explicit retry; discovery checks the old job and prevents concurrent retries from queuing duplicate work.
+
+Discovery job IDs persist in SQLite. Recent jobs also persist in this browser, including up to 20 finished jobs, so closing the dialog or reloading does not lose them. Open the Link tab or History to resume checking progress. Older discovery entries without a job ID still show “Sent to downloader”; they cannot recover progress retroactively.
+
+Run `cargo test -p reitunes downloads` and `cargo test -p reitunes discovery::tests::job_ids` for the worker contract and persisted retry checks. From `reitunes-web`, run `npm run test:e2e -- e2e/downloads.spec.ts e2e/discovery.spec.ts --retries=0` for the UI scenarios. These tests use fake workers and do not download media.

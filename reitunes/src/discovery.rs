@@ -54,6 +54,8 @@ pub struct Entry {
     #[serde(default)]
     library_item_id: Option<String>,
     #[serde(default)]
+    download_job_id: Option<i64>,
+    #[serde(default)]
     error: Option<String>,
 }
 
@@ -97,6 +99,7 @@ struct Listing {
 pub struct Discovery {
     pool: Pool,
     metadata_endpoint: String,
+    downloads: crate::downloads::Downloads,
     data: Mutex<Data>,
     previews: Mutex<HashMap<String, Preview>>,
     // Only one scan at a time, including manual refresh and preview requests.
@@ -283,6 +286,7 @@ fn parse_entry(value: &Value, provider: &str) -> Option<Entry> {
         status: "new".into(),
         discovered_at: now(),
         library_item_id: None,
+        download_job_id: None,
         error: None,
     })
 }
@@ -400,6 +404,7 @@ impl Discovery {
         Ok(Arc::new(Self {
             pool,
             metadata_endpoint: metadata_endpoint()?,
+            downloads: crate::downloads::Downloads::new(&crate::downloader_url()).map_err(|(_, message)| anyhow::anyhow!(message))?,
             data: Mutex::new(data),
             previews: Mutex::new(HashMap::new()),
             scanner: Arc::new(Semaphore::new(1)),
@@ -793,6 +798,13 @@ async fn import(
             "This set is already in your library.".into(),
         ));
     }
+    let previous_job = discovery.data.lock().await.entries.iter()
+        .find(|entry| entry.id == id && entry.status == "queued")
+        .and_then(|entry| entry.download_job_id);
+    let failed_job = if let Some(job_id) = previous_job {
+        let job = discovery.downloads.get(job_id).await?;
+        (job.stage == "failed").then_some(job_id)
+    } else { None };
     let url = discovery
         .change(|data| {
             let entry = data
@@ -800,7 +812,7 @@ async fn import(
                 .iter_mut()
                 .find(|e| e.id == id)
                 .ok_or_else(|| (StatusCode::NOT_FOUND, "Set not found.".into()))?;
-            if entry.status == "queued" {
+            if entry.status == "queued" && (failed_job.is_none() || entry.download_job_id != failed_job) {
                 return Err((
                     StatusCode::CONFLICT,
                     "This set has already been sent to the downloader.".into(),
@@ -808,28 +820,30 @@ async fn import(
             }
             // Persist before dispatch to prevent concurrent clicks/restarts from submitting twice.
             entry.status = "queued".into();
+            entry.download_job_id = None;
             entry.error = None;
             Ok(entry.url.clone())
         })
         .await?;
     // Finish recording the result even if the browser leaves or disconnects.
     let task = tokio::spawn(async move {
-        let result = crate::queue_download(crate::DownloadRequest {
+        let result = discovery.downloads.queue(&crate::DownloadRequest {
             url,
             dl_type: "Audio".into(),
         })
         .await;
-        if let Err((_, message)) = &result {
-            discovery
-                .change(|data| {
-                    if let Some(entry) = data.entries.iter_mut().find(|e| e.id == id) {
+        discovery.change(|data| {
+            if let Some(entry) = data.entries.iter_mut().find(|e| e.id == id) {
+                match &result {
+                    Ok(job) => entry.download_job_id = Some(job.id),
+                    Err((_, message)) => {
                         entry.status = "import_failed".into();
                         entry.error = Some(message.clone());
                     }
-                    Ok(())
-                })
-                .await?;
-        }
+                }
+            }
+            Ok(())
+        }).await?;
         result.map(|_| StatusCode::ACCEPTED)
     });
     task.await.map_err(internal)?

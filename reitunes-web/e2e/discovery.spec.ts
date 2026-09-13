@@ -114,3 +114,35 @@ test('source errors, filters and narrow layouts remain usable', async ({ page },
   await page.getByRole('button', { name: 'Unfollow', exact: true }).click();
   await expect(page.getByText('Your next favourite set starts here')).toBeVisible();
 });
+
+test('discovery tracks download jobs in History after reload and retries a failed job', async ({ page }, testInfo) => {
+  const { data } = await backend(page, { sources: [source], entries: [set], refreshing: false });
+  let imports = 0;
+  let failed = false;
+  await page.route('**/api/discovery/entries/set-1/import', route => {
+    data.entries[0].status = 'queued';
+    data.entries[0].downloadJobId = ++imports;
+    failed = false;
+    return route.fulfill({ status: 202 });
+  });
+  await page.route('**/api/downloads/*', route => route.fulfill({ json: {
+    id: imports, url: set.url, dl_type: 'Audio', stage: failed ? 'failed' : 'downloading',
+    download_percent: failed ? null : 28, error: failed ? 'Upload failed; check your library before retrying.' : null,
+  } }));
+  await page.goto('/');
+  await page.getByRole('combobox', { name: 'Collection' }).selectOption('discover');
+  await page.getByRole('button', { name: 'Import', exact: true }).click();
+  await page.getByRole('button', { name: 'History', exact: true }).click();
+  await expect(page.getByText('Downloading 28%', { exact: true })).toBeVisible();
+  await page.reload();
+  await page.getByRole('combobox', { name: 'Collection' }).selectOption('discover');
+  await page.getByRole('button', { name: 'History', exact: true }).click();
+  await expect(page.getByText('Downloading 28%', { exact: true })).toBeVisible();
+  await page.screenshot({ path: testInfo.outputPath('discovery-download-progress.png'), fullPage: true });
+  expect(imports).toBe(1);
+  failed = true;
+  await expect(page.getByText('Import failed', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Retry import', exact: true }).click();
+  await expect(page.getByText('Downloading 28%', { exact: true })).toBeVisible();
+  expect(imports).toBe(2);
+});

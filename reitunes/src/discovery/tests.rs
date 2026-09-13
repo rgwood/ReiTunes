@@ -437,3 +437,49 @@ async fn recognizes_completed_import_even_when_filename_changes() {
         StatusCode::CONFLICT
     );
 }
+
+#[tokio::test]
+async fn job_ids_survive_restart_and_only_failed_jobs_can_be_retried() {
+    use std::sync::atomic::{AtomicBool, AtomicI64, Ordering};
+    let failed = Arc::new(AtomicBool::new(false));
+    let submissions = Arc::new(AtomicI64::new(0));
+    let worker = Router::new().route("/jobs", post({
+        let submissions = submissions.clone();
+        move || { let submissions = submissions.clone(); async move {
+            let id = submissions.fetch_add(1, Ordering::SeqCst) + 1;
+            (StatusCode::ACCEPTED, Json(serde_json::json!({"id":id,"url":"https://youtube.com/watch?v=set","dl_type":"Audio","stage":"queued","download_percent":null,"error":null})))
+        }}
+    })).route("/jobs/{id}", get({
+        let failed = failed.clone();
+        move |Path(id): Path<i64>| { let failed = failed.clone(); async move {
+            Json(serde_json::json!({"id":id,"url":"https://youtube.com/watch?v=set","dl_type":"Audio","stage":if id == 1 && failed.load(Ordering::SeqCst) { "failed" } else { "downloading" },"download_percent":null,"error":null}))
+        }}
+    }));
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let endpoint = format!("http://{}/download", listener.local_addr().unwrap());
+    let server = tokio::spawn(axum::serve(listener, worker).into_future());
+    let directory = tempfile::tempdir().unwrap();
+    let pool = reitunes_workspace::open_connection_pool(directory.path().join("library.db").to_str().unwrap()).unwrap();
+    let library = Arc::new(RwLock::new(Library::build_from_events(vec![])));
+    let mut discovery = Discovery::new(pool.clone(), library.clone()).unwrap();
+    Arc::get_mut(&mut discovery).unwrap().downloads = crate::downloads::Downloads::new(&endpoint).unwrap();
+    discovery.change(|data| { data.entries.push(entry("set")); Ok(()) }).await.unwrap();
+    let id = entry("set").id;
+    assert_eq!(import(State(discovery.clone()), Path(id.clone())).await.unwrap(), StatusCode::ACCEPTED);
+    drop(discovery);
+    let mut discovery = Discovery::new(pool, library).unwrap();
+    Arc::get_mut(&mut discovery).unwrap().downloads = crate::downloads::Downloads::new(&endpoint).unwrap();
+    assert_eq!(discovery.snapshot().await.unwrap().data.entries[0].download_job_id, Some(1));
+    assert_eq!(import(State(discovery.clone()), Path(id.clone())).await.unwrap_err().0, StatusCode::CONFLICT);
+    assert_eq!(submissions.load(Ordering::SeqCst), 1);
+    failed.store(true, Ordering::SeqCst);
+    // Both requests may observe the failed job, but only one can claim its retry.
+    let (first, second) = tokio::join!(
+        import(State(discovery.clone()), Path(id.clone())),
+        import(State(discovery.clone()), Path(id)),
+    );
+    assert_eq!(usize::from(first.is_ok()) + usize::from(second.is_ok()), 1);
+    assert_eq!(submissions.load(Ordering::SeqCst), 2);
+    assert_eq!(discovery.snapshot().await.unwrap().data.entries[0].download_job_id, Some(2));
+    server.abort();
+}

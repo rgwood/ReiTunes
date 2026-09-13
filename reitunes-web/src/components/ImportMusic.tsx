@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import type { DragEvent, KeyboardEvent, ReactNode } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
+import { submitDownload, useDownloads } from '../hooks/useDownloads';
+import { DownloadProgress } from './DownloadProgress';
 import './ImportMusic.css';
 
 interface ImportMusicProps {
@@ -90,6 +92,8 @@ export function ImportMusic({
   onDroppedFilesConsumed,
 }: ImportMusicProps) {
   const queryClient = useQueryClient();
+  const downloads = useDownloads(state => state.jobs);
+  const forgetDownload = useDownloads(state => state.forget);
   const dialogRef = useRef<HTMLDialogElement>(null);
   const filesInputRef = useRef<HTMLInputElement>(null);
   const folderInputRef = useRef<HTMLInputElement>(null);
@@ -113,7 +117,7 @@ export function ImportMusic({
   const [url, setUrl] = useState('');
   const [downloadType, setDownloadType] = useState<DownloadType>('Audio');
   const [downloadStatus, setDownloadStatus] = useState<
-    'idle' | 'submitting' | 'queued' | 'error'
+    'idle' | 'submitting' | 'error'
   >('idle');
   const [downloadMessage, setDownloadMessage] = useState('');
   const isBusy = isImporting || downloadStatus === 'submitting';
@@ -274,18 +278,9 @@ export function ImportMusic({
     setDownloadStatus('submitting');
     setDownloadMessage('');
     try {
-      const response = await fetch('/api/download', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url: trimmedUrl, dl_type: downloadType }),
-      });
-      const message = await responseMessage(response);
-      if (!response.ok)
-        throw new Error(
-          message || 'Could not queue this link. Please try again.'
-        );
-      setDownloadStatus('queued');
-      setDownloadMessage(message || 'Your download request was accepted.');
+      await submitDownload(trimmedUrl, downloadType);
+      setDownloadStatus('idle');
+      setUrl('');
     } catch (error) {
       setDownloadStatus('error');
       setDownloadMessage(
@@ -673,18 +668,6 @@ export function ImportMusic({
                 </label>
               ))}
             </fieldset>
-            {downloadStatus === 'queued' && (
-              <div className="import-music__download-result" role="status">
-                <ImportIcon kind="check" />
-                <div>
-                  <strong>Added to the download queue</strong>
-                  <p>{downloadMessage}</p>
-                  <p>
-                    The track will appear in your library after processing.
-                  </p>
-                </div>
-              </div>
-            )}
             {downloadStatus === 'error' && (
               <p className="import-music__error" role="alert">
                 {downloadMessage}
@@ -695,16 +678,25 @@ export function ImportMusic({
               <button
                 className="import-music__button import-music__button--solid"
                 type="submit"
-                disabled={isBusy || !url.trim() || downloadStatus === 'queued'}
+                disabled={isBusy || !url.trim()}
               >
                 {downloadStatus === 'submitting'
                   ? 'Queuing…'
-                  : downloadStatus === 'queued'
-                    ? 'Queued'
-                    : 'Queue download'}
+                  : 'Queue download'}
               </button>
             </footer>
           </form>
+          {isOpen && source === 'url' && downloads.length > 0 && <section className="import-downloads" aria-label="Recent downloads">
+            <h3>Recent downloads</h3>
+            <p>You can close this window. Progress is saved in this browser.</p>
+            <ul>{[...downloads].sort((a, b) => b.id - a.id).map(job => <li key={job.id}>
+              <a href={job.url} target="_blank" rel="noopener noreferrer">{job.url}</a>
+              <DownloadProgress id={job.id} enabled={isOpen && source === 'url'}
+                onRetry={async () => { await submitDownload(job.url, job.dl_type); forgetDownload(job.id); }}
+                onDismiss={() => forgetDownload(job.id)}
+                onOpenLibrary={() => { onImported(); onClose(); }} />
+            </li>)}</ul>
+          </section>}
         </section>
       </div>
     </dialog>

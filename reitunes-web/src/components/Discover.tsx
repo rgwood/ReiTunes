@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { discoveryRequest, isInboxEntry, useDiscovery, type DiscoveryEntry, type DiscoverySource } from '../hooks/useDiscovery';
+import { DownloadProgress } from './DownloadProgress';
 import './Discover.css';
 
 interface Preview {
@@ -148,7 +149,7 @@ export function Discover({ searchQuery, onOpenLibrary }: { searchQuery: string; 
           </article>
         ))}</div> : <>
           {sources.some((source) => source.error) && <p className="discovery-error">Some sources could not refresh. <button onClick={() => setView('sources')}>See source errors</button></p>}
-          {view === 'history' && <p className="discovery-hint">“Sent to downloader” confirms the request was queued. It does not confirm the download finished.</p>}
+          {view === 'history' && <p className="discovery-hint">Downloads continue in the background. Completed audio imports appear in your library.</p>}
           {view === 'archive' && <p className="discovery-hint">Previously fetched sets, including older uploads. Choose a source to load another batch.</p>}
           {!visibleEntries.length && <div className="discovery-empty"><h2>{searchQuery || sourceId ? 'No matching sets' : view === 'inbox' ? 'You’re all caught up' : 'Nothing here yet'}</h2><p>{view === 'inbox' ? 'Check your sources or browse the archive for something older.' : 'Sets you import or dismiss stay in History.'}</p></div>}
           <div className="discovery-entries">{visibleEntries.map((entry) => {
@@ -164,10 +165,15 @@ export function Discover({ searchQuery, onOpenLibrary }: { searchQuery: string; 
               <div className="discovery-entry-actions">
                 <a className="discovery-listen" href={entry.url} target="_blank" rel="noopener noreferrer">Listen on {entrySources[0]?.provider ?? 'source'} ↗</a>
                 {entry.libraryItemId ? <button onClick={() => onOpenLibrary(entry.libraryItemId!)}>In library</button>
+                  : entry.downloadJobId ? <DownloadProgress key={entry.downloadJobId} id={entry.downloadJobId}
+                    onRetry={async () => {
+                      await discoveryRequest(`/entries/${entry.id}/import`);
+                      await queryClient.invalidateQueries({ queryKey: ['discovery'] });
+                    }} />
                   : entry.status === 'queued' ? <span className="discovery-queued">Sent to downloader</span>
                   : <button disabled={Boolean(busy)} onClick={() => void act(entry.id, async () => {
                     await discoveryRequest(`/entries/${entry.id}/import`);
-                    setNotice(`Sent “${entry.title}” to the downloader. You can find it in History.`);
+                    setNotice(`Queued “${entry.title}”. Open History to follow its progress.`);
                   })}>{busy === entry.id ? 'Sending…' : entry.status === 'import_failed' ? 'Retry import' : 'Import'}</button>}
                 {entry.status === 'dismissed' ? <button disabled={Boolean(busy)} onClick={() => void act(entry.id, async () => { await discoveryRequest(`/entries/${entry.id}/restore`); setNotice('Returned to inbox.'); })}>Restore</button>
                   : entry.status !== 'queued' && !entry.libraryItemId && <button disabled={Boolean(busy)} onClick={() => void act(entry.id, async () => { await discoveryRequest(`/entries/${entry.id}/dismiss`); setNotice('Dismissed. You can restore it from History.'); })}>Dismiss</button>}

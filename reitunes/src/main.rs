@@ -40,6 +40,7 @@ mod cloud_queue;
 mod storage;
 mod systemd;
 mod discovery;
+mod downloads;
 
 #[cfg(test)]
 mod sonos_route_tests;
@@ -245,6 +246,7 @@ async fn main() -> Result<()> {
                 // Allow uploads up to 500MB
                 .layer(DefaultBodyLimit::max(500 * 1024 * 1024))
                 .route("/download", post(download_handler))
+                .route("/downloads/{id}", get(download_status_handler))
                 .route("/log", post(frontend_log_handler))
                 .route("/playlists", get(list_playlists_handler).post(create_playlist_handler))
                 .route("/playlists/{id}", axum::routing::put(rename_playlist_handler).delete(delete_playlist_handler))
@@ -1219,10 +1221,17 @@ fn single_video_download_url(input: &str) -> String {
 async fn download_handler(
     JsonExtractor(req): JsonExtractor<DownloadRequest>,
 ) -> Result<impl IntoResponse, (StatusCode, String)> {
-    queue_download(req).await
+    queue_download(req).await.map(|job| (StatusCode::ACCEPTED, Json(job)))
 }
 
-async fn queue_download(mut req: DownloadRequest) -> Result<String, (StatusCode, String)> {
+async fn download_status_handler(
+    axum::extract::Path(id): axum::extract::Path<i64>,
+) -> Result<impl IntoResponse, (StatusCode, String)> {
+    let job = downloads::Downloads::new(&downloader_url())?.get(id).await?;
+    Ok(([(axum::http::header::CACHE_CONTROL, "no-store")], Json(job)))
+}
+
+async fn queue_download(mut req: DownloadRequest) -> Result<downloads::Job, (StatusCode, String)> {
     req.url = single_video_download_url(&req.url);
     if req.url.trim().is_empty() {
         return Err((StatusCode::BAD_REQUEST, "URL must not be empty".to_string()));
@@ -1234,45 +1243,7 @@ async fn queue_download(mut req: DownloadRequest) -> Result<String, (StatusCode,
         ));
     }
 
-    let client = reqwest::Client::new();
-    let response = client
-        .post(downloader_url())
-        .timeout(Duration::from_secs(30))
-        .json(&req)
-        .send()
-        .await
-        .map_err(|e| {
-            warn!(error = %e, "Failed to reach downloader service");
-            (
-                StatusCode::BAD_GATEWAY,
-                format!("Failed to reach downloader service: {e}"),
-            )
-        })?;
-
-    let status = response.status();
-    let body = response.text().await.unwrap_or_default();
-
-    if !status.is_success() {
-        warn!(status = %status, body = %body, "Downloader service returned an error");
-        return Err((
-            StatusCode::BAD_GATEWAY,
-            format!("Downloader service error ({status}): {body}"),
-        ));
-    }
-
-    // The worker currently returns a JSON string with HTTP 200 even when its
-    // queue is unavailable. Surface that as a failure in both import flows.
-    let message = serde_json::from_str::<String>(&body).unwrap_or_else(|_| body.clone());
-    if message.starts_with("Failed to queue download:") {
-        return Err((StatusCode::BAD_GATEWAY, message));
-    }
-
-    info!(
-        source_host = reqwest::Url::parse(&req.url).ok().and_then(|url| url.host_str().map(str::to_owned)),
-        download_type = %req.dl_type,
-        "Download accepted by worker"
-    );
-    Ok(body)
+    downloads::Downloads::new(&downloader_url())?.queue(&req).await
 }
 
 // ============================================================================

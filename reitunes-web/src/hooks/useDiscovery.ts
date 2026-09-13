@@ -26,6 +26,7 @@ export interface DiscoveryEntry {
   status: 'new' | 'dismissed' | 'queued' | 'import_failed';
   discoveredAt: number;
   libraryItemId: string | null;
+  downloadJobId?: number | null;
   error: string | null;
 }
 
