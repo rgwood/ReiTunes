@@ -561,6 +561,11 @@ export function AudioPlayer({ items, onPlaybackPosition }: AudioPlayerProps) {
     setSonosSeekDraft(null);
   };
   const displayedSonosVolume = sonosVolumeDraft ?? sonos.volume?.volume ?? 0;
+  const sonosVolumeDisabled = !sonos.volume || sonos.volume.fixed || sonos.isVolumePending || isSending || isSwitchingOutput;
+  const adjustBrowserVolume = (step: number) => {
+    setVolume(Math.min(100, Math.max(0, Math.round((isMuted ? 0 : volume) * 100) + step)) / 100);
+    setMuted(false);
+  };
   const sonosTransportDisabled =
     isSending || isSwitchingOutput ||
     !sonosSessionActive ||
@@ -734,13 +739,16 @@ export function AudioPlayer({ items, onPlaybackPosition }: AudioPlayerProps) {
             <button
               type="button"
               onClick={() => void sonos.setMuted(!sonos.volume?.muted)}
-              disabled={!sonos.volume || sonos.volume.fixed || sonos.isVolumePending}
+              disabled={sonosVolumeDisabled}
               className="p-1.5 text-solarized-base0 hover:text-solarized-cyan disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
               aria-label={sonos.volume?.muted ? 'Unmute Sonos' : 'Mute Sonos'}
               title={sonos.volume?.muted ? 'Unmute Sonos' : 'Mute Sonos'}
             >
               {sonos.volume?.muted ? Icons.volumeMute : Icons.volume}
             </button>
+            <button type="button" className="volume-step" aria-label="Volume down" title="Volume down by 1%"
+              disabled={sonosVolumeDisabled || displayedSonosVolume <= 0}
+              onClick={() => { setSonosVolumeDraft(null); void sonos.setGroupVolume(displayedSonosVolume - 1); }}>−</button>
             <input
               type="range"
               min="0"
@@ -757,10 +765,13 @@ export function AudioPlayer({ items, onPlaybackPosition }: AudioPlayerProps) {
                   .setGroupVolume(displayedSonosVolume)
                   .then(() => setSonosVolumeDraft(null))
               }
-              disabled={!sonos.volume || sonos.volume.fixed || sonos.isVolumePending}
+              disabled={sonosVolumeDisabled}
               className="volume-slider disabled:opacity-40"
               aria-label="Sonos group volume"
             />
+            <button type="button" className="volume-step" aria-label="Volume up" title="Volume up by 1%"
+              disabled={sonosVolumeDisabled || displayedSonosVolume >= 100}
+              onClick={() => { setSonosVolumeDraft(null); void sonos.setGroupVolume(displayedSonosVolume + 1); }}>+</button>
             <span className="text-xs text-solarized-base0 w-8 text-right tabular-nums">
               {sonos.volume ? displayedSonosVolume : '—'}
             </span>
@@ -921,11 +932,13 @@ export function AudioPlayer({ items, onPlaybackPosition }: AudioPlayerProps) {
           >
             {isMuted ? Icons.volumeMute : Icons.volume}
           </button>
+          <button type="button" className="volume-step" aria-label="Volume down" title="Volume down by 1%"
+            disabled={isMuted || volume <= 0} onClick={() => adjustBrowserVolume(-1)}>−</button>
           <input
             type="range"
             min="0"
             max="1"
-            step="0.05"
+            step="0.01"
             value={isMuted ? 0 : volume}
             onChange={(e) => {
               setVolume(parseFloat(e.target.value));
@@ -934,6 +947,8 @@ export function AudioPlayer({ items, onPlaybackPosition }: AudioPlayerProps) {
             className="volume-slider"
             title="Volume"
           />
+          <button type="button" className="volume-step" aria-label="Volume up" title="Volume up by 1%"
+            disabled={!isMuted && volume >= 1} onClick={() => adjustBrowserVolume(1)}>+</button>
         </div>
       </div>
     </div>
