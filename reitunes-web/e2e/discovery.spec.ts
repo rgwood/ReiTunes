@@ -146,3 +146,54 @@ test('discovery tracks download jobs in History after reload and retries a faile
   await expect(page.getByText('Downloading 28%', { exact: true })).toBeVisible();
   expect(imports).toBe(2);
 });
+
+test('older imports can return to the inbox or be resent from History', async ({ page }, testInfo) => {
+  const { data, requests } = await backend(page, { sources: [source], entries: [{ ...set, status: 'queued' }], refreshing: false });
+  await page.goto('/');
+  await page.getByRole('combobox', { name: 'Collection' }).selectOption('discover');
+  await page.getByRole('button', { name: 'History', exact: true }).click();
+  await expect(page.getByText('Sent to downloader', { exact: true })).toBeVisible();
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.screenshot({ path: testInfo.outputPath('discovery-recovery-mobile.png'), fullPage: true });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  await page.getByRole('button', { name: 'Return to inbox', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Import', exact: true })).toBeVisible();
+  expect(requests.filter(request => request.path.endsWith('/import'))).toHaveLength(0);
+  await page.reload();
+  await page.getByRole('combobox', { name: 'Collection' }).selectOption('discover');
+  await expect(page.getByRole('button', { name: 'Import', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Import', exact: true }).click();
+  await page.getByRole('button', { name: 'History', exact: true }).click();
+  await page.route('**/api/discovery/entries/set-1/import', route => {
+    requests.push({ path: '/api/discovery/entries/set-1/import', body: null });
+    data.entries[0].downloadJobId = 9;
+    return route.fulfill({ status: 202 });
+  });
+  await page.route('**/api/downloads/9', route => route.fulfill({ json: {
+    id: 9, url: set.url, dl_type: 'Audio', stage: 'downloading', download_percent: 12, error: null,
+  } }));
+  await page.getByRole('button', { name: 'Resend to downloader', exact: true }).click();
+  await expect(page.getByText('Downloading 12%', { exact: true })).toBeVisible();
+  expect(requests.filter(request => request.path.endsWith('/import'))).toHaveLength(2);
+  await expect(page.getByRole('button', { name: 'Return to inbox', exact: true })).toHaveCount(0);
+});
+
+for (const missing of [false, true]) {
+  test(`returns a ${missing ? 'missing' : 'failed'} download to the inbox with an import button`, async ({ page }) => {
+    const { data, requests } = await backend(page, { sources: [source], entries: [{ ...set, status: 'queued', downloadJobId: 9 }], refreshing: false });
+    await page.route('**/api/downloads/9', route => missing ? route.fulfill({ status: 404, body: 'Job no longer available.' }) : route.fulfill({ json: {
+      id: 9, url: set.url, dl_type: 'Audio', stage: 'failed', download_percent: null, error: 'Download failed.',
+    } }));
+    await page.route('**/api/discovery/entries/set-1/restore', route => {
+      data.entries[0].status = 'new'; data.entries[0].downloadJobId = null;
+      return route.fulfill({ status: 204 });
+    });
+    await page.goto('/');
+    await page.getByRole('combobox', { name: 'Collection' }).selectOption('discover');
+    await page.getByRole('button', { name: 'History', exact: true }).click();
+    await page.getByRole('button', { name: 'Return to inbox', exact: true }).click();
+    await expect(page.getByRole('button', { name: 'Import', exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Retry import', exact: true })).toHaveCount(0);
+    expect(requests.filter(request => request.path.endsWith('/import'))).toHaveLength(0);
+  });
+}

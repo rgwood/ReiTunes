@@ -203,7 +203,7 @@ async fn failed_persistence_does_not_change_memory() {
 }
 
 #[tokio::test]
-async fn refuses_repeat_imports_before_contacting_downloader() {
+async fn restores_legacy_imports_without_contacting_downloader() {
     let pool = r2d2::Pool::builder()
         .max_size(1)
         .build(r2d2_sqlite::SqliteConnectionManager::memory())
@@ -227,10 +227,11 @@ async fn refuses_repeat_imports_before_contacting_downloader() {
         })
         .await
         .unwrap();
-    assert_eq!(
-        import(State(discovery), Path(id)).await.unwrap_err().0,
-        StatusCode::CONFLICT
-    );
+    restore(State(discovery.clone()), Path(id)).await.unwrap();
+    let restored = discovery.snapshot().await.unwrap().data.entries.remove(0);
+    assert_eq!(restored.status, "new");
+    assert!(restored.inbox);
+    assert_eq!(restored.download_job_id, None);
 }
 
 #[tokio::test]
@@ -440,8 +441,8 @@ async fn recognizes_completed_import_even_when_filename_changes() {
 
 #[tokio::test]
 async fn job_ids_survive_restart_and_only_failed_jobs_can_be_retried() {
-    use std::sync::atomic::{AtomicBool, AtomicI64, Ordering};
-    let failed = Arc::new(AtomicBool::new(false));
+    use std::sync::atomic::{AtomicI64, Ordering};
+    let failed = Arc::new(AtomicI64::new(0));
     let submissions = Arc::new(AtomicI64::new(0));
     let worker = Router::new().route("/jobs", post({
         let submissions = submissions.clone();
@@ -452,7 +453,7 @@ async fn job_ids_survive_restart_and_only_failed_jobs_can_be_retried() {
     })).route("/jobs/{id}", get({
         let failed = failed.clone();
         move |Path(id): Path<i64>| { let failed = failed.clone(); async move {
-            Json(serde_json::json!({"id":id,"url":"https://youtube.com/watch?v=set","dl_type":"Audio","stage":if id == 1 && failed.load(Ordering::SeqCst) { "failed" } else { "downloading" },"download_percent":null,"error":null}))
+            Json(serde_json::json!({"id":id,"url":"https://youtube.com/watch?v=set","dl_type":"Audio","stage":if id == failed.load(Ordering::SeqCst) { "failed" } else { "downloading" },"download_percent":null,"error":null}))
         }}
     }));
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -463,7 +464,7 @@ async fn job_ids_survive_restart_and_only_failed_jobs_can_be_retried() {
     let library = Arc::new(RwLock::new(Library::build_from_events(vec![])));
     let mut discovery = Discovery::new(pool.clone(), library.clone()).unwrap();
     Arc::get_mut(&mut discovery).unwrap().downloads = crate::downloads::Downloads::new(&endpoint).unwrap();
-    discovery.change(|data| { data.entries.push(entry("set")); Ok(()) }).await.unwrap();
+    discovery.change(|data| { let mut old = entry("set"); old.status = "queued".into(); data.entries.push(old); Ok(()) }).await.unwrap();
     let id = entry("set").id;
     assert_eq!(import(State(discovery.clone()), Path(id.clone())).await.unwrap(), StatusCode::ACCEPTED);
     drop(discovery);
@@ -472,14 +473,56 @@ async fn job_ids_survive_restart_and_only_failed_jobs_can_be_retried() {
     assert_eq!(discovery.snapshot().await.unwrap().data.entries[0].download_job_id, Some(1));
     assert_eq!(import(State(discovery.clone()), Path(id.clone())).await.unwrap_err().0, StatusCode::CONFLICT);
     assert_eq!(submissions.load(Ordering::SeqCst), 1);
-    failed.store(true, Ordering::SeqCst);
-    // Both requests may observe the failed job, but only one can claim its retry.
+    failed.store(1, Ordering::SeqCst);
+    // Only one concurrent retry can claim the failed job.
     let (first, second) = tokio::join!(
         import(State(discovery.clone()), Path(id.clone())),
-        import(State(discovery.clone()), Path(id)),
+        import(State(discovery.clone()), Path(id.clone())),
     );
     assert_eq!(usize::from(first.is_ok()) + usize::from(second.is_ok()), 1);
     assert_eq!(submissions.load(Ordering::SeqCst), 2);
     assert_eq!(discovery.snapshot().await.unwrap().data.entries[0].download_job_id, Some(2));
+    assert_eq!(restore(State(discovery.clone()), Path(id.clone())).await.unwrap_err().0, StatusCode::CONFLICT);
+    failed.store(2, Ordering::SeqCst);
+    restore(State(discovery.clone()), Path(id.clone())).await.unwrap();
+    let restored = discovery.snapshot().await.unwrap().data.entries.remove(0);
+    assert_eq!(restored.status, "new");
+    assert!(restored.inbox);
+    assert_eq!(restored.download_job_id, None);
+    assert_eq!(submissions.load(Ordering::SeqCst), 2, "restoring must not submit work");
+    import(State(discovery.clone()), Path(id)).await.unwrap();
+    assert_eq!(submissions.load(Ordering::SeqCst), 3);
+    server.abort();
+}
+
+#[tokio::test]
+async fn recovery_preserves_active_completed_and_unavailable_jobs_but_allows_missing_jobs() {
+    let worker = Router::new().route("/jobs/{id}", get(|Path(id): Path<i64>| async move {
+        let status = match id { 3 => StatusCode::SERVICE_UNAVAILABLE, 4 => StatusCode::NOT_FOUND, _ => StatusCode::OK };
+        (status, Json(serde_json::json!({"id":id,"url":"https://youtube.com/watch?v=set","dl_type":"Audio",
+            "stage":if id == 2 { "completed" } else { "downloading" },"download_percent":null,"error":null})))
+    }));
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let endpoint = format!("http://{}/download", listener.local_addr().unwrap());
+    let server = tokio::spawn(axum::serve(listener, worker).into_future());
+    let directory = tempfile::tempdir().unwrap();
+    let pool = reitunes_workspace::open_connection_pool(directory.path().join("library.db").to_str().unwrap()).unwrap();
+    let mut discovery = Discovery::new(pool, Arc::new(RwLock::new(Library::build_from_events(vec![])))).unwrap();
+    Arc::get_mut(&mut discovery).unwrap().downloads = crate::downloads::Downloads::new(&endpoint).unwrap();
+    let id = entry("set").id;
+    for (job_id, expected) in [(1, StatusCode::CONFLICT), (2, StatusCode::CONFLICT), (3, StatusCode::BAD_GATEWAY), (4, StatusCode::NO_CONTENT)] {
+        discovery.change(|data| {
+            let mut item = entry("set"); item.status = "queued".into(); item.download_job_id = Some(job_id);
+            data.entries = vec![item]; Ok(())
+        }).await.unwrap();
+        let result = restore(State(discovery.clone()), Path(id.clone())).await;
+        assert_eq!(result.unwrap_or_else(|(status, _)| status), expected);
+        let item = discovery.snapshot().await.unwrap().data.entries.remove(0);
+        if job_id == 4 {
+            assert_eq!(item.status, "new"); assert!(item.inbox); assert_eq!(item.download_job_id, None);
+        } else {
+            assert_eq!(item.status, "queued"); assert_eq!(item.download_job_id, Some(job_id));
+        }
+    }
     server.abort();
 }

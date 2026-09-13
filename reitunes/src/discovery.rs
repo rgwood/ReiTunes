@@ -102,6 +102,7 @@ pub struct Discovery {
     downloads: crate::downloads::Downloads,
     data: Mutex<Data>,
     previews: Mutex<HashMap<String, Preview>>,
+    import_locks: Mutex<HashMap<String, Arc<Mutex<()>>>>,
     // Only one scan at a time, including manual refresh and preview requests.
     scanner: Arc<Semaphore>,
     library: Arc<RwLock<Library>>,
@@ -407,6 +408,7 @@ impl Discovery {
             downloads: crate::downloads::Downloads::new(&crate::downloader_url()).map_err(|(_, message)| anyhow::anyhow!(message))?,
             data: Mutex::new(data),
             previews: Mutex::new(HashMap::new()),
+            import_locks: Mutex::new(HashMap::new()),
             scanner: Arc::new(Semaphore::new(1)),
             library,
         }))
@@ -759,6 +761,7 @@ async fn set_status(discovery: &Discovery, id: &str, status: &str) -> Result<(),
             entry.error = None;
             if status == "new" {
                 entry.inbox = true;
+                entry.download_job_id = None;
             }
             Ok(())
         })
@@ -777,34 +780,54 @@ async fn restore(
     State(discovery): State<Arc<Discovery>>,
     Path(id): Path<String>,
 ) -> Result<StatusCode, ApiError> {
+    let _guard = lock_import(&discovery, &id).await;
+    ensure_recoverable(&discovery, &id).await?;
     set_status(&discovery, &id, "new").await?;
     Ok(StatusCode::NO_CONTENT)
+}
+
+// Serialize recovery and submission for the same set, including older entries
+// without a job ID. Different sets can still be submitted independently.
+async fn lock_import(discovery: &Discovery, id: &str) -> tokio::sync::OwnedMutexGuard<()> {
+    let lock = discovery.import_locks.lock().await.entry(id.to_owned()).or_default().clone();
+    lock.lock_owned().await
+}
+
+async fn ensure_recoverable(discovery: &Discovery, id: &str) -> Result<(), ApiError> {
+    let entry = discovery.snapshot().await?.data.entries.into_iter()
+        .find(|entry| entry.id == id)
+        .ok_or_else(|| (StatusCode::NOT_FOUND, "Set not found.".into()))?;
+    if entry.library_item_id.is_some() {
+        return Err((StatusCode::CONFLICT, "This set is already in your library.".into()));
+    }
+    if let Some(job_id) = entry.download_job_id {
+        match discovery.downloads.get(job_id).await {
+            Ok(job) if job.stage == "failed" => {},
+            Err((StatusCode::NOT_FOUND, _)) => {},
+            Err(error) => return Err(error),
+            Ok(job) => return Err((StatusCode::CONFLICT, if job.stage == "completed" {
+                "This download has completed. Check your library before importing again."
+            } else {
+                "This download is still active. Wait for it to finish before retrying or returning it to the inbox."
+            }.into())),
+        }
+    }
+    Ok(())
 }
 
 async fn import(
     State(discovery): State<Arc<Discovery>>,
     Path(id): Path<String>,
 ) -> Result<StatusCode, ApiError> {
-    if discovery
-        .snapshot()
-        .await?
-        .data
-        .entries
-        .iter()
-        .any(|e| e.id == id && e.library_item_id.is_some())
-    {
-        return Err((
-            StatusCode::CONFLICT,
-            "This set is already in your library.".into(),
-        ));
-    }
-    let previous_job = discovery.data.lock().await.entries.iter()
-        .find(|entry| entry.id == id && entry.status == "queued")
-        .and_then(|entry| entry.download_job_id);
-    let failed_job = if let Some(job_id) = previous_job {
-        let job = discovery.downloads.get(job_id).await?;
-        (job.stage == "failed").then_some(job_id)
-    } else { None };
+    // Finish recording the result even if the browser leaves or disconnects.
+    tokio::spawn(async move {
+        let _guard = lock_import(&discovery, &id).await;
+        import_locked(discovery, id).await
+    }).await.map_err(internal)?
+}
+
+async fn import_locked(discovery: Arc<Discovery>, id: String) -> Result<StatusCode, ApiError> {
+    ensure_recoverable(&discovery, &id).await?;
     let url = discovery
         .change(|data| {
             let entry = data
@@ -812,41 +835,32 @@ async fn import(
                 .iter_mut()
                 .find(|e| e.id == id)
                 .ok_or_else(|| (StatusCode::NOT_FOUND, "Set not found.".into()))?;
-            if entry.status == "queued" && (failed_job.is_none() || entry.download_job_id != failed_job) {
-                return Err((
-                    StatusCode::CONFLICT,
-                    "This set has already been sent to the downloader.".into(),
-                ));
-            }
-            // Persist before dispatch to prevent concurrent clicks/restarts from submitting twice.
+            // Record submission before dispatch; the per-entry lock prevents
+            // another request from restoring or resending it in the meantime.
             entry.status = "queued".into();
             entry.download_job_id = None;
             entry.error = None;
             Ok(entry.url.clone())
         })
         .await?;
-    // Finish recording the result even if the browser leaves or disconnects.
-    let task = tokio::spawn(async move {
-        let result = discovery.downloads.queue(&crate::DownloadRequest {
+    let result = discovery.downloads.queue(&crate::DownloadRequest {
             url,
             dl_type: "Audio".into(),
         })
         .await;
-        discovery.change(|data| {
-            if let Some(entry) = data.entries.iter_mut().find(|e| e.id == id) {
-                match &result {
-                    Ok(job) => entry.download_job_id = Some(job.id),
-                    Err((_, message)) => {
-                        entry.status = "import_failed".into();
-                        entry.error = Some(message.clone());
-                    }
+    discovery.change(|data| {
+        if let Some(entry) = data.entries.iter_mut().find(|e| e.id == id) {
+            match &result {
+                Ok(job) => entry.download_job_id = Some(job.id),
+                Err((_, message)) => {
+                    entry.status = "import_failed".into();
+                    entry.error = Some(message.clone());
                 }
             }
-            Ok(())
-        }).await?;
-        result.map(|_| StatusCode::ACCEPTED)
-    });
-    task.await.map_err(internal)?
+        }
+        Ok(())
+    }).await?;
+    result.map(|_| StatusCode::ACCEPTED)
 }
 
 #[cfg(test)]

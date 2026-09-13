@@ -2,10 +2,11 @@ import { useState } from 'react';
 import { isFinished, useDownloadJob } from '../hooks/useDownloads';
 import './DownloadProgress.css';
 
-export function DownloadProgress({ id, enabled = true, onRetry, onDismiss, onOpenLibrary }: {
+export function DownloadProgress({ id, enabled = true, onRetry, onRestore, onDismiss, onOpenLibrary }: {
   id: number;
   enabled?: boolean;
   onRetry: () => Promise<void>;
+  onRestore?: () => Promise<void>;
   onDismiss?: () => void;
   onOpenLibrary?: () => void;
 }) {
@@ -28,11 +29,16 @@ export function DownloadProgress({ id, enabled = true, onRetry, onDismiss, onOpe
     {retryError && <p className="download-progress__error" role="alert">{retryError}</p>}
     <div className="download-progress__actions">
       {error && <button type="button" disabled={isFetching} onClick={() => void refetch()}>Check again</button>}
-      {job?.stage === 'failed' && <button type="button" disabled={retrying} onClick={async () => {
+      {(job?.stage === 'failed' || (error?.status === 404 && onRestore)) && <button type="button" disabled={retrying} onClick={async () => {
         setRetrying(true); setRetryError('');
         try { await onRetry(); } catch (error) { setRetryError(error instanceof Error ? error.message : 'Could not retry import.'); }
         finally { setRetrying(false); }
       }}>{retrying ? 'Queuing…' : 'Retry import'}</button>}
+      {onRestore && (job?.stage === 'failed' || error?.status === 404) && <button type="button" disabled={retrying} onClick={async () => {
+        setRetrying(true); setRetryError('');
+        try { await onRestore(); } catch (error) { setRetryError(error instanceof Error ? error.message : 'Could not return this set to the inbox.'); }
+        finally { setRetrying(false); }
+      }}>Return to inbox</button>}
       {job?.stage === 'completed' && job.dl_type === 'Audio' && onOpenLibrary && <button type="button" onClick={onOpenLibrary}>View recent imports</button>}
       {onDismiss && (isFinished(job) || error?.status === 404) && <button type="button" onClick={onDismiss}>Dismiss</button>}
     </div>

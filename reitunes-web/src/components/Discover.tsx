@@ -166,11 +166,29 @@ export function Discover({ searchQuery, onOpenLibrary }: { searchQuery: string; 
                 <a className="discovery-listen" href={entry.url} target="_blank" rel="noopener noreferrer">Listen on {entrySources[0]?.provider ?? 'source'} ↗</a>
                 {entry.libraryItemId ? <button onClick={() => onOpenLibrary(entry.libraryItemId!)}>In library</button>
                   : entry.downloadJobId ? <DownloadProgress key={entry.downloadJobId} id={entry.downloadJobId}
+                    onRestore={async () => {
+                      await discoveryRequest(`/entries/${entry.id}/restore`);
+                      await queryClient.invalidateQueries({ queryKey: ['discovery'] });
+                      setView('inbox'); setNotice(`Returned “${entry.title}” to the inbox.`);
+                    }}
                     onRetry={async () => {
                       await discoveryRequest(`/entries/${entry.id}/import`);
                       await queryClient.invalidateQueries({ queryKey: ['discovery'] });
                     }} />
-                  : entry.status === 'queued' ? <span className="discovery-queued">Sent to downloader</span>
+                  : entry.status === 'queued' ? <div className="discovery-recovery">
+                    <span className="discovery-queued">Sent to downloader</span>
+                    <p>No progress was saved for this import. If it failed, you can resend it or return it to your inbox.</p>
+                    <div className="discovery-actions">
+                      <button disabled={Boolean(busy)} onClick={() => void act(entry.id, async () => {
+                        await discoveryRequest(`/entries/${entry.id}/import`);
+                        setNotice(`Resent “${entry.title}” to the downloader.`);
+                      })}>{busy === entry.id ? 'Sending…' : 'Resend to downloader'}</button>
+                      <button disabled={Boolean(busy)} onClick={() => void act(entry.id, async () => {
+                        await discoveryRequest(`/entries/${entry.id}/restore`);
+                        setView('inbox'); setNotice(`Returned “${entry.title}” to the inbox.`);
+                      })}>Return to inbox</button>
+                    </div>
+                  </div>
                   : <button disabled={Boolean(busy)} onClick={() => void act(entry.id, async () => {
                     await discoveryRequest(`/entries/${entry.id}/import`);
                     setNotice(`Queued “${entry.title}”. Open History to follow its progress.`);

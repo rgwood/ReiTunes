@@ -29,6 +29,7 @@
 .discovery-entry-info p { overflow-wrap: anywhere; }
 .discovery-entry-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; flex-shrink: 0; }
 .discovery-queued { color: var(--muted); padding: 6px 0; }
+.discovery-recovery { max-width: 330px; }
 .discovery-empty { padding: 36px 0; max-width: 520px; }
 .discovery-empty h2 { font-size: 17px; }
 .discovery-empty button { margin-top: 12px; }
