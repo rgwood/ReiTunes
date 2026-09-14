@@ -808,13 +808,13 @@ export function AudioPlayer({ items, onPlaybackPosition }: AudioPlayerProps) {
         <div
           ref={progressRef}
           onClick={handleProgressClick}
-          className="playback-scrubber flex-grow cursor-pointer group relative"
+          className="playback-scrubber flex-grow cursor-pointer relative"
         >
           <div
             className="playback-fill bg-solarized-blue rounded-full"
             style={{ width: `${progress}%` }}
           >
-            <div className="absolute right-0 top-1/2 -translate-y-1/2 w-2.5 h-2.5 bg-solarized-blue rounded-full opacity-0 group-hover:opacity-100 transition-opacity" />
+            <div className="absolute right-0 top-1/2 translate-x-1/2 -translate-y-1/2 w-2.5 h-2.5 bg-solarized-blue rounded-full" />
           </div>
           {/* Bookmark markers */}
           {bookmarks.map((bookmark, idx) => {

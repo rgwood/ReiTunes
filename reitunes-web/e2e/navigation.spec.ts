@@ -50,6 +50,46 @@ async function backend(page: Page) {
 }
 
 for (const viewport of [{ name: 'desktop', width: 1440, height: 900 }, { name: 'mobile', width: 390, height: 844 }]) {
+  test(`playback position stays visible without hover on ${viewport.name}`, async ({ page }, testInfo) => {
+    await page.setViewportSize(viewport);
+    await backend(page);
+    await page.goto('/');
+    await page.getByRole('row').filter({ hasText: 'Northern Sky' }).click();
+    const audio = page.locator('audio');
+    await audio.evaluate(element => {
+      Object.defineProperty(element, 'duration', { configurable: true, value: 1200 });
+      Object.defineProperty(element, 'currentTime', { configurable: true, writable: true, value: 0 });
+      element.dispatchEvent(new Event('loadedmetadata'));
+      element.dispatchEvent(new Event('canplay'));
+    });
+    await page.mouse.move(0, viewport.height - 1);
+    const scrubber = page.locator('.playback-scrubber');
+    const marker = scrubber.locator('.playback-fill > div');
+    for (const seconds of [0, 600, 1200]) {
+      await audio.evaluate((element, time) => {
+        (element as HTMLAudioElement).currentTime = time;
+        element.dispatchEvent(new Event('timeupdate'));
+      }, seconds);
+      await expect(marker).toBeVisible();
+      // Playwright's visibility check alone also accepts fully transparent elements.
+      await expect(marker).toHaveCSS('opacity', '1');
+      await expect.poll(async () => {
+        const track = (await scrubber.boundingBox())!;
+        const thumb = (await marker.boundingBox())!;
+        return Math.abs(thumb.x + thumb.width / 2 - (track.x + track.width * seconds / 1200));
+      }).toBeLessThan(1);
+    }
+    const track = (await scrubber.boundingBox())!;
+    await scrubber.click({ position: { x: track.width / 4, y: track.height / 2 } });
+    // Browser click coordinates round to whole pixels.
+    await expect.poll(async () => Math.abs(await audio.evaluate(element => (element as HTMLAudioElement).currentTime) - 300))
+      .toBeLessThan(1200 / track.width);
+    await audio.evaluate(element => element.dispatchEvent(new Event('timeupdate')));
+    await page.mouse.move(0, viewport.height - 1);
+    await expect(marker).toHaveCSS('opacity', '1');
+    await page.screenshot({ path: testInfo.outputPath(`scrubber-${viewport.name}.png`) });
+  });
+
   test(`compact Discovery navigation preserves browsing and playback on ${viewport.name}`, async ({ page }, testInfo) => {
     await page.setViewportSize(viewport);
     await backend(page);
