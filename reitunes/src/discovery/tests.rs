@@ -387,6 +387,150 @@ fn import_callback_links_match_discovery_identities() {
         Some(identifier("https://soundcloud.com/dj/set"))
     );
     assert!(item_identifier("https://unrelated.example/track").is_none());
+    assert_eq!(item_identifier("https://nts.live/shows/yu-su/episodes/yu-su-1st-june-2026?ref=test"),
+        Some(identifier("https://www.nts.live/shows/yu-su/episodes/yu-su-1st-june-2026")));
+}
+
+#[tokio::test]
+async fn saved_sets_survive_dismissal_refresh_and_restart() {
+    let directory = tempfile::tempdir().unwrap();
+    let pool = reitunes_workspace::open_connection_pool(directory.path().join("library.db").to_str().unwrap()).unwrap();
+    let library = Arc::new(RwLock::new(Library::build_from_events(vec![])));
+    let discovery = Discovery::new(pool.clone(), library.clone()).unwrap();
+    let id = entry("saved").id;
+    discovery.change(|data| { merge_entries(data, "source", vec![entry("saved")], 10); Ok(()) }).await.unwrap();
+    save(State(discovery.clone()), Path(id.clone()), Json(SaveRequest { saved: true })).await.unwrap();
+    set_status(&discovery, &id, "dismissed").await.unwrap();
+    discovery.change(|data| { merge_entries(data, "source", vec![entry("saved")], 10); Ok(()) }).await.unwrap();
+    drop(discovery);
+    let discovery = Discovery::new(pool, library).unwrap();
+    let item = discovery.snapshot().await.unwrap().data.entries.remove(0);
+    assert!(item.saved);
+    assert_eq!(item.status, "dismissed");
+    save(State(discovery.clone()), Path(id), Json(SaveRequest { saved: false })).await.unwrap();
+    assert!(!discovery.snapshot().await.unwrap().data.entries[0].saved);
+}
+
+#[test]
+fn older_discovery_entries_remain_importable_after_upgrade() {
+    let mut raw = serde_json::to_value(entry("older")).unwrap();
+    let fields = raw.as_object_mut().unwrap();
+    for key in ["saved", "description", "genres", "downloadUrl", "canImport"] { fields.remove(key); }
+    let decoded: Entry = serde_json::from_value(raw).unwrap();
+    assert!(!decoded.saved);
+    assert!(decoded.can_import);
+    assert_eq!(decoded.download_url, None);
+}
+
+#[tokio::test]
+async fn nts_import_uses_soundcloud_and_matches_the_resulting_callback() {
+    use reitunes_workspace::{Event, EventWithMetadata};
+    let recording = "https://soundcloud.com/nts-latest/yu-su-show";
+    let worker = Router::new().route("/jobs", post(move |Json(body): Json<Value>| async move {
+        assert_eq!(body["url"], recording);
+        (StatusCode::ACCEPTED, Json(serde_json::json!({"id":42,"url":recording,"dl_type":"Audio","stage":"queued","download_percent":null,"error":null})))
+    }));
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let endpoint = format!("http://{}/download", listener.local_addr().unwrap());
+    let server = tokio::spawn(axum::serve(listener, worker).into_future());
+    let directory = tempfile::tempdir().unwrap();
+    let pool = reitunes_workspace::open_connection_pool(directory.path().join("library.db").to_str().unwrap()).unwrap();
+    let library = Arc::new(RwLock::new(Library::build_from_events(vec![])));
+    let mut discovery = Discovery::new(pool.clone(), library.clone()).unwrap();
+    Arc::get_mut(&mut discovery).unwrap().downloads = crate::downloads::Downloads::new(&endpoint).unwrap();
+    let mut episode = entry("nts");
+    episode.url = "https://www.nts.live/shows/yu-su/episodes/yu-su-1st-june-2026".into();
+    episode.id = identifier(&episode.url);
+    episode.download_url = Some(recording.into());
+    let id = episode.id.clone();
+    discovery.change(|data| { data.entries.push(episode); Ok(()) }).await.unwrap();
+    import(State(discovery.clone()), Path(id.clone())).await.unwrap();
+    assert_eq!(discovery.snapshot().await.unwrap().data.entries[0].download_job_id, Some(42));
+    let item_id = uuid::Uuid::new_v4();
+    let event = EventWithMetadata::new(item_id, Event::LibraryItemCreatedEvent {
+        name: "Renamed recording".into(), artist: None, album: None, track_number: None, file_path: "renamed.mp3".into(),
+    }).unwrap();
+    *library.write().await = Library::build_from_events(vec![event]);
+    pool.get().unwrap().execute("INSERT INTO discovery_imports(SourceId, LibraryItemId) VALUES (?1,?2)",
+        [item_identifier(recording).unwrap(), item_id.to_string()]).unwrap();
+    assert_eq!(discovery.snapshot().await.unwrap().data.entries[0].library_item_id, Some(item_id.to_string()));
+    assert_eq!(import(State(discovery.clone()), Path(id)).await.unwrap_err().0, StatusCode::CONFLICT);
+    server.abort();
+}
+
+#[tokio::test]
+async fn nts_without_supported_audio_can_be_saved_but_not_imported() {
+    let directory = tempfile::tempdir().unwrap();
+    let pool = reitunes_workspace::open_connection_pool(directory.path().join("library.db").to_str().unwrap()).unwrap();
+    let discovery = Discovery::new(pool, Arc::new(RwLock::new(Library::build_from_events(vec![])))).unwrap();
+    let id = entry("external").id;
+    discovery.change(|data| { let mut item = entry("external"); item.can_import = false; data.entries.push(item); Ok(()) }).await.unwrap();
+    save(State(discovery.clone()), Path(id.clone()), Json(SaveRequest { saved: true })).await.unwrap();
+    assert_eq!(import(State(discovery.clone()), Path(id)).await.unwrap_err().0, StatusCode::BAD_REQUEST);
+    assert!(discovery.snapshot().await.unwrap().data.entries[0].saved);
+}
+
+#[tokio::test]
+async fn soundcloud_playlists_hydrate_missing_titles_even_without_a_duration_filter() {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    let reads = Arc::new(AtomicUsize::new(0));
+    let worker = Router::new().route("/metadata", post({
+        let reads = reads.clone();
+        move |Json(body): Json<Value>| { let reads = reads.clone(); async move {
+            if body["flat"] == true {
+                Json(serde_json::json!({"title":"Quantic Mixes","entries":[
+                    {"id":"2244499853","url":"https://soundcloud.com/quantic/sub-club","title":null,"duration":null},
+                    {"id":"123456","url":"https://api-v2.soundcloud.com/tracks/123456","title":null},
+                    {"id":"unsafe","url":"http://localhost/private","title":null}
+                ]}))
+            } else {
+                reads.fetch_add(1, Ordering::SeqCst);
+                let (id, public_url, title) = match body["url"].as_str().unwrap() {
+                    "https://soundcloud.com/quantic/sub-club" => ("2244499853", "https://soundcloud.com/quantic/sub-club", "Quantic at Sub Club"),
+                    "https://api-v2.soundcloud.com/tracks/123456" => ("123456", "https://soundcloud.com/quantic/older-set", "An older Quantic mix"),
+                    other => panic!("Unexpected metadata URL: {other}"),
+                };
+                Json(serde_json::json!({"id":id,"webpage_url":public_url,
+                    "url":"https://media.example/signed-audio?token=never-store-this","title":title,"duration":7057,"uploader":"Quantic"}))
+            }
+        }}
+    }));
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let endpoint = format!("http://{}/metadata", listener.local_addr().unwrap());
+    let server = tokio::spawn(axum::serve(listener, worker).into_future());
+    let mut playlist = source();
+    playlist.provider = "SoundCloud".into(); playlist.url = "https://soundcloud.com/quantic/sets/mixes".into(); playlist.min_minutes = 0;
+    let first = list(&endpoint, &playlist, 1, &[]).await.unwrap();
+    assert_eq!(first.entries.len(), 2);
+    assert_eq!(first.entries[0].title, "Quantic at Sub Club");
+    assert_eq!(first.entries[0].url, "https://soundcloud.com/quantic/sub-club");
+    assert_eq!(first.entries[0].duration, Some(7057.0));
+    assert_eq!(first.entries[1].url, "https://soundcloud.com/quantic/older-set");
+    assert_eq!(first.entries[1].id, identifier("https://soundcloud.com/quantic/older-set"));
+    playlist.min_minutes = 30;
+    assert_eq!(list(&endpoint, &playlist, 1, &first.entries).await.unwrap().entries.len(), 2);
+    assert_eq!(reads.load(Ordering::SeqCst), 2, "refresh reuses metadata for both public links and numeric references");
+    server.abort();
+}
+
+#[test]
+fn soundcloud_numeric_references_are_strict_and_never_persisted_as_entries() {
+    let valid = serde_json::json!({"id":"123", "title":"Temporary", "url":"https://api-v2.soundcloud.com/tracks/123"});
+    assert!(parse_candidate(&valid, "SoundCloud").is_some());
+    assert!(parse_entry(&valid, "SoundCloud").is_none());
+    for url in [
+        "https://api-v2.soundcloud.com/tracks/456",
+        "https://api-v2.soundcloud.com/tracks/123?secret_token=private",
+        "https://api-v2.soundcloud.com/tracks/123#fragment",
+        "http://api-v2.soundcloud.com/tracks/123",
+        "https://api-v2.soundcloud.com:443/tracks/123",
+        "https://api-v2.soundcloud.com/tracks/123/",
+        "https://api-v2.soundcloud.com/users/123",
+        "https://api-v2.soundcloud.com.evil.test/tracks/123",
+    ] {
+        let mut candidate = valid.clone(); candidate["url"] = url.into();
+        assert!(parse_candidate(&candidate, "SoundCloud").is_none(), "{url}");
+    }
 }
 
 #[tokio::test]

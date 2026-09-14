@@ -27,6 +27,11 @@ export interface DiscoveryEntry {
   discoveredAt: number;
   libraryItemId: string | null;
   downloadJobId?: number | null;
+  saved?: boolean;
+  description?: string;
+  genres?: string[];
+  downloadUrl?: string | null;
+  canImport?: boolean;
   error: string | null;
 }
 

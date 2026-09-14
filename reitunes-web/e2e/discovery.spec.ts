@@ -80,7 +80,7 @@ test('dismissal survives refresh and reload; archive browsing does not fill the 
   await page.getByRole('button', { name: 'Inbox (1)', exact: true }).click();
   await expect(page.getByRole('article').filter({ hasText: set.title })).toBeVisible();
   await page.getByRole('button', { name: 'Sources (1)', exact: true }).click();
-  await page.getByRole('button', { name: 'Browse archive' }).click();
+  await page.getByRole('button', { name: 'Browse sets' }).click();
   await page.getByRole('button', { name: 'Load 50 more entries' }).click();
   await expect(page.getByText('An older set')).toBeVisible();
   await page.getByRole('button', { name: 'Inbox (1)', exact: true }).click();

@@ -2,11 +2,12 @@ import { useState } from 'react';
 import { isFinished, useDownloadJob } from '../hooks/useDownloads';
 import './DownloadProgress.css';
 
-export function DownloadProgress({ id, enabled = true, onRetry, onRestore, onDismiss, onOpenLibrary }: {
+export function DownloadProgress({ id, enabled = true, onRetry, onRestore, canRestore = true, onDismiss, onOpenLibrary }: {
   id: number;
   enabled?: boolean;
   onRetry: () => Promise<void>;
   onRestore?: () => Promise<void>;
+  canRestore?: boolean;
   onDismiss?: () => void;
   onOpenLibrary?: () => void;
 }) {
@@ -34,7 +35,7 @@ export function DownloadProgress({ id, enabled = true, onRetry, onRestore, onDis
         try { await onRetry(); } catch (error) { setRetryError(error instanceof Error ? error.message : 'Could not retry import.'); }
         finally { setRetrying(false); }
       }}>{retrying ? 'Queuing…' : 'Retry import'}</button>}
-      {onRestore && (job?.stage === 'failed' || error?.status === 404) && <button type="button" disabled={retrying} onClick={async () => {
+      {onRestore && canRestore && (job?.stage === 'failed' || error?.status === 404) && <button type="button" disabled={retrying} onClick={async () => {
         setRetrying(true); setRetryError('');
         try { await onRestore(); } catch (error) { setRetryError(error instanceof Error ? error.message : 'Could not return this set to the inbox.'); }
         finally { setRetrying(false); }

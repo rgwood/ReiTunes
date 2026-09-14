@@ -1,0 +1,9 @@
+.nts-tracklist { margin-top: 8px; }
+.nts-tracklist > button { font-size: 11px; padding: 4px 8px; }
+.nts-tracklist__body { margin-top: 8px; border-left: 2px solid var(--line); padding-left: 12px; }
+.nts-tracklist ol { margin: 0; padding: 0 0 0 20px; max-height: 320px; overflow: auto; }
+.nts-tracklist li { padding: 5px 0; border-bottom: 1px solid var(--line); overflow-wrap: anywhere; }
+.nts-tracklist li::marker { color: var(--muted); font-size: 10px; }
+.nts-tracklist li span { display: block; }
+.nts-tracklist li span:first-child { font-weight: 600; }
+.nts-tracklist li span:last-child { color: var(--muted); }

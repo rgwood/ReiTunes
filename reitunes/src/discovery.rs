@@ -19,7 +19,11 @@ use tokio::sync::{Mutex, RwLock, Semaphore};
 
 type Pool = r2d2::Pool<r2d2_sqlite::SqliteConnectionManager>;
 type ApiError = (StatusCode, String);
+mod nts;
+
 const PAGE_SIZE: usize = 50;
+
+fn default_importable() -> bool { true }
 const REFRESH_SECONDS: i64 = 3 * 60 * 60;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -57,6 +61,16 @@ pub struct Entry {
     download_job_id: Option<i64>,
     #[serde(default)]
     error: Option<String>,
+    #[serde(default)]
+    saved: bool,
+    #[serde(default)]
+    description: String,
+    #[serde(default)]
+    genres: Vec<String>,
+    #[serde(default)]
+    download_url: Option<String>,
+    #[serde(default = "default_importable")]
+    can_import: bool,
 }
 
 #[derive(Clone, Default, Serialize, Deserialize)]
@@ -125,6 +139,7 @@ pub fn item_identifier(input: &str) -> Option<String> {
         return None;
     }
     let canonical = match url.host_str()? {
+        "nts.live" | "www.nts.live" => nts::canonical_episode_url(input).ok()?,
         "youtube.com" | "www.youtube.com" | "m.youtube.com" | "music.youtube.com" => {
             let id = url
                 .query_pairs()
@@ -164,8 +179,12 @@ fn internal(error: impl std::fmt::Display) -> ApiError {
 /// Only accept supported collection URLs. Never pass arbitrary URLs or options
 /// to the metadata process, and strip tracking parameters for deduplication.
 fn source_url(input: &str) -> Result<(String, String)> {
+    if reqwest::Url::parse(input.trim()).ok().and_then(|url| url.host_str().map(str::to_owned))
+        .is_some_and(|host| matches!(host.as_str(), "nts.live" | "www.nts.live")) {
+        return Ok((nts::canonical_show_url(input)?, "NTS".into()));
+    }
     let url =
-        reqwest::Url::parse(input.trim()).context("Enter a complete YouTube or SoundCloud URL.")?;
+        reqwest::Url::parse(input.trim()).context("Enter a complete YouTube, SoundCloud or NTS URL.")?;
     if !matches!(url.scheme(), "http" | "https")
         || !url.username().is_empty()
         || url.password().is_some()
@@ -221,6 +240,14 @@ fn text_field(value: &Value, key: &str) -> Option<String> {
 }
 
 fn parse_entry(value: &Value, provider: &str) -> Option<Entry> {
+    let entry = parse_candidate(value, provider)?;
+    // API references are temporary lookup targets, never listening/import links.
+    (!entry.title.is_empty() && !entry.url.starts_with("https://api-v2.soundcloud.com/")).then_some(entry)
+}
+
+// Flat SoundCloud playlists supply identities and public links without titles.
+// These candidates must be hydrated before they can become visible entries.
+fn parse_candidate(value: &Value, provider: &str) -> Option<Entry> {
     if matches!(
         value.get("live_status").and_then(Value::as_str),
         Some("is_live" | "is_upcoming" | "post_live")
@@ -237,7 +264,7 @@ fn parse_entry(value: &Value, provider: &str) -> Option<Entry> {
             .map(str::to_owned)
             .or_else(|| id.as_u64().map(|id| id.to_string()))
     })?;
-    let title = text_field(value, "title")?;
+    let title = text_field(value, "title").unwrap_or_default();
     if matches!(title.as_str(), "[Deleted video]" | "[Private video]") {
         return None;
     }
@@ -252,11 +279,16 @@ fn parse_entry(value: &Value, provider: &str) -> Option<Entry> {
     } else {
         let raw = text_field(value, "webpage_url").or_else(|| text_field(value, "url"))?;
         let mut url = reqwest::Url::parse(&raw).ok()?;
+        // Flat playlists only include permalinks for their first few tracks.
+        // Accept the extractor's exact numeric reference for metadata hydration.
+        let api_track = !media_id.is_empty() && media_id.len() <= 20
+            && media_id.bytes().all(|c| c.is_ascii_digit())
+            && raw == format!("https://api-v2.soundcloud.com/tracks/{media_id}");
         if !matches!(url.scheme(), "http" | "https")
-            || !matches!(
+            || !(api_track || matches!(
                 url.host_str(),
                 Some("soundcloud.com" | "www.soundcloud.com")
-            )
+            ))
             || !url.username().is_empty()
             || url.password().is_some()
             || url.port().is_some()
@@ -264,7 +296,7 @@ fn parse_entry(value: &Value, provider: &str) -> Option<Entry> {
             return None;
         }
         url.set_scheme("https").ok()?;
-        url.set_host(Some("soundcloud.com")).ok()?;
+        if !api_track { url.set_host(Some("soundcloud.com")).ok()?; }
         url.set_query(None);
         url.set_fragment(None);
         url.to_string().trim_end_matches('/').to_string()
@@ -289,6 +321,11 @@ fn parse_entry(value: &Value, provider: &str) -> Option<Entry> {
         library_item_id: None,
         download_job_id: None,
         error: None,
+        saved: false,
+        description: text_field(value, "description").unwrap_or_default().chars().take(2000).collect(),
+        genres: Vec::new(),
+        download_url: None,
+        can_import: true,
     })
 }
 
@@ -329,7 +366,45 @@ async fn extract(endpoint: &str, url: &str, start: usize, flat: bool) -> Result<
         .context("The downloader returned invalid metadata.")
 }
 
+async fn list_nts(endpoint: &str, source: &Source, start: usize, known: &[Entry]) -> Result<Listing> {
+    let mut listing = nts::list(source, start).await?;
+    let slots = Arc::new(Semaphore::new(2));
+    let mut details = tokio::task::JoinSet::new();
+    for (index, entry) in listing.entries.iter_mut().enumerate() {
+        if let Some(cached) = known.iter().find(|cached| cached.id == entry.id) {
+            entry.duration = cached.duration;
+            entry.media_id.clone_from(&cached.media_id);
+        }
+        // Show durations for the first inboxful even with no duration filter.
+        // Strict filters need metadata for all candidates. Cache it on refresh.
+        if entry.duration.is_none() && (source.min_minutes > 0 || index < 10) {
+            if let Some(url) = entry.download_url.clone() {
+                let slots = slots.clone();
+                let endpoint = endpoint.to_owned();
+                details.spawn(async move {
+                    let _permit = slots.acquire().await.ok()?;
+                    let value = extract(&endpoint, &url, 1, false).await.ok()?;
+                    Some((index, value))
+                });
+            }
+        }
+    }
+    while let Some(result) = details.join_next().await {
+        if let Ok(Some((index, value))) = result {
+            let entry = &mut listing.entries[index];
+            entry.duration = value.get("duration").and_then(Value::as_f64).filter(|value| value.is_finite() && *value > 0.0);
+            if let Some(id) = value.get("id").and_then(Value::as_str) { entry.media_id = id.into(); }
+        }
+    }
+    listing.entries.retain(|entry| source.min_minutes == 0 || entry.duration.is_some_and(|duration| duration >= f64::from(source.min_minutes) * 60.0));
+    Ok(listing)
+}
+
 async fn list(endpoint: &str, source: &Source, start: usize, known: &[Entry]) -> Result<Listing> {
+    if source.provider == "NTS" {
+        return tokio::time::timeout(Duration::from_secs(180), list_nts(endpoint, source, start, known))
+            .await.context("Reading this NTS show took too long. Try again later.")?;
+    }
     tokio::time::timeout(Duration::from_secs(180), async {
         let raw = extract(endpoint, &source.url, start, true).await?;
         let values = raw
@@ -340,17 +415,24 @@ async fn list(endpoint: &str, source: &Source, start: usize, known: &[Entry]) ->
         let mut details = tokio::task::JoinSet::new();
         let detail_slots = Arc::new(Semaphore::new(2));
         for (index, value) in values.iter().take(PAGE_SIZE).enumerate() {
-            let Some(mut entry) = parse_entry(value, &source.provider) else {
+            let Some(mut entry) = parse_candidate(value, &source.provider) else {
                 continue;
             };
-            if let Some(cached) = known.iter().find(|cached| cached.id == entry.id) {
+            if let Some(cached) = known.iter().find(|cached| cached.id == entry.id
+                || (source.provider == "SoundCloud" && cached.media_id == entry.media_id
+                    && cached.url.starts_with("https://soundcloud.com/"))) {
+                entry.id.clone_from(&cached.id);
+                entry.url.clone_from(&cached.url);
+                if entry.title.is_empty() { entry.title.clone_from(&cached.title); }
+                if entry.description.is_empty() { entry.description.clone_from(&cached.description); }
                 entry.duration = entry.duration.or(cached.duration);
                 if entry.uploader.is_empty() {
                     entry.uploader.clone_from(&cached.uploader);
                 }
                 entry.published = entry.published.or_else(|| cached.published.clone());
             }
-            if entry.duration.is_none() && source.min_minutes > 0 {
+            if entry.url.starts_with("https://api-v2.soundcloud.com/") || entry.title.is_empty()
+                || (entry.duration.is_none() && source.min_minutes > 0) {
                 let provider = source.provider.clone();
                 let endpoint = endpoint.to_string();
                 let slots = detail_slots.clone();
@@ -444,8 +526,10 @@ impl Discovery {
             // The existing downloader uses yt-dlp's default title [id].ext name.
             // Do not infer successful downloads just from a queue acknowledgement.
             let suffix = format!("[{}].", entry.media_id);
+            let download_identity = entry.download_url.as_deref().and_then(item_identifier);
             entry.library_item_id = imports
                 .get(&entry.id)
+                .or_else(|| download_identity.as_ref().and_then(|id| imports.get(id)))
                 .filter(|id| library.items.keys().any(|key| key.to_string() == **id))
                 .cloned()
                 .or_else(|| {
@@ -551,9 +635,16 @@ fn merge_entries(data: &mut Data, source_id: &str, entries: Vec<Entry>, inbox_li
             if !existing.sources.iter().any(|id| id == source_id) {
                 existing.sources.push(source_id.into());
             }
-            // Preserve dismissals, queue state and archive membership across refreshes.
+            // Preserve saves, dismissals, queue state and inbox membership.
             existing.title = entry.title;
             existing.duration = entry.duration.or(existing.duration);
+            existing.media_id = entry.media_id;
+            existing.published = entry.published.or_else(|| existing.published.clone());
+            if !entry.uploader.is_empty() { existing.uploader = entry.uploader; }
+            if !entry.description.is_empty() { existing.description = entry.description; }
+            existing.genres = entry.genres;
+            existing.download_url = entry.download_url;
+            existing.can_import = entry.can_import;
         } else {
             entry.sources.push(source_id.into());
             entry.inbox = index < inbox_limit;
@@ -571,6 +662,8 @@ pub fn router(discovery: Arc<Discovery>) -> Router<crate::AppState> {
         .route("/discovery/sources/{id}/archive", post(archive))
         .route("/discovery/refresh", post(refresh))
         .route("/discovery/entries/{id}/dismiss", post(dismiss))
+        .route("/discovery/entries/{id}/save", post(save))
+        .route("/discovery/entries/{id}/details", get(entry_details))
         .route("/discovery/entries/{id}/restore", post(restore))
         .route("/discovery/entries/{id}/import", post(import))
         .with_state(discovery)
@@ -578,6 +671,33 @@ pub fn router(discovery: Arc<Discovery>) -> Router<crate::AppState> {
 
 async fn snapshot(State(discovery): State<Arc<Discovery>>) -> Result<Json<Snapshot>, ApiError> {
     discovery.snapshot().await.map(Json)
+}
+
+#[derive(Deserialize)]
+struct SaveRequest { saved: bool }
+
+async fn save(
+    State(discovery): State<Arc<Discovery>>,
+    Path(id): Path<String>,
+    Json(request): Json<SaveRequest>,
+) -> Result<StatusCode, ApiError> {
+    discovery.change(|data| {
+        let entry = data.entries.iter_mut().find(|entry| entry.id == id)
+            .ok_or_else(|| (StatusCode::NOT_FOUND, "Set not found.".into()))?;
+        entry.saved = request.saved;
+        Ok(())
+    }).await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn entry_details(
+    State(discovery): State<Arc<Discovery>>,
+    Path(id): Path<String>,
+) -> Result<Json<nts::EpisodeDetails>, ApiError> {
+    let url = discovery.data.lock().await.entries.iter().find(|entry| entry.id == id)
+        .map(|entry| entry.url.clone())
+        .ok_or_else(|| (StatusCode::NOT_FOUND, "Set not found.".into()))?;
+    nts::details(&url).await.map(Json).map_err(|error| (StatusCode::BAD_GATEWAY, error.to_string()))
 }
 
 async fn preview(
@@ -835,12 +955,15 @@ async fn import_locked(discovery: Arc<Discovery>, id: String) -> Result<StatusCo
                 .iter_mut()
                 .find(|e| e.id == id)
                 .ok_or_else(|| (StatusCode::NOT_FOUND, "Set not found.".into()))?;
+            if !entry.can_import {
+                return Err(bad_request("This episode has no supported downloadable audio. You can listen on NTS or save it for later."));
+            }
             // Record submission before dispatch; the per-entry lock prevents
             // another request from restoring or resending it in the meantime.
             entry.status = "queued".into();
             entry.download_job_id = None;
             entry.error = None;
-            Ok(entry.url.clone())
+            Ok(entry.download_url.clone().unwrap_or_else(|| entry.url.clone()))
         })
         .await?;
     let result = discovery.downloads.queue(&crate::DownloadRequest {
