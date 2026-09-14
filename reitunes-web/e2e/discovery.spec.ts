@@ -39,7 +39,7 @@ test('follows a source, listens externally and imports without replacing the pla
   const { requests } = await backend(page, { sources: [], entries: [], refreshing: false });
   await page.goto('/');
   await page.evaluate(() => { window.sessionStorage.setItem('player-marker', 'ready'); document.querySelector('audio')?.setAttribute('data-test-marker', 'same-player'); });
-  await page.getByRole('navigation', { name: 'Main views' }).getByRole('button', { name: 'Discover', exact: true }).click();
+  await page.getByRole('button', { name: 'Discover', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Discover', exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Add your first source' }).click();
   await page.getByLabel('Source URL').fill(source.url);
@@ -60,7 +60,7 @@ test('follows a source, listens externally and imports without replacing the pla
   expect(requests.filter((r) => r.path.endsWith('/import'))).toHaveLength(1);
   // Navigation must not remount the audio element or reset playback state.
   await expect(page.locator('audio')).toHaveAttribute('data-test-marker', 'same-player');
-  await page.getByRole('navigation', { name: 'Main views' }).getByRole('button', { name: 'Library', exact: true }).click();
+  await page.getByRole('button', { name: 'Back to library', exact: true }).click();
   await expect(page.getByRole('main', { name: 'Music library' })).toBeVisible();
   await expect(page.locator('audio')).toHaveAttribute('data-test-marker', 'same-player');
 });
@@ -68,12 +68,12 @@ test('follows a source, listens externally and imports without replacing the pla
 test('dismissal survives refresh and reload; archive browsing does not fill the inbox', async ({ page }) => {
   const { requests } = await backend(page, { sources: [source], entries: [set], refreshing: false });
   await page.goto('/');
-  await page.getByRole('navigation', { name: 'Main views' }).getByRole('button', { name: 'Discover', exact: true }).click();
+  await page.getByRole('button', { name: 'Discover', exact: true }).click();
   await page.getByRole('button', { name: 'Dismiss', exact: true }).click();
   await page.getByRole('button', { name: 'Refresh', exact: true }).click();
   await expect(page.getByText('You’re all caught up')).toBeVisible();
   await page.reload();
-  await page.getByRole('navigation', { name: 'Main views' }).getByRole('button', { name: 'Discover', exact: true }).click();
+  await page.getByRole('button', { name: 'Discover', exact: true }).click();
   await expect(page.getByText('You’re all caught up')).toBeVisible();
   await page.getByRole('button', { name: 'History', exact: true }).click();
   await page.getByRole('button', { name: 'Restore', exact: true }).click();
@@ -92,7 +92,7 @@ test('failed imports remain retryable and queued sets cannot be submitted again'
   await backend(page, { sources: [source], entries: [set], refreshing: false });
   await page.route('**/api/discovery/entries/set-1/import', (route) => route.fulfill({ status: 502, body: 'Downloader is unavailable.' }));
   await page.goto('/');
-  await page.getByRole('navigation', { name: 'Main views' }).getByRole('button', { name: 'Discover', exact: true }).click();
+  await page.getByRole('button', { name: 'Discover', exact: true }).click();
   await page.getByRole('button', { name: 'Import', exact: true }).click();
   await expect(page.getByRole('alert')).toContainText('Downloader is unavailable');
   await expect(page.getByRole('button', { name: 'Import', exact: true })).toBeEnabled();
@@ -102,7 +102,7 @@ test('source errors, filters and narrow layouts remain usable', async ({ page },
   await page.setViewportSize({ width: 390, height: 844 });
   await backend(page, { sources: [{ ...source, error: 'Source is temporarily unavailable.' }], entries: [set], refreshing: false });
   await page.goto('/');
-  await page.getByRole('navigation', { name: 'Main views' }).getByRole('button', { name: 'Discover', exact: true }).click();
+  await page.getByRole('button', { name: 'Discover', exact: true }).click();
   await page.getByRole('searchbox', { name: 'Search discovery' }).fill('not a match');
   await expect(page.getByText('No matching sets')).toBeVisible();
   await page.getByRole('searchbox', { name: 'Search discovery' }).fill('late night');
@@ -130,12 +130,12 @@ test('discovery tracks download jobs in History after reload and retries a faile
     download_percent: failed ? null : 28, error: failed ? 'Upload failed; check your library before retrying.' : null,
   } }));
   await page.goto('/');
-  await page.getByRole('navigation', { name: 'Main views' }).getByRole('button', { name: 'Discover', exact: true }).click();
+  await page.getByRole('button', { name: 'Discover', exact: true }).click();
   await page.getByRole('button', { name: 'Import', exact: true }).click();
   await page.getByRole('button', { name: 'History', exact: true }).click();
   await expect(page.getByText('Downloading 28%', { exact: true })).toBeVisible();
   await page.reload();
-  await page.getByRole('navigation', { name: 'Main views' }).getByRole('button', { name: 'Discover', exact: true }).click();
+  await page.getByRole('button', { name: 'Discover', exact: true }).click();
   await page.getByRole('button', { name: 'History', exact: true }).click();
   await expect(page.getByText('Downloading 28%', { exact: true })).toBeVisible();
   await page.screenshot({ path: testInfo.outputPath('discovery-download-progress.png'), fullPage: true });
@@ -150,7 +150,7 @@ test('discovery tracks download jobs in History after reload and retries a faile
 test('older imports can return to the inbox or be resent from History', async ({ page }, testInfo) => {
   const { data, requests } = await backend(page, { sources: [source], entries: [{ ...set, status: 'queued' }], refreshing: false });
   await page.goto('/');
-  await page.getByRole('navigation', { name: 'Main views' }).getByRole('button', { name: 'Discover', exact: true }).click();
+  await page.getByRole('button', { name: 'Discover', exact: true }).click();
   await page.getByRole('button', { name: 'History', exact: true }).click();
   await expect(page.getByText('Sent to downloader', { exact: true })).toBeVisible();
   await page.setViewportSize({ width: 390, height: 844 });
@@ -160,7 +160,7 @@ test('older imports can return to the inbox or be resent from History', async ({
   await expect(page.getByRole('button', { name: 'Import', exact: true })).toBeVisible();
   expect(requests.filter(request => request.path.endsWith('/import'))).toHaveLength(0);
   await page.reload();
-  await page.getByRole('navigation', { name: 'Main views' }).getByRole('button', { name: 'Discover', exact: true }).click();
+  await page.getByRole('button', { name: 'Discover', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Import', exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Import', exact: true }).click();
   await page.getByRole('button', { name: 'History', exact: true }).click();
@@ -189,7 +189,7 @@ for (const missing of [false, true]) {
       return route.fulfill({ status: 204 });
     });
     await page.goto('/');
-    await page.getByRole('navigation', { name: 'Main views' }).getByRole('button', { name: 'Discover', exact: true }).click();
+    await page.getByRole('button', { name: 'Discover', exact: true }).click();
     await page.getByRole('button', { name: 'History', exact: true }).click();
     await page.getByRole('button', { name: 'Return to inbox', exact: true }).click();
     await expect(page.getByRole('button', { name: 'Import', exact: true })).toBeVisible();

@@ -317,15 +317,6 @@ function AppContent() {
         </div>
       </header>
 
-      <nav className="main-views" aria-label="Main views">
-        <button aria-current={view === 'library' ? 'page' : undefined}
-          onClick={() => setView('library')}>Library</button>
-        <button aria-current={view === 'discover' ? 'page' : undefined}
-          onClick={() => setView('discover')}>
-          Discover{discoveryCount > 0 && <span className="main-view-count" aria-hidden="true">{discoveryCount}</span>}
-        </button>
-      </nav>
-
       <div className="library-toolbar">
         <div className="library-search">
           <MusicIcon name="search" size={14} />
@@ -358,7 +349,7 @@ function AppContent() {
             <kbd>/</kbd>
           )}
         </div>
-        {view === 'library' && <select
+        {view === 'library' ? <select
           aria-label="Collection"
           value={
             selectedPlaylistId ? `playlist:${selectedPlaylistId}` : collection
@@ -376,8 +367,14 @@ function AppContent() {
               {selectedPlaylist.name}
             </option>
           )}
-        </select>}
+        </select> : <button className="library-back" onClick={() => setView('library')}>
+          <span aria-hidden="true">←</span> Back to library
+        </button>}
         <div className="toolbar-actions">
+          {view === 'library' && <button onClick={() => setView('discover')}>
+            Discover{discoveryCount > 0 && <span className="discovery-count" aria-hidden="true">{discoveryCount}</span>}
+            <span aria-hidden="true">→</span>
+          </button>}
           <button onClick={() => setIsImportOpen(true)}>
             <MusicIcon name="plus" size={14} />
             Import music

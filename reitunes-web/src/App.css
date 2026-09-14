@@ -96,11 +96,9 @@ input::placeholder { color: var(--muted); opacity: 1; }
 .timeline-slider:disabled { cursor: default; opacity: .5; }
 .sonos-player-layout .timeline-bookmark { padding: 0; z-index: 1; }
 
-.main-views { display: flex; flex-shrink: 0; gap: 2px; padding: 0 6px; background: var(--panel); border-bottom: 1px solid var(--line); }
-.main-views button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-width: 88px; min-height: 34px; padding: 4px 14px; border-bottom: 3px solid transparent; color: var(--muted); font-size: 13px; font-weight: 600; }
-.main-views button:hover { background: var(--hover); color: var(--text); }
-.main-views button[aria-current='page'] { border-bottom-color: var(--accent); background: var(--surface); color: var(--text); }
-.main-view-count { padding: 0 5px; border-radius: 8px; background: var(--header); color: var(--muted); font-size: 10px; font-weight: 400; font-variant-numeric: tabular-nums; }
+.discovery-count { padding: 0 5px; border-radius: 8px; background: var(--header); color: var(--muted); font-size: 10px; font-weight: 400; font-variant-numeric: tabular-nums; }
+.library-back { display: inline-flex; align-items: center; flex-shrink: 0; gap: 4px; min-height: 25px; padding: 3px 7px; border: 1px solid var(--border-strong); border-radius: 2px; background: var(--surface); color: var(--text); font-size: 12px; white-space: nowrap; }
+.library-back:hover { background: var(--hover); }
 .library-toolbar { display: flex; align-items: center; flex-shrink: 0; gap: 6px; padding: 4px 6px; min-height: 34px; background: var(--panel); border-bottom: 1px solid var(--line); }
 .library-search { display: flex; align-items: center; gap: 5px; flex: 1; min-width: 140px; height: 25px; padding: 2px 6px; background: var(--input); border: 1px solid var(--border-strong); border-radius: 2px; }
 .library-search:focus-within { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
@@ -161,7 +159,6 @@ input::placeholder { color: var(--muted); opacity: 1; }
   .toolbar-actions { flex: 1; justify-content: flex-end; }
 }
 @media (max-width: 650px) {
-  .main-views button { min-height: 40px; min-width: 104px; }
   .player-bar { grid-template-columns: minmax(0, 1fr) auto; grid-template-rows: 18px 18px 26px; }
   .player-now-playing, .sonos-track-title { grid-column: 1; text-align: left; }
   .player-output { grid-column: 2; }

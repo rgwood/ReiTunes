@@ -368,8 +368,7 @@ test('shows at least thirty compact rows even with an old visual-view preference
   await writeFile(testInfo.outputPath('density-library.json'), JSON.stringify(densityItems));
   await writeFile(testInfo.outputPath('density.json'), JSON.stringify(measurements, null, 2));
   await page.screenshot({ path: testInfo.outputPath('density-after.png'), animations: 'disabled' });
-  // Includes the 35px persistent Library/Discover navigation.
-  expect(measurements.tableTop).toBeLessThanOrEqual(125);
+  expect(measurements.tableTop).toBeLessThanOrEqual(90);
   expect(measurements.tableLeft).toBeLessThanOrEqual(8);
   expect(measurements.rowHeight).toBeLessThanOrEqual(25);
   expect(measurements.visibleRows).toBeGreaterThanOrEqual(30);

@@ -29,7 +29,7 @@ Traces exclude track titles, audio URLs and credentials. They batch up to 40 eve
 
 ## Discovery
 
-Use the **Library** and **Discover** navigation below the player to switch screens. The current screen is underlined; Library retains its search, collection filter and playlist when you return. Follow a YouTube channel/playlist, SoundCloud profile/playlist or NTS show, preview its entries, and choose a minimum duration. Listen opens the source in a new tab. Import uses the same downloader as the existing link-import dialog.
+Open **Discover →** in the compact library toolbar. Use **← Back to library** beside the search field to return to your music; your library search, collection filter and playlist are preserved. Follow a YouTube channel/playlist, SoundCloud profile/playlist or NTS show, preview its entries, and choose a minimum duration. Listen opens the source in a new tab. Import uses the same downloader as the existing link-import dialog.
 
 Save for later builds a shortlist without downloading. Saved sets and import history remain accessible after unfollowing their source. Browse by duration, sort by release date or length, or shuffle the current results. Source chips jump to that source's sets. All sets includes the older batches previously called Archive. Dismiss has an Undo action, and active imports stay visible above the results so they do not disappear when removed from the inbox.
 

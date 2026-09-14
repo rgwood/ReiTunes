@@ -270,10 +270,7 @@ for (const theme of themeIds) for (const mode of ['light', 'dark'] as const) {
     const originalDensity = await density(page);
     await chooseTheme(page, theme, mode);
     expect(await density(page)).toEqual(originalDensity);
-    // The persistent Library/Discover navigation adds 35px above the grid.
-    expect(originalDensity.top).toBe(125);
-    expect(originalDensity.rowHeight).toBe(24);
-    expect(originalDensity.visibleRows).toBeGreaterThanOrEqual(30);
+    expect(originalDensity).toEqual({ top: 90, rowHeight: 24, visibleRows: 31 });
     const samples = [];
     const row = page.locator('tbody tr').first();
     const nameCell = row.locator('td').nth(1);
@@ -283,9 +280,13 @@ for (const theme of themeIds) for (const mode of ['light', 'dark'] as const) {
     samples.push(await readable(page.getByRole('searchbox', { name: 'Search library' }), 'search text'));
     samples.push(await readable(page.getByRole('searchbox', { name: 'Search library' }), 'search placeholder', 4.5, '::placeholder'));
     samples.push(await readable(page.getByRole('combobox', { name: 'Collection', exact: true }), 'collection dropdown'));
-    const mainViews = page.getByRole('navigation', { name: 'Main views', exact: true });
-    samples.push(await readable(mainViews.getByRole('button', { name: 'Library', exact: true }), 'active Library navigation'));
-    samples.push(await readable(mainViews.getByRole('button', { name: 'Discover', exact: true }), 'inactive Discover navigation'));
+    const discoverButton = page.getByRole('button', { name: 'Discover', exact: true });
+    samples.push(await readable(discoverButton, 'Discover navigation'));
+    await discoverButton.click();
+    const backButton = page.getByRole('button', { name: 'Back to library', exact: true });
+    samples.push(await readable(backButton, 'Back to library navigation'));
+    await backButton.click();
+    expect(await density(page)).toEqual(originalDensity);
     samples.push(await readable(row.getByRole('button', { name: '♥', exact: true }), 'favourite icon', 3));
     await row.click();
     await expect(row).toHaveAttribute('aria-current', 'true');
