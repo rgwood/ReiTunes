@@ -44,7 +44,7 @@ async function backend(page: Page, initial: Partial<DiscoveryData> = {}) {
 
 async function discover(page: Page) {
   await page.goto('/');
-  await page.getByRole('combobox', { name: 'Collection' }).selectOption('discover');
+  await page.getByRole('navigation', { name: 'Main views' }).getByRole('button', { name: 'Discover', exact: true }).click();
 }
 
 const titles = (page: Page) => page.locator('.discovery-entries article h2').allTextContents();
@@ -58,7 +58,7 @@ test('a listening shortlist survives reload without submitting a download', asyn
   await page.getByRole('button', { name: 'Saved (1)', exact: true }).click();
   await expect(page.getByRole('article').filter({ hasText: 'Set A' })).toBeVisible();
   await page.reload();
-  await page.getByRole('combobox', { name: 'Collection' }).selectOption('discover');
+  await page.getByRole('navigation', { name: 'Main views' }).getByRole('button', { name: 'Discover', exact: true }).click();
   await page.getByRole('button', { name: 'Saved (1)', exact: true }).click();
   await page.getByRole('button', { name: 'Saved for later', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Make a little listening list' })).toBeVisible();
@@ -204,7 +204,7 @@ test('saved NTS episodes and history remain accessible after unfollowing the las
   await page.getByRole('button', { name: 'All sets', exact: true }).click();
   await expect.poll(() => titles(page)).toEqual(['Set A', 'Set B', 'Set C']);
   await page.reload();
-  await page.getByRole('combobox', { name: 'Collection' }).selectOption('discover');
+  await page.getByRole('navigation', { name: 'Main views' }).getByRole('button', { name: 'Discover', exact: true }).click();
   await page.getByRole('button', { name: 'Saved (1)', exact: true }).click();
   await expect.poll(() => titles(page)).toEqual(['Set A']);
   await expect(page.getByRole('link', { name: 'Listen on NTS ↗' })).toBeVisible();

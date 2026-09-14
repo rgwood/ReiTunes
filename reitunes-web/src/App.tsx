@@ -31,7 +31,7 @@ import { matchesLibrarySearch } from './utils/libraryBrowser';
 import './App.css';
 
 const queryClient = new QueryClient();
-type Collection = 'all' | 'favourites' | 'recent' | 'unplayed' | 'discover';
+type Collection = 'all' | 'favourites' | 'recent' | 'unplayed';
 interface Playlist {
   id: string;
   name: string;
@@ -39,8 +39,13 @@ interface Playlist {
 }
 
 function AppContent() {
-  const [searchQuery, setSearchQuery] = useState('');
+  const [view, setView] = useState<'library' | 'discover'>('library');
+  const [librarySearch, setLibrarySearch] = useState('');
+  const [discoverySearch, setDiscoverySearch] = useState('');
+  const searchQuery = view === 'discover' ? discoverySearch : librarySearch;
+  const setSearchQuery = view === 'discover' ? setDiscoverySearch : setLibrarySearch;
   const deferredSearch = useDeferredValue(searchQuery);
+  const deferredLibrarySearch = useDeferredValue(librarySearch);
   const [collection, setCollection] = useState<Collection>('all');
   const [revealRequest, setRevealRequest] = useState<{ itemId: string } | null>(null);
   const finishReveal = useCallback(() => setRevealRequest(null), []);
@@ -75,7 +80,8 @@ function AppContent() {
   );
   const { items, isLoading, error } = useLibrary();
   const { data: discovery } = useDiscovery();
-  const discoveryCount = discovery?.entries.filter(isInboxEntry).length ?? 0;
+  const discoveryCount = discovery?.entries.filter(entry => isInboxEntry(entry)
+    && entry.sources.some(id => discovery.sources.some(source => source.id === id))).length ?? 0;
   const play = usePlayback();
   const {
     currentItem,
@@ -152,9 +158,9 @@ function AppContent() {
         ) < recentCutoff
       )
         return false;
-      return matchesLibrarySearch(item, deferredSearch);
+      return matchesLibrarySearch(item, deferredLibrarySearch);
     });
-  }, [items, selectedPlaylist, collection, deferredSearch, recentCutoff]);
+  }, [items, selectedPlaylist, collection, deferredLibrarySearch, recentCutoff]);
   const moments = useMemo(
     () =>
       filteredItems.flatMap((item) =>
@@ -202,10 +208,11 @@ function AppContent() {
     const next = targets[Math.floor(Math.random() * targets.length)];
     void play(next.item, next.position, 'ctrl-e');
     if (!filteredItems.some((item) => item.id === next.item.id)) {
-      setSearchQuery('');
+      setLibrarySearch('');
       setCollection('all');
       setSelectedPlaylistId(null);
     }
+    setView('library');
     setRevealRequest({ itemId: next.item.id });
   }, [items, play, filteredItems]);
 
@@ -238,15 +245,15 @@ function AppContent() {
   }, [randomFavourite]);
 
   const chooseCollection = (next: Collection) => {
-    if (next === 'discover' || collection === 'discover') setSearchQuery('');
+    setView('library');
     setCollection(next);
     setSelectedPlaylistId(null);
     if (next === 'recent')
       setRecentCutoff(Date.now() - 30 * 24 * 60 * 60 * 1000);
   };
   const togglePanel = (next: typeof panel) => {
-    if (collection === 'discover' && (next === 'playlists' || next === 'bookmarks')) {
-      chooseCollection('all');
+    if (view === 'discover' && (next === 'playlists' || next === 'bookmarks')) {
+      setView('library');
       setPanel(next);
     } else setPanel(panel === next ? null : next);
   };
@@ -310,14 +317,23 @@ function AppContent() {
         </div>
       </header>
 
+      <nav className="main-views" aria-label="Main views">
+        <button aria-current={view === 'library' ? 'page' : undefined}
+          onClick={() => setView('library')}>Library</button>
+        <button aria-current={view === 'discover' ? 'page' : undefined}
+          onClick={() => setView('discover')}>
+          Discover{discoveryCount > 0 && <span className="main-view-count" aria-hidden="true">{discoveryCount}</span>}
+        </button>
+      </nav>
+
       <div className="library-toolbar">
         <div className="library-search">
           <MusicIcon name="search" size={14} />
           <input
             ref={searchRef}
             type="search"
-            aria-label={collection === 'discover' ? 'Search discovery' : 'Search library'}
-            placeholder={collection === 'discover' ? 'Search sets and sources' : 'Search'}
+            aria-label={view === 'discover' ? 'Search discovery' : 'Search library'}
+            placeholder={view === 'discover' ? 'Search sets and sources' : 'Search library'}
             value={searchQuery}
             autoComplete="off"
             onChange={(event) => setSearchQuery(event.target.value)}
@@ -342,7 +358,7 @@ function AppContent() {
             <kbd>/</kbd>
           )}
         </div>
-        <select
+        {view === 'library' && <select
           aria-label="Collection"
           value={
             selectedPlaylistId ? `playlist:${selectedPlaylistId}` : collection
@@ -355,23 +371,18 @@ function AppContent() {
           <option value="favourites">Favourites</option>
           <option value="recent">Recently added</option>
           <option value="unplayed">Unplayed</option>
-          <option value="discover">Discover{discoveryCount > 0 ? ` (${discoveryCount})` : ''}</option>
           {selectedPlaylist && (
             <option value={`playlist:${selectedPlaylist.id}`}>
               {selectedPlaylist.name}
             </option>
           )}
-        </select>
+        </select>}
         <div className="toolbar-actions">
-          <button onClick={() => chooseCollection(collection === 'discover' ? 'all' : 'discover')}
-            aria-pressed={collection === 'discover'}>
-            {collection === 'discover' ? 'All music' : `Discover${discoveryCount > 0 ? ` (${discoveryCount})` : ''}`}
-          </button>
           <button onClick={() => setIsImportOpen(true)}>
             <MusicIcon name="plus" size={14} />
             Import music
           </button>
-          <button
+          {view === 'library' && <><button
             onClick={() => togglePanel('playlists')}
             aria-pressed={panel === 'playlists'}
           >
@@ -389,7 +400,7 @@ function AppContent() {
             title="Jump to the next bookmark"
           >
             Next saved moment
-          </button>
+          </button></>}
           <button
             aria-label="Queue"
             aria-pressed={panel === 'queue'}
@@ -400,8 +411,8 @@ function AppContent() {
         </div>
       </div>
 
-      <main className="library-content" aria-label={collection === 'discover' ? 'Music discovery' : 'Music library'}>
-        {panel === 'playlists' && collection !== 'discover' && (
+      <main className="library-content" aria-label={view === 'discover' ? 'Music discovery' : 'Music library'}>
+        {panel === 'playlists' && view === 'library' && (
           <aside className="library-sidepanel">
             <button
               className="panel-close"
@@ -419,7 +430,7 @@ function AppContent() {
             />
           </aside>
         )}
-        {panel === 'bookmarks' && collection !== 'discover' && (
+        {panel === 'bookmarks' && view === 'library' && (
           <aside className="library-sidepanel">
             <button
               className="panel-close"
@@ -433,11 +444,12 @@ function AppContent() {
         )}
         <div
           className="library-results"
-          aria-busy={(collection !== 'discover' && isLoading) || searchQuery !== deferredSearch}
+          aria-busy={(view === 'library' && isLoading) || searchQuery !== deferredSearch}
         >
-          {collection === 'discover' ? (
+          {view === 'discover' ? (
             <Discover searchQuery={deferredSearch} onOpenLibrary={(id) => {
               chooseCollection('all');
+              setLibrarySearch('');
               setRevealRequest({ itemId: id });
             }} />
           ) : error ? (
@@ -507,14 +519,14 @@ function AppContent() {
       </main>
 
       <footer className="library-status" role="status">
-        {collection === 'discover' ? <span>{discoveryCount} sets in inbox · {discovery?.sources.length ?? 0} sources</span> : <span>
+        {view === 'discover' ? <span>{discoveryCount} sets in inbox · {discovery?.sources.length ?? 0} sources</span> : <span>
           {filteredItems.length.toLocaleString()}
           {filteredItems.length !== items.length &&
             ` of ${items.length.toLocaleString()}`}{' '}
           {items.length === 1 ? 'track' : 'tracks'}
           {selectedPlaylist && ` · ${selectedPlaylist.name}`}
         </span>}
-        {collection === 'recent' && <span>Last 30 days</span>}
+        {view === 'library' && collection === 'recent' && <span>Last 30 days</span>}
       </footer>
       {isDragging && (
         <div className="global-drop-overlay">Drop audio files to import</div>
@@ -527,7 +539,7 @@ function AppContent() {
         onImported={() => {
           setIsImportOpen(false);
           chooseCollection('recent');
-          setSearchQuery('');
+          setLibrarySearch('');
         }}
       />
       <SonosModal items={items} isOpen={isSonosOpen} onClose={() => setIsSonosOpen(false)} />
