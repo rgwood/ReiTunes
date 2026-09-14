@@ -1,3 +1,4 @@
+import { writeFile } from 'node:fs/promises';
 import { expect, test, type Page } from '@playwright/test';
 import type { DiscoveryData, DiscoveryEntry, DiscoverySource } from '../src/hooks/useDiscovery';
 
@@ -61,7 +62,7 @@ test('a listening shortlist survives reload without submitting a download', asyn
   await page.getByRole('button', { name: 'Discover', exact: true }).click();
   await page.getByRole('button', { name: 'Saved (1)', exact: true }).click();
   await page.getByRole('button', { name: 'Saved for later', exact: true }).click();
-  await expect(page.getByRole('heading', { name: 'Make a little listening list' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'No saved sets' })).toBeVisible();
   expect(requests.filter(request => request.path.endsWith('/save')).map(request => request.body)).toEqual([{ saved: true }, { saved: false }]);
   expect(requests.some(request => request.path.endsWith('/import'))).toBe(false);
 });
@@ -153,7 +154,7 @@ test('NTS episodes expose descriptions and lazy tracklists without a false impor
   await expect(page.getByRole('button', { name: 'Import', exact: true })).toHaveCount(0);
   await expect(page.getByText('No downloadable audio available for this episode.')).toBeVisible();
   await expect(page.getByRole('link', { name: 'Listen on NTS ↗' })).toHaveAttribute('target', '_blank');
-  await page.getByText('About this set', { exact: true }).click();
+  await expect(page.getByText('About this set', { exact: true })).toHaveCount(0);
   await expect(page.getByText('A patient journey through Brazilian records.')).toBeVisible();
   await page.getByRole('button', { name: 'Tracklist', exact: true }).click();
   await expect(page.getByRole('list', { name: 'Episode tracklist' })).toContainText('Arthur Verocai');
@@ -186,7 +187,7 @@ test('saved NTS episodes and history remain accessible after unfollowing the las
   await page.getByRole('button', { name: 'Sources (1)', exact: true }).click();
   await page.getByRole('button', { name: 'Unfollow', exact: true }).click();
   await page.getByRole('button', { name: 'Inbox', exact: true }).click();
-  await expect(page.getByRole('heading', { name: 'Your next favourite set starts here' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'No sources yet' })).toBeVisible();
   await expect(page.locator('.discovery-entries article')).toHaveCount(0);
   await page.getByRole('button', { name: 'Saved (1)', exact: true }).click();
   await expect.poll(() => titles(page)).toEqual(['Set A']);
@@ -208,4 +209,124 @@ test('saved NTS episodes and history remain accessible after unfollowing the las
   await page.getByRole('button', { name: 'Saved (1)', exact: true }).click();
   await expect.poll(() => titles(page)).toEqual(['Set A']);
   await expect(page.getByRole('link', { name: 'Listen on NTS ↗' })).toBeVisible();
+});
+
+// Representative show notes, not copies of actual NTS episode listings.
+const compactDescriptions = [
+  'Summer dub, hazy electronics and a few records brought home from the road.',
+  'A slow start with Japanese folk, followed by warm basslines and spacious house.',
+  'Field recordings, percussion and unhurried dance music for a rainy afternoon.',
+  'Soft rhythms, strange pop and leftfield selections from the record bag.',
+  'A guest selection of ambient pieces, low-slung dub and late-night favourites.',
+  'Loose drums and deep grooves, with a short detour through Brazilian records.',
+  'New finds and old favourites: synths, strings, voices and a little disco.',
+  'Music for travelling home after a long night, from quiet textures to slow acid.',
+  'An hour of dreamlike electronics and patient, rolling basslines.',
+  'A personal selection of overlooked records, handmade sounds and dub versions.',
+  'Distant voices, broken rhythms and warm records for the changing seasons.',
+  'Percussion-heavy tracks meet melodic house and some unexpected guitar music.',
+  'A gentle mix of cosmic sounds, jazz and records found while touring.',
+  'Taking the scenic route through folk, oddball dance music and deep listening.',
+];
+const longShowNotes = 'This month starts with a stack of records collected while travelling, moving between softly played strings, handmade percussion and patient electronic music. '
+  + 'The first half leaves room for field recordings and unfamiliar voices, with a few rough edges kept intact. '
+  + 'After that, the tempo gradually rises through a sequence of dub versions, warm basslines and loose drums. '
+  + 'There is no rush to get anywhere: several long tracks are played all the way through, and the closing stretch returns to quieter sounds. '
+  + 'The final selection is an unhurried favourite saved for the journey home.';
+const showIntroduction = 'A monthly selection moving between electronic music, dub and sounds from further afield, assembled from new discoveries and records collected along the way.';
+
+test('Discovery keeps show notes visible in a dense list on desktop and phone', async ({ page }, testInfo) => {
+  const ntsSource = { ...source, provider: 'NTS', title: 'Yu Su', url: 'https://www.nts.live/shows/yu-su' };
+  const entries = [...compactDescriptions.map(notes => `${showIntroduction} ${notes}`), longShowNotes].map((description, index) => episode(`yu-su-${index}`, 7200, {
+    title: 'Yu Su', uploader: 'Yu Su', description, genres: ['Leftfield', 'Electronic'],
+    url: `https://www.nts.live/shows/yu-su/episodes/yu-su-${index}`, canImport: true,
+    downloadUrl: `https://soundcloud.com/nts-latest/yu-su-${index}`,
+    discoveredAt: 1789000000 - index,
+    published: new Date(Date.UTC(2026, 8, 14 - index)).toISOString().slice(0, 10).replaceAll('-', ''),
+  }));
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await backend(page, { sources: [ntsSource], entries });
+  await discover(page);
+  const rows = page.locator('.discovery-entries article');
+  await expect(rows).toHaveCount(15);
+  await expect(page.getByText(entries[0].description!, { exact: true })).toBeVisible();
+  await expect(page.getByText('About this set', { exact: true })).toHaveCount(0);
+  const showNamesPerRow = await rows.evaluateAll(elements => elements.map(element => ((element as HTMLElement).innerText.match(/Yu Su/g) ?? []).length));
+  expect(showNamesPerRow).toEqual(Array(15).fill(1));
+
+  const measurements = await rows.evaluateAll(elements => {
+    const bounds = elements.map(element => element.getBoundingClientRect());
+    let clipTop = 0;
+    let clipBottom = window.innerHeight;
+    for (let parent = elements[0].parentElement; parent; parent = parent.parentElement) {
+      if (/(auto|hidden|scroll|clip)/.test(getComputedStyle(parent).overflowY)) {
+        const box = parent.getBoundingClientRect();
+        clipTop = Math.max(clipTop, box.top);
+        clipBottom = Math.min(clipBottom, box.bottom);
+      }
+    }
+    return {
+      firstRowTop: bounds[0].top,
+      normalRowHeight: Math.max(...bounds.slice(0, -1).map(box => box.height)),
+      visibleRows: bounds.filter(box => box.top >= clipTop - 0.5 && box.bottom <= clipBottom + 0.5).length,
+    };
+  });
+  expect(measurements.firstRowTop).toBeLessThanOrEqual(170);
+  expect(measurements.normalRowHeight).toBeLessThanOrEqual(70);
+  expect(measurements.visibleRows).toBeGreaterThan(10);
+  await testInfo.attach('Discovery density', { body: JSON.stringify(measurements, null, 2), contentType: 'application/json' });
+  await writeFile(testInfo.outputPath('discovery-density.json'), JSON.stringify(measurements, null, 2));
+  await page.screenshot({ path: testInfo.outputPath('discovery-dense-desktop.png'), fullPage: true });
+
+  const longDescription = page.getByText(longShowNotes, { exact: true });
+  const search = page.getByRole('searchbox', { name: 'Search discovery', exact: true });
+  await search.fill('rough edges kept intact');
+  await expect(rows).toHaveCount(1);
+  await expect(longDescription).toBeVisible();
+  await search.fill('');
+  await expect(rows).toHaveCount(15);
+  await longDescription.scrollIntoViewIfNeeded();
+  await expect(longDescription).toBeVisible();
+  expect(await longDescription.evaluate(element => {
+    const range = document.createRange();
+    range.selectNodeContents(element);
+    const textRects = Array.from(range.getClientRects());
+    const row = element.closest('article')!.getBoundingClientRect();
+    return textRects.length > 0 && textRects[0].top >= row.top && textRects.at(-1)!.bottom <= row.bottom + 1;
+  })).toBe(true);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await rows.first().scrollIntoViewIfNeeded();
+  await expect(page.getByText(entries[0].description!, { exact: true })).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  expect(await rows.evaluateAll(elements => elements.every(element => {
+    const box = element.getBoundingClientRect();
+    return box.left >= 0 && box.right <= window.innerWidth;
+  }))).toBe(true);
+  await page.screenshot({ path: testInfo.outputPath('discovery-dense-mobile.png'), fullPage: true });
+  await longDescription.scrollIntoViewIfNeeded();
+  await expect(longDescription).toBeVisible();
+  expect(await longDescription.evaluate(element => {
+    const range = document.createRange();
+    range.selectNodeContents(element);
+    const textRects = Array.from(range.getClientRects());
+    const row = element.closest('article')!.getBoundingClientRect();
+    return textRects.length > 0 && textRects[0].top >= row.top && textRects.at(-1)!.bottom <= row.bottom + 1;
+  })).toBe(true);
+
+  await page.getByRole('button', { name: 'Settings', exact: true }).click();
+  const settings = page.getByRole('dialog', { name: 'Settings', exact: true });
+  await settings.getByRole('combobox', { name: 'Dark theme', exact: true }).selectOption('catppuccin');
+  await settings.getByRole('combobox', { name: 'Mode', exact: true }).selectOption('dark');
+  await settings.getByRole('button', { name: 'Done', exact: true }).click();
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'catppuccin');
+  await expect(page.locator('html')).toHaveAttribute('data-theme-mode', 'dark');
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await rows.first().scrollIntoViewIfNeeded();
+  await expect(page.getByText(entries[0].description!, { exact: true })).toBeVisible();
+  expect(await rows.first().evaluate(element => element.getBoundingClientRect().top)).toBe(measurements.firstRowTop);
+  await page.screenshot({ path: testInfo.outputPath('discovery-dense-dark-desktop.png'), fullPage: true });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await rows.first().scrollIntoViewIfNeeded();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  await page.screenshot({ path: testInfo.outputPath('discovery-dense-dark-mobile.png'), fullPage: true });
 });

@@ -28,6 +28,10 @@ function publishedLabel(date: string | null) {
   return date && /^\d{8}$/.test(date) ? `${date.slice(0, 4)}-${date.slice(4, 6)}-${date.slice(6)}` : null;
 }
 
+function sameLabel(a: string, b: string) {
+  return a.trim().replace(/\s+/g, ' ').toLocaleLowerCase() === b.trim().replace(/\s+/g, ' ').toLocaleLowerCase();
+}
+
 function shuffleRank(id: string, seed: number) {
   let hash = 2166136261 ^ seed;
   for (const char of id) hash = Math.imul(hash ^ char.charCodeAt(0), 16777619);
@@ -107,7 +111,7 @@ export function Discover({ searchQuery, onOpenLibrary }: { searchQuery: string; 
   const matchingEntries = entries.filter(entry => {
     if (sourceId && !entry.sources.includes(sourceId)) return false;
     const sourceTitles = sources.filter(source => entry.sources.includes(source.id)).map(source => source.title);
-    const matchesSearch = `${entry.title} ${entry.uploader} ${sourceTitles.join(' ')} ${(entry.genres ?? []).join(' ')}`.toLowerCase().includes(searchQuery.toLowerCase());
+    const matchesSearch = `${entry.title} ${entry.uploader} ${sourceTitles.join(' ')} ${(entry.genres ?? []).join(' ')} ${entry.description ?? ''}`.toLowerCase().includes(searchQuery.toLowerCase());
     if (!matchesSearch) return false;
     if (length !== 'any') {
       if (entry.duration === null) return false;
@@ -170,10 +174,14 @@ export function Discover({ searchQuery, onOpenLibrary }: { searchQuery: string; 
   return (
     <section className="discovery" aria-label="Discover sets">
       <header className="discovery-heading">
-        <div>
-          <h1>Discover</h1>
-          <p>Find a set for right now. Save a few for later.</p>
-        </div>
+        <h1>Discover</h1>
+        <nav className="discovery-tabs" aria-label="Discovery views">
+          <button aria-pressed={view === 'inbox'} onClick={() => setView('inbox')}>Inbox{inboxCount > 0 ? ` (${inboxCount})` : ''}</button>
+          <button aria-pressed={view === 'saved'} onClick={() => setView('saved')}>Saved{savedCount > 0 ? ` (${savedCount})` : ''}</button>
+          <button aria-pressed={view === 'all'} onClick={() => setView('all')}>All sets</button>
+          <button aria-pressed={view === 'sources'} onClick={() => setView('sources')}>Sources{sources.length > 0 ? ` (${sources.length})` : ''}</button>
+          <button aria-pressed={view === 'history'} onClick={() => setView('history')}>History</button>
+        </nav>
         <div className="discovery-actions">
           <button onClick={() => setShowFollow(!showFollow)} aria-expanded={showFollow}>Follow a source</button>
           <button disabled={Boolean(busy) || data?.refreshing || !sources.length}
@@ -197,7 +205,6 @@ export function Discover({ searchQuery, onOpenLibrary }: { searchQuery: string; 
             <button type="submit" disabled={Boolean(busy) || data?.refreshing}>{busy === 'preview' ? 'Reading source…' : 'Preview source'}</button>
             <button type="button" disabled={Boolean(busy)} onClick={() => { setShowFollow(false); setPreview(null); }}>Cancel</button>
           </div>
-          <p>Follow a channel, profile, playlist or show. Preview the latest batch before adding it to your inbox.</p>
           {preview && (
             <div className="discovery-preview">
               <h2>{preview.source.title}</h2>
@@ -214,14 +221,6 @@ export function Discover({ searchQuery, onOpenLibrary }: { searchQuery: string; 
           )}
         </form>
       )}
-
-      <nav className="discovery-tabs" aria-label="Discovery views">
-        <button aria-pressed={view === 'inbox'} onClick={() => setView('inbox')}>Inbox{inboxCount > 0 ? ` (${inboxCount})` : ''}</button>
-        <button aria-pressed={view === 'saved'} onClick={() => setView('saved')}>Saved{savedCount > 0 ? ` (${savedCount})` : ''}</button>
-        <button aria-pressed={view === 'all'} onClick={() => setView('all')}>All sets</button>
-        <button aria-pressed={view === 'sources'} onClick={() => setView('sources')}>Sources{sources.length > 0 ? ` (${sources.length})` : ''}</button>
-        <button aria-pressed={view === 'history'} onClick={() => setView('history')}>History</button>
-      </nav>
 
       {error && <p className="discovery-error" role="alert">{error}</p>}
       {notice && <div className="discovery-notice" role="status"><span>{notice}</span>{undoEntry && <button disabled={Boolean(busy)} onClick={() => void act(undoEntry.id, async () => {
@@ -246,14 +245,14 @@ export function Discover({ searchQuery, onOpenLibrary }: { searchQuery: string; 
 
       {loadError ? <p className="discovery-error" role="alert">Could not load discovery. <button onClick={() => void refetch()}>Retry</button></p>
         : isLoading ? <p role="status">Loading discovery…</p>
-        : !sources.length && (view === 'inbox' || view === 'sources' || !entries.length) ? <div className="discovery-empty"><h2>Your next favourite set starts here</h2><p>Follow a DJ, mix series, label, playlist or NTS show. New sets will arrive here every 3 hours. Listen at the source and import the ones you want to keep.</p><button onClick={() => setShowFollow(true)}>Add your first source</button></div>
+        : !sources.length && (view === 'inbox' || view === 'sources' || !entries.length) ? <div className="discovery-empty"><h2>No sources yet</h2><p>Follow a YouTube channel, SoundCloud profile or NTS show.</p><button onClick={() => setShowFollow(true)}>Add your first source</button></div>
         : view === 'sources' ? <div className="discovery-sources">{sources.map(source => {
           const sourceEntries = entries.filter(entry => entry.sources.includes(source.id));
           const sourceInbox = sourceEntries.filter(isInboxEntry).length;
           return <article key={source.id} className="discovery-source">
             <div className="discovery-source-heading"><h2><a href={source.url} target="_blank" rel="noopener noreferrer">{source.title} ↗</a></h2><span className="discovery-provider">{source.provider}</span></div>
             <p>{sourceInbox} in inbox · {sourceEntries.length} {sourceEntries.length === 1 ? 'set' : 'sets'} found · {source.minMinutes ? `At least ${source.minMinutes} minutes` : 'Any duration'}</p>
-            <p>{source.lastChecked ? `Last checked ${new Date(source.lastChecked * 1000).toLocaleString()}` : 'Not checked yet'} · Refreshes every 3 hours</p>
+            <p>{source.lastChecked ? `Last checked ${new Date(source.lastChecked * 1000).toLocaleString()}` : 'Not checked yet'}</p>
             {source.error && <p className="discovery-error" role="alert">{source.error}</p>}
             <div className="discovery-actions">
               <button onClick={() => { setSourceId(source.id); setView('all'); setLength('any'); }}>Browse sets</button>
@@ -279,15 +278,9 @@ export function Discover({ searchQuery, onOpenLibrary }: { searchQuery: string; 
               </select>
               <button onClick={() => { setShuffleSeed(seed => seed + 1); setSort('shuffle'); }}>{sort === 'shuffle' ? 'Shuffle again' : 'Shuffle'}</button>
             </div>
+            {(view !== 'inbox' || visibleEntries.length !== inboxCount) && <span className="discovery-result-count">{visibleEntries.length} {visibleEntries.length === 1 ? 'set' : 'sets'}</span>}
           </div>
-          <div className="discovery-results-heading">
-            <p>{view === 'saved' ? 'Your shortlist. Save a set now, choose when to listen later.'
-              : view === 'history' ? 'Imports and dismissed sets. Downloads continue in the background.'
-                : view === 'all' ? 'Everything found so far. Choose a source to explore its older sets.'
-                  : 'Fresh sets from your sources. Listen externally or import a permanent copy.'}</p>
-            <span>{visibleEntries.length} {visibleEntries.length === 1 ? 'set' : 'sets'}</span>
-          </div>
-          {!visibleEntries.length && <div className="discovery-empty"><h2>{searchQuery || sourceId || length !== 'any' ? 'No matching sets' : view === 'inbox' ? 'You’re all caught up' : view === 'saved' ? 'Make a little listening list' : 'Nothing here yet'}</h2><p>{view === 'saved' ? 'Choose “Save for later” on any set. It will wait here without starting a download.'
+          {!visibleEntries.length && <div className="discovery-empty"><h2>{searchQuery || sourceId || length !== 'any' ? 'No matching sets' : view === 'inbox' ? 'You’re all caught up' : view === 'saved' ? 'No saved sets' : 'Nothing here yet'}</h2><p>{view === 'saved' ? 'Choose Save on a set to keep it here without downloading.'
             : view === 'inbox' ? 'Check your sources or browse All sets for something older.' : 'Sets you import or dismiss stay in History.'}</p>
             {(sourceId || length !== 'any') && <button onClick={() => { setSourceId(''); setLength('any'); }}>Clear filters</button>}
             {!searchQuery && !sourceId && length === 'any' && (view === 'inbox' || view === 'saved') && <button onClick={() => setView('all')}>Explore all sets</button>}
@@ -296,23 +289,29 @@ export function Discover({ searchQuery, onOpenLibrary }: { searchQuery: string; 
             const entrySources = sources.filter(source => entry.sources.includes(source.id));
             const published = publishedLabel(entry.published);
             const ntsEpisode = isNtsEpisode(entry.url);
+            const uploader = [entry.title, ...entrySources.map(source => source.title)].some(label => sameLabel(label, entry.uploader)) ? '' : entry.uploader;
+            const listenLabel = `Listen on ${ntsEpisode ? 'NTS' : entrySources[0]?.provider ?? 'source'} ↗`;
             return <article className={`discovery-entry${entry.saved ? ' discovery-entry-saved' : ''}`} key={entry.id}>
               <div className="discovery-entry-info">
                 <h2><a href={entry.url} target="_blank" rel="noopener noreferrer">{entry.title}</a></h2>
-                <p>{[entry.uploader, durationLabel(entry.duration), published].filter(Boolean).join(' · ')}</p>
-                <div className="discovery-source-chips">{entrySources.map(source => <button key={source.id} aria-label={`Browse ${source.title}`} onClick={() => { setSourceId(source.id); setView('all'); setLength('any'); }}>{source.title}</button>)}</div>
+                <div className="discovery-entry-meta">
+                  <span>{[uploader, durationLabel(entry.duration), published].filter(Boolean).join(' · ')}</span>
+                  {entrySources.map(source => <button key={source.id} aria-label={`Browse ${source.title}`} title={`Browse ${source.title}`} onClick={() => { setSourceId(source.id); setView('all'); setLength('any'); }}>{sameLabel(source.title, entry.title) ? source.provider : source.title}</button>)}
+                </div>
                 {Boolean(entry.genres?.length) && <p className="discovery-genres">{entry.genres!.join(' · ')}</p>}
-                {entry.description && <details className="discovery-description"><summary>About this set</summary><p>{entry.description}</p></details>}
+              </div>
+              <div className="discovery-entry-description">
+                {entry.description && <p className="discovery-description">{entry.description}</p>}
                 {ntsEpisode && <NtsTracklist entryId={entry.id} />}
                 {entry.error && <p className="discovery-error">{entry.error}</p>}
               </div>
               <div className="discovery-entry-actions">
-                <a className="discovery-listen" href={entry.url} target="_blank" rel="noopener noreferrer">Listen on {ntsEpisode ? 'NTS' : entrySources[0]?.provider ?? 'source'} ↗</a>
+                <a className="discovery-listen" href={entry.url} target="_blank" rel="noopener noreferrer" aria-label={listenLabel} title={listenLabel}>Listen ↗</a>
                 {importControls(entry)}
-                {!entry.libraryItemId && <button aria-pressed={Boolean(entry.saved)} className="discovery-save" disabled={Boolean(busy)} onClick={() => void act(`save-${entry.id}`, async () => {
+                {!entry.libraryItemId && <button aria-label={entry.saved ? 'Saved for later' : 'Save for later'} title={entry.saved ? 'Remove from saved sets' : 'Save for later'} aria-pressed={Boolean(entry.saved)} className="discovery-save" disabled={Boolean(busy)} onClick={() => void act(`save-${entry.id}`, async () => {
                   await discoveryRequest(`/entries/${entry.id}/save`, { saved: !entry.saved });
                   setNotice(entry.saved ? `Removed “${entry.title}” from Saved.` : `Saved “${entry.title}” for later.`);
-                })}>{entry.saved ? 'Saved for later' : 'Save for later'}</button>}
+                })}>{entry.saved ? 'Saved' : 'Save'}</button>}
                 {entry.status === 'dismissed' ? hasFollowedSource(entry) && <button disabled={Boolean(busy)} onClick={() => void act(entry.id, async () => { await discoveryRequest(`/entries/${entry.id}/restore`); setNotice('Returned to inbox.'); })}>Restore</button>
                   : hasFollowedSource(entry) && entry.status !== 'queued' && !entry.libraryItemId && <button className="discovery-dismiss" disabled={Boolean(busy)} onClick={() => void act(entry.id, async () => {
                     await discoveryRequest(`/entries/${entry.id}/dismiss`); setNotice(`Dismissed “${entry.title}”.`); setUndoEntry(entry);

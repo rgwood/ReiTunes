@@ -112,7 +112,7 @@ test('source errors, filters and narrow layouts remain usable', async ({ page },
   await expect(page.getByRole('alert')).toContainText('Source is temporarily unavailable.');
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   await page.getByRole('button', { name: 'Unfollow', exact: true }).click();
-  await expect(page.getByText('Your next favourite set starts here')).toBeVisible();
+  await expect(page.getByText('No sources yet')).toBeVisible();
 });
 
 test('discovery tracks download jobs in History after reload and retries a failed job', async ({ page }, testInfo) => {
