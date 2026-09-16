@@ -61,6 +61,7 @@ function AppContent() {
   const [isDragging, setIsDragging] = useState(false);
   const dragDepth = useRef(0);
   const searchRef = useRef<HTMLInputElement>(null);
+  const audioRef = useRef<HTMLAudioElement>(null);
   const playbackPosition = useRef<{ itemId: string; position: number } | null>(
     null
   );
@@ -289,6 +290,7 @@ function AppContent() {
       <header className="player-bar">
         <span className="app-name">ReiTunes</span>
         <AudioPlayer
+          audioRef={audioRef}
           onPlaybackPosition={reportPlaybackPosition}
           items={items}
         />
@@ -539,7 +541,7 @@ function AppContent() {
           setLibrarySearch('');
         }}
       />
-      <SonosModal items={items} isOpen={isSonosOpen} onClose={() => setIsSonosOpen(false)} />
+      <SonosModal audioRef={audioRef} items={items} isOpen={isSonosOpen} onClose={() => setIsSonosOpen(false)} />
       <SettingsDialog
         isOpen={isSettingsOpen}
         onClose={() => setIsSettingsOpen(false)}

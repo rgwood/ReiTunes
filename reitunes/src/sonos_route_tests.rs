@@ -144,7 +144,8 @@ impl FakeSonos {
         assert_eq!(window["items"][0]["track"]["contentType"], "audio/mpeg");
         fake.record("queue: authenticated callback round trip succeeded".into());
         *fake.playback.lock().unwrap() = json!({
-            "playbackState": "PLAYBACK_STATE_PLAYING", "positionMillis": body["positionMillis"],
+            "playbackState": if body["playOnCompletion"] == false { "PLAYBACK_STATE_PAUSED" } else { "PLAYBACK_STATE_PLAYING" },
+            "positionMillis": body["positionMillis"],
             "queueVersion": body["queueVersion"], "itemId": body["itemId"],
         });
         StatusCode::NO_CONTENT
@@ -273,6 +274,23 @@ impl Harness {
             .await
             .unwrap()
     }
+}
+
+#[tokio::test]
+async fn sonos_handoff_loads_a_paused_track_at_the_requested_position() {
+    let harness = Harness::new().await;
+    let response = harness.client.post(format!("{}api/sonos/play", harness.server.url))
+        .header("Cookie", format!("{SESSION_COOKIE_NAME}={}", *PASSWORD_HASH))
+        .json(&json!({
+            "groupId": "group-1", "itemIds": [harness.track_id], "startItemId": harness.track_id,
+            "positionMillis": 73_456, "allowTakeover": true, "playOnCompletion": false,
+        }))
+        .send().await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let playback = harness.fake.playback.lock().unwrap();
+    assert_eq!(playback["playbackState"], "PLAYBACK_STATE_PAUSED");
+    assert_eq!(playback["positionMillis"], 73_456);
+    assert_eq!(harness.fake.loaded_sessions.lock().unwrap().len(), 1);
 }
 
 #[tokio::test]

@@ -299,7 +299,7 @@ test('switches between Sonos and browser playback without playing twice', async 
       return;
     }
     sonosSessionActive = true;
-    sonosPlaybackState = 'PLAYBACK_STATE_PLAYING';
+    sonosPlaybackState = request.playOnCompletion === false ? 'PLAYBACK_STATE_PAUSED' : 'PLAYBACK_STATE_PLAYING';
     await route.fulfill({
       json: { groupId: 'group-1', sessionCreated: sonosPlayRequests.length === 1 },
     });
@@ -368,6 +368,7 @@ test('switches between Sonos and browser playback without playing twice', async 
     startItemId: TRACK_ID,
     positionMillis: 0,
     allowTakeover: true,
+    playOnCompletion: true,
   });
   await expect(page.getByText('Sonos · Downstairs · Playing')).toBeVisible();
   await expect(page.getByText(/^0:4[2-9]$/)).toBeVisible();
@@ -521,6 +522,7 @@ test('switches between Sonos and browser playback without playing twice', async 
   await expect(page.getByRole('button', { name: 'Pause', exact: true })).toBeVisible();
 
   // Moving an already-paused Sonos session back must not autoplay locally.
+  await page.getByRole('button', { name: 'Pause', exact: true }).click();
   const playCalls = await page.evaluate(() => (window as typeof window & { __playCalls: number }).__playCalls);
   await page.getByRole('button', { name: 'Sonos', exact: true }).click();
   await dialog.getByRole('button', { name: 'Use this group' }).click();
@@ -529,7 +531,8 @@ test('switches between Sonos and browser playback without playing twice', async 
   await dialog.getByRole('button', { name: 'Close', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Play', exact: true })).toBeVisible();
   expect(await page.evaluate(() => (window as typeof window & { __playCalls: number }).__playCalls)).toBe(playCalls);
-  expect(sonosPlayRequests).toHaveLength(3);
+  expect(sonosPlayRequests).toHaveLength(4);
+  expect(sonosPlayRequests[3]).toMatchObject({ positionMillis: 42_000, playOnCompletion: false });
 });
 
 test('Sonos status messages keep controls aligned and timeouts offer a normal retry', async ({ page }, testInfo) => {

@@ -1,10 +1,11 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type RefObject } from 'react';
 import { usePlaybackTargetStore } from '../stores/playbackTargetStore';
 import { usePlayerStore } from '../stores/playerStore';
 import type { LibraryItem } from '../types';
 import type { SonosPlaybackStatus } from '../hooks/useSonosControls';
+import { sendSonosQueue } from '../hooks/usePlayback';
 import { recordPlaybackEvent } from '../utils/playbackDiagnostics';
-import { sonosRequest } from '../utils/sonosRequest';
+import { sonosRequest, SonosRequestError } from '../utils/sonosRequest';
 import './SonosModal.css';
 
 interface SonosStatus {
@@ -41,6 +42,7 @@ interface DiscoveredHousehold {
 }
 
 interface SonosModalProps {
+  audioRef: RefObject<HTMLAudioElement | null>;
   isOpen: boolean;
   onClose: () => void;
   items: LibraryItem[];
@@ -50,7 +52,20 @@ async function fetchJson<T>(url: string): Promise<T> {
   return sonosRequest<T>(url, {}, 20_000);
 }
 
-export function SonosModal({ isOpen, onClose, items }: SonosModalProps) {
+async function pauseSonosForHandoff(groupId: string) {
+  const url = `/api/sonos/groups/${encodeURIComponent(groupId)}/playback`;
+  const before = await fetchJson<SonosPlaybackStatus>(url);
+  const wasPlaying = before.playbackState === 'PLAYBACK_STATE_PLAYING' ||
+    before.playbackState === 'PLAYBACK_STATE_BUFFERING';
+  let playback = before;
+  if (before.reitunesSessionActive && wasPlaying) {
+    await sonosRequest(`${url}/pause`, { method: 'POST', credentials: 'include' });
+    playback = await fetchJson<SonosPlaybackStatus>(url).catch(() => before);
+  }
+  return { playback, wasPlaying };
+}
+
+export function SonosModal({ audioRef, isOpen, onClose, items }: SonosModalProps) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   const [status, setStatus] = useState<SonosStatus | null>(null);
   const [households, setHouseholds] = useState<DiscoveredHousehold[]>([]);
@@ -134,23 +149,11 @@ export function SonosModal({ isOpen, onClose, items }: SonosModalProps) {
     setError(null);
     recordPlaybackEvent('command', { origin: 'handoff-to-browser', target: 'sonos' });
     try {
-      const url = `/api/sonos/groups/${encodeURIComponent(output.target.groupId)}/playback`;
-      const before = await fetchJson<SonosPlaybackStatus>(url);
-      let playback = before;
-      if (before.reitunesSessionActive) {
-        await sonosRequest(`${url}/pause`, {
-          method: 'POST', credentials: 'include',
-        });
-        // Read the final position after Sonos acknowledges pause. If this read
-        // fails, the pre-pause snapshot is still safe to resume locally.
-        playback = await fetchJson<SonosPlaybackStatus>(url).catch(() => before);
-      }
+      const { playback, wasPlaying } = await pauseSonosForHandoff(output.target.groupId);
       const player = usePlayerStore.getState();
       const item = playback.reitunesSessionActive
         ? items.find(candidate => candidate.id === playback.sourceItemId)
         : undefined;
-      const wasPlaying = before.playbackState === 'PLAYBACK_STATE_PLAYING' ||
-        before.playbackState === 'PLAYBACK_STATE_BUFFERING';
       // Commit the output only after pause succeeds, so a failed request cannot
       // leave both outputs playing. A paused Sonos session stays paused locally.
       if (item) {
@@ -177,11 +180,13 @@ export function SonosModal({ isOpen, onClose, items }: SonosModalProps) {
   }, [items, setBrowserTarget]);
 
   const chooseGroup = useCallback(
-    (
+    async (
       household: SonosHousehold,
       group: SonosGroup,
       players: Map<string, SonosPlayer>
     ) => {
+      const output = usePlaybackTargetStore.getState();
+      if (output.isSending || output.isSwitchingOutput || output.isTransportPending) return;
       const playerNames = group.playerIds.map(
         (playerId) => players.get(playerId)?.name || playerId
       );
@@ -198,15 +203,53 @@ export function SonosModal({ isOpen, onClose, items }: SonosModalProps) {
         return;
       }
 
-      usePlayerStore.getState().setIsPlaying(false);
-      setSonosTarget({
-        householdId: household.id,
-        groupId: group.id,
-        groupName: group.name,
-        playerNames,
-      });
+      output.setSwitchingOutput(true);
+      setError(null);
+      try {
+        const player = usePlayerStore.getState();
+        let item = player.currentItem;
+        let position = player.pendingSeek ?? audioRef.current?.currentTime ?? player.resumePosition;
+        let wasPlaying = player.isPlaying;
+        if (output.target.kind === 'sonos') {
+          const snapshot = await pauseSonosForHandoff(output.target.groupId);
+          item = snapshot.playback.reitunesSessionActive
+            ? items.find(candidate => candidate.id === snapshot.playback.sourceItemId) ?? null
+            : null;
+          position = snapshot.playback.positionMillis / 1000;
+          wasPlaying = snapshot.wasPlaying;
+        } else {
+          // Read the media element directly: persisted progress can be five seconds old.
+          audioRef.current?.pause();
+        }
+        player.setIsPlaying(false);
+        setSonosTarget({
+          householdId: household.id, groupId: group.id, groupName: group.name, playerNames,
+        });
+        if (item) {
+          player.selectRemoteItem(item, position);
+          const next = usePlaybackTargetStore.getState();
+          if (next.target.kind !== 'sonos') return;
+          next.beginSending();
+          try {
+            await sendSonosQueue(item, position, next.target, next.takeoverRequired, wasPlaying);
+            if (usePlaybackTargetStore.getState().target !== next.target) return;
+            next.finishSending();
+          } catch (err) {
+            if (usePlaybackTargetStore.getState().target !== next.target) return;
+            next.failSending(
+              err instanceof Error ? err.message : 'Could not transfer playback to Sonos',
+              err instanceof SonosRequestError && err.status === 409,
+            );
+            throw err;
+          }
+        }
+      } catch (err) {
+        setError(`Could not switch to Sonos: ${err instanceof Error ? err.message : 'Sonos did not respond'}`);
+      } finally {
+        output.setSwitchingOutput(false);
+      }
     },
-    [playbackError, setSonosTarget, takeoverRequired, target]
+    [audioRef, items, playbackError, setSonosTarget, takeoverRequired, target]
   );
 
   return (
@@ -231,7 +274,7 @@ export function SonosModal({ isOpen, onClose, items }: SonosModalProps) {
               Sonos
             </h2>
             <p className="text-xs text-solarized-base0 mt-1">
-              Switching to this browser brings the current Sonos track with you.
+              Switching speakers keeps your current track, position, and play/pause state.
             </p>
           </div>
           <button
@@ -341,7 +384,7 @@ export function SonosModal({ isOpen, onClose, items }: SonosModalProps) {
                             </div>
                             <button
                               type="button"
-                              onClick={() => chooseGroup(household, group, players)}
+                              onClick={() => void chooseGroup(household, group, players)}
                               disabled={isSending || isSwitchingOutput || isTransportPending || (isSelected && !needsConfirmation)}
                               className="shrink-0 px-3 py-1.5 text-xs bg-solarized-base01 text-solarized-base2 rounded hover:bg-solarized-base00 disabled:text-solarized-cyan disabled:bg-solarized-base02 transition-colors"
                             >

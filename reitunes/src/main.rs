@@ -675,6 +675,8 @@ struct SonosPlayRequest {
     position_millis: u32,
     #[serde(default)]
     allow_takeover: bool,
+    // Existing clients start playback when this is omitted.
+    play_on_completion: Option<bool>,
 }
 
 async fn sonos_play_handler(
@@ -747,6 +749,7 @@ async fn send_sonos_queue(
             request.position_millis,
             request.allow_takeover,
             current_playback.reitunes_session_active,
+            request.play_on_completion.unwrap_or(true),
         )
         .await
         .map_err(sonos_playback_failure)?;

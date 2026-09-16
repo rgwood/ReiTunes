@@ -1,4 +1,4 @@
-import { useEffect, useRef, useCallback, useState } from 'react';
+import { useEffect, useRef, useCallback, useState, type RefObject } from 'react';
 import { usePlayerStore } from '../stores/playerStore';
 import { useQueueStore } from '../hooks/useQueue';
 import { getItemUrl, markPlayed, addBookmark } from '../hooks/useLibrary';
@@ -87,12 +87,17 @@ function formatTime(seconds: number): string {
 }
 
 interface AudioPlayerProps {
+  audioRef: RefObject<HTMLAudioElement | null>;
   items: LibraryItem[];
   onPlaybackPosition?: (itemId: string, position: number) => void;
 }
 
-export function AudioPlayer({ items, onPlaybackPosition }: AudioPlayerProps) {
+export function AudioPlayer({ audioRef: sharedAudioRef, items, onPlaybackPosition }: AudioPlayerProps) {
   const audioRef = useRef<HTMLAudioElement>(null);
+  const attachAudio = useCallback((audio: HTMLAudioElement | null) => {
+    audioRef.current = audio;
+    sharedAudioRef.current = audio;
+  }, [sharedAudioRef]);
   const progressRef = useRef<HTMLDivElement>(null);
   const lastPlayedIdRef = useRef<string | null>(null);
   const lastItemIdRef = useRef<string | null>(null);
@@ -180,7 +185,7 @@ export function AudioPlayer({ items, onPlaybackPosition }: AudioPlayerProps) {
     if (!audio || !currentItem) return;
 
     const isNewSong = currentItem.id !== lastItemIdRef.current;
-    if (isNewSong) {
+    if (isNewSong || !audio.getAttribute('src')) {
       lastItemIdRef.current = currentItem.id;
       lastCheckpointRef.current = -1;
       isChangingSourceRef.current = target.kind === 'browser';
@@ -281,7 +286,7 @@ export function AudioPlayer({ items, onPlaybackPosition }: AudioPlayerProps) {
     if (audioRef.current) {
       audioRef.current.volume = isMuted ? 0 : volume;
     }
-  }, [volume, isMuted]);
+  }, [volume, isMuted, target.kind]);
 
   const handleTimeUpdate = useCallback(() => {
     const audio = audioRef.current;
@@ -419,7 +424,9 @@ export function AudioPlayer({ items, onPlaybackPosition }: AudioPlayerProps) {
   const handleAudioPause = useCallback(() => {
     // Media events are queued tasks. An old pause can arrive after play() has
     // already made the element play again; feeding it back would pause that play.
-    if (isChangingSourceRef.current || !audioRef.current?.paused) return;
+    if (usePlaybackTargetStore.getState().target.kind !== 'browser' ||
+      usePlaybackTargetStore.getState().isSwitchingOutput ||
+      isChangingSourceRef.current || !audioRef.current?.paused) return;
     setIsPlaying(false);
     if (audioRef.current) setResumePosition(audioRef.current.currentTime);
   }, [setIsPlaying, setResumePosition]);
@@ -577,7 +584,7 @@ export function AudioPlayer({ items, onPlaybackPosition }: AudioPlayerProps) {
     return (
       <div className="sonos-player-layout" aria-busy={isSwitchingOutput}>
         <audio
-          ref={audioRef}
+          ref={attachAudio}
           preload="metadata"
           onLoadStart={handleLoadStart}
           onLoadedMetadata={handleLoadedMetadata}
@@ -777,7 +784,7 @@ export function AudioPlayer({ items, onPlaybackPosition }: AudioPlayerProps) {
     <div className="player-layout px-4 pt-3 pb-2">
       {/* Hidden audio element */}
       <audio
-        ref={audioRef}
+        ref={attachAudio}
         onLoadStart={handleLoadStart}
         onTimeUpdate={handleTimeUpdate}
         onLoadedMetadata={handleLoadedMetadata}

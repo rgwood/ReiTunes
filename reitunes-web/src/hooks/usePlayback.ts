@@ -3,7 +3,7 @@ import type { LibraryItem } from '../types';
 import { useQueueStore } from './useQueue';
 import { markPlayed } from './useLibrary';
 import { usePlayerStore } from '../stores/playerStore';
-import { usePlaybackTargetStore } from '../stores/playbackTargetStore';
+import { usePlaybackTargetStore, type SonosPlaybackTarget } from '../stores/playbackTargetStore';
 import { recordPlaybackEvent } from '../utils/playbackDiagnostics';
 import { sonosRequest, SonosRequestError } from '../utils/sonosRequest';
 
@@ -12,6 +12,25 @@ function sonosQueueFor(item: LibraryItem): LibraryItem[] {
   const contextIndex = queue.contextItems.findIndex((candidate) => candidate.id === item.id);
   const upcomingContext = contextIndex >= 0 ? queue.contextItems.slice(contextIndex + 1) : [];
   return [item, ...queue.manualQueue, ...upcomingContext].slice(0, 500);
+}
+
+export async function sendSonosQueue(
+  item: LibraryItem, startPosition: number, target: SonosPlaybackTarget,
+  allowTakeover: boolean, playOnCompletion = true,
+) {
+  await sonosRequest('/api/sonos/play', {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      groupId: target.groupId,
+      itemIds: sonosQueueFor(item).map(queueItem => queueItem.id),
+      startItemId: item.id,
+      positionMillis: Math.round(Math.max(0, startPosition) * 1000),
+      allowTakeover,
+      playOnCompletion,
+    }),
+  }, 50_000);
 }
 
 export function usePlayback() {
@@ -28,23 +47,11 @@ export function usePlayback() {
     if (targetState.isSending) return;
 
     const target = targetState.target;
-    const items = sonosQueueFor(item);
     usePlayerStore.getState().selectRemoteItem(item, startPosition);
     targetState.beginSending();
 
     try {
-      await sonosRequest('/api/sonos/play', {
-        method: 'POST',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          groupId: target.groupId,
-          itemIds: items.map((queueItem) => queueItem.id),
-          startItemId: item.id,
-          positionMillis: Math.round(Math.max(0, startPosition) * 1000),
-          allowTakeover: targetState.takeoverRequired,
-        }),
-      }, 50_000);
+      await sendSonosQueue(item, startPosition, target, targetState.takeoverRequired);
       if (usePlaybackTargetStore.getState().target !== target) return;
 
       usePlaybackTargetStore.getState().finishSending();

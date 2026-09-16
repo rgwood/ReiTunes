@@ -1,5 +1,67 @@
 import { expect, test } from '@playwright/test';
 
+for (const playing of [true, false]) {
+  test(`switching browser → Sonos → browser preserves position and ${playing ? 'playing' : 'paused'} state`, async ({ page }) => {
+    const trackId = '11111111-1111-4111-8111-111111111110';
+    let positionMillis = 0;
+    let remotePlaying = false;
+    const requests: Array<Record<string, unknown>> = [];
+    await page.route('**/api/sonos/status', route => route.fulfill({ json: { configured: true, connected: true } }));
+    await page.route('**/api/sonos/households', route => route.fulfill({ json: { households: [{ id: 'household' }] } }));
+    await page.route('**/api/sonos/households/household/groups', route => route.fulfill({ json: {
+      groups: [{ id: 'group-1', name: 'Kitchen', playerIds: [] }], players: [],
+    } }));
+    await page.route('**/api/sonos/groups/group-1/volume', route => route.fulfill({ json: { volume: 50, muted: false, fixed: false } }));
+    await page.route('**/api/sonos/groups/group-1/playback', route => route.fulfill({ json: {
+      playbackState: remotePlaying ? 'PLAYBACK_STATE_PLAYING' : 'PLAYBACK_STATE_PAUSED',
+      positionMillis, itemId: 'queue-item', sourceItemId: trackId, reitunesSessionActive: true,
+    } }));
+    await page.route('**/api/sonos/groups/group-1/playback/pause', route => {
+      remotePlaying = false;
+      // The final position can advance while Sonos acknowledges the pause.
+      positionMillis = 81_234;
+      return route.fulfill({ status: 204 });
+    });
+    let release!: () => void;
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    await page.route('**/api/sonos/play', async route => {
+      const request = route.request().postDataJSON();
+      requests.push(request);
+      await gate;
+      positionMillis = request.positionMillis;
+      remotePlaying = request.playOnCompletion;
+      await route.fulfill({ json: { groupId: 'group-1' } });
+    });
+
+    await page.getByRole('row').filter({ hasText: 'First track' }).click();
+    await expect(page.getByRole('button', { name: 'Pause', exact: true })).toBeVisible();
+    if (!playing) await page.getByRole('button', { name: 'Pause', exact: true }).click();
+    // Deliberately do not emit timeupdate: the handoff needs the live media position.
+    await page.locator('audio').evaluate(audio => { audio.currentTime = 73.456; });
+    await page.getByRole('button', { name: 'Sonos', exact: true }).click();
+    const dialog = page.getByRole('dialog', { name: 'Sonos' });
+    await dialog.getByRole('button', { name: 'Use this group' }).click();
+    await expect.poll(() => requests.length).toBe(1);
+    expect(requests[0]).toMatchObject({ startItemId: trackId, positionMillis: 73_456, playOnCompletion: playing });
+    expect(await page.locator('audio').evaluate(audio => audio.paused)).toBe(true);
+    await expect(dialog.getByRole('button', { name: 'Switching…' })).toBeDisabled();
+    release();
+    await expect(dialog.getByRole('button', { name: 'Use browser' })).toBeEnabled();
+    expect(remotePlaying).toBe(playing);
+    await dialog.getByRole('button', { name: 'Use browser' }).click();
+    await expect(dialog.getByRole('button', { name: 'Use browser' })).toHaveCount(0);
+    await dialog.getByRole('button', { name: 'Close', exact: true }).click();
+    await expect(page.getByRole('button', { name: playing ? 'Pause' : 'Play', exact: true })).toBeVisible();
+    const audio = await page.locator('audio').evaluate(audio => ({
+      paused: audio.paused, position: audio.currentTime, src: audio.src,
+    }));
+    expect(audio.paused).toBe(!playing);
+    expect(audio.position).toBe(playing ? 81.234 : 73.456);
+    expect(audio.src).toContain('/audio/0.mp3');
+    expect(remotePlaying).toBe(false);
+  });
+}
+
 test.beforeEach(async ({ page }) => {
   const items = ['First track', 'Bookmarked track'].map((name, index) => ({
     id: `11111111-1111-4111-8111-11111111111${index}`,
@@ -26,6 +88,7 @@ test.beforeEach(async ({ page }) => {
   }));
   await page.route('**/api/items', (route) => route.fulfill({ json: items }));
   await page.route('**/api/playlists', (route) => route.fulfill({ json: [] }));
+  await page.route('**/api/discovery', route => route.fulfill({ json: { sources: [], entries: [] } }));
   await page.route('**/api/log', (route) => route.fulfill({ status: 200 }));
   await page.route('**/ui/play', (route) => route.fulfill({ status: 200 }));
   await page.routeWebSocket('**/updates', () => {});

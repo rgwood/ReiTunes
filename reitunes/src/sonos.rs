@@ -461,6 +461,7 @@ impl SonosControl {
         position_millis: u32,
         allow_takeover: bool,
         current_queue_is_ours: bool,
+        play_on_completion: bool,
     ) -> std::result::Result<SonosPlaybackStatus, SonosPlaybackError> {
         let existing_session = self
             .playback_sessions
@@ -486,18 +487,18 @@ impl SonosControl {
         };
 
         let mut result = self
-            .load_cloud_queue(&session_id, queue, position_millis)
+            .load_cloud_queue(&session_id, queue, position_millis, play_on_completion)
             .await;
         if let Err(error) = &result {
             if is_command_timeout(error) {
                 warn!(error = ?error, group_id, "Sonos queue load timed out; checking playback before retrying");
-                match self.queue_is_playing(group_id, queue).await {
+                match self.queue_matches_state(group_id, queue, play_on_completion).await {
                     Ok(true) => result = Ok(()),
                     Ok(false) => {
                         tokio::time::sleep(Duration::from_secs(1)).await;
-                        result = self.load_cloud_queue(&session_id, queue, position_millis).await;
+                        result = self.load_cloud_queue(&session_id, queue, position_millis, play_on_completion).await;
                         if result.as_ref().err().is_some_and(is_command_timeout)
-                            && self.queue_is_playing(group_id, queue).await.unwrap_or(false)
+                            && self.queue_matches_state(group_id, queue, play_on_completion).await.unwrap_or(false)
                         {
                             result = Ok(());
                         }
@@ -544,14 +545,18 @@ impl SonosControl {
         self.get_url(url).await
     }
 
-    async fn queue_is_playing(&self, group_id: &str, queue: &PlaybackQueueParameters) -> Result<bool> {
+    async fn queue_matches_state(&self, group_id: &str, queue: &PlaybackQueueParameters, play_on_completion: bool) -> Result<bool> {
         // Match both identifiers: another song playing is not evidence that
         // this command succeeded. Never seek back after a lost acknowledgement.
         match self.group_playback(group_id).await {
             Ok(playback) => {
                 let confirmed = playback.queue_version.as_deref() == Some(&queue.queue_version)
                     && playback.item_id.as_deref() == Some(&queue.item_id)
-                    && playback.playback_state == "PLAYBACK_STATE_PLAYING";
+                    && playback.playback_state == if play_on_completion {
+                        "PLAYBACK_STATE_PLAYING"
+                    } else {
+                        "PLAYBACK_STATE_PAUSED"
+                    };
                 if confirmed {
                     tracing::info!(group_id, "Sonos playback confirmed after a lost response");
                 }
@@ -731,6 +736,7 @@ impl SonosControl {
         session_id: &str,
         queue: &PlaybackQueueParameters,
         position_millis: u32,
+        play_on_completion: bool,
     ) -> Result<()> {
         let url = self.control_url(&[
             "playbackSessions",
@@ -747,7 +753,7 @@ impl SonosControl {
                 item_id: &queue.item_id,
                 queue_version: &queue.queue_version,
                 position_millis,
-                play_on_completion: true,
+                play_on_completion,
             },
         )
         .await
@@ -1596,19 +1602,19 @@ mod tests {
 
         assert!(matches!(
             control
-                .play_cloud_queue("group-1", &queue, 42_000, false, false)
+                .play_cloud_queue("group-1", &queue, 42_000, false, false, true)
                 .await,
             Err(SonosPlaybackError::TakeoverRequired)
         ));
         assert_eq!(sessions_created.load(Ordering::SeqCst), 0);
 
         let first = control
-            .play_cloud_queue("group-1", &queue, 42_000, true, false)
+            .play_cloud_queue("group-1", &queue, 42_000, true, false, true)
             .await
             .unwrap();
         assert!(first.session_created);
         let second = control
-            .play_cloud_queue("group-1", &queue, 42_000, false, true)
+            .play_cloud_queue("group-1", &queue, 42_000, false, true, true)
             .await
             .unwrap();
         assert!(!second.session_created);
@@ -1619,13 +1625,13 @@ mod tests {
         // Spotify took over, but our saved session ID remains. Never send a
         // queue to that stale session or replace Spotify without confirmation.
         assert!(matches!(
-            control.play_cloud_queue("group-1", &queue, 42_000, false, false).await,
+            control.play_cloud_queue("group-1", &queue, 42_000, false, false, true).await,
             Err(SonosPlaybackError::TakeoverRequired)
         ));
         assert_eq!(sessions_created.load(Ordering::SeqCst), 1);
         assert_eq!(queues_loaded.load(Ordering::SeqCst), 2);
         let takeover = control
-            .play_cloud_queue("group-1", &queue, 42_000, true, false)
+            .play_cloud_queue("group-1", &queue, 42_000, true, false, true)
             .await
             .unwrap();
         assert!(takeover.session_created);
@@ -1677,7 +1683,7 @@ mod tests {
                 http_authorization: "Bearer cloud-queue-secret".into(),
                 item_id: "queue-item-1".into(), queue_version: "queue-version-1".into(),
             };
-            let result = control.play_cloud_queue("group-1", &queue, 42_000, true, false).await;
+            let result = control.play_cloud_queue("group-1", &queue, 42_000, true, false, true).await;
             if timeouts == 1 {
                 assert!(result.is_ok());
             } else {
@@ -1690,7 +1696,7 @@ mod tests {
             let payloads = counts.payloads.lock().unwrap().clone();
             assert_eq!(payloads[0], payloads[1]);
             assert!(control.has_playback_session("group-1").unwrap());
-            control.play_cloud_queue("group-1", &queue, 42_000, false, true).await.unwrap();
+            control.play_cloud_queue("group-1", &queue, 42_000, false, true, true).await.unwrap();
             assert_eq!(counts.sessions.load(Ordering::SeqCst), 1);
             assert_eq!(counts.loads.load(Ordering::SeqCst), 3);
             server.abort();
@@ -1727,13 +1733,15 @@ mod tests {
         }
         // Lost first reply, lost retry reply, unrelated queue, unrelated track,
         // still paused, and no way to read the speaker's state.
-        for (confirm_after, version, item, state, unavailable, expected_loads, success) in [
-            (1, "queue-1", "item-1", "PLAYBACK_STATE_PLAYING", false, 1, true),
-            (2, "queue-1", "item-1", "PLAYBACK_STATE_PLAYING", false, 2, true),
-            (1, "other-queue", "item-1", "PLAYBACK_STATE_PLAYING", false, 2, false),
-            (1, "queue-1", "other-item", "PLAYBACK_STATE_PLAYING", false, 2, false),
-            (1, "queue-1", "item-1", "PLAYBACK_STATE_PAUSED", false, 2, false),
-            (1, "queue-1", "item-1", "PLAYBACK_STATE_PLAYING", true, 1, false),
+        for (confirm_after, version, item, state, unavailable, expected_loads, success, play_on_completion) in [
+            (1, "queue-1", "item-1", "PLAYBACK_STATE_PLAYING", false, 1, true, true),
+            (2, "queue-1", "item-1", "PLAYBACK_STATE_PLAYING", false, 2, true, true),
+            (1, "other-queue", "item-1", "PLAYBACK_STATE_PLAYING", false, 2, false, true),
+            (1, "queue-1", "other-item", "PLAYBACK_STATE_PLAYING", false, 2, false, true),
+            (1, "queue-1", "item-1", "PLAYBACK_STATE_PAUSED", false, 2, false, true),
+            (1, "queue-1", "item-1", "PLAYBACK_STATE_PLAYING", true, 1, false, true),
+            (1, "queue-1", "item-1", "PLAYBACK_STATE_PAUSED", false, 1, true, false),
+            (1, "queue-1", "item-1", "PLAYBACK_STATE_PLAYING", false, 2, false, false),
         ] {
             let loads = Arc::new(AtomicUsize::new(0));
             let router = Router::new()
@@ -1751,7 +1759,7 @@ mod tests {
                 queue_base_url: "https://example.com/queue/v2.3".into(), http_authorization: "Bearer test".into(),
                 item_id: "item-1".into(), queue_version: "queue-1".into(),
             };
-            let result = control.play_cloud_queue("group-1", &queue, 42_000, false, true).await;
+            let result = control.play_cloud_queue("group-1", &queue, 42_000, false, true, play_on_completion).await;
             assert_eq!(result.is_ok(), success, "{confirm_after}, {version}, {item}, {state}, {unavailable}");
             assert_eq!(loads.load(Ordering::SeqCst), expected_loads);
             assert!(control.has_playback_session("group-1").unwrap());
@@ -1937,11 +1945,11 @@ mod tests {
         };
 
         assert!(matches!(
-            control.play_cloud_queue("group-1", &queue, 0, true, false).await,
+            control.play_cloud_queue("group-1", &queue, 0, true, false, true).await,
             Err(SonosPlaybackError::SessionEnded(_))
         ));
         assert!(matches!(
-            control.play_cloud_queue("group-1", &queue, 0, false, false).await,
+            control.play_cloud_queue("group-1", &queue, 0, false, false, true).await,
             Err(SonosPlaybackError::TakeoverRequired)
         ));
         server.abort();
