@@ -189,6 +189,7 @@ test('restores a saved track paused and registers media controls', async ({ page
       'seekbackward',
       'seekforward',
       'seekto',
+      'stop',
     ],
     volume: 0,
   });

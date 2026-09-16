@@ -131,6 +131,14 @@ export function AudioPlayer({ audioRef: sharedAudioRef, items, onPlaybackPositio
   const { target, isSending, isSwitchingOutput, error: playbackError, takeoverRequired } =
     usePlaybackTargetStore();
   const sonos = useSonosControls(target.kind === 'sonos' ? target.groupId : null);
+  const { play: playSonos, pause: pauseSonos, seek: seekOnSonos, playback: sonosPlayback } = sonos;
+  const sonosSessionActive = sonosPlayback?.reitunesSessionActive === true;
+  const sonosIsPlaying =
+    sonosPlayback?.playbackState === 'PLAYBACK_STATE_PLAYING' ||
+    sonosPlayback?.playbackState === 'PLAYBACK_STATE_BUFFERING';
+  const mediaSessionActive = !!currentItem && (target.kind === 'browser' ||
+    (sonosSessionActive && sonosPlayback?.sourceItemId === currentItem.id));
+  const mediaPosition = target.kind === 'sonos' ? sonos.positionMillis / 1000 : currentTime;
   const refreshSonosPlayback = sonos.refreshPlayback;
   const { playNext, playPrevious, shuffleEnabled, repeatMode, toggleShuffle, cycleRepeatMode } = useQueueStore();
 
@@ -452,7 +460,7 @@ export function AudioPlayer({ audioRef: sharedAudioRef, items, onPlaybackPositio
   useEffect(() => {
     if (!('mediaSession' in navigator)) return;
 
-    navigator.mediaSession.metadata = currentItem && target.kind === 'browser'
+    navigator.mediaSession.metadata = currentItem && mediaSessionActive
       ? new MediaMetadata({
           title: currentItem.name,
           artist: currentItem.artist,
@@ -463,71 +471,91 @@ export function AudioPlayer({ audioRef: sharedAudioRef, items, onPlaybackPositio
     return () => {
       navigator.mediaSession.metadata = null;
     };
-  }, [currentItem, target.kind]);
+  }, [currentItem, mediaSessionActive]);
 
   useEffect(() => {
     if (!('mediaSession' in navigator)) return;
-    navigator.mediaSession.playbackState = currentItem && target.kind === 'browser'
-      ? isPlaying ? 'playing' : 'paused'
+    navigator.mediaSession.playbackState = mediaSessionActive
+      ? (target.kind === 'sonos' ? sonosIsPlaying : isPlaying) ? 'playing' : 'paused'
       : 'none';
-  }, [currentItem, isPlaying, target.kind]);
+  }, [mediaSessionActive, isPlaying, sonosIsPlaying, target.kind]);
 
   useEffect(() => {
-    if (
-      !('mediaSession' in navigator) ||
-      target.kind !== 'browser' ||
-      !duration ||
-      !Number.isFinite(duration)
-    ) return;
+    if (!('mediaSession' in navigator)) return;
 
     try {
+      if (!mediaSessionActive || !duration || !Number.isFinite(duration)) {
+        navigator.mediaSession.setPositionState();
+        return;
+      }
       navigator.mediaSession.setPositionState({
         duration,
-        playbackRate: audioRef.current?.playbackRate ?? 1,
-        position: Math.min(duration, Math.max(0, currentTime)),
+        playbackRate: target.kind === 'sonos' ? 1 : audioRef.current?.playbackRate ?? 1,
+        position: Math.min(duration, Math.max(0, mediaPosition)),
       });
     } catch (error) {
       console.debug('Could not update media session position:', error);
     }
-  }, [currentTime, duration, target.kind]);
+  }, [mediaPosition, duration, mediaSessionActive, target.kind]);
 
   useEffect(() => {
-    if (!('mediaSession' in navigator) || target.kind !== 'browser') return;
+    if (!('mediaSession' in navigator)) return;
+
+    const canControl = () => {
+      const output = usePlaybackTargetStore.getState();
+      // Keep guarded handlers even without a Sonos session: removing them lets
+      // the browser's default media-key behavior start the local audio element.
+      return mediaSessionActive && output.target === target && !output.isSending &&
+        !output.isSwitchingOutput && !output.isTransportPending;
+    };
+    const seek = (position: number) => {
+      if (!canControl() || !Number.isFinite(position)) return;
+      if (target.kind === 'sonos') {
+        const limit = duration > 0 ? Math.max(0, duration - 0.001) : Infinity;
+        void seekOnSonos(Math.min(limit, Math.max(0, position)) * 1000);
+      } else if (audioRef.current) {
+        const limit = Number.isFinite(audioRef.current.duration) ? audioRef.current.duration : Infinity;
+        const clamped = Math.min(limit, Math.max(0, position));
+        audioRef.current.currentTime = clamped;
+        setResumePosition(clamped);
+      }
+    };
+    const position = () => target.kind === 'sonos' && sonosPlayback
+      ? (sonosPlayback.positionMillis + (sonosPlayback.playbackState === 'PLAYBACK_STATE_PLAYING'
+        ? Math.max(0, Date.now() - sonosPlayback.observedAt) : 0)) / 1000
+      : audioRef.current?.currentTime ?? 0;
+    const pause = () => {
+      if (!canControl()) return;
+      recordPlaybackEvent('command', { origin: 'media-session-pause', target: target.kind });
+      if (target.kind === 'sonos') {
+        if (sonosPlayback?.availablePlaybackActions?.canPause !== false) void pauseSonos();
+      } else {
+        audioRef.current?.pause();
+      }
+    };
 
     const handlers: Array<[MediaSessionAction, MediaSessionActionHandler]> = [
       ['play', () => {
-        recordPlaybackEvent('command', { origin: 'media-session-play' });
+        if (!canControl()) return;
+        recordPlaybackEvent('command', { origin: 'media-session-play', target: target.kind });
+        if (target.kind === 'sonos') {
+          void playSonos();
+          return;
+        }
         audioRef.current?.play().catch((error) => {
           recordPlaybackEvent('play-rejected', { origin: 'media-session-play', errorName: error instanceof Error ? error.name : 'UnknownError' });
           console.error('Failed to resume from media controls:', error);
         });
       }],
-      ['pause', () => {
-        recordPlaybackEvent('command', { origin: 'media-session-pause' });
-        audioRef.current?.pause();
-      }],
-      ['seekbackward', (details) => {
-        if (!audioRef.current) return;
-        const position = Math.max(0, audioRef.current.currentTime - (details.seekOffset ?? 30));
-        audioRef.current.currentTime = position;
-        setResumePosition(position);
-      }],
-      ['seekforward', (details) => {
-        if (!audioRef.current) return;
-        const position = Math.min(
-          audioRef.current.duration,
-          audioRef.current.currentTime + (details.seekOffset ?? 30)
-        );
-        audioRef.current.currentTime = position;
-        setResumePosition(position);
-      }],
+      ['pause', pause],
+      ['stop', pause],
+      ['seekbackward', (details) => seek(position() - (details.seekOffset ?? 30))],
+      ['seekforward', (details) => seek(position() + (details.seekOffset ?? 30))],
       ['seekto', (details) => {
-        if (!audioRef.current || details.seekTime === undefined) return;
-        audioRef.current.currentTime = details.seekTime;
-        setResumePosition(details.seekTime);
+        if (details.seekTime !== undefined) seek(details.seekTime);
       }],
-      ['previoustrack', handlePrevious],
-      ['nexttrack', handleNext],
+      ['previoustrack', () => { if (canControl()) handlePrevious(); }],
+      ['nexttrack', () => { if (canControl()) handleNext(); }],
     ];
 
     for (const [action, handler] of handlers) {
@@ -547,14 +575,10 @@ export function AudioPlayer({ audioRef: sharedAudioRef, items, onPlaybackPositio
         }
       }
     };
-  }, [handleNext, handlePrevious, setResumePosition, target.kind]);
+  }, [duration, handleNext, handlePrevious, mediaSessionActive, pauseSonos, playSonos, seekOnSonos, setResumePosition, sonosPlayback, target]);
 
   const progress = duration > 0 ? (currentTime / duration) * 100 : 0;
   const bookmarks = currentItem?.bookmarks ? Object.values(currentItem.bookmarks) : [];
-  const sonosSessionActive = sonos.playback?.reitunesSessionActive === true;
-  const sonosIsPlaying =
-    sonos.playback?.playbackState === 'PLAYBACK_STATE_PLAYING' ||
-    sonos.playback?.playbackState === 'PLAYBACK_STATE_BUFFERING';
   const sonosPosition = sonosSessionActive ? sonos.positionMillis / 1000 : 0;
   const displayedSonosPosition = sonosSeekDraft ?? sonosPosition;
   const sonosProgress = duration > 0 ? Math.min(100, (displayedSonosPosition / duration) * 100) : 0;

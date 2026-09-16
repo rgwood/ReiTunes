@@ -34,6 +34,7 @@ Rust tests use loopback servers and temporary SQLite databases. Browser tests st
 | `sonosRequest.test.ts` | Browser deadlines, stalled headers/body, network failure, expired login, proxy errors and takeover conflicts |
 | `sonos-resilience.spec.ts` | Stateful fake ReiTunes API: failed/lost pause replies, stale playback/volume polls, output changes, stalled requests and connection recovery |
 | `sonos-controllers.spec.ts` | Two independent browser contexts sharing a speaker; reverse-order playback/volume polls; output changes to another group; credential and missing-group recovery messages |
+| `sonos-media-session.spec.ts` | Media Session metadata and playback state; play/pause/stop, seeking and track changes; failed commands, lost sessions, handoffs and return to browser controls |
 | Existing `reitunes.spec.ts` cases | Output handoff, takeover UI, retries, next/previous, seek and layout |
 
 The browser fixtures do not exercise Rust. The route tests bridge real handlers and fake Sonos, including queue callbacks. The fake never downloads audio.
@@ -65,6 +66,8 @@ Assert request counts, IDs, positions and control availability as well as final 
 The reverse-order playback poll test was checked by temporarily removing the ordering guard: it failed at the stale response, as intended. The guard was restored afterward.
 
 ## Remaining limits
+
+The media-session tests invoke the registered callbacks while keeping the browser's real Media Session API. They verify command routing, not delivery from physical media keys. Firefox on Linux can withhold global media keys when a tab has no local playback; setting metadata and `playbackState` alone does not activate its native controls. See [Firefox's controller activation rules](https://searchfox.org/firefox-main/source/dom/media/mediacontrol/MediaController.cpp). Check physical keys separately with both a browser-to-Sonos handoff and a fresh tab that starts on Sonos.
 
 These scenarios cover the previously listed follow-ups. They do not model every combination of faults. Useful future incidents to capture include owner changes during an in-flight retry, successful refresh racing with disconnect, and additional mute/volume failures. A missing group never causes automatic selection of a replacement group. The two-controller test asserts eventual convergence, not an arbitrary winner between simultaneous commands.
 

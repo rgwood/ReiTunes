@@ -343,6 +343,9 @@ export function useSonosControls(groupId: string | null) {
     [groupId, isVolumePending, refreshVolume, volume?.fixed]
   );
 
+  const play = useCallback(() => sendTransport('play'), [sendTransport]);
+  const pause = useCallback(() => sendTransport('pause'), [sendTransport]);
+
   return {
     playback,
     positionMillis,
@@ -351,8 +354,8 @@ export function useSonosControls(groupId: string | null) {
     isTransportPending,
     isVolumePending,
     requestedVolume,
-    play: () => sendTransport('play'),
-    pause: () => sendTransport('pause'),
+    play,
+    pause,
     seek,
     setGroupVolume,
     setMuted,
