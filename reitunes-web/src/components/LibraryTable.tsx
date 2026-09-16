@@ -116,6 +116,10 @@ function formatCreatedTime(value: string, short = false): string {
 }
 
 export function LibraryTable({ items, searchQuery, playlistId, onSearchChange, revealRequest, onRevealed }: LibraryTableProps) {
+  // TanStack Table v8 exposes mutable state through stable methods. Remove this
+  // opt-out when useReactTable supports React Compiler memoization.
+  'use no memo';
+
   const scrollRef = useRef<HTMLDivElement>(null);
   const revealRowRef = useRef<HTMLTableRowElement>(null);
   useLayoutEffect(() => {
@@ -264,6 +268,7 @@ export function LibraryTable({ items, searchQuery, playlistId, onSearchChange, r
     }),
   ], []);
 
+  // eslint-disable-next-line react-hooks/incompatible-library -- LibraryTable opts out of compiler memoization above.
   const table = useReactTable({
     data: filteredItems,
     columns,
