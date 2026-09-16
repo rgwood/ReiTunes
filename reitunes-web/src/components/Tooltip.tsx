@@ -39,14 +39,18 @@ export function Tooltip({ content, children, force }: TooltipProps) {
 
   const hover = useHover(context, { delay: { open: 200, close: 0 } });
   const { getReferenceProps, getFloatingProps } = useInteractions([hover]);
+  const setReference = useCallback((node: HTMLDivElement | null) => {
+    refs.setReference(node);
+    triggerRef.current = node;
+  }, [refs]);
+  const setFloating = useCallback((node: HTMLDivElement | null) => {
+    refs.setFloating(node);
+  }, [refs]);
 
   return (
     <>
       <div
-        ref={(node) => {
-          refs.setReference(node);
-          (triggerRef as React.MutableRefObject<HTMLDivElement | null>).current = node;
-        }}
+        ref={setReference}
         className="truncate"
         {...getReferenceProps()}
       >
@@ -55,7 +59,7 @@ export function Tooltip({ content, children, force }: TooltipProps) {
       {isOpen && (
         <FloatingPortal>
           <div
-            ref={refs.setFloating}
+            ref={setFloating}
             style={floatingStyles}
             className="z-50 px-2 py-1 text-xs bg-solarized-base02 text-solarized-base1 border border-solarized-base01 rounded shadow-lg max-w-80"
             {...getFloatingProps()}

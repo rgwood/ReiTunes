@@ -47,7 +47,6 @@ export function DownloadModal({ isOpen, onClose }: DownloadModalProps) {
         // Clipboard read can fail without permission - that's fine, leave the field empty.
       }
     })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen]);
 
   const handleSubmit = useCallback(async () => {

@@ -17,7 +17,7 @@ import { usePlayback } from '../hooks/usePlayback';
 import { updateLibraryItem, deleteItem as apiDeleteItem } from '../hooks/useLibrary';
 import { FavoriteButton } from './FavoriteButton';
 import { Tooltip } from './Tooltip';
-import { useAddToPlaylist } from './PlaylistSidebar';
+import { useAddToPlaylist } from '../hooks/useAddToPlaylist';
 
 interface Playlist {
   id: string;

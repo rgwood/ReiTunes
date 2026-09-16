@@ -29,15 +29,6 @@ async function deletePlaylist(id: string): Promise<void> {
   if (!response.ok) throw new Error('Failed to delete playlist');
 }
 
-async function addToPlaylist(playlistId: string, libraryItemId: string): Promise<void> {
-  const response = await fetch(`/api/playlists/${playlistId}/items`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ library_item_id: libraryItemId }),
-  });
-  if (!response.ok) throw new Error('Failed to add to playlist');
-}
-
 interface PlaylistSidebarProps {
   selectedPlaylistId: string | null;
   onSelectPlaylist: (id: string | null) => void;
@@ -192,17 +183,4 @@ export function PlaylistSidebar({ selectedPlaylistId, onSelectPlaylist }: Playli
       </div>
     </div>
   );
-}
-
-// Export a hook for adding items to playlists from the context menu
-export function useAddToPlaylist() {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: ({ playlistId, libraryItemId }: { playlistId: string; libraryItemId: string }) =>
-      addToPlaylist(playlistId, libraryItemId),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['playlists'] });
-    },
-  });
 }
