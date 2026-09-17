@@ -25,7 +25,7 @@ The [library tagging implementation](TAGGING.md) uses GLM 5.3 Flash through the 
 - [x] Add and manage bookmarks, including compact rows, inline name editing and access from a song's context menu.
 - [x] Compare classification models on real favourites, songs and DJ sets; retain evidence, costs and human review labels.
 - [x] Implement GLM tagging with persistent suggestions, manual corrections, reasons, combined filters and classification after import or metadata changes.
-- [ ] Decide whether a periodic pass for unclassified items is useful beyond import-time classification and the bounded manual backfill.
+- [x] Backfill unclassified tracks at startup and roughly hourly, alongside immediate asynchronous tagging after imports and metadata edits.
 
 ## Playback diagnostics
 

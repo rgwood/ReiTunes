@@ -172,6 +172,24 @@ impl Tagging {
         if self.0.key.is_none() || self.0.started.swap(true, Ordering::SeqCst) {
             return;
         }
+        let sweep = self.clone();
+        tokio::spawn(async move {
+            loop {
+                match sweep.enqueue_missing().await {
+                    Ok(queued) if queued > 0 => tracing::info!(
+                        queued,
+                        "Automatically queued missing or changed library tags"
+                    ),
+                    Ok(_) => {}
+                    Err(error) => {
+                        tracing::warn!(%error, "Could not sweep library for missing tags")
+                    }
+                }
+                // Avoid synchronized hourly bursts. Import/edit hooks still enqueue immediately.
+                tokio::time::sleep(Duration::from_secs(55 * 60 + rand::random::<u64>() % 601))
+                    .await;
+            }
+        });
         let this = self.clone();
         tokio::spawn(async move {
             loop {
@@ -205,6 +223,58 @@ impl Tagging {
             self.enqueue(id, false).await?;
         }
         Ok(())
+    }
+
+    async fn enqueue_missing(&self) -> Result<usize> {
+        if self.0.key.is_none() {
+            return Ok(0);
+        }
+        let candidates = {
+            let library = self.0.library.read().await;
+            let conn = self.0.pool.get()?;
+            let mut statement = conn.prepare("SELECT ItemId, MetadataHash FROM tagging_items")?;
+            let prior = statement
+                .query_map([], |row| {
+                    Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+                })?
+                .collect::<rusqlite::Result<HashMap<_, _>>>()?;
+            let mut statement = conn.prepare("SELECT ItemId FROM tagging_labels WHERE json_extract(Serialized, '$.verdict')='accepted'")?;
+            let manually_tagged = statement
+                .query_map([], |row| row.get::<_, String>(0))?
+                .collect::<rusqlite::Result<HashSet<_>>>()?;
+            let mut items: Vec<_> = library
+                .items
+                .values()
+                .filter(|item| {
+                    let id = item.id.to_string();
+                    match prior.get(&id) {
+                        // A completed abstention or unchanged failure is still a completed attempt.
+                        // Never turn the sweep into recurring paid retries or undo human removals.
+                        Some(hash) => *hash != Metadata::from(*item).hash(),
+                        None => !manually_tagged.contains(&id),
+                    }
+                })
+                .collect();
+            items.sort_by(|a, b| {
+                b.created_time_utc
+                    .cmp(&a.created_time_utc)
+                    .then(a.id.cmp(&b.id))
+            });
+            items.into_iter().map(|item| item.id).collect::<Vec<_>>()
+        };
+        let mut queued = 0;
+        for id in candidates {
+            // Recheck current metadata and queue state under enqueue's transaction. An import,
+            // edit or manual queue request may have arrived while the sweep was running.
+            match self.enqueue(id, false).await {
+                Ok(true) => queued += 1,
+                Ok(false) => {}
+                Err(error) => {
+                    tracing::warn!(%id, %error, "Could not automatically queue track tags")
+                }
+            }
+        }
+        Ok(queued)
     }
 
     async fn enqueue(&self, id: Uuid, force: bool) -> Result<bool> {
@@ -1320,6 +1390,95 @@ mod tests {
         let mut tagging = Tagging::new(pool, Arc::new(RwLock::new(library))).unwrap();
         Arc::get_mut(&mut tagging.0).unwrap().key = None;
         (directory, tagging, id)
+    }
+
+    #[tokio::test]
+    async fn automatic_sweep_catches_the_whole_library_and_missed_changes_without_rebilling() {
+        let (_directory, mut tagging, first) = fixture();
+        Arc::get_mut(&mut tagging.0).unwrap().key = Some("local-test-key".into());
+        let original = tagging.0.library.read().await.items[&first].clone();
+        let mut ids = vec![first];
+        for _ in 0..24 {
+            let mut item = original.clone();
+            item.id = Uuid::new_v4();
+            ids.push(item.id);
+            tagging.0.library.write().await.items.insert(item.id, item);
+        }
+        assert_eq!(tagging.enqueue_missing().await.unwrap(), 25);
+        assert_eq!(tagging.enqueue_missing().await.unwrap(), 0);
+        let jobs = tagging.next_batch().unwrap();
+        assert_eq!(jobs.len(), 20);
+        for (id, hash) in jobs {
+            // Empty output is an intentional abstention, not an invitation to bill again.
+            tagging
+                .publish(
+                    id,
+                    &hash,
+                    &ItemTags {
+                        status: "ready".into(),
+                        metadata_hash: hash.clone(),
+                        ..Default::default()
+                    },
+                )
+                .await
+                .unwrap();
+        }
+        for (id, hash) in tagging.next_batch().unwrap() {
+            tagging
+                .fail(id, &hash, "Interrupted; billing may have occurred")
+                .unwrap();
+        }
+        assert_eq!(tagging.enqueue_missing().await.unwrap(), 0);
+        {
+            let mut library = tagging.0.library.write().await;
+            library.items.get_mut(&first).unwrap().name = "Corrected title".into();
+            // Listening and favorites are not classification metadata changes.
+            library.items.get_mut(&ids[1]).unwrap().play_count += 1;
+            library.items.get_mut(&ids[2]).unwrap().is_favorite = true;
+            let mut imported = original;
+            imported.id = Uuid::new_v4();
+            library.items.insert(imported.id, imported);
+        }
+        assert_eq!(tagging.enqueue_missing().await.unwrap(), 2);
+        assert_eq!(tagging.enqueue_missing().await.unwrap(), 0);
+        assert_eq!(tagging.next_batch().unwrap().len(), 2);
+    }
+
+    #[tokio::test]
+    async fn automatic_sweep_respects_manual_tags_and_import_edit_hooks_preserve_reasons() {
+        let (_directory, mut tagging, id) = fixture();
+        assert_eq!(tagging.enqueue_missing().await.unwrap(), 0); // No API key.
+        tagging
+            .save_label(
+                id,
+                Label {
+                    tag: "folk".into(),
+                    verdict: "accepted".into(),
+                    reason: "My own tag".into(),
+                },
+            )
+            .await
+            .unwrap();
+        Arc::get_mut(&mut tagging.0).unwrap().key = Some("local-test-key".into());
+        assert_eq!(tagging.enqueue_missing().await.unwrap(), 0); // Already tagged manually.
+        tagging.enqueue_changed(id).await.unwrap();
+        assert_eq!(tagging.next_batch().unwrap().len(), 1);
+        tagging
+            .0
+            .library
+            .write()
+            .await
+            .items
+            .get_mut(&id)
+            .unwrap()
+            .artist = "Corrected artist".into();
+        assert_eq!(tagging.enqueue_missing().await.unwrap(), 1);
+        assert_eq!(
+            tagging.snapshot().await.unwrap().items[&id.to_string()].labels["folk"].reason,
+            "My own tag"
+        );
+        tagging.enqueue_changed(id).await.unwrap();
+        assert_eq!(tagging.next_batch().unwrap().len(), 1);
     }
 
     #[tokio::test]

@@ -12,7 +12,11 @@ Use the regular search field: `tag:dj-mix`, `tag:house tag:vocal`, or `artist:"F
 
 Provide `OPENROUTER_API_KEY` to the server process. A runtime value takes precedence over a compile-time value. The browser never receives the key. Without a key, manual tagging still works and automatic suggestions are disabled.
 
-New file uploads, completed link imports, and edits to title, artist, album or file path queue suggestions automatically. Existing items are not classified merely because the server starts. **Tags → Automatic tags** previews up to 20 new or changed tracks, newest first, and submits those specific IDs. The selected-track editor only generates or refreshes that track. Failed tracks have an explicit retry action. No periodic library-wide backfill is scheduled.
+New file uploads, completed link imports, and edits to title, artist, album or file path queue suggestions automatically. Classification runs asynchronously and does not delay the import or edit response for MusicBrainz or model calls.
+
+At startup and every 55–65 minutes, a background sweep queues all previously unclassified tracks without manually accepted tags, plus tracks whose classification metadata has changed. The randomized interval avoids synchronized hourly bursts. Queue entries persist, deduplicate against immediate import/edit hooks, and are processed in batches of up to 20. The sweep never regenerates unchanged successful results, deliberate empty results, or failures; it also does not reintroduce human-removed tags. A metadata change permits a fresh attempt, while unrelated play counts, favorites and bookmarks do not. Human tags and correction reasons survive regeneration.
+
+**Tags → Automatic tags** retains the optional bounded manual queue action. The selected-track editor only generates or refreshes that track. Failed tracks have an explicit retry action, so an interrupted billable call cannot be charged repeatedly by the sweep. Without an API key, both automatic enqueueing and processing are disabled; manual labels remain available.
 
 Progress distinguishes waiting, metadata lookup, metadata ready and model generation inside the optional tag panel. The toolbar's Tags button shows a count while work is running, or an indicator for failures. Completion is quiet: the new tags appear in the grid and search automatically. Recent outcomes remain available under Automatic tags.
 
