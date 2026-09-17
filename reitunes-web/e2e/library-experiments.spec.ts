@@ -109,7 +109,9 @@ const randomJumpItems = densityItems.map((item, index) => ({
 }));
 
 async function playingRowIsRevealed(page: Page) {
-  return page.locator('tbody tr[aria-current="true"]').evaluate(row => {
+  return page.locator('tbody tr[aria-current="true"]').evaluateAll(rows => {
+    const row = rows[0];
+    if (!row) return false;
     const table = row.closest('table')!;
     const scroller = table.parentElement!;
     const bounds = row.getBoundingClientRect();
@@ -122,7 +124,7 @@ test('random jumps reveal the highlighted row in both directions, including the 
   await page.setViewportSize({ width: 1440, height: 600 });
   await mockLibrary(page, randomJumpItems);
   await page.goto('/');
-  await expect(page.locator('tbody tr')).toHaveCount(120);
+  await expect(page.getByRole('table', { name: 'Tracks' })).toHaveAttribute('aria-rowcount', '121');
   await page.keyboard.press('Control+e');
   await expect(page.locator('tbody tr[aria-current="true"]')).toContainText(randomJumpItems[60].name);
   await expect.poll(() => playingRowIsRevealed(page)).toBe(true);
@@ -148,25 +150,25 @@ test('random jumps escape hiding filters but preserve a search that includes the
   const collection = page.getByRole('combobox', { name: 'Collection', exact: true });
   await page.getByRole('button', { name: 'Playlists', exact: true }).click();
   await page.getByText('Other songs', { exact: true }).click();
-  await expect(page.locator('tbody tr')).toHaveCount(1);
+  await expect(page.locator('tbody tr[tabindex]')).toHaveCount(1);
   await search.fill('no matching music');
   await search.blur();
-  await expect(page.locator('tbody tr')).toHaveCount(0);
+  await expect(page.locator('tbody tr[tabindex]')).toHaveCount(0);
   await page.keyboard.press('Control+e');
   await expect(search).toHaveValue('');
-  await expect(page.locator('tbody tr')).toHaveCount(120);
+  await expect(page.getByRole('table', { name: 'Tracks' })).toHaveAttribute('aria-rowcount', '121');
   await expect.poll(() => playingRowIsRevealed(page)).toBe(true);
 
   await collection.selectOption('favourites');
   await collection.blur();
-  await expect(page.locator('tbody tr')).toHaveCount(0);
+  await expect(page.locator('tbody tr[tabindex]')).toHaveCount(0);
   await page.keyboard.press('Control+e');
   await expect(collection).toHaveValue('all');
   await expect.poll(() => playingRowIsRevealed(page)).toBe(true);
 
   await search.fill(randomJumpItems[60].name);
   await search.blur();
-  await expect(page.locator('tbody tr')).toHaveCount(1);
+  await expect(page.locator('tbody tr[tabindex]')).toHaveCount(1);
   await page.keyboard.press('Control+e');
   await expect(search).toHaveValue(randomJumpItems[60].name);
   await expect.poll(() => playingRowIsRevealed(page)).toBe(true);
@@ -175,7 +177,7 @@ test('random jumps escape hiding filters but preserve a search that includes the
 test('searches artists, albums and bookmark labels in one grid', async ({ page }) => {
   await mockLibrary(page);
   await page.goto('/');
-  const rows = page.locator('tbody tr');
+  const rows = page.locator('tbody tr[tabindex]');
   await expect(rows).toHaveCount(34);
   const search = page.getByRole('searchbox', { name: 'Search library' });
   await search.fill('artist:"Nick Drake"');
@@ -254,7 +256,7 @@ test('opens a playlist in its saved order and uses its name for playback', async
   await page.goto('/');
   await page.getByRole('button', { name: 'Playlists', exact: true }).click();
   await page.getByText('Evening rotation', { exact: true }).click();
-  const rows = page.locator('tbody tr');
+  const rows = page.locator('tbody tr[tabindex]');
   await expect(rows).toHaveCount(3);
   for (const [index, item] of orderedItems.entries()) {
     await expect(rows.nth(index)).toContainText(item.name);
@@ -340,7 +342,7 @@ test('shows at least thirty compact rows even with an old visual-view preference
   await mockLibrary(page, densityItems);
   await page.addInitScript(() => localStorage.setItem('reitunes-library-view', 'sleeves'));
   await page.goto('/?view=sleeves');
-  await expect(page.locator('tbody tr')).toHaveCount(120);
+  await expect(page.getByRole('table', { name: 'Tracks' })).toHaveAttribute('aria-rowcount', '121');
   await expect(page.getByRole('heading')).toHaveCount(0);
   await expect(page.getByRole('complementary')).toHaveCount(0);
   await expect(page.getByRole('button', { name: /^(Gallery|Columns|Sleeves|Songs)$/ })).toHaveCount(0);
@@ -356,7 +358,7 @@ test('shows at least thirty compact rows even with an old visual-view preference
         clipBottom = Math.min(clipBottom, box.bottom);
       }
     }
-    const rows = Array.from(table.querySelectorAll('tbody tr')).map(row => row.getBoundingClientRect());
+    const rows = Array.from(table.querySelectorAll('tbody tr[tabindex]')).map(row => row.getBoundingClientRect());
     return {
       tableTop: table.getBoundingClientRect().top,
       tableLeft: table.getBoundingClientRect().left,

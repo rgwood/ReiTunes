@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { LibraryItem } from '../types';
-import { matchesLibrarySearch } from './libraryBrowser';
+import { matchesLibrarySearch, tagSearch } from './libraryBrowser';
 
 function item(id: string, changes: Partial<LibraryItem> = {}): LibraryItem {
   return {
@@ -19,6 +19,17 @@ function item(id: string, changes: Partial<LibraryItem> = {}): LibraryItem {
 }
 
 describe('library search', () => {
+  it('combines exact tag matches with text and artist/album filters', () => {
+    const track = item('one');
+    const tags = ['dj-mix', 'house', 'high-energy', 'odd"tag'];
+    expect(matchesLibrarySearch(track, 'tag:DJ-MIX tag:house artist:"Four Tet" night', tags)).toBe(true);
+    expect(matchesLibrarySearch(track, 'tag:dj', tags)).toBe(false);
+    expect(matchesLibrarySearch(track, 'tag:missing', tags)).toBe(false);
+    expect(matchesLibrarySearch(track, 'tag:"high energy" album:Rounds', tags)).toBe(true);
+    expect(matchesLibrarySearch(track, 'tag:dj-mix')).toBe(false);
+    expect(matchesLibrarySearch(track, tagSearch('odd"tag'), tags)).toBe(true);
+    expect(tagSearch('dj-mix')).toBe('tag:dj-mix');
+  });
   it('searches across words, bookmark labels, and existing artist/album syntax', () => {
     const track = item('one', {
       bookmarks: {

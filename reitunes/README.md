@@ -20,10 +20,12 @@ This is entirely single-node right now. I'm not sure whether to forge ahead with
 
 ### TODO
 
+The [library tagging implementation](TAGGING.md) uses GLM 5.3 Flash through the official Z.ai provider, with high reasoning and cached MusicBrainz evidence. It adds persistent tags, manual corrections with reasons, combined browsing filters and classification after imports. The [local tagging lab](TAGGING_EXPERIMENT.md) retains the model comparison and separate human-label exports.
+
 - [x] Add and manage bookmarks, including compact rows, inline name editing and access from a song's context menu.
-- [ ] Experiment with AI-driven classification, tags and browsing filters. Give an agent broad freedom to look through the library and propose useful categories, such as high energy, low energy and instrumental, including combinations of these concepts. Pay particular attention to newly imported songs.
-- [ ] Run a couple of classification experiments before choosing a model and agent harness. Use OpenRouter through the existing environment API key (it may only be available outside the sandbox; never print or commit it). Compare at least two model/harness combinations on the same representative library sample, including favourites, individual songs and long DJ sets. Record useful versus misleading tags, consistency, evidence used, latency and cost; distinguish metadata-based guesses from classifications supported by audio.
-- [ ] Use the experiment results to design persistent tags and library filters. Keep room for agent-created categories, manual corrections and model/harness version tracking. Consider classification after import, with a recurring pass for unclassified or changed items; decide on the schedule after the experiments.
+- [x] Compare classification models on real favourites, songs and DJ sets; retain evidence, costs and human review labels.
+- [x] Implement GLM tagging with persistent suggestions, manual corrections, reasons, combined filters and classification after import or metadata changes.
+- [ ] Decide whether a periodic pass for unclassified items is useful beyond import-time classification and the bounded manual backfill.
 
 ## Playback diagnostics
 

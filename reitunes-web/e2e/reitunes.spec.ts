@@ -44,6 +44,34 @@ async function mockBackend(page: Page) {
   await page.routeWebSocket('**/updates', () => {});
 }
 
+test('bookmark titles play from their saved position without opening the editor', async ({ page }) => {
+  await mockBackend(page);
+  // A real silent audio fixture verifies the seek, not just the button handler.
+  const samples = 8000 * 180;
+  const wav = Buffer.alloc(44 + samples * 2);
+  wav.write('RIFF'); wav.writeUInt32LE(wav.length - 8, 4); wav.write('WAVEfmt ', 8);
+  wav.writeUInt32LE(16, 16); wav.writeUInt16LE(1, 20); wav.writeUInt16LE(1, 22);
+  wav.writeUInt32LE(8000, 24); wav.writeUInt32LE(16000, 28);
+  wav.writeUInt16LE(2, 32); wav.writeUInt16LE(16, 34); wav.write('data', 36);
+  wav.writeUInt32LE(samples * 2, 40);
+  await page.route('**/audio/*.mp3', route => {
+    const range = route.request().headers().range?.match(/bytes=(\d+)-(\d*)/);
+    if (!range) return route.fulfill({ contentType: 'audio/wav', headers: { 'Accept-Ranges': 'bytes' }, body: wav });
+    const start = Number(range[1]);
+    const end = range[2] ? Math.min(Number(range[2]), wav.length - 1) : wav.length - 1;
+    return route.fulfill({ status: 206, contentType: 'audio/wav', headers: {
+      'Accept-Ranges': 'bytes', 'Content-Range': `bytes ${start}-${end}/${wav.length}`,
+    }, body: wav.subarray(start, end + 1) });
+  });
+  await page.goto('/');
+  await page.locator('.library-toolbar').getByRole('button', { name: 'Bookmarks', exact: true }).click();
+  await page.getByText('Guitar entrance', { exact: true }).click();
+  await expect(page.getByRole('textbox', { name: 'Bookmark label for Northern Sky' })).toHaveCount(0);
+  await expect.poll(() => page.locator('audio').evaluate(audio => !audio.paused && audio.currentTime >= 70 && audio.currentTime < 75)).toBe(true);
+  await page.getByRole('button', { name: 'Play Northern Sky from Unlabelled bookmark', exact: true }).press('Enter');
+  await expect.poll(() => page.locator('audio').evaluate(audio => !audio.paused && audio.currentTime >= 145 && audio.currentTime < 150)).toBe(true);
+});
+
 test('shows, filters, edits and deletes bookmarks', async ({ page }) => {
   await mockBackend(page);
   const items = structuredClone(libraryItems);
@@ -78,7 +106,7 @@ test('shows, filters, edits and deletes bookmarks', async ({ page }) => {
   await expect(page.getByText('No matching bookmarks')).toBeVisible();
   await page.getByRole('searchbox', { name: 'Filter bookmarks' }).fill('');
 
-  await page.getByText('Guitar entrance', { exact: true }).click();
+  await page.getByRole('button', { name: 'Rename Guitar entrance for Northern Sky', exact: true }).click();
   await expect(page.getByRole('textbox', { name: 'Bookmark label for Northern Sky' })).toBeFocused();
   await page.getByRole('textbox', { name: 'Bookmark label for Northern Sky' }).fill('First chorus');
   await page.getByRole('textbox', { name: 'Bookmark emoji for Northern Sky' }).fill('🔥');
@@ -95,7 +123,7 @@ test('shows, filters, edits and deletes bookmarks', async ({ page }) => {
   await expect(page.getByText('First chorus', { exact: true })).toHaveCount(0);
 });
 
-test('bookmark names edit without playing, cancel with Escape, and retain failed saves for retry', async ({ page }) => {
+test('bookmark rename action does not play, cancels with Escape, and retains failed saves for retry', async ({ page }) => {
   await mockBackend(page);
   const items = structuredClone(libraryItems);
   await page.route('**/api/items', route => route.fulfill({ json: items }));
@@ -110,7 +138,7 @@ test('bookmark names edit without playing, cancel with Escape, and retain failed
   });
   await page.goto('/');
   await page.locator('.library-toolbar').getByRole('button', { name: 'Bookmarks' }).click();
-  await page.getByText('Guitar entrance', { exact: true }).click();
+  await page.getByRole('button', { name: 'Rename Guitar entrance for Northern Sky', exact: true }).click();
   const name = page.getByRole('textbox', { name: 'Bookmark label for Northern Sky' });
   await expect(name).toBeFocused();
   expect(await name.evaluate(element => (element as HTMLInputElement).selectionEnd)).toBe('Guitar entrance'.length);
@@ -119,7 +147,7 @@ test('bookmark names edit without playing, cancel with Escape, and retain failed
   await expect(name).toHaveCount(0);
   await expect(page.getByText('Guitar entrance', { exact: true })).toBeVisible();
   expect(attempts).toBe(0);
-  await page.getByText('Guitar entrance', { exact: true }).click();
+  await page.getByRole('button', { name: 'Rename Guitar entrance for Northern Sky', exact: true }).click();
   await name.fill('Keep this');
   await name.press('Enter');
   await expect(page.getByRole('alert')).toContainText('Could not save');
@@ -161,7 +189,7 @@ for (const viewport of [{ name: 'desktop', width: 1440, height: 900 }, { name: '
     await page.getByRole('button', { name: 'Manage bookmarks' }).click();
     await expect(sidebar.locator('.bookmark-row')).toHaveCount(1);
     await expect(sidebar.getByText('Quiet ending', { exact: true })).toBeVisible();
-    await sidebar.getByText('Quiet ending', { exact: true }).click();
+    await sidebar.getByRole('button', { name: 'Rename Quiet ending for Pink Moon', exact: true }).click();
     await expect(sidebar.getByRole('textbox', { name: 'Bookmark label for Pink Moon' })).toBeFocused();
     await page.screenshot({ path: testInfo.outputPath(`bookmark-edit-${viewport.name}.png`) });
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);

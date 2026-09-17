@@ -1,4 +1,4 @@
-import { useMemo, useState, useCallback, useEffect, useLayoutEffect, useRef } from 'react';
+import { Fragment, memo, useMemo, useState, useCallback, useEffect, useRef } from 'react';
 import {
   useReactTable,
   getCoreRowModel,
@@ -6,6 +6,8 @@ import {
   getFilteredRowModel,
   flexRender,
   createColumnHelper,
+  type Cell,
+  type Row,
   type SortingState,
   type ColumnFiltersState,
 } from '@tanstack/react-table';
@@ -17,7 +19,9 @@ import { usePlayback } from '../hooks/usePlayback';
 import { updateLibraryItem, deleteItem as apiDeleteItem } from '../hooks/useLibrary';
 import { FavoriteButton } from './FavoriteButton';
 import { Tooltip } from './Tooltip';
+import { useLibraryViewport, LIBRARY_HEADER_HEIGHT } from '../hooks/useLibraryViewport';
 import { useAddToPlaylist } from '../hooks/useAddToPlaylist';
+import { effectiveTags, tagProgress, type ItemTags } from '../hooks/useTags';
 
 interface Playlist {
   id: string;
@@ -30,11 +34,17 @@ const columnHelper = createColumnHelper<LibraryItem>();
 interface LibraryTableProps {
   items: LibraryItem[];
   searchQuery: string;
+  filterKey?: string;
   playlistId?: string | null;
   onSearchChange?: (query: string) => void;
   revealRequest?: { itemId: string } | null;
   onRevealed?: () => void;
   onManageBookmarks?: (item: LibraryItem) => void;
+  onManageTags?: (item: LibraryItem) => void;
+  onFilterTag?: (tag: string) => void;
+  tagItems?: Record<string, ItemTags>;
+  includeSuggestedTags?: boolean;
+  selectedTagItemId?: string | null;
 }
 
 interface ParsedSearch {
@@ -94,51 +104,206 @@ function formatBookmarks(bookmarks: Record<string, Bookmark>): React.ReactNode {
   });
 }
 
+const shortDateFormatter = new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+const fullDateFormatter = new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' });
+
 function formatCreatedTime(value: string, short = false): string {
-  // Parse the UTC time and convert to local time
-  // Input format: "2025-01-24T14:30:45.123456789" (UTC)
-  const utcDate = new Date(value.split('.')[0] + 'Z'); // Add 'Z' to indicate UTC
-
-  if (short) {
-    return utcDate.toLocaleDateString(undefined, {
-      month: 'short',
-      day: 'numeric',
-      year: 'numeric',
-    });
-  }
-
-  return utcDate.toLocaleString(undefined, {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
-    hour: 'numeric',
-    minute: '2-digit',
-  });
+  const date = new Date(/Z|[+-]\d\d:\d\d$/.test(value) ? value : `${value}Z`);
+  return Number.isNaN(date.getTime()) ? value : (short ? shortDateFormatter : fullDateFormatter).format(date);
 }
 
-export function LibraryTable({ items, searchQuery, playlistId, onSearchChange, revealRequest, onRevealed, onManageBookmarks }: LibraryTableProps) {
+interface TagTableMeta {
+  tagItems?: Record<string, ItemTags>;
+  includeSuggestedTags?: boolean;
+  selectedTagItemId?: string | null;
+  onManageTags?: (item: LibraryItem) => void;
+  onFilterTag?: (tag: string) => void;
+}
+
+// Tag state changes through table metadata; column renderer identities never change.
+// Changing a renderer makes React unmount its cells, including every tooltip.
+const columns = [
+    columnHelper.accessor('is_favorite', {
+      header: '\u2665',
+      cell: (info) => (
+        <FavoriteButton
+          itemId={info.row.original.id}
+          isFavorite={info.getValue() ?? false}
+        />
+      ),
+      size: 28,
+      minSize: 28,
+      maxSize: 28,
+      enableResizing: false,
+      enableSorting: true,
+    }),
+    columnHelper.accessor('name', {
+      header: 'Name',
+      cell: (info) => <Tooltip content={info.getValue()}>{info.getValue()}</Tooltip>,
+      size: 220,
+    }),
+    columnHelper.accessor('artist', {
+      header: 'Artist',
+      cell: (info) => <Tooltip content={info.getValue()}>{info.getValue()}</Tooltip>,
+      size: 140,
+    }),
+    columnHelper.accessor('album', {
+      header: 'Album',
+      cell: (info) => <Tooltip content={info.getValue()}>{info.getValue()}</Tooltip>,
+      size: 140,
+    }),
+    columnHelper.accessor('track_number', {
+      header: '#',
+      cell: (info) => info.getValue() ?? '',
+      size: 40,
+    }),
+    columnHelper.accessor('play_count', {
+      header: 'Plays',
+      cell: (info) => info.getValue(),
+      size: 50,
+    }),
+    columnHelper.display({
+      id: 'tags', header: 'Tags', size: 230,
+      cell: ({ row, table }) => {
+        const { tagItems, includeSuggestedTags, selectedTagItemId, onManageTags, onFilterTag } = table.options.meta as TagTableMeta;
+        const data = tagItems?.[row.original.id];
+        const itemTags = effectiveTags(data, includeSuggestedTags);
+        return <div className="row-tags">
+          <span className="row-tag-links">{itemTags.slice(0, 2).map(tag => <button key={tag} className="row-tag-link" title={`Browse all music tagged ${tag}`} aria-label={`Browse music tagged ${tag}`} onClick={event => { event.stopPropagation(); onFilterTag?.(tag); }}>{tag}</button>)}
+          {!itemTags.length && <span className="row-tags-empty" title={tagProgress(data)}>{data?.status === 'running' ? 'Generating…' : data?.status === 'queued' ? 'Waiting…' : data?.status === 'failed' ? 'Failed' : '—'}</span>}</span>
+          <button type="button" className={`row-tag-edit${itemTags.length > 2 ? ' has-more' : ''}`} aria-label={`Edit tags for ${row.original.name}`} aria-pressed={selectedTagItemId === row.original.id} title={itemTags.length > 2 ? `${itemTags.join(', ')} — manage tags` : 'Add or remove tags'} onClick={event => { event.stopPropagation(); onManageTags?.(row.original); }}>{itemTags.length > 2 ? `+${itemTags.length - 2}` : '…'}</button>
+        </div>;
+      },
+    }),
+    columnHelper.accessor('bookmarks', {
+      header: 'Bookmarks',
+      cell: (info) => formatBookmarks(info.getValue()),
+      size: 100,
+      enableSorting: false,
+    }),
+    columnHelper.accessor('created_time_utc', {
+      header: 'Created',
+      cell: (info) => {
+        const full = formatCreatedTime(info.getValue());
+        const short = formatCreatedTime(info.getValue(), true);
+        return <Tooltip content={full} force>{short}</Tooltip>;
+      },
+      size: 130,
+    }),
+];
+
+interface RenderedCellProps {
+  cell: Cell<LibraryItem, unknown>;
+  tagData?: ItemTags;
+  tagSelected?: boolean;
+  includeSuggestedTags?: boolean;
+  onManageTags?: (item: LibraryItem) => void;
+  onFilterTag?: (tag: string) => void;
+}
+
+// Explicit tag dependencies are needed because TanStack's table/meta are mutable.
+// An unchanged cell can skip rendering even when another row's tag state changes.
+const RenderedCell = memo(function RenderedCell({ cell }: RenderedCellProps) {
+  return flexRender(cell.column.columnDef.cell, cell.getContext());
+});
+
+interface LibraryRowProps {
+  row: Row<LibraryItem>;
+  rowIndex: number;
+  isCurrentlyPlaying: boolean;
+  tagSelected: boolean;
+  tagData?: ItemTags;
+  includeSuggestedTags?: boolean;
+  onManageTags?: (item: LibraryItem) => void;
+  onFilterTag?: (tag: string) => void;
+  editingField: string | null;
+  editValue: string;
+  setEditValue: (value: string) => void;
+  handleRowClick: (item: LibraryItem, rowIndex: number, event: React.MouseEvent | React.KeyboardEvent) => void;
+  handleContextMenu: (event: React.MouseEvent, item: LibraryItem) => void;
+  handleCellDoubleClick: (rowId: string, field: string, value: string) => void;
+  handleBookmarkClick: (item: LibraryItem, position: number, event: React.MouseEvent) => void;
+  handleEditBlur: () => void;
+  handleEditKeyDown: (event: React.KeyboardEvent) => void;
+}
+
+const LibraryRow = memo(function LibraryRow({ row, rowIndex, isCurrentlyPlaying, tagSelected, tagData,
+  includeSuggestedTags, onManageTags, onFilterTag, editingField, editValue, setEditValue, handleRowClick,
+  handleContextMenu, handleCellDoubleClick, handleBookmarkClick, handleEditBlur, handleEditKeyDown }: LibraryRowProps) {
+  return (
+  <tr
+    key={row.id}
+    data-item-id={row.id}
+    aria-rowindex={rowIndex + 2}
+    data-stripe={rowIndex % 2 === 1 || undefined}
+    aria-current={isCurrentlyPlaying ? 'true' : undefined}
+    data-tag-selected={tagSelected || undefined}
+    tabIndex={0}
+    onKeyDown={(event) => {
+      if (event.target === event.currentTarget && (event.key === 'Enter' || event.key === ' ')) {
+        event.preventDefault();
+        handleRowClick(row.original, rowIndex, event);
+      }
+    }}
+    className={`hover:bg-solarized-base02 cursor-pointer ${isCurrentlyPlaying ? 'bg-solarized-base02' : ''}`}
+    onClick={(e) => handleRowClick(row.original, rowIndex, e)}
+    onContextMenu={(e) => handleContextMenu(e, row.original)}
+  >
+    {row.getVisibleCells().map((cell) => {
+      const field = cell.column.id;
+      const isEditing = editingField === field;
+      const isEditable = ['name', 'artist', 'album'].includes(field);
+
+      return (
+        <td
+          key={cell.id}
+          data-column={field}
+          className="px-2 py-1 border-b border-solarized-base02 whitespace-nowrap overflow-hidden text-ellipsis max-w-0"
+          onDoubleClick={() => {
+            if (isEditable) {
+              handleCellDoubleClick(row.id, field, cell.getValue() as string);
+            }
+          }}
+          onClick={(e) => {
+            // Handle bookmark clicks
+            const target = e.target as HTMLElement;
+            if (target.classList.contains('bookmark-emoji')) {
+              const position = parseFloat(target.getAttribute('data-position') || '0');
+              handleBookmarkClick(row.original, position, e);
+            }
+          }}
+        >
+          {isEditing ? (
+            <input
+              type="text"
+              value={editValue}
+              onChange={(e) => setEditValue(e.target.value)}
+              onBlur={handleEditBlur}
+              onKeyDown={handleEditKeyDown}
+              className="w-full bg-solarized-base03 text-solarized-base1 border border-solarized-blue px-1"
+              autoFocus
+            />
+          ) : (
+            <RenderedCell cell={cell}
+              tagData={field === 'tags' ? tagData : undefined}
+              tagSelected={field === 'tags' ? tagSelected : undefined}
+              includeSuggestedTags={field === 'tags' ? includeSuggestedTags : undefined}
+              onManageTags={field === 'tags' ? onManageTags : undefined}
+              onFilterTag={field === 'tags' ? onFilterTag : undefined} />
+          )}
+        </td>
+      );
+    })}
+  </tr>
+  );
+});
+
+export const LibraryTable = memo(function LibraryTable({ items, searchQuery, filterKey = searchQuery, playlistId, onSearchChange, revealRequest, onRevealed, onManageBookmarks, onManageTags, onFilterTag, tagItems, includeSuggestedTags, selectedTagItemId }: LibraryTableProps) {
   // TanStack Table v8 exposes mutable state through stable methods. Remove this
   // opt-out when useReactTable supports React Compiler memoization.
   'use no memo';
 
   const scrollRef = useRef<HTMLDivElement>(null);
-  const revealRowRef = useRef<HTMLTableRowElement>(null);
-  useLayoutEffect(() => {
-    const scroller = scrollRef.current;
-    const row = revealRowRef.current;
-    if (!revealRequest || !scroller || !row) return;
-    // Wait for deferred search to expose the row, then reveal it just once.
-    // Measuring the sticky header also keeps upward jumps out from under it.
-    const bounds = scroller.getBoundingClientRect();
-    const headerHeight = scroller.querySelector('thead')?.getBoundingClientRect().height ?? 0;
-    const rowBounds = row.getBoundingClientRect();
-    const visibleTop = bounds.top + headerHeight;
-    if (rowBounds.top < visibleTop || rowBounds.bottom > bounds.bottom) {
-      scroller.scrollTop += rowBounds.top - visibleTop -
-        (scroller.clientHeight - headerHeight - rowBounds.height) / 2;
-    }
-    onRevealed?.();
-  }, [revealRequest, items, onRevealed]);
   const [sorting, setSorting] = useState<SortingState>(playlistId ? [] : [
     { id: 'created_time_utc', desc: true },
   ]);
@@ -150,9 +315,11 @@ export function LibraryTable({ items, searchQuery, playlistId, onSearchChange, r
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; item: LibraryItem } | null>(null);
   const [showPlaylistSubmenu, setShowPlaylistSubmenu] = useState(false);
 
-  const { currentItem } = usePlayerStore();
+  const currentItemId = usePlayerStore(state => state.currentItemId);
   const play = usePlayback();
-  const { addToQueue, addNext, setContext } = useQueueStore();
+  const addToQueue = useQueueStore(state => state.addToQueue);
+  const addNext = useQueueStore(state => state.addNext);
+  const setContext = useQueueStore(state => state.setContext);
 
   // Fetch playlists for context menu and filtering
   const { data: playlists = [] } = useQuery<Playlist[]>({
@@ -212,67 +379,13 @@ export function LibraryTable({ items, searchQuery, playlistId, onSearchChange, r
     return result;
   }, [items, searchQuery, selectedPlaylist]);
 
-  const columns = useMemo(() => [
-    columnHelper.accessor('is_favorite', {
-      header: '\u2665',
-      cell: (info) => (
-        <FavoriteButton
-          itemId={info.row.original.id}
-          isFavorite={info.getValue() ?? false}
-        />
-      ),
-      size: 28,
-      minSize: 28,
-      maxSize: 28,
-      enableResizing: false,
-      enableSorting: true,
-    }),
-    columnHelper.accessor('name', {
-      header: 'Name',
-      cell: (info) => <Tooltip content={info.getValue()}>{info.getValue()}</Tooltip>,
-      size: 220,
-    }),
-    columnHelper.accessor('artist', {
-      header: 'Artist',
-      cell: (info) => <Tooltip content={info.getValue()}>{info.getValue()}</Tooltip>,
-      size: 140,
-    }),
-    columnHelper.accessor('album', {
-      header: 'Album',
-      cell: (info) => <Tooltip content={info.getValue()}>{info.getValue()}</Tooltip>,
-      size: 140,
-    }),
-    columnHelper.accessor('track_number', {
-      header: '#',
-      cell: (info) => info.getValue() ?? '',
-      size: 40,
-    }),
-    columnHelper.accessor('play_count', {
-      header: 'Plays',
-      cell: (info) => info.getValue(),
-      size: 50,
-    }),
-    columnHelper.accessor('bookmarks', {
-      header: 'Bookmarks',
-      cell: (info) => formatBookmarks(info.getValue()),
-      size: 100,
-      enableSorting: false,
-    }),
-    columnHelper.accessor('created_time_utc', {
-      header: 'Created',
-      cell: (info) => {
-        const full = formatCreatedTime(info.getValue());
-        const short = formatCreatedTime(info.getValue(), true);
-        return <Tooltip content={full} force>{short}</Tooltip>;
-      },
-      size: 130,
-    }),
-  ], []);
+
 
   // eslint-disable-next-line react-hooks/incompatible-library -- LibraryTable opts out of compiler memoization above.
   const table = useReactTable({
     data: filteredItems,
     columns,
+    meta: { tagItems, includeSuggestedTags, selectedTagItemId, onManageTags, onFilterTag } satisfies TagTableMeta,
     state: {
       sorting,
       columnFilters,
@@ -285,6 +398,12 @@ export function LibraryTable({ items, searchQuery, playlistId, onSearchChange, r
     getRowId: (row) => row.id,
     columnResizeMode: 'onChange',
   });
+
+  const rows = table.getRowModel().rows;
+  const viewport = useLibraryViewport({ rows, scrollRef, filterKey, sorting,
+    editingId: editingCell?.rowId, revealRequest, onRevealed });
+
+  const bottomGap = viewport.virtualRows.length ? Math.max(0, viewport.totalHeight - (viewport.virtualRows[viewport.virtualRows.length - 1].end - LIBRARY_HEADER_HEIGHT)) : 0;
 
   const handleRowClick = useCallback((item: LibraryItem, rowIndex: number, e: React.MouseEvent | React.KeyboardEvent) => {
     // Don't play if clicking a bookmark or editing
@@ -411,8 +530,8 @@ export function LibraryTable({ items, searchQuery, playlistId, onSearchChange, r
 
   return (
     <div className="px-5 h-full flex flex-col">
-      <div ref={scrollRef} className="overflow-auto flex-grow">
-        <table aria-label="Tracks" className={`w-full border-collapse table-fixed ${table.getState().columnSizingInfo.isResizingColumn ? 'select-none' : ''}`}>
+      <div ref={scrollRef} className="overflow-auto flex-grow" onKeyDown={viewport.onKeyDown} onFocusCapture={viewport.onFocusCapture} onBlurCapture={viewport.onBlurCapture}>
+        <table aria-label="Tracks" aria-rowcount={table.getRowModel().rows.length + 1} className={`w-full border-collapse table-fixed ${table.getState().columnSizingInfo.isResizingColumn ? 'select-none' : ''}`}>
           <colgroup>
             {table.getVisibleLeafColumns().map(column => (
               <col key={column.id} style={{
@@ -426,7 +545,7 @@ export function LibraryTable({ items, searchQuery, playlistId, onSearchChange, r
           </colgroup>
           <thead className="sticky top-0 bg-solarized-base02">
             {table.getHeaderGroups().map((headerGroup) => (
-              <tr key={headerGroup.id}>
+              <tr key={headerGroup.id} aria-rowindex={1}>
                 {headerGroup.headers.map((header) => (
                   <th
                     key={header.id}
@@ -457,66 +576,26 @@ export function LibraryTable({ items, searchQuery, playlistId, onSearchChange, r
             ))}
           </thead>
           <tbody>
-            {table.getRowModel().rows.map((row, rowIndex) => {
-              const isCurrentlyPlaying = currentItem?.id === row.original.id;
-              return (
-                <tr
-                  key={row.id}
-                  ref={row.original.id === revealRequest?.itemId ? revealRowRef : undefined}
-                  aria-current={isCurrentlyPlaying ? 'true' : undefined}
-                  tabIndex={0}
-                  onKeyDown={(event) => {
-                    if (event.target === event.currentTarget && (event.key === 'Enter' || event.key === ' ')) {
-                      event.preventDefault();
-                      handleRowClick(row.original, rowIndex, event);
-                    }
-                  }}
-                  className={`hover:bg-solarized-base02 cursor-pointer ${isCurrentlyPlaying ? 'bg-solarized-base02' : ''}`}
-                  onClick={(e) => handleRowClick(row.original, rowIndex, e)}
-                  onContextMenu={(e) => handleContextMenu(e, row.original)}
-                >
-                  {row.getVisibleCells().map((cell) => {
-                    const field = cell.column.id;
-                    const isEditing = editingCell?.rowId === row.id && editingCell?.field === field;
-                    const isEditable = ['name', 'artist', 'album'].includes(field);
-
-                    return (
-                      <td
-                        key={cell.id}
-                        className="px-2 py-1 border-b border-solarized-base02 whitespace-nowrap overflow-hidden text-ellipsis max-w-0"
-                        onDoubleClick={() => {
-                          if (isEditable) {
-                            handleCellDoubleClick(row.id, field, cell.getValue() as string);
-                          }
-                        }}
-                        onClick={(e) => {
-                          // Handle bookmark clicks
-                          const target = e.target as HTMLElement;
-                          if (target.classList.contains('bookmark-emoji')) {
-                            const position = parseFloat(target.getAttribute('data-position') || '0');
-                            handleBookmarkClick(row.original, position, e);
-                          }
-                        }}
-                      >
-                        {isEditing ? (
-                          <input
-                            type="text"
-                            value={editValue}
-                            onChange={(e) => setEditValue(e.target.value)}
-                            onBlur={handleEditBlur}
-                            onKeyDown={handleEditKeyDown}
-                            className="w-full bg-solarized-base03 text-solarized-base1 border border-solarized-blue px-1"
-                            autoFocus
-                          />
-                        ) : (
-                          flexRender(cell.column.columnDef.cell, cell.getContext())
-                        )}
-                      </td>
-                    );
-                  })}
-                </tr>
-              );
+            {viewport.virtualRows.map((virtualRow, virtualIndex) => {
+              const rowIndex = virtualRow.index;
+              const row = rows[rowIndex];
+              const previousEnd = virtualIndex ? viewport.virtualRows[virtualIndex - 1].end : LIBRARY_HEADER_HEIGHT;
+              const gap = virtualRow.start - previousEnd;
+              return <Fragment key={row.id}>
+              {gap > 0 && <tr aria-hidden="true" role="presentation" className="virtual-spacer"><td colSpan={columns.length} style={{ height: gap }} /></tr>}
+              <LibraryRow
+              row={row} rowIndex={rowIndex}
+              isCurrentlyPlaying={currentItemId === row.original.id}
+              tagSelected={selectedTagItemId === row.id} tagData={tagItems?.[row.id]}
+              includeSuggestedTags={includeSuggestedTags} onManageTags={onManageTags} onFilterTag={onFilterTag}
+              editingField={editingCell?.rowId === row.id ? editingCell.field : null}
+              editValue={editingCell?.rowId === row.id ? editValue : ''} setEditValue={setEditValue}
+              handleRowClick={handleRowClick} handleContextMenu={handleContextMenu}
+              handleCellDoubleClick={handleCellDoubleClick} handleBookmarkClick={handleBookmarkClick}
+              handleEditBlur={handleEditBlur} handleEditKeyDown={handleEditKeyDown} />
+              </Fragment>;
             })}
+            {bottomGap > 0 && <tr aria-hidden="true" role="presentation" className="virtual-spacer"><td colSpan={columns.length} style={{ height: bottomGap }} /></tr>}
           </tbody>
         </table>
       </div>
@@ -540,6 +619,7 @@ export function LibraryTable({ items, searchQuery, playlistId, onSearchChange, r
           >
             &#43; Add to Queue
           </div>
+          {onManageTags && <button type="button" className="w-full text-left px-3 py-2 text-solarized-base1 hover:bg-solarized-blue" onClick={() => { onManageTags(contextMenu.item); setContextMenu(null); }}>Manage tags</button>}
           {onManageBookmarks && Object.keys(contextMenu.item.bookmarks).length > 0 && (
             <button type="button" className="w-full text-left px-3 py-2 text-solarized-base1 hover:bg-solarized-blue"
               onClick={() => {
@@ -611,4 +691,4 @@ export function LibraryTable({ items, searchQuery, playlistId, onSearchChange, r
       )}
     </div>
   );
-}
+});

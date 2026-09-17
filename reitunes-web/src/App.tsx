@@ -21,13 +21,17 @@ import { BookmarkSidebar } from './components/BookmarkSidebar';
 import { SonosModal } from './components/SonosModal';
 import { SettingsDialog } from './components/SettingsDialog';
 import { Discover } from './components/Discover';
+import { TagPanel } from './components/TagPanel';
+import { TagBrowser } from './components/TagBrowser';
+import { effectiveTags, useTags } from './hooks/useTags';
 import { isInboxEntry, useDiscovery } from './hooks/useDiscovery';
 import { useLibrary } from './hooks/useLibrary';
 import { useQueueStore } from './hooks/useQueue';
 import { usePlayback } from './hooks/usePlayback';
 import { usePlayerStore } from './stores/playerStore';
 import { usePlaybackTargetStore } from './stores/playbackTargetStore';
-import { matchesLibrarySearch } from './utils/libraryBrowser';
+import type { LibraryItem } from './types';
+import { createLibrarySearch, tagSearch } from './utils/libraryBrowser';
 import './App.css';
 
 const queryClient = new QueryClient();
@@ -53,9 +57,11 @@ function AppContent() {
     () => Date.now() - 30 * 24 * 60 * 60 * 1000
   );
   const [panel, setPanel] = useState<
-    'queue' | 'bookmarks' | 'playlists' | null
+    'queue' | 'bookmarks' | 'playlists' | 'tags' | null
   >(null);
   const [bookmarkItemId, setBookmarkItemId] = useState<string | null>(null);
+  const [tagItemId, setTagItemId] = useState<string | null>(null);
+  const [tagWorkOpen, setTagWorkOpen] = useState(false);
   const [isImportOpen, setIsImportOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [droppedFiles, setDroppedFiles] = useState<File[]>([]);
@@ -81,6 +87,9 @@ function AppContent() {
       new URLSearchParams(window.location.search).get('sonos') === 'connected'
   );
   const { items, isLoading, error } = useLibrary();
+  const tags = useTags();
+  const activeTagCount = Object.values(tags.data?.items || {}).filter(item => ['queued', 'running'].includes(item.status)).length;
+  const failedTagCount = Object.values(tags.data?.items || {}).filter(item => item.status === 'failed').length;
   const { data: discovery } = useDiscovery();
   const discoveryCount = discovery?.entries.filter(entry => isInboxEntry(entry)
     && entry.sources.some(id => discovery.sources.some(source => source.id === id))).length ?? 0;
@@ -139,7 +148,10 @@ function AppContent() {
   const selectedPlaylist = playlists.find(
     (playlist) => playlist.id === selectedPlaylistId
   );
+  const matchesSearch = useMemo(() => createLibrarySearch(deferredLibrarySearch,
+    item => effectiveTags(tags.data?.items[item.id])), [deferredLibrarySearch, tags.data]);
   const filteredItems = useMemo(() => {
+    if (!selectedPlaylist && collection === 'all' && !deferredLibrarySearch.trim()) return items;
     const playlistIds = selectedPlaylist
       ? new Set(
           Object.values(selectedPlaylist.items).map(
@@ -160,9 +172,9 @@ function AppContent() {
         ) < recentCutoff
       )
         return false;
-      return matchesLibrarySearch(item, deferredLibrarySearch);
+      return matchesSearch(item);
     });
-  }, [items, selectedPlaylist, collection, deferredLibrarySearch, recentCutoff]);
+  }, [items, selectedPlaylist, collection, deferredLibrarySearch, recentCutoff, matchesSearch]);
   const moments = useMemo(
     () =>
       filteredItems.flatMap((item) =>
@@ -260,6 +272,15 @@ function AppContent() {
       setPanel(next);
     } else setPanel(panel === next ? null : next);
   };
+  const browseTag = useCallback((tag: string) => {
+    setView('library'); setCollection('all'); setSelectedPlaylistId(null);
+    setLibrarySearch(tagSearch(tag)); setPanel(null);
+  }, []);
+  const manageTags = useCallback((item: LibraryItem) => { setTagItemId(item.id); setPanel('tags'); }, []);
+  const manageBookmarks = useCallback((item: LibraryItem) => { setBookmarkItemId(item.id); setPanel('bookmarks'); }, []);
+  const openTagBrowser = (work = false) => {
+    setTagItemId(null); setTagWorkOpen(work); setPanel('tags');
+  };
 
   return (
     <div
@@ -328,7 +349,7 @@ function AppContent() {
             ref={searchRef}
             type="search"
             aria-label={view === 'discover' ? 'Search discovery' : 'Search library'}
-            placeholder={view === 'discover' ? 'Search sets and sources' : 'Search library'}
+            placeholder={view === 'discover' ? 'Search sets and sources' : 'Search library or tag:dj-mix'}
             value={searchQuery}
             autoComplete="off"
             onChange={(event) => setSearchQuery(event.target.value)}
@@ -383,7 +404,7 @@ function AppContent() {
             <MusicIcon name="plus" size={14} />
             Import music
           </button>
-          {view === 'library' && <><button
+          {view === 'library' && <><button onClick={() => panel === 'tags' && !tagItemId ? setPanel(null) : openTagBrowser()} aria-pressed={panel === 'tags'} title={activeTagCount ? `${activeTagCount} tracks getting tags` : failedTagCount ? `${failedTagCount} tracks could not be tagged` : 'Browse or manage tags'}>Tags{activeTagCount ? ` (${activeTagCount})` : failedTagCount ? ' !' : ''}</button><button
             onClick={() => togglePanel('playlists')}
             aria-pressed={panel === 'playlists'}
           >
@@ -412,7 +433,11 @@ function AppContent() {
         </div>
       </div>
 
-      <main className="library-content" aria-label={view === 'discover' ? 'Music discovery' : 'Music library'}>
+      <main className={`library-content${panel === 'tags' && view === 'library' ? ' with-tags' : ''}`} aria-label={view === 'discover' ? 'Music discovery' : 'Music library'}>
+        {panel === 'tags' && view === 'library' && <aside key={tagItemId} className="library-sidepanel tag-sidepanel">
+          <button className="panel-close" aria-label="Close tags" onClick={() => setPanel(null)}><MusicIcon name="close" size={14} /></button>
+          {tagItemId ? <TagPanel key={tagItemId} item={items.find(item => item.id === tagItemId)} snapshot={tags.data} loading={tags.isLoading} loadError={tags.error} onPlay={play} onFilterTag={browseTag} onBrowse={() => openTagBrowser()} /> : <TagBrowser items={items} snapshot={tags.data} showWork={tagWorkOpen} onShowWork={setTagWorkOpen} onFilterTag={browseTag} onEdit={item => setTagItemId(item.id)} loadError={tags.error} />}
+        </aside>}
         {panel === 'playlists' && view === 'library' && (
           <aside className="library-sidepanel">
             <button
@@ -477,14 +502,17 @@ function AppContent() {
                   key={selectedPlaylistId || 'library'}
                   items={filteredItems}
                   searchQuery=""
+                  filterKey={`${collection}:${deferredLibrarySearch}`}
                   playlistId={selectedPlaylistId}
                   onSearchChange={setSearchQuery}
                   revealRequest={revealRequest}
                   onRevealed={finishReveal}
-                  onManageBookmarks={item => {
-                    setBookmarkItemId(item.id);
-                    setPanel('bookmarks');
-                  }}
+                  onManageTags={manageTags}
+                  onFilterTag={browseTag}
+                  tagItems={tags.data?.items}
+                  includeSuggestedTags={true}
+                  selectedTagItemId={panel === 'tags' ? tagItemId : null}
+                  onManageBookmarks={manageBookmarks}
                 />
               </div>
               {!filteredItems.length && (

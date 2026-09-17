@@ -40,6 +40,7 @@ mod cloud_queue;
 mod storage;
 mod systemd;
 mod discovery;
+mod tagging;
 mod downloads;
 
 #[cfg(test)]
@@ -129,6 +130,7 @@ struct AppState {
     storage: Arc<S3Storage>,
     sonos: Option<Arc<sonos::SonosControl>>,
     cloud_queues: Arc<cloud_queue::CloudQueueStore>,
+    tagging: Option<tagging::Tagging>,
 }
 
 #[tokio::main]
@@ -200,13 +202,17 @@ async fn main() -> Result<()> {
             .await
             .expect("Failed to initialize S3 storage");
 
+            let library = Arc::new(RwLock::new(library));
+            let tagging = tagging::Tagging::new(DB.clone(), library.clone())?;
+            tagging.start_worker();
             let app_state = AppState {
-                library: Arc::new(RwLock::new(library)),
+                library,
                 playlists: Arc::new(RwLock::new(playlists)),
                 update_tx: broadcast::channel(100).0,
                 storage: Arc::new(storage),
                 sonos: sonos::SonosControl::from_env(DB.clone())?,
                 cloud_queues: Arc::new(cloud_queue::CloudQueueStore::from_env(DB.clone())?),
+                tagging: Some(tagging.clone()),
             };
 
             let discovery = discovery::Discovery::new(DB.clone(), app_state.library.clone())?;
@@ -241,6 +247,7 @@ async fn main() -> Result<()> {
             // Private API routes require the same session as the React frontend.
             let protected_api_router = Router::new()
                 .merge(discovery::router(discovery))
+                .merge(tagging::router(tagging))
                 .route("/items", get(items_handler))
                 .route("/upload", post(upload_handler))
                 // Allow uploads up to 500MB
@@ -1165,6 +1172,8 @@ async fn upload_handler(
                 .send(FrontendUpdate::Update { item: Box::new(response) });
         }
 
+        drop(library);
+        queue_tag_suggestions(&app_state, item_id).await;
         return Ok(Json(UploadResponse {
             id: item_id,
             name,
@@ -1421,6 +1430,10 @@ async fn update_handler(
 }
 
 async fn save_and_broadcast_event(event: EventWithMetadata, app_state: AppState) -> Result<()> {
+    let affects_tags = matches!(&event.event,
+        Event::LibraryItemCreatedEvent { .. } | Event::LibraryItemNameChangedEvent { .. }
+        | Event::LibraryItemArtistChangedEvent { .. } | Event::LibraryItemAlbumChangedEvent { .. }
+        | Event::LibraryItemFilePathChangedEvent { .. });
     // Save the event to the database
     let conn = DB.get()?;
     save_event_to_db(&conn, &event)?;
@@ -1446,7 +1459,17 @@ async fn save_and_broadcast_event(event: EventWithMetadata, app_state: AppState)
             }
         }
     }
+    drop(library);
+    if affects_tags { queue_tag_suggestions(&app_state, event.aggregate_id).await; }
     Ok(())
+}
+
+async fn queue_tag_suggestions(app_state: &AppState, item_id: Uuid) {
+    if let Some(tagging) = &app_state.tagging {
+        if let Err(error) = tagging.enqueue_changed(item_id).await {
+            warn!(%item_id, %error, "Could not queue tag suggestions");
+        }
+    }
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -1514,6 +1537,8 @@ async fn add_item_handler(
             .send(FrontendUpdate::Update { item: Box::new(response) });
     }
 
+    drop(library);
+    queue_tag_suggestions(&app_state, item_id).await;
     Ok(StatusCode::CREATED)
 }
 

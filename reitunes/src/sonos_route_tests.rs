@@ -211,6 +211,7 @@ impl Harness {
                     .unwrap(),
             ),
             sonos: Some(Arc::new(control)),
+            tagging: None,
             cloud_queues: Arc::new(cloud_queue::CloudQueueStore::with_base_url(&base)),
         };
         let router = Router::new()

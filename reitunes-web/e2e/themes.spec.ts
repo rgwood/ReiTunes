@@ -123,7 +123,7 @@ async function density(page: Page) {
         bottom = Math.min(bottom, box.bottom);
       }
     }
-    const rows = Array.from(table.querySelectorAll('tbody tr')).map(row => row.getBoundingClientRect());
+    const rows = Array.from(table.querySelectorAll('tbody tr[tabindex]')).map(row => row.getBoundingClientRect());
     return { top: table.getBoundingClientRect().top, rowHeight: Math.max(...rows.map(row => row.height)), visibleRows: rows.filter(row => row.top >= top - 0.5 && row.bottom <= bottom + 0.5).length };
   });
 }
@@ -240,7 +240,7 @@ for (const [label, stored] of [
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'neutral');
     await expect(page.locator('html')).toHaveAttribute('data-theme-preference', 'system');
     await expect(page.locator('html')).toHaveAttribute('data-theme-mode', 'dark');
-    await expect(page.locator('tbody tr')).toHaveCount(120);
+    await expect(page.getByRole('table', { name: 'Tracks' })).toHaveAttribute('aria-rowcount', '121');
   });
 }
 
@@ -259,20 +259,20 @@ test('keeps appearance usable when theme storage is blocked', async ({ page }) =
   }, STORAGE_KEY);
   await page.goto('/');
   await chooseTheme(page, 'catppuccin', 'dark');
-  await expect(page.locator('tbody tr')).toHaveCount(120);
+  await expect(page.getByRole('table', { name: 'Tracks' })).toHaveAttribute('aria-rowcount', '121');
 });
 
 for (const theme of themeIds) for (const mode of ['light', 'dark'] as const) {
   test(`${theme} ${mode} keeps compact surfaces and overlays readable`, async ({ page }, testInfo) => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.goto('/');
-    await expect(page.locator('tbody tr')).toHaveCount(120);
+    await expect(page.getByRole('table', { name: 'Tracks' })).toHaveAttribute('aria-rowcount', '121');
     const originalDensity = await density(page);
     await chooseTheme(page, theme, mode);
     expect(await density(page)).toEqual(originalDensity);
     expect(originalDensity).toEqual({ top: 90, rowHeight: 24, visibleRows: 31 });
     const samples = [];
-    const row = page.locator('tbody tr').first();
+    const row = page.locator('tbody tr[tabindex]').first();
     const nameCell = row.locator('td').nth(1);
     samples.push(await readable(nameCell, 'track text'));
     samples.push(await readable(page.getByRole('button', { name: 'Name', exact: true }), 'column heading'));
@@ -355,7 +355,7 @@ test('keeps settings inside a phone viewport', async ({ page }, testInfo) => {
 test('captures theme comparisons with the same explicit review library', async ({ page }, testInfo) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto('/');
-  await expect(page.locator('tbody tr')).toHaveCount(120);
+  await expect(page.getByRole('table', { name: 'Tracks' })).toHaveAttribute('aria-rowcount', '121');
   await writeFile(testInfo.outputPath('theme-library.json'), JSON.stringify(fixtureItems));
   for (const [theme, mode] of [['solarized', 'dark'], ['catppuccin', 'dark'], ['catppuccin', 'light']] as const) {
     await chooseTheme(page, theme, mode);

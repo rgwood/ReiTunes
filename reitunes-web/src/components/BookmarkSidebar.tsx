@@ -107,15 +107,14 @@ export function BookmarkSidebar({ items, selectedItem, onClearItem, onPlay }: Bo
                 </form>
               ) : (
                 <div className="bookmark-main">
-                  <button type="button" className="bookmark-name" onClick={beginEdit} disabled={pendingKey !== null}
-                    aria-label={`Edit bookmark for ${item.name}`} title={`${displayLabel} — click to rename`}>
+                  <button type="button" className="bookmark-name" onClick={() => onPlay(item, bookmark.position)}
+                    aria-label={`Play ${item.name} from ${displayLabel}`} title={`Play from ${formatBookmarkPosition(bookmark.position)}`}>
                     <span aria-hidden="true">{bookmark.emoji || '🔖'}</span>
                     <span>{displayLabel}</span>
+                    <span className="bookmark-position">{formatBookmarkPosition(bookmark.position)}</span>
                   </button>
-                  <button type="button" className="bookmark-play" onClick={() => onPlay(item, bookmark.position)}
-                    aria-label={`Play ${item.name} from ${displayLabel}`} title={`Play from ${formatBookmarkPosition(bookmark.position)}`}>
-                    <span aria-hidden="true">▶</span> {formatBookmarkPosition(bookmark.position)}
-                  </button>
+                  <button type="button" className="bookmark-rename" onClick={beginEdit} disabled={pendingKey !== null}
+                    aria-label={`Rename ${displayLabel} for ${item.name}`} title="Rename bookmark">✎</button>
                   <button type="button" className="bookmark-delete" disabled={pendingKey !== null}
                     onClick={() => void removeBookmark(item.id, bookmarkId, displayLabel)}
                     aria-label={`Delete bookmark for ${item.name}`} title="Delete bookmark">×</button>

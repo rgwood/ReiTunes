@@ -124,7 +124,7 @@ input::placeholder { color: var(--muted); opacity: 1; }
 .song-table th:hover { background: var(--hover); }
 .song-table td { height: 23px; padding: 0 6px; border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); line-height: 22px; }
 .song-table tbody tr { height: 23px; background: var(--surface); }
-.song-table tbody tr:nth-child(even) { background: var(--alternate); }
+.song-table tbody tr[data-stripe='true'] { background: var(--alternate); }
 .song-table tbody tr:hover { background: var(--hover); }
 .song-table tbody tr[aria-current='true'] { background: var(--selection); }
 .song-table tbody tr[aria-current='true'] td:first-child { box-shadow: inset 3px 0 var(--accent); }
@@ -132,7 +132,7 @@ input::placeholder { color: var(--muted); opacity: 1; }
 .song-table td:first-child, .song-table th:first-child { text-align: center; padding: 0 2px; }
 .song-table th:first-child > button { justify-content: center; gap: 1px; }
 .song-table td:first-child button { font-size: 15px; line-height: 20px; height: 22px; }
-.song-table td:nth-child(5), .song-table td:nth-child(6) { text-align: right; font-variant-numeric: tabular-nums; }
+.song-table td[data-column='track_number'], .song-table td[data-column='play_count'] { text-align: right; font-variant-numeric: tabular-nums; }
 .song-table .bookmark-emoji { font-size: 13px; line-height: 20px; padding: 0 2px; }
 .song-table .text-shadow-solarized { text-shadow: none; }
 .song-table td input { height: 21px; line-height: 19px; }
@@ -162,8 +162,11 @@ input::placeholder { color: var(--muted); opacity: 1; }
 .bookmark-row:hover { background: var(--hover); }
 .bookmark-main, .bookmark-editor { display: flex; align-items: center; gap: 3px; min-height: 24px; }
 .bookmark-name { display: flex; align-items: center; gap: 5px; flex: 1; min-width: 0; text-align: left; padding: 2px; }
-.bookmark-name > span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.bookmark-name:hover > span:last-child { text-decoration: underline; text-decoration-style: dotted; }
+.bookmark-name > span:nth-child(2) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bookmark-name:hover > span:nth-child(2) { text-decoration: underline; }
+.bookmark-position { margin-left: auto; flex-shrink: 0; color: var(--muted); font-variant-numeric: tabular-nums; }
+.bookmark-rename { flex-shrink: 0; width: 22px; height: 24px; color: var(--muted); }
+.bookmark-rename:hover { color: var(--accent); }
 .bookmark-play { flex-shrink: 0; color: var(--accent); font-variant-numeric: tabular-nums; padding: 3px; font-size: 11px; }
 .bookmark-play > span { font-size: 9px; }
 .bookmark-delete, .bookmark-editor button { flex-shrink: 0; width: 22px; height: 24px; color: var(--muted); }
@@ -221,3 +224,7 @@ input::placeholder { color: var(--muted); opacity: 1; }
 @media (max-width: 420px) {
   .player-progress > span:last-child { display: none; }
 }
+
+/* Spacer rows preserve native table layout without creating off-screen cells. */
+.song-table tbody .virtual-spacer, .song-table tbody .virtual-spacer:hover { height: 0; background: transparent; }
+.song-table .virtual-spacer td { padding: 0; border: 0; line-height: 0; }
