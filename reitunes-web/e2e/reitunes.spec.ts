@@ -46,15 +46,19 @@ async function mockBackend(page: Page) {
 
 test('shows, filters, edits and deletes bookmarks', async ({ page }) => {
   await mockBackend(page);
+  const items = structuredClone(libraryItems);
+  await page.route('**/api/items', route => route.fulfill({ json: items }));
 
   let updateBody: unknown;
   let deleteRequested = false;
   await page.route(`**/ui/${TRACK_ID}/bookmarks/${BOOKMARK_ID}`, async (route) => {
     if (route.request().method() === 'PUT') {
       updateBody = route.request().postDataJSON();
+      Object.assign(items[0].bookmarks[BOOKMARK_ID], updateBody);
       await route.fulfill({ status: 200 });
     } else if (route.request().method() === 'DELETE') {
       deleteRequested = true;
+      Reflect.deleteProperty(items[0].bookmarks, BOOKMARK_ID);
       await route.fulfill({ status: 204 });
     } else {
       await route.fallback();
@@ -74,21 +78,95 @@ test('shows, filters, edits and deletes bookmarks', async ({ page }) => {
   await expect(page.getByText('No matching bookmarks')).toBeVisible();
   await page.getByRole('searchbox', { name: 'Filter bookmarks' }).fill('');
 
-  const editButton = page.getByRole('button', { name: 'Edit bookmark for Northern Sky' }).first();
-  await editButton.hover();
-  await editButton.click();
+  await page.getByText('Guitar entrance', { exact: true }).click();
+  await expect(page.getByRole('textbox', { name: 'Bookmark label for Northern Sky' })).toBeFocused();
   await page.getByRole('textbox', { name: 'Bookmark label for Northern Sky' }).fill('First chorus');
   await page.getByRole('textbox', { name: 'Bookmark emoji for Northern Sky' }).fill('🔥');
-  await page.getByRole('button', { name: 'Save', exact: true }).click();
+  await page.getByRole('button', { name: 'Save bookmark', exact: true }).click();
 
   await expect.poll(() => updateBody).toEqual({ label: 'First chorus', emoji: '🔥' });
+  await expect(page.getByText('First chorus', { exact: true })).toBeVisible();
 
   page.once('dialog', (dialog) => dialog.accept());
   const deleteButton = page.getByRole('button', { name: 'Delete bookmark for Northern Sky' }).first();
   await deleteButton.hover();
   await deleteButton.click();
   await expect.poll(() => deleteRequested).toBe(true);
+  await expect(page.getByText('First chorus', { exact: true })).toHaveCount(0);
 });
+
+test('bookmark names edit without playing, cancel with Escape, and retain failed saves for retry', async ({ page }) => {
+  await mockBackend(page);
+  const items = structuredClone(libraryItems);
+  await page.route('**/api/items', route => route.fulfill({ json: items }));
+  let attempts = 0;
+  let playRequests = 0;
+  await page.route('**/ui/play', route => { playRequests++; return route.fulfill({ status: 200 }); });
+  await page.route(`**/ui/${TRACK_ID}/bookmarks/${BOOKMARK_ID}`, async route => {
+    attempts++;
+    if (attempts === 1) return route.fulfill({ status: 500 });
+    Object.assign(items[0].bookmarks[BOOKMARK_ID], route.request().postDataJSON());
+    await route.fulfill({ status: 200 });
+  });
+  await page.goto('/');
+  await page.locator('.library-toolbar').getByRole('button', { name: 'Bookmarks' }).click();
+  await page.getByText('Guitar entrance', { exact: true }).click();
+  const name = page.getByRole('textbox', { name: 'Bookmark label for Northern Sky' });
+  await expect(name).toBeFocused();
+  expect(await name.evaluate(element => (element as HTMLInputElement).selectionEnd)).toBe('Guitar entrance'.length);
+  await name.fill('Discard this');
+  await name.press('Escape');
+  await expect(name).toHaveCount(0);
+  await expect(page.getByText('Guitar entrance', { exact: true })).toBeVisible();
+  expect(attempts).toBe(0);
+  await page.getByText('Guitar entrance', { exact: true }).click();
+  await name.fill('Keep this');
+  await name.press('Enter');
+  await expect(page.getByRole('alert')).toContainText('Could not save');
+  await expect(name).toHaveValue('Keep this');
+  await expect(name).toBeEnabled();
+  await name.press('Enter');
+  await expect(page.getByText('Keep this', { exact: true })).toBeVisible();
+  await expect(name).toHaveCount(0);
+  expect(attempts).toBe(2);
+  expect(playRequests).toBe(0);
+});
+
+for (const viewport of [{ name: 'desktop', width: 1440, height: 900 }, { name: 'mobile', width: 390, height: 844 }]) {
+  test(`compact bookmark management opens for the right-clicked song on ${viewport.name}`, async ({ page }, testInfo) => {
+    await page.setViewportSize(viewport);
+    await mockBackend(page);
+    const secondTrack = { ...libraryItems[0], id: '44444444-4444-4444-8444-444444444444', name: 'Pink Moon',
+      bookmarks: { [BOOKMARK_ID]: { ...libraryItems[0].bookmarks[BOOKMARK_ID], label: 'Quiet ending' } } };
+    const emptyTrack = { ...libraryItems[0], id: '55555555-5555-4555-8555-555555555555', name: 'No moments', bookmarks: {} };
+    await page.route('**/api/items', route => route.fulfill({ json: [...libraryItems, secondTrack, emptyTrack] }));
+    await page.goto('/');
+    const sidebar = page.getByRole('region', { name: 'Bookmark management' });
+    await page.getByRole('row').filter({ hasText: 'No moments' }).click({ button: 'right' });
+    await expect(page.getByRole('button', { name: 'Manage bookmarks' })).toHaveCount(0);
+    await page.keyboard.press('Escape');
+    await page.getByRole('row').filter({ hasText: 'Northern Sky' }).click({ button: 'right' });
+    await page.getByRole('button', { name: 'Manage bookmarks' }).click();
+    await expect(sidebar).toBeVisible();
+    await expect(sidebar.locator('.bookmark-row')).toHaveCount(2);
+    await expect(sidebar.getByText('Quiet ending', { exact: true })).toHaveCount(0);
+    await expect(sidebar.locator('.bookmark-row').first()).toContainText('Guitar entrance');
+    await sidebar.getByRole('button', { name: 'All bookmarks' }).click();
+    await expect(sidebar.locator('.bookmark-row')).toHaveCount(3);
+    const bounds = await sidebar.locator('.bookmark-row').first().boundingBox();
+    expect(bounds!.height).toBeLessThanOrEqual(48);
+    await page.screenshot({ path: testInfo.outputPath(`bookmarks-${viewport.name}.png`) });
+    await page.getByRole('button', { name: 'Close bookmarks' }).click();
+    await page.getByRole('row').filter({ hasText: 'Pink Moon' }).click({ button: 'right' });
+    await page.getByRole('button', { name: 'Manage bookmarks' }).click();
+    await expect(sidebar.locator('.bookmark-row')).toHaveCount(1);
+    await expect(sidebar.getByText('Quiet ending', { exact: true })).toBeVisible();
+    await sidebar.getByText('Quiet ending', { exact: true }).click();
+    await expect(sidebar.getByRole('textbox', { name: 'Bookmark label for Pink Moon' })).toBeFocused();
+    await page.screenshot({ path: testInfo.outputPath(`bookmark-edit-${viewport.name}.png`) });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  });
+}
 
 test('restores a saved track paused and registers media controls', async ({ page }) => {
   await page.addInitScript(

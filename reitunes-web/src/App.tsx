@@ -55,6 +55,7 @@ function AppContent() {
   const [panel, setPanel] = useState<
     'queue' | 'bookmarks' | 'playlists' | null
   >(null);
+  const [bookmarkItemId, setBookmarkItemId] = useState<string | null>(null);
   const [isImportOpen, setIsImportOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [droppedFiles, setDroppedFiles] = useState<File[]>([]);
@@ -253,6 +254,7 @@ function AppContent() {
       setRecentCutoff(Date.now() - 30 * 24 * 60 * 60 * 1000);
   };
   const togglePanel = (next: typeof panel) => {
+    if (next === 'bookmarks') setBookmarkItemId(null);
     if (view === 'discover' && (next === 'playlists' || next === 'bookmarks')) {
       setView('library');
       setPanel(next);
@@ -438,7 +440,9 @@ function AppContent() {
             >
               <MusicIcon name="close" size={14} />
             </button>
-            <BookmarkSidebar items={filteredItems} onPlay={play} />
+            <BookmarkSidebar key={bookmarkItemId || 'all'} items={filteredItems} onPlay={play}
+              selectedItem={items.find(item => item.id === bookmarkItemId)}
+              onClearItem={() => setBookmarkItemId(null)} />
           </aside>
         )}
         <div
@@ -477,6 +481,10 @@ function AppContent() {
                   onSearchChange={setSearchQuery}
                   revealRequest={revealRequest}
                   onRevealed={finishReveal}
+                  onManageBookmarks={item => {
+                    setBookmarkItemId(item.id);
+                    setPanel('bookmarks');
+                  }}
                 />
               </div>
               {!filteredItems.length && (

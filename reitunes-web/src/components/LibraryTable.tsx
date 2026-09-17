@@ -34,6 +34,7 @@ interface LibraryTableProps {
   onSearchChange?: (query: string) => void;
   revealRequest?: { itemId: string } | null;
   onRevealed?: () => void;
+  onManageBookmarks?: (item: LibraryItem) => void;
 }
 
 interface ParsedSearch {
@@ -115,7 +116,7 @@ function formatCreatedTime(value: string, short = false): string {
   });
 }
 
-export function LibraryTable({ items, searchQuery, playlistId, onSearchChange, revealRequest, onRevealed }: LibraryTableProps) {
+export function LibraryTable({ items, searchQuery, playlistId, onSearchChange, revealRequest, onRevealed, onManageBookmarks }: LibraryTableProps) {
   // TanStack Table v8 exposes mutable state through stable methods. Remove this
   // opt-out when useReactTable supports React Compiler memoization.
   'use no memo';
@@ -539,6 +540,15 @@ export function LibraryTable({ items, searchQuery, playlistId, onSearchChange, r
           >
             &#43; Add to Queue
           </div>
+          {onManageBookmarks && Object.keys(contextMenu.item.bookmarks).length > 0 && (
+            <button type="button" className="w-full text-left px-3 py-2 text-solarized-base1 hover:bg-solarized-blue"
+              onClick={() => {
+                onManageBookmarks(contextMenu.item);
+                setContextMenu(null);
+              }}>
+              Manage bookmarks
+            </button>
+          )}
           <div className="border-t border-solarized-base01 my-1" />
           {onSearchChange && (
             <>

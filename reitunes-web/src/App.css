@@ -148,6 +148,33 @@ input::placeholder { color: var(--muted); opacity: 1; }
 .library-sidepanel > div > div:first-child { padding: 6px 8px; }
 .panel-close { position: absolute; right: 5px; top: 4px; display: grid; place-items: center; width: 20px; height: 20px; z-index: 10; border-radius: 2px; }
 .panel-close:hover { background: var(--hover); }
+.bookmark-sidebar { width: 288px; max-width: 100%; height: 100%; display: flex; flex-direction: column; background: var(--panel); }
+.bookmark-header { padding: 5px 7px; border-bottom: 1px solid var(--line); }
+.bookmark-header h2 { margin: 0 0 5px; line-height: 20px; }
+.bookmark-count { color: var(--muted); font-weight: normal; margin-left: 3px; }
+.bookmark-header input { width: 100%; height: 25px; padding: 2px 5px; background: var(--surface); border: 1px solid var(--border-strong); }
+.bookmark-sidebar input:focus { outline: 1px solid var(--accent); outline-offset: -1px; }
+.bookmark-scope { display: flex; align-items: center; gap: 5px; margin-bottom: 5px; }
+.bookmark-scope > span { flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.bookmark-scope button { flex-shrink: 0; color: var(--accent); font-size: 11px; padding: 3px; }
+.bookmark-list { flex: 1; overflow-y: auto; min-height: 0; }
+.bookmark-row { padding: 3px 5px; border-bottom: 1px solid var(--line); }
+.bookmark-row:hover { background: var(--hover); }
+.bookmark-main, .bookmark-editor { display: flex; align-items: center; gap: 3px; min-height: 24px; }
+.bookmark-name { display: flex; align-items: center; gap: 5px; flex: 1; min-width: 0; text-align: left; padding: 2px; }
+.bookmark-name > span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bookmark-name:hover > span:last-child { text-decoration: underline; text-decoration-style: dotted; }
+.bookmark-play { flex-shrink: 0; color: var(--accent); font-variant-numeric: tabular-nums; padding: 3px; font-size: 11px; }
+.bookmark-play > span { font-size: 9px; }
+.bookmark-delete, .bookmark-editor button { flex-shrink: 0; width: 22px; height: 24px; color: var(--muted); }
+.bookmark-delete:hover { color: var(--error); }
+.bookmark-editor button:hover { color: var(--accent); }
+.bookmark-track { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font-size: 11px; line-height: 17px; padding: 0 2px; }
+.bookmark-editor input { height: 24px; padding: 1px 3px; background: var(--surface); border: 1px solid var(--border-strong); }
+.bookmark-emoji-input { width: 29px; text-align: center; }
+.bookmark-label-input { flex: 1; min-width: 0; }
+.bookmark-error { color: var(--error); padding: 5px 7px; }
+.bookmark-empty { color: var(--muted); padding: 8px; }
 .queue-sidepanel { border-right: 0; border-left: 1px solid var(--line); }
 .global-drop-overlay { position: fixed; inset: 2px; z-index: 40; display: grid; place-items: center; pointer-events: none; background: color-mix(in srgb, var(--surface) 92%, transparent); border: 2px dashed var(--accent); font-size: 16px; }
 
