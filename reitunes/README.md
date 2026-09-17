@@ -18,8 +18,12 @@ This is entirely single-node right now. I'm not sure whether to forge ahead with
 2. A web UI makes it especially tempting to just have a single central server
    1. If I'm already paying the complexity tax (HTTP requests, split brain thing) for web... maybe I should take advantage of that instead of treating this like a normal desktop app?
 
-Still need to:
-- implement better bookmark functionality (adding bookmarks, at least)
+### TODO
+
+- [x] Add and manage bookmarks, including compact rows, inline name editing and access from a song's context menu.
+- [ ] Experiment with AI-driven classification, tags and browsing filters. Give an agent broad freedom to look through the library and propose useful categories, such as high energy, low energy and instrumental, including combinations of these concepts. Pay particular attention to newly imported songs.
+- [ ] Run a couple of classification experiments before choosing a model and agent harness. Use OpenRouter through the existing environment API key (it may only be available outside the sandbox; never print or commit it). Compare at least two model/harness combinations on the same representative library sample, including favourites, individual songs and long DJ sets. Record useful versus misleading tags, consistency, evidence used, latency and cost; distinguish metadata-based guesses from classifications supported by audio.
+- [ ] Use the experiment results to design persistent tags and library filters. Keep room for agent-created categories, manual corrections and model/harness version tracking. Consider classification after import, with a recurring pass for unclassified or changed items; decide on the schedule after the experiments.
 
 ## Playback diagnostics
 
