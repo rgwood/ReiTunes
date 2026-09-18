@@ -1,0 +1,114 @@
+[
+  {
+    "id": "t01",
+    "name": "Black Is Back in Style",
+    "artist": "Moonfaec",
+    "album": "Julia With Blue Jeans On",
+    "musicbrainz": {
+      "artist_status": "ambiguous-or-unknown",
+      "errors": [],
+      "identity_caveat": "Metadata matches are candidates, not fingerprint-verified local recordings. Do not infer the local recording's live/remix/version status from a candidate alone. Artist tags describe the artist, not necessarily this track. Missing vocal credits do not establish instrumental status.",
+      "recording_status": "unresolved",
+      "research_reasons": [
+        "unknown-recording",
+        "vocal-status-unconfirmed"
+      ],
+      "source": "MusicBrainz",
+      "sources": [],
+      "statistics": {
+        "cache_hits": 2,
+        "network_requests": 0,
+        "paid_search_requests": 0
+      }
+    }
+  },
+  {
+    "id": "t02",
+    "name": "Two Thousand and Seventeen [Official Audio].mp3",
+    "artist": "Four Tet - Topic",
+    "album": "New Energy",
+    "musicbrainz": {
+      "artist_status": "ambiguous-or-unknown",
+      "errors": [],
+      "identity_caveat": "Metadata matches are candidates, not fingerprint-verified local recordings. Do not infer the local recording's live/remix/version status from a candidate alone. Artist tags describe the artist, not necessarily this track. Missing vocal credits do not establish instrumental status.",
+      "recording_status": "unresolved",
+      "research_reasons": [
+        "unknown-recording",
+        "vocal-status-unconfirmed"
+      ],
+      "source": "MusicBrainz",
+      "sources": [],
+      "statistics": {
+        "cache_hits": 2,
+        "network_requests": 0,
+        "paid_search_requests": 0
+      }
+    }
+  },
+  {
+    "id": "t03",
+    "name": "Robbie Basho — Blue Crystal Fire",
+    "artist": "",
+    "album": "Visions of the Country",
+    "musicbrainz": {
+      "errors": [],
+      "identity_caveat": "Metadata matches are candidates, not fingerprint-verified local recordings. Do not infer the local recording's live/remix/version status from a candidate alone. Artist tags describe the artist, not necessarily this track. Missing vocal credits do not establish instrumental status.",
+      "recording_status": "unresolved",
+      "research_reasons": [
+        "insufficient-metadata",
+        "vocal-status-unconfirmed"
+      ],
+      "source": "MusicBrainz",
+      "sources": [],
+      "statistics": {
+        "cache_hits": 0,
+        "network_requests": 0,
+        "paid_search_requests": 0
+      }
+    }
+  },
+  {
+    "id": "t04",
+    "name": "Barbarian",
+    "artist": "",
+    "album": "",
+    "musicbrainz": {
+      "errors": [],
+      "identity_caveat": "Metadata matches are candidates, not fingerprint-verified local recordings. Do not infer the local recording's live/remix/version status from a candidate alone. Artist tags describe the artist, not necessarily this track. Missing vocal credits do not establish instrumental status.",
+      "recording_status": "unresolved",
+      "research_reasons": [
+        "insufficient-metadata",
+        "vocal-status-unconfirmed"
+      ],
+      "source": "MusicBrainz",
+      "sources": [],
+      "statistics": {
+        "cache_hits": 0,
+        "network_requests": 0,
+        "paid_search_requests": 0
+      }
+    }
+  },
+  {
+    "id": "t05",
+    "name": "Zqxv Nebula Teapot 7319",
+    "artist": "",
+    "album": "",
+    "musicbrainz": {
+      "errors": [],
+      "identity_caveat": "Metadata matches are candidates, not fingerprint-verified local recordings. Do not infer the local recording's live/remix/version status from a candidate alone. Artist tags describe the artist, not necessarily this track. Missing vocal credits do not establish instrumental status.",
+      "recording_status": "unresolved",
+      "research_reasons": [
+        "insufficient-metadata",
+        "vocal-status-unconfirmed"
+      ],
+      "source": "MusicBrainz",
+      "sources": [],
+      "statistics": {
+        "cache_hits": 0,
+        "network_requests": 0,
+        "paid_search_requests": 0
+      }
+    }
+  }
+]

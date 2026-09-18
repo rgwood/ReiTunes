@@ -193,6 +193,7 @@ def collect(item: dict, cache: MusicBrainzCache, partial: dict | None = None) ->
 
 
 def main() -> None:
+    raise SystemExit("RETIRED: use cargo run -p tagging-engine --bin tagging-eval -- live (or replay). See tagging-engine/README.md. This Python code is an archived pilot, not production.")
     OUT.mkdir(parents=True, exist_ok=True)
     sample = json.loads((OUT / "sample.json").read_text())
     evidence: dict = {"schema_version": 1, "sample_id": sample["id"], "source": "MusicBrainz",

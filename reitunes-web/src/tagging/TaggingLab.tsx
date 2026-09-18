@@ -33,7 +33,7 @@ export default function TaggingLab() {
       .then((data: Experiment) => {
         if (data.schema_version !== 1 || !Array.isArray(data.items) || !Array.isArray(data.runs)) throw new Error();
         setExperiment(data); setSelected(data.items[0]?.id || '');
-      }).catch(e => { if (e.name !== 'AbortError') setError('No experiment loaded. Run scripts/tagging_experiment.py first, then reload.'); });
+      }).catch(e => { if (e.name !== 'AbortError') setError('No archived experiment loaded. Current evals use the Rust tagging-eval CLI; see tagging-engine/README.md.'); });
     const changed = (event: StorageEvent) => {
       if (event.key === STORAGE_KEY) {
         try { setReview(event.newValue ? parseReview(JSON.parse(event.newValue)) : emptyReview()); }

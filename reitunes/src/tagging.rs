@@ -24,23 +24,9 @@ use uuid::Uuid;
 mod evidence;
 type Pool = r2d2::Pool<r2d2_sqlite::SqliteConnectionManager>;
 type ApiError = (StatusCode, String);
-// Only a received, unusable model completion permits an automatic paid retry.
-// Transport errors and interrupted calls have unknown billing outcomes.
-#[derive(Debug)]
-struct InvalidModelOutput(String);
-impl std::fmt::Display for InvalidModelOutput {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(&self.0)
-    }
-}
-impl std::error::Error for InvalidModelOutput {}
-const MODEL: &str = "z-ai/glm-5.3-flash";
-const MAX_BATCH_ITEMS: usize = 20;
-static CONTRACT: std::sync::LazyLock<Value> = std::sync::LazyLock::new(|| {
-    serde_json::from_str(include_str!("../tagging-request.json"))
-        .expect("valid shared tagging contract")
-});
-
+#[cfg(test)]
+use tagging_engine::{Prediction, CONTRACT};
+use tagging_engine::{Tag, MAX_BATCH_ITEMS, MODEL};
 #[derive(Clone)]
 struct PreparedItem {
     id: Uuid,
@@ -76,16 +62,6 @@ impl Metadata {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct Tag {
-    tag: String,
-    basis: String,
-    confidence: f64,
-    evidence: String,
-    #[serde(alias = "source_urls")]
-    source_urls: Vec<String>,
-}
-#[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Label {
     tag: String,
@@ -110,13 +86,6 @@ struct ItemTags {
     run_id: Option<String>,
     phase: Option<String>,
 }
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct Prediction {
-    id: String,
-    tags: Vec<Tag>,
-    uncertainty: String,
-}
 #[derive(Serialize)]
 struct Snapshot {
     enabled: bool,
@@ -129,6 +98,7 @@ struct Inner {
     client: reqwest::Client,
     key: Option<String>,
     endpoint: String,
+    engine_mode: tagging_engine::Mode,
     wake: Notify,
     started: AtomicBool,
 }
@@ -172,6 +142,7 @@ impl Tagging {
                 .timeout(Duration::from_secs(240))
                 .build()?,
             key,
+            engine_mode: tagging_engine::Mode::Agent,
             endpoint: "https://openrouter.ai/api/v1/chat/completions".into(),
             wake: Notify::new(),
             started: AtomicBool::new(false),
@@ -427,18 +398,7 @@ impl Tagging {
             batches.push(batch);
         }
         for batch in batches {
-            let mut result = self.classify_batch(&batch).await;
-            if result
-                .as_ref()
-                .is_err_and(|error| error.is::<InvalidModelOutput>())
-            {
-                tracing::warn!(
-                    items = batch.len(),
-                    "Invalid tagging output; retrying batch once"
-                );
-                result = self.classify_batch(&batch).await;
-            }
-            if let Err(error) = result {
+            if let Err(error) = self.classify_batch(&batch).await {
                 for item in &batch {
                     self.fail(item.id, &item.hash, &error.to_string())?;
                 }
@@ -472,7 +432,10 @@ impl Tagging {
         if items.is_empty() {
             return Ok(());
         }
-        let request = build_request(&items)?;
+        // A session has several HTTP requests. Store its manifest here; exact
+        // requests (including tools) are journaled by the engine before sending.
+        let request = json!({"engine":tagging_engine::VERSION,"revision":tagging_engine::REVISION,
+            "config":tagging_engine::Config {mode:self.0.engine_mode,..Default::default()}});
         // Save before sending. A timeout/crash never triggers an automatic paid retry.
         let run = Uuid::new_v4().to_string();
         {
@@ -489,65 +452,54 @@ impl Tagging {
         for item in &items {
             self.set_phase(item.id, &item.hash, "classifying")?;
         }
-        let response = self
-            .0
-            .client
-            .post(&self.0.endpoint)
-            .bearer_auth(
-                self.0
-                    .key
-                    .as_deref()
-                    .context("OPENROUTER_API_KEY is not configured")?,
-            )
-            .json(&request)
-            .send()
-            .await;
-        let raw_result: Result<Value> = async {
-            let response =
-                response.context("OpenRouter request failed; billing may have occurred")?;
-            let status = response.status();
-            let bytes = response
-                .bytes()
-                .await
-                .context("Could not read OpenRouter response; billing may have occurred")?;
-            if bytes.len() > 1_000_000 {
-                bail!("OpenRouter response exceeded size limit");
-            }
-            let value: Value =
-                serde_json::from_slice(&bytes).context("OpenRouter returned invalid JSON")?;
-            if !status.is_success() {
-                self.0.pool.get()?.execute(
-                    "UPDATE tagging_runs SET Response=?2 WHERE Id=?1",
-                    params![run, serde_json::to_string(&value)?],
-                )?;
-                bail!("OpenRouter returned HTTP {status}; explicit retry required");
-            }
-            Ok(value)
-        }
-        .await;
-        let raw = match raw_result {
-            Ok(raw) => raw,
+        let inputs = engine_inputs(&items);
+        let mut model = tagging_engine::HttpModel {
+            client: self.0.client.clone(),
+            endpoint: self.0.endpoint.clone(),
+            key: self
+                .0
+                .key
+                .clone()
+                .context("OPENROUTER_API_KEY is not configured")?,
+        };
+        let mut mb = tagging_engine::evidence::Cache::new(&self.0.pool, &self.0.client)?;
+        let mut sequence = 0;
+        let config = tagging_engine::Config {
+            mode: self.0.engine_mode,
+            ..Default::default()
+        };
+        let outcome = tagging_engine::run(&inputs, config, &mut model, &mut mb, |event| {
+            self.0.pool.get()?.execute(
+                "INSERT INTO tagging_agent_events (RunId,Sequence,CreatedAt,Serialized) VALUES (?1,?2,?3,?4)",
+                params![run, sequence, now(), serde_json::to_string(&event)?],
+            )?;
+            sequence += 1;
+            Ok(())
+        }).await;
+        let report = match outcome {
+            Ok(report) => report,
             Err(error) => {
                 self.finish_run(&run, None, Some(&error.to_string()), None)?;
                 return Err(error);
             }
         };
-        let cost = raw
-            .pointer("/usage/cost")
-            .and_then(Value::as_f64)
-            .filter(|n| n.is_finite() && *n >= 0.0);
-        let prediction = parse_predictions(&raw, &items);
+        let cost = if report.missing_cost_records == 0 {
+            Some(report.reported_cost_usd)
+        } else {
+            None
+        };
         self.finish_run(
             &run,
-            Some(&raw),
-            prediction
-                .as_ref()
-                .err()
-                .map(ToString::to_string)
-                .as_deref(),
+            Some(&serde_json::to_value(&report)?),
+            report.error.as_deref(),
             cost,
         )?;
-        let predictions = prediction.map_err(|error| InvalidModelOutput(error.to_string()))?;
+        if let Some(error) = report.error {
+            bail!("{error}");
+        }
+        let predictions = report
+            .predictions
+            .context("Agent returned no predictions")?;
         for (item, prediction) in items.iter().zip(predictions) {
             let item_tags = ItemTags {
                 status: "ready".into(),
@@ -692,136 +644,26 @@ impl Tagging {
     }
 }
 
-fn normalize_tag(tag: &str) -> Result<String> {
-    let tag = tag
-        .split_whitespace()
-        .collect::<Vec<_>>()
-        .join("-")
-        .to_lowercase();
-    if tag.is_empty() || tag.chars().count() > 60 || tag.chars().any(char::is_control) {
-        bail!("Tags must contain 1–60 characters without control characters");
-    }
-    Ok(tag)
-}
-
-fn build_request(items: &[PreparedItem]) -> Result<Value> {
-    if items.is_empty() || items.len() > MAX_BATCH_ITEMS {
-        bail!("Batch must contain 1–20 items");
-    }
-    let ids: Vec<_> = (1..=items.len()).map(|i| format!("t{i:02}")).collect();
-    let metadata: Vec<_> = items.iter().zip(&ids).map(|(item, id)| {
-        json!({"id":id,"name":item.metadata.name,"artist":item.metadata.artist,"album":item.metadata.album,"musicbrainz":item.evidence})
-    }).collect();
-    let mut request = CONTRACT["request"].clone();
-    // Match the evaluated schema text byte for byte, including its ID list spacing.
-    let id_list = format!(
-        "[{}]",
-        ids.iter()
-            .map(|id| format!("\"{id}\""))
-            .collect::<Vec<_>>()
-            .join(", ")
-    );
-    request["messages"][0]["content"] = json!(request["messages"][0]["content"]
-        .as_str()
-        .unwrap()
-        .replace("__ITEM_IDS__", &id_list));
-    request["messages"][1]["content"] = json!(serde_json::to_string(&metadata)?);
-    if serde_json::to_vec(&request)?.len()
-        > CONTRACT["max_request_bytes"].as_u64().unwrap() as usize
-    {
-        bail!("Tagging request exceeds 48 KB; reduce evidence");
-    }
-    Ok(request)
-}
-
-fn parse_predictions(raw: &Value, items: &[PreparedItem]) -> Result<Vec<Prediction>> {
-    #[derive(Deserialize)]
-    #[serde(deny_unknown_fields)]
-    struct Batch {
-        items: Vec<Prediction>,
-    }
-    if raw
-        .pointer("/choices/0/finish_reason")
-        .and_then(Value::as_str)
-        != Some("stop")
-    {
-        bail!("Model did not finish normally; explicit retry required");
-    }
-    let content = raw
-        .pointer("/choices/0/message/content")
-        .and_then(Value::as_str)
-        .context("Missing model response")?;
-    let mut stream = serde_json::Deserializer::from_str(content.trim()).into_iter::<Batch>();
-    let batch = stream.next().context("Empty model response")??;
-    // The official endpoint sometimes appends Markdown closing backticks (including
-    // malformed two/four-character fences). Never accept prose or a second object.
-    let tail = content.trim()[stream.byte_offset()..].trim();
-    if !tail.is_empty() && !(tail.len() >= 2 && tail.bytes().all(|byte| byte == b'`')) {
-        bail!("Unexpected content after prediction JSON");
-    }
-    let mut by_id = HashMap::new();
-    for prediction in batch.items {
-        if by_id.insert(prediction.id.clone(), prediction).is_some() {
-            bail!("Duplicate item ID");
-        }
-    }
-    if by_id.len() != items.len() {
-        bail!("Missing or invented item IDs");
-    }
+fn engine_inputs(items: &[PreparedItem]) -> Vec<tagging_engine::Input> {
     items
         .iter()
         .enumerate()
-        .map(|(index, item)| {
-            let prediction = by_id
-                .remove(&format!("t{:02}", index + 1))
-                .context("Missing or invented item ID")?;
-            validate_prediction(prediction, &item.evidence)
+        .map(|(index, item)| tagging_engine::Input {
+            id: format!("t{:02}", index + 1),
+            name: item.metadata.name.clone(),
+            artist: item.metadata.artist.clone(),
+            album: item.metadata.album.clone(),
+            musicbrainz: item.evidence.clone(),
         })
         .collect()
 }
-
-fn validate_prediction(mut prediction: Prediction, evidence: &Value) -> Result<Prediction> {
-    if prediction.tags.len() > 6 || prediction.uncertainty.len() > 1500 {
-        bail!("Prediction exceeds size limits");
-    }
-    let sources: HashSet<&str> = evidence
-        .get("sources")
-        .and_then(Value::as_array)
-        .into_iter()
-        .flatten()
-        .filter_map(|v| v.as_str().or_else(|| v.get("url").and_then(Value::as_str)))
-        .collect();
-    let mut seen = HashSet::new();
-    for tag in &mut prediction.tags {
-        tag.tag = normalize_tag(&tag.tag)?;
-        if !seen.insert(tag.tag.clone())
-            || !tag.confidence.is_finite()
-            || !(0.0..=1.0).contains(&tag.confidence)
-            || tag.evidence.is_empty()
-            || tag.evidence.len() > 1000
-            || tag.source_urls.len() > 3
-        {
-            bail!("Invalid or duplicate tag");
-        }
-        match tag.basis.as_str() {
-            // A cited source does not turn an inference into database evidence.
-            // The evaluated schema permits citations on any basis; still require
-            // every citation to belong to this item's supplied evidence.
-            "metadata" | "inference"
-                if tag
-                    .source_urls
-                    .iter()
-                    .all(|url| sources.contains(url.as_str())) => {}
-            "database"
-                if !tag.source_urls.is_empty()
-                    && tag
-                        .source_urls
-                        .iter()
-                        .all(|url| sources.contains(url.as_str())) => {}
-            _ => bail!("Tag has unsupported evidence basis or source URL"),
-        }
-    }
-    Ok(prediction)
+use tagging_engine::baseline::normalize_tag;
+fn build_request(items: &[PreparedItem]) -> Result<Value> {
+    tagging_engine::baseline::build_request(&engine_inputs(items))
+}
+#[cfg(test)]
+fn parse_predictions(raw: &Value, items: &[PreparedItem]) -> Result<Vec<Prediction>> {
+    tagging_engine::baseline::parse_predictions(raw, &engine_inputs(items))
 }
 
 pub fn router<S: Clone + Send + Sync + 'static>(tagging: Tagging) -> Router<S> {
@@ -953,86 +795,6 @@ async fn delete_label(
 mod tests {
     use super::*;
 
-    #[tokio::test]
-    #[ignore = "Paid singleton comparison; explicitly provide TAGGING_EVAL_KEY_FILE"]
-    async fn live_singleton_comparison() {
-        let key_file = std::env::var("TAGGING_EVAL_KEY_FILE").expect("Explicit key file required");
-        let key = std::fs::read_to_string(key_file)
-            .unwrap()
-            .trim()
-            .to_string();
-        let out = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(format!(
-            "../target/tagging/singleton-eval-{}",
-            Uuid::new_v4()
-        ));
-        std::fs::create_dir_all(&out).unwrap();
-        let pool =
-            reitunes_workspace::open_connection_pool(out.join("runs.sqlite").to_str().unwrap())
-                .unwrap();
-        let mut tagging = Tagging::new(pool, Arc::new(RwLock::new(Library::new()))).unwrap();
-        Arc::get_mut(&mut tagging.0).unwrap().key = Some(key);
-        let fixture: Value =
-            serde_json::from_str(include_str!("../test-fixtures/tagging-evaluated.json")).unwrap();
-        let metadata: Vec<Value> = serde_json::from_str(
-            fixture["request"]["messages"][1]["content"]
-                .as_str()
-                .unwrap(),
-        )
-        .unwrap();
-        let baseline: Value = serde_json::Deserializer::from_str(
-            fixture["response"]["choices"][0]["message"]["content"]
-                .as_str()
-                .unwrap(),
-        )
-        .into_iter::<Value>()
-        .next()
-        .unwrap()
-        .unwrap();
-        let mut comparisons = Vec::new();
-        eprintln!("Singleton comparison artifacts: {}", out.display());
-        // Three fixed cases, one call each, no retry. Compare with the saved batch;
-        // this measures disagreement, not correctness or statistical equivalence.
-        for index in [0, 9, 14] {
-            let value = &metadata[index];
-            let id = Uuid::new_v4();
-            let item = LibraryItem {
-                id,
-                name: value["name"].as_str().unwrap().into(),
-                artist: value["artist"].as_str().unwrap().into(),
-                album: value["album"].as_str().unwrap().into(),
-                file_path: "eval-only".into(),
-                created_time_utc: "2026-09-17T00:00:00".parse().unwrap(),
-                track_number: None,
-                play_count: 0,
-                bookmarks: Default::default(),
-                is_favorite: false,
-            };
-            tagging.0.library.write().await.items.insert(id, item);
-            tagging.enqueue(id, false).await.unwrap();
-            let mut prepared = prepared_jobs(&tagging).await;
-            prepared[0].evidence = value["musicbrainz"].clone();
-            tagging.classify_prepared(prepared).await.unwrap();
-            let result = tagging
-                .snapshot()
-                .await
-                .unwrap()
-                .items
-                .remove(&id.to_string())
-                .unwrap();
-            eprintln!("{}: {}", value["name"], result.status);
-            let original = baseline["items"]
-                .as_array()
-                .unwrap()
-                .iter()
-                .find(|item| item["id"] == value["id"])
-                .unwrap();
-            comparisons.push(
-                json!({"input":value,"batch_prediction":original,"singleton_prediction":result}),
-            );
-            std::fs::write(out.join("comparison.json"), serde_json::to_vec_pretty(&json!({"contract_version":CONTRACT["version"],"baseline":CONTRACT["origin"],"comparisons":comparisons,"limitation":"Three fixed cases, one sample each; disagreement is not an accuracy score."})).unwrap()).unwrap();
-        }
-    }
-
     #[test]
     fn evaluated_request_and_response_replay_through_production_contract() {
         let fixture: Value =
@@ -1163,6 +925,7 @@ mod tests {
         Arc::get_mut(&mut tagging.0).unwrap().endpoint =
             format!("http://{}", listener.local_addr().unwrap());
         Arc::get_mut(&mut tagging.0).unwrap().key = Some("local-test-key".into());
+        Arc::get_mut(&mut tagging.0).unwrap().engine_mode = tagging_engine::Mode::Fixed;
         let calls = Arc::new(std::sync::atomic::AtomicUsize::new(0));
         let captured = calls.clone();
         let server = tokio::spawn(async move {
@@ -1227,6 +990,7 @@ mod tests {
         Arc::get_mut(&mut tagging.0).unwrap().endpoint =
             format!("http://{}", listener.local_addr().unwrap());
         Arc::get_mut(&mut tagging.0).unwrap().key = Some("local-test-key".into());
+        Arc::get_mut(&mut tagging.0).unwrap().engine_mode = tagging_engine::Mode::Fixed;
         let ids: Vec<_> = tagging
             .0
             .library
@@ -1317,7 +1081,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn malformed_batch_retries_once_then_fails_members() {
+    async fn malformed_batch_exhausts_recovery_then_fails_members() {
         let (_directory, mut tagging, id) = fixture();
         let mut second = tagging.0.library.read().await.items[&id].clone();
         second.id = Uuid::new_v4();
@@ -1333,6 +1097,7 @@ mod tests {
         Arc::get_mut(&mut tagging.0).unwrap().endpoint =
             format!("http://{}", listener.local_addr().unwrap());
         Arc::get_mut(&mut tagging.0).unwrap().key = Some("local-test-key".into());
+        Arc::get_mut(&mut tagging.0).unwrap().engine_mode = tagging_engine::Mode::Fixed;
         let server = tokio::spawn(async move {
             axum::serve(listener, Router::new().route("/", post(|| async {
                 Json(json!({"choices":[{"finish_reason":"length","message":{"content":"{\"items\":["}}],"usage":{"cost":0.001}}))
@@ -1356,16 +1121,16 @@ mod tests {
                 |r| r.get::<_, i64>(0)
             )
             .unwrap(),
-            4
+            2
         );
         assert_eq!(
             conn.query_row(
-                "SELECT COUNT(*) FROM tagging_runs WHERE Error IS NOT NULL AND CostUsd=0.001",
+                "SELECT COUNT(*) FROM tagging_runs WHERE Error IS NOT NULL AND CostUsd=0.003",
                 [],
                 |r| r.get::<_, i64>(0)
             )
             .unwrap(),
-            2
+            1
         );
     }
 
@@ -1377,6 +1142,7 @@ mod tests {
             Arc::get_mut(&mut tagging.0).unwrap().endpoint =
                 format!("http://{}", listener.local_addr().unwrap());
             Arc::get_mut(&mut tagging.0).unwrap().key = Some("local-test-key".into());
+            Arc::get_mut(&mut tagging.0).unwrap().engine_mode = tagging_engine::Mode::Fixed;
             let calls = Arc::new(std::sync::atomic::AtomicUsize::new(0));
             let captured = calls.clone();
             let server = tokio::spawn(async move {
@@ -1427,7 +1193,7 @@ mod tests {
                     |r| r.get::<_, i64>(0)
                 )
                 .unwrap(),
-                1
+                if http_error { 1 } else { 0 }
             );
             assert_eq!(
                 conn.query_row(
@@ -1439,6 +1205,75 @@ mod tests {
                 if http_error { 0.0 } else { 0.002 }
             );
         }
+    }
+
+    #[tokio::test]
+    async fn production_adapter_uses_tools_and_persists_each_request_before_sending() {
+        let (_directory, mut tagging, id) = fixture();
+        assert_eq!(tagging.0.engine_mode, tagging_engine::Mode::Agent);
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        Arc::get_mut(&mut tagging.0).unwrap().endpoint =
+            format!("http://{}", listener.local_addr().unwrap());
+        Arc::get_mut(&mut tagging.0).unwrap().key = Some("local-test-key".into());
+        let artist = "0a326e5b-9332-4490-a37c-aa3692201401";
+        tagging_engine::evidence::Cache::new(&tagging.0.pool, &tagging.0.client).unwrap();
+        tagging.0.pool.get().unwrap().execute("INSERT INTO TaggingMusicBrainzCache VALUES (?1,0,?2)",params!["search:artist:artist:\"robbie basho\"",json!({"artists":[{"id":artist,"name":"Robbie Basho","tags":[{"name":"folk"}]}]}).to_string()]).unwrap();
+        let pool = tagging.0.pool.clone();
+        let calls = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let captured = calls.clone();
+        let server = tokio::spawn(async move {
+            axum::serve(listener,Router::new().route("/",post(move |Json(request):Json<Value>| {
+                let attempt=captured.fetch_add(1,Ordering::SeqCst);
+                let pool=pool.clone();
+                async move {
+                    let requests:i64=pool.get().unwrap().query_row("SELECT count(*) FROM tagging_agent_events WHERE json_extract(Serialized,'$.event')='request'",[],|r|r.get(0)).unwrap();
+                    assert_eq!(requests,attempt as i64+1);
+                    assert!(request["tools"].is_array());
+                    if attempt==0 {
+                        Json(json!({"choices":[{"finish_reason":"tool_calls","message":{"role":"assistant","tool_calls":[{"id":"call1","type":"function","function":{"name":"search_artists","arguments":json!({"item_ids":["t01"],"name":"Robbie Basho"}).to_string()}}]}}],"usage":{"cost":0.001}}))
+                    } else {
+                        assert!(!request.to_string().contains(artist));
+                        Json(json!({"choices":[{"finish_reason":"stop","message":{"content":json!({"items":[{"id":"t01","tags":[{"tag":"folk","basis":"database","confidence":0.8,"evidence":"Artist tag, not verified recording","sources":["s1"]}],"uncertainty":"Unverified","research":{"artist":"s1","recording":null}}]}).to_string()}}],"usage":{"cost":0.002}}))
+                    }
+                }
+            }))).await.unwrap();
+        });
+        tagging
+            .save_label(
+                id,
+                Label {
+                    tag: "folk".into(),
+                    verdict: "rejected".into(),
+                    reason: "Keep my correction".into(),
+                },
+            )
+            .await
+            .unwrap();
+        tagging.enqueue(id, false).await.unwrap();
+        tagging
+            .classify_prepared(prepared_jobs(&tagging).await)
+            .await
+            .unwrap();
+        server.abort();
+        assert_eq!(calls.load(Ordering::SeqCst), 2);
+        let snapshot = tagging.snapshot().await.unwrap();
+        assert_eq!(snapshot.items[&id.to_string()].status, "ready");
+        assert_eq!(
+            snapshot.items[&id.to_string()].labels["folk"].reason,
+            "Keep my correction"
+        );
+        assert_eq!(
+            snapshot.items[&id.to_string()].tags[0].source_urls,
+            vec![format!("https://musicbrainz.org/artist/{artist}")]
+        );
+        let conn = tagging.0.pool.get().unwrap();
+        assert_eq!(
+            conn.query_row("SELECT sum(CostUsd) FROM tagging_runs", [], |r| r
+                .get::<_, f64>(0))
+                .unwrap(),
+            0.003
+        );
+        assert_eq!(conn.query_row("SELECT count(*) FROM tagging_agent_events WHERE json_extract(Serialized,'$.event')='tool'",[],|r|r.get::<_,i64>(0)).unwrap(),1);
     }
 
     fn parse_test_prediction(raw: &Value, evidence: &Value) -> Result<Prediction> {
@@ -1489,6 +1324,7 @@ mod tests {
     async fn automatic_sweep_catches_the_whole_library_and_missed_changes_without_rebilling() {
         let (_directory, mut tagging, first) = fixture();
         Arc::get_mut(&mut tagging.0).unwrap().key = Some("local-test-key".into());
+        Arc::get_mut(&mut tagging.0).unwrap().engine_mode = tagging_engine::Mode::Fixed;
         let original = tagging.0.library.read().await.items[&first].clone();
         let mut ids = vec![first];
         for _ in 0..24 {
@@ -1553,6 +1389,7 @@ mod tests {
             .await
             .unwrap();
         Arc::get_mut(&mut tagging.0).unwrap().key = Some("local-test-key".into());
+        Arc::get_mut(&mut tagging.0).unwrap().engine_mode = tagging_engine::Mode::Fixed;
         assert_eq!(tagging.enqueue_missing().await.unwrap(), 0); // Already tagged manually.
         tagging.enqueue_changed(id).await.unwrap();
         assert_eq!(tagging.next_batch().unwrap().len(), 1);
@@ -1610,6 +1447,7 @@ mod tests {
     async fn queue_reports_exact_members_and_research_progress_resumes_without_rebilling() {
         let (_directory, mut tagging, id) = fixture();
         Arc::get_mut(&mut tagging.0).unwrap().key = Some("local-test-key".into());
+        Arc::get_mut(&mut tagging.0).unwrap().engine_mode = tagging_engine::Mode::Fixed;
         let mut second = tagging.0.library.read().await.items[&id].clone();
         second.id = Uuid::new_v4();
         let second_id = second.id;

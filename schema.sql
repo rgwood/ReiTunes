@@ -76,7 +76,7 @@ CREATE TABLE IF NOT EXISTS tagging_runs (
     Error TEXT,
     CostUsd REAL
 );
--- One run is one billable request; members map opaque model IDs back to items.
+-- A run is a batch agent session; each model request/response has its own trace event.
 -- ItemId/MetadataHash on tagging_runs retain the first member for legacy readers.
 CREATE TABLE IF NOT EXISTS tagging_run_items (
     RunId TEXT NOT NULL,
@@ -86,4 +86,11 @@ CREATE TABLE IF NOT EXISTS tagging_run_items (
     Status TEXT NOT NULL,
     Error TEXT,
     PRIMARY KEY (RunId, RequestItemId)
+);
+CREATE TABLE IF NOT EXISTS tagging_agent_events (
+    RunId TEXT NOT NULL,
+    Sequence INTEGER NOT NULL,
+    CreatedAt INTEGER NOT NULL,
+    Serialized TEXT NOT NULL,
+    PRIMARY KEY (RunId, Sequence)
 );

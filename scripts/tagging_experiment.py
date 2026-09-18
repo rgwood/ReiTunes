@@ -158,6 +158,7 @@ def build_request(model: str, spec: dict, metadata: list[dict], reasoning: str =
 
 
 def main() -> None:
+    raise SystemExit("RETIRED: use cargo run -p tagging-engine --bin tagging-eval -- live (or replay). See tagging-engine/README.md. This Python code is an archived pilot, not production.")
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--key-env-file", type=Path, help="Optional dotenv file; values are never logged")
     parser.add_argument("--key-file", type=Path, help="Plain text API key file; contents are never logged")

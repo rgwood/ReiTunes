@@ -1,3 +1,5 @@
+> Historical Python pilot, retired. Current production and evals use the [shared Rust engine](../tagging-engine/README.md). The commands and production-status statements below describe the old experiment only.
+
 # Tagging lab
 
 The review prototype works with a 16-item sample from the real library. Open the [local tagging lab](http://127.0.0.1:4173/tagging.html).

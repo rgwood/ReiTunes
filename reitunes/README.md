@@ -20,7 +20,7 @@ This is entirely single-node right now. I'm not sure whether to forge ahead with
 
 ### TODO
 
-The [library tagging implementation](TAGGING.md) uses GLM 5.3 Flash through the official Z.ai provider, with high reasoning and cached MusicBrainz evidence. It adds persistent tags, manual corrections with reasons, combined browsing filters and classification after imports. The [local tagging lab](TAGGING_EXPERIMENT.md) retains the model comparison and separate human-label exports.
+The [library tagging implementation](TAGGING.md) uses GLM 5.3 Flash through the official Z.ai provider, with high reasoning and real MusicBrainz tools. Production and experiments call the [same Rust engine](../tagging-engine/README.md). It preserves persistent tags, human corrections with reasons, combined browsing filters and asynchronous tagging after imports and edits. The old Python/browser lab is archived.
 
 - [x] Add and manage bookmarks, including compact rows, inline name editing and access from a song's context menu.
 - [x] Compare classification models on real favourites, songs and DJ sets; retain evidence, costs and human review labels.
