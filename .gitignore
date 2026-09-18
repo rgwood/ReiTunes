@@ -35,6 +35,7 @@ x86/
 [Aa][Rr][Mm]64/
 bld/
 [Bb]in/
+!/tagging-engine/src/bin/
 [Oo]bj/
 [Ll]og/
 [Ll]ogs/
