@@ -24,6 +24,16 @@ use uuid::Uuid;
 mod evidence;
 type Pool = r2d2::Pool<r2d2_sqlite::SqliteConnectionManager>;
 type ApiError = (StatusCode, String);
+// Only a received, unusable model completion permits an automatic paid retry.
+// Transport errors and interrupted calls have unknown billing outcomes.
+#[derive(Debug)]
+struct InvalidModelOutput(String);
+impl std::fmt::Display for InvalidModelOutput {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+impl std::error::Error for InvalidModelOutput {}
 const MODEL: &str = "z-ai/glm-5.3-flash";
 const MAX_BATCH_ITEMS: usize = 20;
 static CONTRACT: std::sync::LazyLock<Value> = std::sync::LazyLock::new(|| {
@@ -417,7 +427,18 @@ impl Tagging {
             batches.push(batch);
         }
         for batch in batches {
-            if let Err(error) = self.classify_batch(&batch).await {
+            let mut result = self.classify_batch(&batch).await;
+            if result
+                .as_ref()
+                .is_err_and(|error| error.is::<InvalidModelOutput>())
+            {
+                tracing::warn!(
+                    items = batch.len(),
+                    "Invalid tagging output; retrying batch once"
+                );
+                result = self.classify_batch(&batch).await;
+            }
+            if let Err(error) = result {
                 for item in &batch {
                     self.fail(item.id, &item.hash, &error.to_string())?;
                 }
@@ -526,7 +547,7 @@ impl Tagging {
                 .as_deref(),
             cost,
         )?;
-        let predictions = prediction?;
+        let predictions = prediction.map_err(|error| InvalidModelOutput(error.to_string()))?;
         for (item, prediction) in items.iter().zip(predictions) {
             let item_tags = ItemTags {
                 status: "ready".into(),
@@ -732,10 +753,10 @@ fn parse_predictions(raw: &Value, items: &[PreparedItem]) -> Result<Vec<Predicti
         .context("Missing model response")?;
     let mut stream = serde_json::Deserializer::from_str(content.trim()).into_iter::<Batch>();
     let batch = stream.next().context("Empty model response")??;
-    // The official endpoint sometimes appends a lone Markdown closing delimiter.
-    // Preserve raw output and accept only that exact suffix, never extra prose.
+    // The official endpoint sometimes appends Markdown closing backticks (including
+    // malformed two/four-character fences). Never accept prose or a second object.
     let tail = content.trim()[stream.byte_offset()..].trim();
-    if !tail.is_empty() && tail != "```" && tail != "``" {
+    if !tail.is_empty() && !(tail.len() >= 2 && tail.bytes().all(|byte| byte == b'`')) {
         bail!("Unexpected content after prediction JSON");
     }
     let mut by_id = HashMap::new();
@@ -1296,7 +1317,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn malformed_batch_fails_members_without_automatic_paid_retry() {
+    async fn malformed_batch_retries_once_then_fails_members() {
         let (_directory, mut tagging, id) = fixture();
         let mut second = tagging.0.library.read().await.items[&id].clone();
         second.id = Uuid::new_v4();
@@ -1335,7 +1356,7 @@ mod tests {
                 |r| r.get::<_, i64>(0)
             )
             .unwrap(),
-            2
+            4
         );
         assert_eq!(
             conn.query_row(
@@ -1344,8 +1365,80 @@ mod tests {
                 |r| r.get::<_, i64>(0)
             )
             .unwrap(),
-            1
+            2
         );
+    }
+
+    #[tokio::test]
+    async fn invalid_completion_recovers_once_but_http_errors_do_not_retry() {
+        for http_error in [false, true] {
+            let (_directory, mut tagging, id) = fixture();
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+            Arc::get_mut(&mut tagging.0).unwrap().endpoint =
+                format!("http://{}", listener.local_addr().unwrap());
+            Arc::get_mut(&mut tagging.0).unwrap().key = Some("local-test-key".into());
+            let calls = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+            let captured = calls.clone();
+            let server = tokio::spawn(async move {
+                axum::serve(listener, Router::new().route("/", post(move || {
+                    let attempt = captured.fetch_add(1, Ordering::SeqCst);
+                    async move {
+                        if http_error {
+                            return (StatusCode::SERVICE_UNAVAILABLE, Json(json!({"error":"unavailable"})));
+                        }
+                        let content = if attempt == 0 {
+                            // Mirrors the production response with an extra note and
+                            // a second answer. Neither should be silently salvaged.
+                            r#"{"items":[{"id":"t01","tags":[],"uncertainty":"Unknown","note":"Extra"}]} Correction: {"items":[]}"#.to_string()
+                        } else {
+                            json!({"items":[{"id":"t01","tags":[],"uncertainty":"Unknown"}]}).to_string()
+                        };
+                        (StatusCode::OK, Json(json!({"choices":[{"finish_reason":"stop","message":{"content":content}}],"usage":{"cost":0.001}})))
+                    }
+                }))).await.unwrap();
+            });
+            tagging
+                .save_label(
+                    id,
+                    Label {
+                        tag: "folk".into(),
+                        verdict: "rejected".into(),
+                        reason: "Wrong recording".into(),
+                    },
+                )
+                .await
+                .unwrap();
+            tagging.enqueue(id, false).await.unwrap();
+            tagging
+                .classify_prepared(prepared_jobs(&tagging).await)
+                .await
+                .unwrap();
+            server.abort();
+            assert_eq!(calls.load(Ordering::SeqCst), if http_error { 1 } else { 2 });
+            let snapshot = tagging.snapshot().await.unwrap();
+            let item = &snapshot.items[&id.to_string()];
+            assert_eq!(item.status, if http_error { "failed" } else { "ready" });
+            assert_eq!(item.labels["folk"].reason, "Wrong recording");
+            let conn = tagging.0.pool.get().unwrap();
+            assert_eq!(
+                conn.query_row(
+                    "SELECT COUNT(*) FROM tagging_runs WHERE Error IS NOT NULL",
+                    [],
+                    |r| r.get::<_, i64>(0)
+                )
+                .unwrap(),
+                1
+            );
+            assert_eq!(
+                conn.query_row(
+                    "SELECT COALESCE(SUM(CostUsd),0) FROM tagging_runs",
+                    [],
+                    |r| r.get::<_, f64>(0)
+                )
+                .unwrap(),
+                if http_error { 0.0 } else { 0.002 }
+            );
+        }
     }
 
     fn parse_test_prediction(raw: &Value, evidence: &Value) -> Result<Prediction> {
@@ -1653,7 +1746,7 @@ mod tests {
         let evidence = json!({"sources":["https://musicbrainz.org/artist/known"]});
         let prediction = json!({"id":"t01","tags":[{"tag":"Acoustic Folk","basis":"database","confidence":0.8,"evidence":"Artist community tags include folk.","sourceUrls":["https://musicbrainz.org/artist/known"]}],"uncertainty":"Recording identity is unverified."});
         let response = |content: String| json!({"choices":[{"finish_reason":"stop","message":{"content":content}}]});
-        for suffix in ["", "``", "```"] {
+        for suffix in ["", "``", "```", "````", "``````"] {
             assert_eq!(
                 parse_test_prediction(
                     &response(format!("{{\"items\":[{prediction}]}}{suffix}")),
@@ -1665,11 +1758,13 @@ mod tests {
                 "acoustic-folk"
             );
         }
-        assert!(parse_test_prediction(
-            &response(format!("{{\"items\":[{prediction}]}} extra prose")),
-            &evidence
-        )
-        .is_err());
+        for suffix in [" extra prose", "```` Correction", " {\"items\":[]}"] {
+            assert!(parse_test_prediction(
+                &response(format!("{{\"items\":[{prediction}]}}{suffix}")),
+                &evidence
+            )
+            .is_err());
+        }
         assert!(parse_test_prediction(
             &response(json!({"items":[prediction.clone()]}).to_string()),
             &json!({"sources":[]})
