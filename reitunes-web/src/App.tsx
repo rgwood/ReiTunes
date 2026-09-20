@@ -290,7 +290,6 @@ function AppContent() {
       }}
     >
       <header className="player-bar">
-        <span className="app-name">ReiTunes</span>
         <AudioPlayer
           audioRef={audioRef}
           onPlaybackPosition={reportPlaybackPosition}
@@ -375,27 +374,30 @@ function AppContent() {
           <span aria-hidden="true">←</span> Back to library
         </button>}
         <div className="toolbar-actions">
-          {view === 'library' && <button onClick={() => setView('discover')}>
+          {view === 'library' && <button data-tone="primary" onClick={() => setView('discover')}>
             Discover{discoveryCount > 0 && <span className="discovery-count" aria-hidden="true">{discoveryCount}</span>}
             <span aria-hidden="true">→</span>
           </button>}
-          <button onClick={() => setIsImportOpen(true)}>
+          <button data-tone="secondary" onClick={() => setIsImportOpen(true)}>
             <MusicIcon name="plus" size={14} />
             Import music
           </button>
           {view === 'library' && <><button
+            data-tone="tertiary"
             onClick={() => togglePanel('playlists')}
             aria-pressed={panel === 'playlists'}
           >
             Playlists
           </button>
           <button
+            data-tone="primary"
             onClick={() => togglePanel('bookmarks')}
             aria-pressed={panel === 'bookmarks'}
           >
             Bookmarks
           </button>
           <button
+            data-tone="secondary"
             onClick={nextMoment}
             disabled={!moments.length}
             title="Jump to the next bookmark"
@@ -403,6 +405,7 @@ function AppContent() {
             Next saved moment
           </button></>}
           <button
+            data-tone="tertiary"
             aria-label="Queue"
             aria-pressed={panel === 'queue'}
             onClick={() => togglePanel('queue')}

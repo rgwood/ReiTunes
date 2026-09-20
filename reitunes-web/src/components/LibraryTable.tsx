@@ -483,6 +483,7 @@ export function LibraryTable({ items, searchQuery, playlistId, onSearchChange, r
                     return (
                       <td
                         key={cell.id}
+                        data-column={field}
                         className="px-2 py-1 border-b border-solarized-base02 whitespace-nowrap overflow-hidden text-ellipsis max-w-0"
                         onDoubleClick={() => {
                           if (isEditable) {

@@ -580,7 +580,8 @@ test('switches between Sonos and browser playback without playing twice', async 
       return {
         height: rect('.player-bar').height,
         volumeWidth: rect('.sonos-volume input').width,
-        transportBeforeTitle: transport.right <= title.left,
+        titleAlignedWithTransport: title.left === transport.left,
+        titleBeforeOutput: title.right <= rect('.player-output').left,
         progressBelowTitle: progress.top >= title.bottom,
         sliderOffset: progress.top + progress.height / 2 - (rect('.sonos-volume input').top + rect('.sonos-volume input').height / 2),
         fits: document.documentElement.scrollWidth <= window.innerWidth,
@@ -589,7 +590,8 @@ test('switches between Sonos and browser playback without playing twice', async 
     expect(dimensions.height).toBe(width > 650 ? 56 : 77);
     expect(dimensions.volumeWidth).toBe(110);
     if (width > 650) {
-      expect(dimensions.transportBeforeTitle).toBe(true);
+      expect(dimensions.titleAlignedWithTransport).toBe(true);
+      expect(dimensions.titleBeforeOutput).toBe(true);
       expect(Math.abs(dimensions.sliderOffset)).toBeLessThanOrEqual(1);
     }
     expect(dimensions.progressBelowTitle).toBe(true);

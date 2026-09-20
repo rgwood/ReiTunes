@@ -3,7 +3,7 @@ import { expect, test, type Locator, type Page } from '@playwright/test';
 import type { LibraryItem } from '../src/types';
 
 const STORAGE_KEY = 'reitunes-theme';
-const themeIds = ['neutral', 'solarized', 'catppuccin', 'gruvbox', 'nord', 'dracula', 'tokyo-night', 'rose-pine'] as const;
+const themeIds = ['neutral', 'solarized', 'catppuccin', 'gruvbox', 'nord', 'dracula', 'tokyo-night', 'rose-pine', 'guava', 'papaya', 'blueberry', 'dragonfruit', 'forest-palace'] as const;
 type ThemeId = typeof themeIds[number];
 type ThemeMode = 'system' | 'light' | 'dark';
 const longTitle = 'Northern Sky — live rehearsal with alternate vocals and an extended instrumental ending';
@@ -136,7 +136,7 @@ test.beforeEach(async ({ page }) => {
 test('follows the operating system initially and when it changes live', async ({ page }) => {
   await page.emulateMedia({ colorScheme: 'dark', reducedMotion: 'reduce' });
   await page.goto('/');
-  await expect(page.locator('html')).toHaveAttribute('data-theme', 'neutral');
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'forest-palace');
   await expect(page.locator('html')).toHaveAttribute('data-theme-preference', 'system');
   await expect(page.locator('html')).toHaveAttribute('data-theme-mode', 'dark');
   await page.emulateMedia({ colorScheme: 'light' });
@@ -237,7 +237,7 @@ for (const [label, stored] of [
     await page.addInitScript(({ key, value }) => localStorage.setItem(key, value), { key: STORAGE_KEY, value: stored });
     await page.emulateMedia({ colorScheme: 'dark' });
     await page.goto('/');
-    await expect(page.locator('html')).toHaveAttribute('data-theme', 'neutral');
+    await expect(page.locator('html')).toHaveAttribute('data-theme', 'forest-palace');
     await expect(page.locator('html')).toHaveAttribute('data-theme-preference', 'system');
     await expect(page.locator('html')).toHaveAttribute('data-theme-mode', 'dark');
     await expect(page.locator('tbody tr')).toHaveCount(120);
@@ -272,9 +272,17 @@ for (const theme of themeIds) for (const mode of ['light', 'dark'] as const) {
     expect(await density(page)).toEqual(originalDensity);
     expect(originalDensity).toEqual({ top: 90, rowHeight: 24, visibleRows: 31 });
     const samples = [];
+    for (const name of ['Play', 'Previous', 'Back 30s', 'Add bookmark', 'Settings']) {
+      samples.push(await readable(page.getByRole('button', { name, exact: true }), `${name} control`, 3));
+    }
+    for (const name of ['Import music', 'Playlists', 'Bookmarks', 'Queue']) {
+      samples.push(await readable(page.locator('.toolbar-actions').getByRole('button', { name, exact: true }), `${name} toolbar text`));
+    }
     const row = page.locator('tbody tr').first();
     const nameCell = row.locator('td').nth(1);
     samples.push(await readable(nameCell, 'track text'));
+    samples.push(await readable(row.locator('[data-column="artist"]'), 'artist text'));
+    samples.push(await readable(row.locator('[data-column="album"]'), 'album text'));
     samples.push(await readable(page.getByRole('button', { name: 'Name', exact: true }), 'column heading'));
     samples.push(await readable(page.locator('.library-status'), 'muted status text'));
     samples.push(await readable(page.getByRole('searchbox', { name: 'Search library' }), 'search text'));
@@ -292,6 +300,7 @@ for (const theme of themeIds) for (const mode of ['light', 'dark'] as const) {
     await expect(row).toHaveAttribute('aria-current', 'true');
     samples.push(await readable(nameCell, 'playing track text'));
     samples.push(await readable(row.locator('td').nth(2), 'playing artist text'));
+    samples.push(await readable(row.locator('[data-column="album"]'), 'playing album text'));
     samples.push(await readable(row.locator('td').last(), 'playing created time'));
     await nameCell.hover();
     const tooltip = page.locator('[data-floating-ui-portal] > div').filter({ hasText: longTitle });
@@ -357,7 +366,7 @@ test('captures theme comparisons with the same explicit review library', async (
   await page.goto('/');
   await expect(page.locator('tbody tr')).toHaveCount(120);
   await writeFile(testInfo.outputPath('theme-library.json'), JSON.stringify(fixtureItems));
-  for (const [theme, mode] of [['solarized', 'dark'], ['catppuccin', 'dark'], ['catppuccin', 'light']] as const) {
+  for (const [theme, mode] of [['solarized', 'dark'], ['catppuccin', 'dark'], ['catppuccin', 'light'], ['guava', 'dark'], ['papaya', 'dark'], ['blueberry', 'dark'], ['dragonfruit', 'dark'], ['forest-palace', 'dark']] as const) {
     await chooseTheme(page, theme, mode);
     await page.screenshot({ path: testInfo.outputPath(`${theme}-${mode}.png`), animations: 'disabled' });
   }

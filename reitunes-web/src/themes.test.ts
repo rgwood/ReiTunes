@@ -121,19 +121,19 @@ describe('theme preferences', () => {
     const initial = themes.getSnapshot();
     expect(initial).toEqual({
       lightTheme: 'neutral',
-      darkTheme: 'neutral',
+      darkTheme: 'forest-palace',
       mode: 'system',
     });
     expect(themes.getSnapshot()).toBe(initial);
     expect(root.dataset).toEqual({
-      theme: 'neutral',
+      theme: 'forest-palace',
       themeMode: 'dark',
       themePreference: 'system',
     });
     expect(root.style.colorScheme).toBe('dark');
     expect(root.style.setProperty).toHaveBeenCalledWith(
       '--accent-text',
-      themes.getPalette('neutral', 'dark').accentText
+      themes.getPalette('forest-palace', 'dark').accentText
     );
     const listener = vi.fn();
     const unsubscribe = themes.subscribe(listener);
