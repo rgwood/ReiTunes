@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { deleteBookmark, updateBookmark } from '../hooks/useLibrary';
 import type { LibraryItem } from '../types';
-import { bookmarkEntries, filterBookmarkEntries, formatBookmarkPosition } from '../utils/bookmarks';
+import { bookmarkEntries, filterBookmarkEntries, formatBookmarkPosition, parseBookmarkPosition } from '../utils/bookmarks';
 
 interface BookmarkSidebarProps {
   items: LibraryItem[];
@@ -15,6 +15,8 @@ interface EditState {
   key: string;
   label: string;
   emoji: string;
+  position: string;
+  originalPosition: string;
 }
 
 export function BookmarkSidebar({ items, selectedItem, onClearItem, onPlay }: BookmarkSidebarProps) {
@@ -31,10 +33,16 @@ export function BookmarkSidebar({ items, selectedItem, onClearItem, onPlay }: Bo
 
   const saveEdit = async (itemId: string, bookmarkId: string) => {
     if (!editing || pendingKey) return;
+    const position = parseBookmarkPosition(editing.position);
+    if (position === null) {
+      setError('Enter a time in seconds, m:ss or h:mm:ss (for example, 1:05.5).');
+      return;
+    }
     setPendingKey(editing.key);
     setError(null);
     try {
-      await updateBookmark(itemId, bookmarkId, editing.label, editing.emoji);
+      await updateBookmark(itemId, bookmarkId, editing.label, editing.emoji,
+        editing.position === editing.originalPosition ? undefined : position);
       await queryClient.invalidateQueries({ queryKey: ['library'] });
       setEditing(null);
     } catch {
@@ -80,7 +88,8 @@ export function BookmarkSidebar({ items, selectedItem, onClearItem, onPlay }: Bo
           const displayLabel = bookmark.label || 'Unlabelled bookmark';
           const beginEdit = () => {
             setError(null);
-            setEditing({ key, label: bookmark.label || '', emoji: bookmark.emoji || '🔖' });
+            const position = formatBookmarkPosition(bookmark.position, true);
+            setEditing({ key, label: bookmark.label || '', emoji: bookmark.emoji || '🔖', position, originalPosition: position });
           };
           return (
             <div key={key} className="bookmark-row">
@@ -104,25 +113,44 @@ export function BookmarkSidebar({ items, selectedItem, onClearItem, onPlay }: Bo
                   <button type="submit" disabled={pendingKey !== null} title="Save (Enter)" aria-label="Save bookmark">✓</button>
                   <button type="button" disabled={pendingKey !== null} title="Cancel (Escape)" aria-label="Cancel editing bookmark"
                     onClick={() => { setEditing(null); setError(null); }}>×</button>
+                  <div className="bookmark-time-editor">
+                    <label>Time
+                      <input className="bookmark-time-input" value={editing.position} disabled={pendingKey !== null}
+                        onChange={event => { setEditing({ ...editing, position: event.target.value }); setError(null); }}
+                        aria-label={`Bookmark time for ${item.name}`} spellCheck={false}
+                        aria-invalid={parseBookmarkPosition(editing.position) === null}
+                        title="Seconds, m:ss or h:mm:ss; decimals are supported" />
+                    </label>
+                    {[-1, 1].map(offset => (
+                      <button key={offset} type="button" className="bookmark-time-adjust"
+                        disabled={pendingKey !== null || parseBookmarkPosition(editing.position) === null}
+                        aria-label={`Move bookmark ${offset < 0 ? 'back' : 'forward'} one second`}
+                        onClick={() => {
+                          const position = parseBookmarkPosition(editing.position);
+                          if (position !== null) setEditing({ ...editing, position: formatBookmarkPosition(Math.max(0, position + offset), true) });
+                        }}>{offset < 0 ? '−1s' : '+1s'}</button>
+                    ))}
+                  </div>
                 </form>
               ) : (
                 <div className="bookmark-main">
-                  <button type="button" className="bookmark-name" onClick={beginEdit} disabled={pendingKey !== null}
-                    aria-label={`Edit bookmark for ${item.name}`} title={`${displayLabel} — click to rename`}>
+                  <div className="bookmark-name" title={displayLabel}>
                     <span aria-hidden="true">{bookmark.emoji || '🔖'}</span>
                     <span>{displayLabel}</span>
-                  </button>
+                  </div>
                   <button type="button" className="bookmark-play" onClick={() => onPlay(item, bookmark.position)}
                     aria-label={`Play ${item.name} from ${displayLabel}`} title={`Play from ${formatBookmarkPosition(bookmark.position)}`}>
                     <span aria-hidden="true">▶</span> {formatBookmarkPosition(bookmark.position)}
                   </button>
+                  <button type="button" className="bookmark-edit" onClick={beginEdit} disabled={pendingKey !== null}
+                    aria-label={`Edit ${displayLabel} bookmark for ${item.name}`} title="Edit name, emoji or time">Edit</button>
                   <button type="button" className="bookmark-delete" disabled={pendingKey !== null}
                     onClick={() => void removeBookmark(item.id, bookmarkId, displayLabel)}
                     aria-label={`Delete bookmark for ${item.name}`} title="Delete bookmark">×</button>
                 </div>
               )}
-              {(!selectedItem || isEditing) && <div className="bookmark-track" title={[item.name, item.artist].filter(Boolean).join(' · ')}>
-                {selectedItem ? formatBookmarkPosition(bookmark.position) : [item.name, item.artist].filter(Boolean).join(' · ')}
+              {!selectedItem && <div className="bookmark-track" title={[item.name, item.artist].filter(Boolean).join(' · ')}>
+                {[item.name, item.artist].filter(Boolean).join(' · ')}
               </div>}
             </div>
           );

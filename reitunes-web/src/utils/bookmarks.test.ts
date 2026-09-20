@@ -4,6 +4,7 @@ import {
   bookmarkEntries,
   filterBookmarkEntries,
   formatBookmarkPosition,
+  parseBookmarkPosition,
 } from './bookmarks';
 
 function item(
@@ -66,5 +67,21 @@ describe('bookmark entries', () => {
   it('formats short and long bookmark positions', () => {
     expect(formatBookmarkPosition(70.9)).toBe('1:10');
     expect(formatBookmarkPosition(3723)).toBe('1:02:03');
+    expect(formatBookmarkPosition(70.125, true)).toBe('1:10.125');
+    expect(formatBookmarkPosition(1.1 - 1, true)).toBe('0:00.1');
+    expect(formatBookmarkPosition(0.000000001, true)).toBe('0:00.000000001');
+  });
+});
+
+describe('bookmark time input', () => {
+  it.each([
+    ['0', 0], ['70.125', 70.125], ['1:05.5', 65.5], ['1:02:03', 3723],
+    ['90:00', 5400], [' 0:02 ', 2],
+  ])('parses %s as %s seconds', (value, expected) => {
+    expect(parseBookmarkPosition(value)).toBe(expected);
+  });
+
+  it.each(['', ' ', '-1', '1:60', '1:99:00', '1:2:3:4', 'NaN', 'Infinity', '1e3', 'abc', '1:', '9007199254740992'])('rejects %j', value => {
+    expect(parseBookmarkPosition(value)).toBeNull();
   });
 });

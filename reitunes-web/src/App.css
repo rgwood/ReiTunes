@@ -163,9 +163,10 @@ input::placeholder { color: var(--muted); opacity: 1; }
 .bookmark-main, .bookmark-editor { display: flex; align-items: center; gap: 3px; min-height: 24px; }
 .bookmark-name { display: flex; align-items: center; gap: 5px; flex: 1; min-width: 0; text-align: left; padding: 2px; }
 .bookmark-name > span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.bookmark-name:hover > span:last-child { text-decoration: underline; text-decoration-style: dotted; }
 .bookmark-play { flex-shrink: 0; color: var(--accent); font-variant-numeric: tabular-nums; padding: 3px; font-size: 11px; }
 .bookmark-play > span { font-size: 9px; }
+.bookmark-edit { flex-shrink: 0; padding: 2px 5px; border: 1px solid var(--border-strong); border-radius: 2px; background: var(--surface); color: var(--accent); font-size: 11px; }
+.bookmark-edit:hover { background: var(--hover); }
 .bookmark-delete, .bookmark-editor button { flex-shrink: 0; width: 22px; height: 24px; color: var(--muted); }
 .bookmark-delete:hover { color: var(--error); }
 .bookmark-editor button:hover { color: var(--accent); }
@@ -173,6 +174,11 @@ input::placeholder { color: var(--muted); opacity: 1; }
 .bookmark-editor input { height: 24px; padding: 1px 3px; background: var(--surface); border: 1px solid var(--border-strong); }
 .bookmark-emoji-input { width: 29px; text-align: center; }
 .bookmark-label-input { flex: 1; min-width: 0; }
+.bookmark-editor { flex-wrap: wrap; }
+.bookmark-time-editor { display: flex; align-items: center; gap: 3px; width: 100%; }
+.bookmark-time-editor label { display: flex; align-items: center; gap: 6px; flex: 1; min-width: 0; color: var(--muted); }
+.bookmark-time-input { flex: 1; min-width: 0; width: 90px; font-variant-numeric: tabular-nums; }
+.bookmark-time-editor .bookmark-time-adjust { width: 34px; }
 .bookmark-error { color: var(--error); padding: 5px 7px; }
 .bookmark-empty { color: var(--muted); padding: 8px; }
 .queue-sidepanel { border-right: 0; border-left: 1px solid var(--line); }

@@ -159,12 +159,13 @@ export async function updateBookmark(
   itemId: string,
   bookmarkId: string,
   label: string,
-  emoji: string
+  emoji: string,
+  position?: number
 ): Promise<void> {
   const response = await fetch(`/ui/${itemId}/bookmarks/${bookmarkId}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ label: label.trim() || null, emoji }),
+    body: JSON.stringify({ label: label.trim() || null, emoji, position }),
     credentials: 'include',
   });
   if (!response.ok) {

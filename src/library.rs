@@ -281,6 +281,15 @@ impl Library {
                     }
                 }
             }
+            Event::LibraryItemBookmarkPositionChangedEvent { bookmark_id, position } => {
+                if let Some(item) = self.items.get_mut(&event.aggregate_id) {
+                    if let Some(bookmark) = item.bookmarks.get_mut(bookmark_id) {
+                        bookmark.position = *position;
+                    }
+                    item.bookmarks
+                        .sort_by(|_, v1, _, v2| Ord::cmp(&v1.position, &v2.position));
+                }
+            }
             Event::LibraryItemFavoritedEvent => {
                 if let Some(item) = self.items.get_mut(&event.aggregate_id) {
                     item.is_favorite = true;
@@ -340,6 +349,11 @@ pub enum Event {
     LibraryItemBookmarkLabelChangedEvent {
         bookmark_id: Uuid,
         label: Option<String>,
+    },
+    LibraryItemBookmarkPositionChangedEvent {
+        bookmark_id: Uuid,
+        #[serde(with = "duration_serde_dotnet")]
+        position: Duration,
     },
     LibraryItemFavoritedEvent,
     LibraryItemUnfavoritedEvent,
@@ -507,6 +521,68 @@ mod tests {
         )?);
         assert!(library.items[&item_id].bookmarks.is_empty());
 
+        Ok(())
+    }
+
+    #[test]
+    fn bookmark_position_changes_survive_reload_and_reorder_bookmarks() -> Result<()> {
+        let conn = Connection::open(":memory:")?;
+        conn.execute_batch(include_str!("../schema.sql"))?;
+        let item_id = Uuid::new_v4();
+        let bookmark_id = Uuid::new_v4();
+        let other_id = Uuid::new_v4();
+        let mut library = Library::new();
+        for event in [
+            Event::LibraryItemCreatedEvent {
+                name: "Test Item".to_string(),
+                artist: None,
+                album: None,
+                track_number: None,
+                file_path: "test.mp3".to_string(),
+            },
+            Event::LibraryItemBookmarkAddedEvent {
+                bookmark_id,
+                position: Duration::from_secs(70),
+                label: Some("Chorus".to_string()),
+            },
+            Event::LibraryItemBookmarkAddedEvent {
+                bookmark_id: other_id,
+                position: Duration::from_secs(60),
+                label: None,
+            },
+        ] {
+            let event = EventWithMetadata::new(item_id, event)?;
+            save_event_to_db(&conn, &event)?;
+            library.apply(&event);
+        }
+        let original = library.items[&item_id].bookmarks[&bookmark_id].clone();
+        for position in [
+            Duration::from_millis(59_125),
+            Duration::ZERO,
+            Duration::from_secs(3723),
+        ] {
+            let event = EventWithMetadata::new(
+                item_id,
+                Event::LibraryItemBookmarkPositionChangedEvent {
+                    bookmark_id,
+                    position,
+                },
+            )?;
+            save_event_to_db(&conn, &event)?;
+            library.apply(&event);
+            let reloaded = load_library_from_db(&conn)?;
+            assert_eq!(library.items, reloaded.items);
+            let bookmarks = &reloaded.items[&item_id].bookmarks;
+            let mut expected = original.clone();
+            expected.position = position;
+            assert_eq!(bookmarks[&bookmark_id], expected);
+            let expected_order = if position < Duration::from_secs(60) {
+                vec![bookmark_id, other_id]
+            } else {
+                vec![other_id, bookmark_id]
+            };
+            assert_eq!(bookmarks.keys().copied().collect::<Vec<_>>(), expected_order);
+        }
         Ok(())
     }
 

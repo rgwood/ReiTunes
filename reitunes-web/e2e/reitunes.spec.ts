@@ -78,8 +78,9 @@ test('shows, filters, edits and deletes bookmarks', async ({ page }) => {
   await expect(page.getByText('No matching bookmarks')).toBeVisible();
   await page.getByRole('searchbox', { name: 'Filter bookmarks' }).fill('');
 
-  await page.getByText('Guitar entrance', { exact: true }).click();
+  await page.getByRole('button', { name: 'Edit Guitar entrance bookmark for Northern Sky' }).click();
   await expect(page.getByRole('textbox', { name: 'Bookmark label for Northern Sky' })).toBeFocused();
+  await expect(page.getByRole('textbox', { name: 'Bookmark time for Northern Sky' })).toHaveValue('1:10');
   await page.getByRole('textbox', { name: 'Bookmark label for Northern Sky' }).fill('First chorus');
   await page.getByRole('textbox', { name: 'Bookmark emoji for Northern Sky' }).fill('🔥');
   await page.getByRole('button', { name: 'Save bookmark', exact: true }).click();
@@ -95,7 +96,7 @@ test('shows, filters, edits and deletes bookmarks', async ({ page }) => {
   await expect(page.getByText('First chorus', { exact: true })).toHaveCount(0);
 });
 
-test('bookmark names edit without playing, cancel with Escape, and retain failed saves for retry', async ({ page }) => {
+test('only Edit opens bookmark editing, with keyboard access, cancellation and failed-save retry', async ({ page }) => {
   await mockBackend(page);
   const items = structuredClone(libraryItems);
   await page.route('**/api/items', route => route.fulfill({ json: items }));
@@ -112,24 +113,51 @@ test('bookmark names edit without playing, cancel with Escape, and retain failed
   await page.locator('.library-toolbar').getByRole('button', { name: 'Bookmarks' }).click();
   await page.getByText('Guitar entrance', { exact: true }).click();
   const name = page.getByRole('textbox', { name: 'Bookmark label for Northern Sky' });
+  const time = page.getByRole('textbox', { name: 'Bookmark time for Northern Sky' });
+  await expect(name).toHaveCount(0);
+  expect(playRequests).toBe(0);
+  const editButton = page.getByRole('button', { name: 'Edit Guitar entrance bookmark for Northern Sky' });
+  await editButton.focus();
+  await page.keyboard.press('Enter');
   await expect(name).toBeFocused();
   expect(await name.evaluate(element => (element as HTMLInputElement).selectionEnd)).toBe('Guitar entrance'.length);
   await name.fill('Discard this');
+  await time.fill('0:05');
   await name.press('Escape');
   await expect(name).toHaveCount(0);
   await expect(page.getByText('Guitar entrance', { exact: true })).toBeVisible();
   expect(attempts).toBe(0);
-  await page.getByText('Guitar entrance', { exact: true }).click();
+  await editButton.click();
+  await expect(time).toHaveValue('1:10');
+  await time.fill('1:60');
+  await time.press('Enter');
+  await expect(page.getByRole('alert')).toContainText('Enter a time');
+  expect(attempts).toBe(0);
+  await time.fill('0:00');
+  await page.getByRole('button', { name: 'Move bookmark back one second' }).click();
+  await expect(time).toHaveValue('0:00');
+  await time.fill('1:02:03.5');
+  await page.getByRole('button', { name: 'Move bookmark back one second' }).click();
+  await expect(time).toHaveValue('1:02:02.5');
+  await page.getByRole('button', { name: 'Move bookmark forward one second' }).click();
+  await expect(time).toHaveValue('1:02:03.5');
   await name.fill('Keep this');
   await name.press('Enter');
   await expect(page.getByRole('alert')).toContainText('Could not save');
   await expect(name).toHaveValue('Keep this');
+  await expect(time).toHaveValue('1:02:03.5');
   await expect(name).toBeEnabled();
   await name.press('Enter');
   await expect(page.getByText('Keep this', { exact: true })).toBeVisible();
   await expect(name).toHaveCount(0);
   expect(attempts).toBe(2);
   expect(playRequests).toBe(0);
+  expect(items[0].bookmarks[BOOKMARK_ID].position).toBe(3723.5);
+  await expect(page.getByRole('button', { name: 'Play Northern Sky from Keep this' })).toContainText('1:02:03');
+  await page.reload();
+  await page.locator('.library-toolbar').getByRole('button', { name: 'Bookmarks', exact: true }).click();
+  await page.getByRole('button', { name: 'Edit Keep this bookmark for Northern Sky' }).click();
+  await expect(time).toHaveValue('1:02:03.5');
 });
 
 for (const viewport of [{ name: 'desktop', width: 1440, height: 900 }, { name: 'mobile', width: 390, height: 844 }]) {
@@ -156,13 +184,19 @@ for (const viewport of [{ name: 'desktop', width: 1440, height: 900 }, { name: '
     const bounds = await sidebar.locator('.bookmark-row').first().boundingBox();
     expect(bounds!.height).toBeLessThanOrEqual(48);
     await page.screenshot({ path: testInfo.outputPath(`bookmarks-${viewport.name}.png`) });
+    await sidebar.getByRole('button', { name: 'Edit Guitar entrance bookmark for Northern Sky' }).click();
+    await expect(sidebar.getByRole('textbox', { name: 'Bookmark time for Northern Sky' })).toHaveValue('1:10');
+    await sidebar.getByRole('button', { name: 'Cancel editing bookmark' }).click();
     await page.getByRole('button', { name: 'Close bookmarks' }).click();
     await page.getByRole('row').filter({ hasText: 'Pink Moon' }).click({ button: 'right' });
     await page.getByRole('button', { name: 'Manage bookmarks' }).click();
     await expect(sidebar.locator('.bookmark-row')).toHaveCount(1);
     await expect(sidebar.getByText('Quiet ending', { exact: true })).toBeVisible();
     await sidebar.getByText('Quiet ending', { exact: true }).click();
+    await expect(sidebar.getByRole('textbox', { name: 'Bookmark label for Pink Moon' })).toHaveCount(0);
+    await sidebar.getByRole('button', { name: 'Edit Quiet ending bookmark for Pink Moon' }).click();
     await expect(sidebar.getByRole('textbox', { name: 'Bookmark label for Pink Moon' })).toBeFocused();
+    await expect(sidebar.getByRole('textbox', { name: 'Bookmark time for Pink Moon' })).toHaveValue('1:10');
     await page.screenshot({ path: testInfo.outputPath(`bookmark-edit-${viewport.name}.png`) });
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   });

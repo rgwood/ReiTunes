@@ -1596,6 +1596,7 @@ async fn add_bookmark_handler(
 struct UpdateBookmarkRequest {
     label: Option<String>,
     emoji: String,
+    position: Option<f64>,
 }
 
 #[instrument(skip(app_state))]
@@ -1604,6 +1605,10 @@ async fn update_bookmark_handler(
     Path((item_id, bookmark_id)): Path<(Uuid, Uuid)>,
     JsonExtractor(request): JsonExtractor<UpdateBookmarkRequest>,
 ) -> Result<impl IntoResponse, AppError> {
+    let position = match request.position.map(Duration::try_from_secs_f64).transpose() {
+        Ok(position) => position,
+        Err(_) => return Ok(StatusCode::BAD_REQUEST),
+    };
     let existing_emoji = {
         let library = app_state.library.read().await;
         library
@@ -1632,7 +1637,19 @@ async fn update_bookmark_handler(
             bookmark_id,
             emoji: emoji.to_string(),
         };
-        save_and_broadcast_event(EventWithMetadata::new(item_id, emoji_event)?, app_state).await?;
+        save_and_broadcast_event(
+            EventWithMetadata::new(item_id, emoji_event)?,
+            app_state.clone(),
+        )
+        .await?;
+    }
+
+    if let Some(position) = position {
+        let position_event = Event::LibraryItemBookmarkPositionChangedEvent {
+            bookmark_id,
+            position,
+        };
+        save_and_broadcast_event(EventWithMetadata::new(item_id, position_event)?, app_state).await?;
     }
 
     Ok(StatusCode::OK)
@@ -1804,6 +1821,49 @@ impl fmt::Debug for AppError {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn bookmark_updates_reject_invalid_times_and_missing_bookmarks() {
+        let state = AppState {
+            library: Arc::new(RwLock::new(Library::new())),
+            playlists: Arc::new(RwLock::new(PlaylistStore::new())),
+            update_tx: broadcast::channel(16).0,
+            storage: Arc::new(
+                S3Storage::new("https://storage.example.test", "test", None, "test", "test")
+                    .await
+                    .unwrap(),
+            ),
+            sonos: None,
+            cloud_queues: Arc::new(cloud_queue::CloudQueueStore::with_base_url("http://localhost")),
+        };
+        for (position, expected_status) in [
+            (Some(-1.0), StatusCode::BAD_REQUEST),
+            (Some(f64::NAN), StatusCode::BAD_REQUEST),
+            (Some(f64::INFINITY), StatusCode::BAD_REQUEST),
+            (Some(f64::MAX), StatusCode::BAD_REQUEST),
+            (Some(0.0), StatusCode::NOT_FOUND),
+            (Some(65.5), StatusCode::NOT_FOUND),
+            (None, StatusCode::NOT_FOUND),
+        ] {
+            let response = update_bookmark_handler(
+                State(state.clone()),
+                Path((Uuid::new_v4(), Uuid::new_v4())),
+                JsonExtractor(UpdateBookmarkRequest {
+                    label: Some("Unchanged".to_string()),
+                    emoji: "🔖".to_string(),
+                    position,
+                }),
+            )
+            .await
+            .unwrap()
+            .into_response();
+            assert_eq!(response.status(), expected_status);
+        }
+        assert!(state.library.read().await.items.is_empty());
+        let legacy_request: UpdateBookmarkRequest =
+            serde_json::from_str(r#"{"label":"Intro","emoji":"🔖"}"#).unwrap();
+        assert!(legacy_request.position.is_none());
+    }
 
     #[tokio::test]
     async fn sonos_total_budget_bounds_multiple_individually_fast_steps() {
