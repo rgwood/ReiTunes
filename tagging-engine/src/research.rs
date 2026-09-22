@@ -108,6 +108,24 @@ fn credits(data: &Value) -> Vec<Value> {
     }
 }
 
+fn final_json_content(content: &str) -> Result<&str> {
+    let content = content.trim();
+    if !content.starts_with("```") {
+        return Ok(content);
+    }
+    // Accept presentation-only wrapping without dropping prose, additional
+    // objects or a truncated response outside a complete Markdown fence.
+    let (opening, body) = content.split_once('\n').context("Incomplete JSON fence")?;
+    if !matches!(opening.trim_end(), "```json" | "```") {
+        bail!("Unexpected JSON fence");
+    }
+    let (body, closing) = body.rsplit_once('\n').context("Incomplete JSON fence")?;
+    if closing.trim() != "```" {
+        bail!("Incomplete JSON fence or extra content after it");
+    }
+    Ok(body.trim())
+}
+
 impl Research {
     pub fn new(items: &[Input]) -> Result<Self> {
         let mut this = Self {
@@ -460,19 +478,27 @@ impl Research {
             basis: String,
             confidence: f64,
             evidence: String,
+            // Metadata/inference tags need no citation. Database tags still
+            // require a supporting source in the validation below.
+            #[serde(default)]
             sources: Vec<String>,
         }
         if raw["choices"][0]["finish_reason"] != "stop" {
             bail!("Model did not finish normally");
         }
-        let content = raw["choices"][0]["message"]["content"]
+        let raw_content = raw["choices"][0]["message"]["content"]
             .as_str()
-            .context("Missing final JSON")?
-            .trim();
+            .context("Missing final JSON")?;
+        let fenced = raw_content.trim_start().starts_with("```");
+        let content = final_json_content(raw_content)?;
         let mut stream = serde_json::Deserializer::from_str(content).into_iter::<Batch>();
         let batch = stream.next().context("Empty final output")??;
         let tail = content[stream.byte_offset()..].trim();
-        if !tail.is_empty() && !(tail.len() >= 2 && tail.bytes().all(|b| b == b'`')) {
+        // Retain the existing GLM compatibility for stray closing backticks on
+        // bare JSON. A leading fence must still be complete and correctly paired.
+        let harmless_closing_ticks =
+            !fenced && tail.len() >= 2 && tail.bytes().all(|byte| byte == b'`');
+        if !tail.is_empty() && !harmless_closing_ticks {
             bail!("Extra content after JSON");
         }
         let mut by_id = BTreeMap::new();
