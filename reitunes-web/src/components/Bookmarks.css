@@ -6,6 +6,11 @@
 .bookmark-grid thead { position: sticky; top: 0; z-index: 1; }
 .bookmark-grid th > button { text-align: left; }
 .bookmark-grid td { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bookmark-title-content { display: flex; align-items: center; gap: 5px; min-width: 0; }
+.bookmark-title-content > span:last-child { overflow: hidden; text-overflow: ellipsis; }
+.bookmark-grid td[data-editing] { outline: 1px solid var(--accent); outline-offset: -1px; }
+.bookmark-grid .bookmark-title-input { min-width: 0; width: 100%; margin: 0; padding: 0; border: 0; border-radius: 0; outline: none; box-shadow: none; background: transparent; color: inherit; font: inherit; line-height: inherit; }
+.bookmark-grid .bookmark-title-input:focus { outline: none; }
 .bookmark-grid td:nth-child(4), .bookmark-grid td:nth-child(5), .bookmark-grid td:nth-child(6) { font-variant-numeric: tabular-nums; }
 .bookmark-grid .bookmark-edit { border: 0; padding: 0 4px; background: transparent; height: 22px; }
 .bookmark-grid .bookmark-delete { width: 17px; height: 22px; }

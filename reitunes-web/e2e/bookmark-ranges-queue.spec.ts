@@ -48,6 +48,78 @@ async function time(page: Page, position: number) {
   await page.locator('audio').evaluate((audio: HTMLAudioElement, position) => { audio.currentTime = position; audio.dispatchEvent(new Event('timeupdate')); }, position);
 }
 
+test('bookmark titles edit inline with native caret movement and preserve the saved range', async ({ page }, testInfo) => {
+  const { items, writes } = await setup(page); await bookmarkView(page);
+  const row = page.locator('tr[data-bookmark-id=first]');
+  await row.getByText('Piano entrance').click(); await row.press('F2');
+  const input = row.getByRole('textbox', { name: 'Bookmark title for Long evening mix' });
+  await expect(input).toBeFocused();
+  expect(await input.evaluate((el: HTMLInputElement) => [el.selectionStart, el.selectionEnd])).toEqual([0, 14]);
+  await input.press('ArrowRight');
+  expect(await input.evaluate((el: HTMLInputElement) => [el.selectionStart, el.selectionEnd])).toEqual([14, 14]);
+  await input.press('End'); await input.press('!');
+  await expect(input).toHaveValue('Piano entrance!');
+  expect(await input.evaluate(el => getComputedStyle(el).outlineStyle)).toBe('none');
+  expect((await row.boundingBox())!.height).toBe(24);
+  await page.screenshot({ path: testInfo.outputPath('bookmark-title-inline.png'), fullPage: true });
+  await input.press('Enter');
+  await expect(input).toHaveCount(0); await expect(row).toBeFocused();
+  await expect(row).toContainText('Piano entrance!');
+  expect(writes).toEqual([{ label: 'Piano entrance!', emoji: '🎹' }]);
+  expect(items[0].bookmarks.first).toMatchObject({ position: 70, end_position: 120, emoji: '🎹' });
+  expect((await player(page))?.currentItemId ?? null).toBeNull();
+  await row.press('F2'); await input.fill('Discard this'); await input.press('Escape');
+  await expect(row).toBeFocused(); await expect(row).toContainText('Piano entrance!'); expect(writes).toHaveLength(1);
+  await row.press('F2'); await input.fill(''); await input.press('Tab');
+  await expect(row).toContainText('Unlabelled bookmark');
+  expect(writes.at(-1)).toEqual({ label: null, emoji: '🎹' });
+});
+
+test('a slow second click renames but a double click plays, including an already selected bookmark', async ({ page }) => {
+  const { writes } = await setup(page); await bookmarkView(page);
+  const row = page.locator('tr[data-bookmark-id=first]');
+  const title = row.getByText('Piano entrance', { exact: true });
+  await title.click();
+  await title.click();
+  const input = row.getByRole('textbox');
+  await expect(input).toBeFocused();
+  await input.fill('New title');
+  const other = page.locator('tr[data-bookmark-id=second]');
+  await other.getByText('Good guitar track', { exact: true }).click();
+  await expect(input).toHaveCount(0); await expect(other).toBeFocused();
+  expect(writes).toEqual([{ label: 'New title', emoji: '🎹' }]);
+  await other.getByText('Good guitar track', { exact: true }).dblclick();
+  await expect.poll(async () => (await player(page)).resumePosition).toBe(180);
+  // A queued rename must not appear after the double-click window expires.
+  await page.waitForTimeout(600);
+  await expect(page.locator('.bookmark-title-input')).toHaveCount(0);
+});
+
+test('failed title saves retain the draft, composition does not submit, and repeated saves are deduplicated', async ({ page }) => {
+  const { writes } = await setup(page); await bookmarkView(page);
+  let attempts = 0;
+  await page.route('**/ui/track-0/bookmarks/first', async route => {
+    attempts++;
+    if (attempts === 1) return route.fulfill({ status: 500 });
+    await new Promise(resolve => setTimeout(resolve, 150));
+    await route.fallback();
+  });
+  const row = page.locator('tr[data-bookmark-id=first]');
+  await row.focus(); await row.press('F2');
+  const input = row.getByRole('textbox');
+  await input.fill('Keep this draft');
+  await input.dispatchEvent('compositionstart'); await input.press('Enter');
+  expect(attempts).toBe(0);
+  await input.dispatchEvent('compositionend'); await input.press('Enter');
+  await expect(page.getByRole('alert')).toContainText('Could not save the title');
+  await expect(input).toHaveValue('Keep this draft');
+  await input.press('Enter'); await input.press('Enter');
+  await page.locator('tr[data-bookmark-id=second]').click();
+  await expect(input).toHaveCount(0);
+  expect(attempts).toBe(2); expect(writes).toEqual([{ label: 'Keep this draft', emoji: '🎹' }]);
+  await expect(page.locator('tr[data-bookmark-id=second]')).toBeFocused();
+});
+
 test('bookmark grid selects without playing, sorts, and edits start/end without losing precision', async ({ page }, testInfo) => {
   const { writes } = await setup(page); await bookmarkView(page);
   const table = page.getByRole('table', { name: 'Bookmarks' });
@@ -60,7 +132,7 @@ test('bookmark grid selects without playing, sorts, and edits start/end without 
   await table.getByRole('columnheader', { name: 'Start', exact: true }).getByRole('button').click();
   await table.getByRole('columnheader', { name: /Start/ }).getByRole('button').click();
   await expect(table.locator('tbody tr').first()).toContainText('Good guitar track');
-  await row.focus(); await row.press('F2');
+  await row.focus(); await row.press('Control+i');
   const start = page.getByRole('textbox', { name: 'Bookmark time for Long evening mix', exact: true });
   const end = page.getByRole('textbox', { name: 'Bookmark end time for Long evening mix' });
   await start.fill('1:01.125'); await end.fill('0:30');
