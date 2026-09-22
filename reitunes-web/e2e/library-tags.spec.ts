@@ -54,12 +54,13 @@ test('automatic tags are searchable without review and removals with reasons sur
   await expect(house.getByRole('button', { name: 'Accept', exact: true })).toHaveCount(0);
   await house.getByRole('button', { name: 'Remove tag house' }).click();
   await expect(page.getByRole('row').filter({ hasText: 'Evening set' })).toHaveCount(0);
-  await house.getByLabel('Reason for house').fill('No house rhythm in this recording.');
-  await house.getByRole('button', { name: 'Save reason' }).click();
+  await house.getByLabel('Your feedback on house').fill('No house rhythm in this recording.');
+  await house.getByRole('button', { name: 'Save feedback' }).click();
+  await expect(house.getByRole('status')).toHaveText('Feedback saved.');
   expect(data.items[tracks[0].id].labels.house.reason).toBe('No house rhythm in this recording.');
   await page.reload();
   await page.getByRole('button', { name: 'Edit tags for Evening set', exact: true }).click();
-  await expect(house.getByLabel('Reason for house')).toHaveValue('No house rhythm in this recording.');
+  await expect(house.getByLabel('Your feedback on house')).toHaveValue('No house rhythm in this recording.');
   await page.getByRole('button', { name: 'Regenerate tags', exact: true }).click();
   await expect(page.getByRole('button', { name: 'In progress', exact: true })).toBeDisabled();
   data.items[tracks[0].id].status = 'ready';
@@ -68,6 +69,83 @@ test('automatic tags are searchable without review and removals with reasons sur
   await expect(page.getByRole('row').filter({ hasText: 'Evening set' })).toHaveCount(0);
   await house.getByRole('button', { name: 'Restore tag house' }).click();
   await expect(page.getByRole('row').filter({ hasText: 'Evening set' })).toBeVisible();
+  await expect(house.getByLabel('Your feedback on house')).toHaveValue('No house rhythm in this recording.');
+  expect(data.items[tracks[0].id].labels.house.reason).toBe('No house rhythm in this recording.');
+});
+
+for (const width of [1200, 390]) {
+  test(`AI explanation stays separate from saved feedback at ${width}px`, async ({ page }, testInfo) => {
+    await page.setViewportSize({ width, height: 1000 });
+    await page.addInitScript(() => localStorage.setItem('reitunes-theme', JSON.stringify({ lightTheme: 'neutral', darkTheme: 'forest-palace', mode: 'dark' })));
+    const { data, writes } = await backend(page);
+    const tag = 'joanna-newsom';
+    const evidence = "Filename contains 'Joanna Newsom – Live at Bottletree (Full Audio)'.";
+    data.items[tracks[0].id].tags = [{ tag, confidence: .7, basis: 'inference', evidence, sourceUrls: [] }];
+    data.items[tracks[0].id].labels[tag] = { tag, verdict: 'rejected', reason: 'just the artist name' };
+    await page.goto('/');
+    await page.getByRole('button', { name: 'Edit tags for Evening set', exact: true }).click();
+    const decision = page.getByRole('article', { name: `Tag ${tag}`, exact: true });
+    const ai = decision.locator('.tag-ai-explanation');
+    const feedback = decision.locator('.tag-feedback');
+    await expect(ai).not.toHaveAttribute('open', '');
+    await expect(feedback).toHaveAttribute('open', '');
+    await expect(feedback).toContainText('Your notes stay with this tag when you remove or restore it.');
+    await expect(feedback.getByLabel(`Your feedback on ${tag}`)).toHaveValue('just the artist name');
+    await expect(feedback.getByRole('button', { name: 'Save feedback' })).toBeDisabled();
+    await expect(feedback.getByText('Saved', { exact: true })).toBeVisible();
+    await expect(feedback).not.toContainText(evidence);
+    await ai.getByText('Why AI suggested this tag', { exact: true }).click();
+    await expect(ai).toContainText('AI inferred this from metadata.');
+    await expect(ai.locator('blockquote')).toHaveText(evidence);
+    await expect(ai.locator('textarea, input, [contenteditable=true]')).toHaveCount(0);
+    await expect(ai).not.toContainText('just the artist name');
+    await expect(decision).not.toContainText('(inference)');
+    expect(writes).toEqual([]);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    await decision.screenshot({ path: testInfo.outputPath(`tag-explanation-and-feedback-${width}.png`), animations: 'disabled' });
+    await feedback.getByLabel(`Your feedback on ${tag}`).fill('This repeats the artist name; it is not a useful music tag.');
+    await feedback.getByRole('button', { name: 'Save feedback' }).click();
+    await expect(decision.getByRole('status')).toHaveText('Feedback saved.');
+    await page.reload();
+    await page.getByRole('button', { name: 'Edit tags for Evening set', exact: true }).click();
+    await expect(feedback.getByLabel(`Your feedback on ${tag}`)).toHaveValue('This repeats the artist name; it is not a useful music tag.');
+    await decision.getByRole('button', { name: `Restore tag ${tag}` }).click();
+    await expect(decision.getByRole('status')).toHaveText('Tag restored.');
+    await expect(feedback.getByLabel(`Your feedback on ${tag}`)).toHaveValue('This repeats the artist name; it is not a useful music tag.');
+    expect(data.items[tracks[0].id].labels[tag]).toEqual({ tag, verdict: 'accepted', reason: 'This repeats the artist name; it is not a useful music tag.' });
+  });
+}
+
+test('failed feedback saves keep the draft for retry, and Cancel restores the saved feedback', async ({ page }) => {
+  const { data } = await backend(page);
+  data.items[tracks[0].id].labels.house = { tag: 'house', verdict: 'rejected', reason: 'Original feedback' };
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Edit tags for Evening set', exact: true }).click();
+  const house = page.getByRole('article', { name: 'Tag house', exact: true });
+  const feedback = house.getByLabel('Your feedback on house');
+  await feedback.fill('Edited feedback');
+  await page.route(`**/api/tags/items/${tracks[0].id}/labels`, route => route.fulfill({ status: 503, body: 'Could not save feedback. Try again.' }), { times: 1 });
+  await house.getByRole('button', { name: 'Save feedback' }).click();
+  await expect(house.getByRole('alert')).toHaveText('Could not save feedback. Try again.');
+  await expect(feedback).toHaveValue('Edited feedback');
+  expect(data.items[tracks[0].id].labels.house.reason).toBe('Original feedback');
+  await expect(house.getByRole('button', { name: 'Save feedback' })).toBeEnabled();
+  await house.getByRole('button', { name: 'Save feedback' }).click();
+  await expect(house.getByRole('status')).toHaveText('Feedback saved.');
+  await expect(house.getByRole('alert')).toHaveCount(0);
+  expect(data.items[tracks[0].id].labels.house.reason).toBe('Edited feedback');
+  await feedback.fill('A draft I do not want to save');
+  await house.getByRole('button', { name: 'Cancel', exact: true }).click();
+  await expect(feedback).toHaveValue('Edited feedback');
+  await expect(house.getByRole('button', { name: 'Save feedback' })).toBeDisabled();
+  await expect(house.getByRole('button', { name: 'Cancel', exact: true })).toHaveCount(0);
+  expect(data.items[tracks[0].id].labels.house.reason).toBe('Edited feedback');
+  await feedback.fill('');
+  await expect(feedback).toBeVisible();
+  await house.getByRole('button', { name: 'Save feedback' }).click();
+  await expect(house.getByRole('status')).toHaveText('Feedback saved.');
+  await expect(feedback).toBeVisible();
+  expect(data.items[tracks[0].id].labels.house.reason).toBe('');
 });
 
 test('manual tags work without an API key and paid work needs an explicit action', async ({ page }) => {
@@ -78,7 +156,9 @@ test('manual tags work without an API key and paid work needs an explicit action
   expect(writes).toEqual([]);
   await page.getByLabel('New library tag').fill('Late night');
   await page.getByRole('button', { name: 'Add', exact: true }).click();
-  await expect(page.getByRole('article', { name: 'Tag late-night', exact: true })).toBeVisible();
+  const manualTag = page.getByRole('article', { name: 'Tag late-night', exact: true });
+  await expect(manualTag).toBeVisible();
+  await expect(manualTag.getByText('Why AI suggested this tag', { exact: true })).toHaveCount(0);
   expect(data.items[tracks[0].id].labels['late-night'].verdict).toBe('accepted');
 });
 

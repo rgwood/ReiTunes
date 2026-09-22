@@ -8,30 +8,56 @@ import './Tags.css';
 function TagDecision({ itemId, tag, label, suggestion, refresh, onFilterTag }: {
   itemId: string; tag: string; label?: TagLabel; suggestion?: TagSuggestion; refresh: () => Promise<void>; onFilterTag: (tag: string) => void;
 }) {
+  const removed = label?.verdict === 'rejected' || label?.verdict === 'uncertain';
   const [reason, setReason] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
-  async function save(verdict?: TagVerdict) {
-    setBusy(true); setError('');
+  const [notice, setNotice] = useState('');
+  const [feedbackOpen, setFeedbackOpen] = useState(removed || !!label?.reason);
+  const feedback = reason ?? label?.reason ?? '';
+  const dirty = reason !== null && reason !== (label?.reason ?? '');
+  async function save(verdict: TagVerdict, message: string) {
+    setBusy(true); setError(''); setNotice('');
     try {
-      if (verdict) await tagsRequest(`/items/${itemId}/labels`, { tag, verdict, reason: reason ?? label?.reason ?? '' }, 'PUT');
-      else await tagsRequest(`/items/${itemId}/labels/${encodeURIComponent(tag)}`, undefined, 'DELETE');
-      await refresh(); setReason(null);
+      await tagsRequest(`/items/${itemId}/labels`, { tag, verdict, reason: feedback }, 'PUT');
+      await refresh(); setReason(null); setNotice(message);
+      if (verdict !== 'accepted') setFeedbackOpen(true);
     } catch (error) { setError(error instanceof Error ? error.message : 'Could not save tag'); }
     finally { setBusy(false); }
   }
-  const removed = label?.verdict === 'rejected' || label?.verdict === 'uncertain';
+  const basis = suggestion && ({
+    inference: 'AI inferred this from metadata.',
+    metadata: 'AI based this on the song’s metadata.',
+    database: 'AI based this on MusicBrainz metadata.',
+  }[suggestion.basis] || 'AI suggested this from metadata.');
   return <article className="library-tag-decision" aria-label={`Tag ${tag}`}>
-    <button className="tag-link" aria-label={`Browse music tagged ${tag}`} onClick={() => onFilterTag(tag)}>{tag} ↗</button>
-    <button className="tag-remove" disabled={busy} onClick={() => void save(removed ? 'accepted' : 'rejected')} aria-label={`${removed ? 'Restore' : 'Remove'} tag ${tag}`}>{removed ? 'Restore' : 'Remove'}</button>
-    {removed && <span className="tag-review-state">Removed</span>}
-    <details open={removed || undefined}>
-    <summary>{removed ? 'Reason for removal (optional)' : 'Details & note'}</summary>
-    {suggestion && <p>{suggestion.evidence} <span className="tag-basis">({suggestion.basis})</span></p>}
-    {!!suggestion?.sourceUrls?.length && <div className="tag-sources">{suggestion.sourceUrls.filter(url => /^https:\/\/musicbrainz\.org\//.test(url)).map(url => <a key={url} href={url} target="_blank" rel="noreferrer">MusicBrainz ↗</a>)}</div>}
-    <label>Reason for {tag}<textarea value={reason ?? label?.reason ?? ''} maxLength={2000} rows={2} onChange={event => setReason(event.target.value)} placeholder={removed ? 'Why doesn’t this tag fit?' : 'Optional note about this tag'} /></label>
-    {reason !== null && <button disabled={busy} onClick={() => void save(label?.verdict || 'accepted')}>Save reason</button>}
+    <header className="tag-decision-heading">
+      <button className="tag-link" aria-label={`Browse music tagged ${tag}`} onClick={() => onFilterTag(tag)}>{tag} ↗</button>
+      {removed && <span className="tag-review-state">Removed</span>}
+      <button className="tag-remove" disabled={busy} onClick={() => void save(removed ? 'accepted' : 'rejected', removed ? 'Tag restored.' : 'Tag removed.')} aria-label={`${removed ? 'Restore' : 'Remove'} tag ${tag}`}>{removed ? 'Restore' : 'Remove'}</button>
+    </header>
+    {suggestion && <details className="tag-ai-explanation">
+      <summary>Why AI suggested this tag</summary>
+      <div className="tag-ai-evidence">
+        <p className="tag-basis">{basis}</p>
+        <blockquote>{suggestion.evidence}</blockquote>
+        {!!suggestion.sourceUrls?.length && <div className="tag-sources">{suggestion.sourceUrls.filter(url => /^https:\/\/musicbrainz\.org\//.test(url)).map(url => <a key={url} href={url} target="_blank" rel="noreferrer">MusicBrainz source ↗</a>)}</div>}
+      </div>
+    </details>}
+    <details className="tag-feedback" open={feedbackOpen} onToggle={event => setFeedbackOpen(event.currentTarget.open)}>
+      <summary>Your feedback <span className="tag-optional">(optional)</span></summary>
+      <form onSubmit={event => { event.preventDefault(); void save(label?.verdict || 'accepted', 'Feedback saved.'); }}>
+        <p className="tag-feedback-help">Your notes stay with this tag when you remove or restore it.</p>
+        <label><span className="sr-only">Your feedback on {tag}</span><textarea disabled={busy} value={feedback} maxLength={2000} rows={2}
+          onChange={event => { setReason(event.target.value); setNotice(''); }} placeholder={removed ? 'Why did you remove this tag?' : 'Your comments or corrections about this tag'} /></label>
+        <div className="tag-feedback-actions">
+          <button type="submit" disabled={busy || !dirty}>{busy ? 'Saving…' : 'Save feedback'}</button>
+          {dirty && <button type="button" disabled={busy} onClick={() => { setReason(null); setError(''); }}>Cancel</button>}
+          {!dirty && label?.reason && !notice && <span className="tag-feedback-saved">Saved</span>}
+        </div>
+      </form>
     </details>
+    {notice && <p className="tag-save-notice" role="status">{notice}</p>}
     {error && <p role="alert">{error}</p>}
   </article>;
 }

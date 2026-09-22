@@ -13,7 +13,9 @@
 .row-tag-edit:not(.has-more) { opacity: 0; }
 tr:hover .row-tag-edit, tr:focus-within .row-tag-edit, .row-tag-edit[aria-pressed='true'] { opacity: 1; }
 @media (hover: none) { .row-tag-edit:not(.has-more) { opacity: 1; } }
-.library-tags .tag-remove { float: right; padding: 1px 5px; color: var(--muted); }
+.tag-decision-heading { display: flex; align-items: baseline; flex-wrap: wrap; gap: 6px; }
+.tag-decision-heading .tag-link { min-width: 0; overflow-wrap: anywhere; text-align: left; }
+.library-tags .tag-remove { margin-left: auto; flex-shrink: 0; padding: 1px 5px; color: var(--muted); }
 .library-tag-decision details { margin-top: 8px; color: var(--muted); }
 .library-tag-decision summary { cursor: pointer; }
 .row-tag-edit:hover, .row-tag-link:hover { text-decoration: underline; }
@@ -46,7 +48,17 @@ tr:hover .row-tag-edit, tr:focus-within .row-tag-edit, .row-tag-edit[aria-presse
 .library-tags button[aria-pressed="true"], .library-tag-filters button[aria-pressed="true"] { border-color: var(--color-solarized-blue); color: var(--color-solarized-blue); }
 .library-tag-decision { padding: 12px 0; border-top: 1px solid var(--color-solarized-base01); }
 .library-tag-decision strong { font-size: 13px; }
-.tag-basis { opacity: .7; }
+.library-tags .tag-basis { margin: 8px 0 4px; color: var(--muted); font-size: 11px; }
+.tag-ai-evidence { border-left: 2px solid var(--line); padding-left: 9px; }
+.tag-ai-evidence blockquote { margin: 0; color: var(--text); line-height: 1.5; }
+.library-tag-decision .tag-feedback { margin-top: 12px; color: var(--text); }
+.tag-optional { color: var(--muted); font-size: 11px; }
+.library-tags .tag-feedback-help { margin: 6px 0; color: var(--muted); font-size: 11px; }
+.library-tags .tag-feedback label { margin-top: 6px; }
+.tag-feedback textarea { display: block; resize: vertical; }
+.tag-feedback-actions { display: flex; align-items: center; gap: 6px; margin-top: 6px; }
+.tag-feedback-saved { color: var(--muted); font-size: 11px; }
+.library-tags .tag-save-notice { color: var(--accent); margin: 6px 0 0; }
 .tag-sources { display: flex; gap: 8px; margin: 6px 0; }
 .tag-sources a { color: var(--color-solarized-blue); }
 .tag-verdicts, .tag-track-actions, .tag-add { display: flex; gap: 5px; margin: 8px 0; }
@@ -68,7 +80,7 @@ tr:hover .row-tag-edit, tr:focus-within .row-tag-edit, .row-tag-edit[aria-presse
 .tag-work-list small { display: block; color: var(--muted); }
 .library-tags h3 { margin-top: 12px; font-weight: 600; }
 .library-tags .tag-link { color: var(--accent); border: 0; padding: 0; font-weight: 600; }
-.tag-review-state { margin-left: 8px; font-size: 11px; color: var(--muted); }
+.tag-review-state { font-size: 11px; color: var(--muted); }
 .library-tags .tag-back { margin: 0 0 12px; border: 0; padding: 0; color: var(--accent); }
 .tag-generate { background: var(--accent-soft); color: var(--accent); }
 .tag-progress { font-weight: 600; }
