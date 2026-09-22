@@ -47,6 +47,7 @@ export interface SmartPlaylistRules {
   added_within_days: number | null;
   play_state: 'any' | 'unplayed' | 'played';
   favourites_only: boolean;
+  bookmark_state?: 'any' | 'with' | 'without';
 }
 
 export interface Playlist {

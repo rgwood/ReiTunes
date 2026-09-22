@@ -212,6 +212,7 @@ impl Harness {
             ),
             sonos: Some(Arc::new(control)),
             cloud_queues: Arc::new(cloud_queue::CloudQueueStore::with_base_url(&base)),
+            tagging: None,
         };
         let router = Router::new()
             .route("/api/sonos/play", post(sonos_play_handler))

@@ -25,6 +25,18 @@ describe('Smart Playlists', () => {
     expect(playlistItems({ id: 'p', name: 'Fresh', items: {}, smart_rules: rules }, [item], now)).toEqual([item]);
     expect(playlistItems({ id: 'p', name: 'Manual', items: { a: { library_item_id: 'missing', position: 0 } } }, [item], now)).toEqual([]);
   });
+  it('matches bookmark presence independently or alongside the existing rules', () => {
+    const bookmarked: LibraryItem = { ...item, play_count: 5, is_favorite: false,
+      bookmarks: { intro: { position: 10, emoji: '🎵', label: null, created_time_utc: item.created_time_utc } } };
+    const all: SmartPlaylistRules = { added_within_days: null, play_state: 'any', favourites_only: false };
+    expect(matchesSmartPlaylist(bookmarked, { ...all, bookmark_state: 'with' }, now)).toBe(true);
+    expect(matchesSmartPlaylist(item, { ...all, bookmark_state: 'with' }, now)).toBe(false);
+    expect(matchesSmartPlaylist(bookmarked, { ...all, bookmark_state: 'without' }, now)).toBe(false);
+    expect(matchesSmartPlaylist(item, { ...all, bookmark_state: 'without' }, now)).toBe(true);
+    expect(matchesSmartPlaylist(bookmarked, { ...rules, bookmark_state: 'with' }, now)).toBe(false);
+    expect(matchesSmartPlaylist({ ...item, bookmarks: bookmarked.bookmarks }, { ...rules, bookmark_state: 'with' }, now)).toBe(true);
+    expect(matchesSmartPlaylist(item, all, now)).toBe(true); // Rules saved before bookmark filtering.
+  });
 });
 
 it('moves a selected block in playlist order without losing or duplicating tracks', () => {

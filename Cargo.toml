@@ -30,7 +30,7 @@ r2d2_sqlite.workspace = true
 rand.workspace = true
 
 [workspace]
-members = ["reitunes", "sonos-player"]
+members = ["reitunes", "sonos-player", "tagging-engine"]
 resolver = "2"
 
 [workspace.dependencies]

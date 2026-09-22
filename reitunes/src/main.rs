@@ -42,6 +42,7 @@ mod storage_cleanup;
 mod systemd;
 mod discovery;
 mod downloads;
+mod tagging;
 
 #[cfg(test)]
 mod sonos_route_tests;
@@ -130,6 +131,7 @@ struct AppState {
     storage: Arc<S3Storage>,
     sonos: Option<Arc<sonos::SonosControl>>,
     cloud_queues: Arc<cloud_queue::CloudQueueStore>,
+    tagging: Option<tagging::Tagging>,
 }
 
 #[tokio::main]
@@ -201,13 +203,17 @@ async fn main() -> Result<()> {
             .await
             .expect("Failed to initialize S3 storage");
 
+            let library = Arc::new(RwLock::new(library));
+            let tagging = tagging::Tagging::new(DB.clone(), library.clone())?;
+            tagging.start_worker();
             let app_state = AppState {
-                library: Arc::new(RwLock::new(library)),
+                library,
                 playlists: Arc::new(RwLock::new(playlists)),
                 update_tx: broadcast::channel(100).0,
                 storage: Arc::new(storage),
                 sonos: sonos::SonosControl::from_env(DB.clone())?,
                 cloud_queues: Arc::new(cloud_queue::CloudQueueStore::from_env(DB.clone())?),
+                tagging: Some(tagging.clone()),
             };
 
             let discovery = discovery::Discovery::new(DB.clone(), app_state.library.clone())?;
@@ -243,6 +249,7 @@ async fn main() -> Result<()> {
             // Private API routes require the same session as the React frontend.
             let protected_api_router = Router::new()
                 .merge(discovery::router(discovery))
+                .merge(tagging::router(tagging))
                 .route("/items", get(items_handler))
                 .route("/upload", post(upload_handler))
                 // Allow uploads up to 500MB
@@ -1169,6 +1176,9 @@ async fn upload_handler(
                 .send(FrontendUpdate::Update { item: Box::new(response) });
         }
 
+        drop(conn);
+        drop(library);
+        queue_tag_suggestions(&app_state, item_id).await;
         return Ok(Json(UploadResponse {
             id: item_id,
             name,
@@ -1485,6 +1495,10 @@ async fn update_handler(
 }
 
 async fn save_and_broadcast_event(event: EventWithMetadata, app_state: AppState) -> Result<()> {
+    let affects_tags = matches!(&event.event,
+        Event::LibraryItemCreatedEvent { .. } | Event::LibraryItemNameChangedEvent { .. }
+        | Event::LibraryItemArtistChangedEvent { .. } | Event::LibraryItemAlbumChangedEvent { .. }
+        | Event::LibraryItemFilePathChangedEvent { .. });
     let mut library = app_state.library.write().await;
     // Save the event to the database
     let conn = DB.get()?;
@@ -1510,7 +1524,18 @@ async fn save_and_broadcast_event(event: EventWithMetadata, app_state: AppState)
             }
         }
     }
+    drop(conn);
+    drop(library);
+    if affects_tags { queue_tag_suggestions(&app_state, event.aggregate_id).await; }
     Ok(())
+}
+
+async fn queue_tag_suggestions(app_state: &AppState, item_id: Uuid) {
+    if let Some(tagging) = &app_state.tagging {
+        if let Err(error) = tagging.enqueue_changed(item_id).await {
+            warn!(%item_id, %error, "Could not queue tag suggestions");
+        }
+    }
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -1578,6 +1603,8 @@ async fn add_item_handler(
             .send(FrontendUpdate::Update { item: Box::new(response) });
     }
 
+    drop(library);
+    queue_tag_suggestions(&app_state, item_id).await;
     Ok(StatusCode::CREATED)
 }
 
@@ -1895,10 +1922,11 @@ mod tests {
             storage: Arc::new(S3Storage::new("https://storage.example.test", "test", None, "test", "test").await.unwrap()),
             sonos: None,
             cloud_queues: Arc::new(cloud_queue::CloudQueueStore::with_base_url("http://localhost")),
+            tagging: None,
         };
         let id = Uuid::new_v4();
         let item_id = Uuid::new_v4();
-        let rules = SmartPlaylistRules { added_within_days: Some(0), play_state: PlayState::Any, favourites_only: false };
+        let rules = SmartPlaylistRules { added_within_days: Some(0), play_state: PlayState::Any, favourites_only: false, bookmark_state: BookmarkState::Any };
         let response = create_playlist_handler(State(state.clone()), JsonExtractor(CreatePlaylistRequest {
             name: "Invalid".into(), smart_rules: Some(rules),
         })).await.unwrap();
@@ -1919,7 +1947,7 @@ mod tests {
             let response = reorder_playlist_handler(State(state.clone()), Path(id), JsonExtractor(PlaylistOrderRequest { library_item_ids: ids })).await.unwrap();
             assert_eq!(response, StatusCode::BAD_REQUEST);
         }
-        let valid_rules = SmartPlaylistRules { added_within_days: None, play_state: PlayState::Any, favourites_only: false };
+        let valid_rules = SmartPlaylistRules { added_within_days: None, play_state: PlayState::Any, favourites_only: false, bookmark_state: BookmarkState::Any };
         let response = update_playlist_rules_handler(State(state.clone()), Path(id), JsonExtractor(valid_rules.clone())).await.unwrap();
         assert_eq!(response, StatusCode::BAD_REQUEST);
         state.playlists.write().await.playlists.get_mut(&id).unwrap().smart_rules = Some(valid_rules);
@@ -1941,6 +1969,7 @@ mod tests {
             ),
             sonos: None,
             cloud_queues: Arc::new(cloud_queue::CloudQueueStore::with_base_url("http://localhost")),
+            tagging: None,
         };
         for (position, expected_status) in [
             (Some(-1.0), StatusCode::BAD_REQUEST),

@@ -1,0 +1,565 @@
+{
+  "version": "musicbrainz-agent-v1",
+  "config": {
+    "mode": "agent",
+    "max_model_calls": 6,
+    "max_tool_calls": 16,
+    "max_recoveries": 2,
+    "max_request_bytes": 160000
+  },
+  "predictions": [
+    {
+      "id": "t01",
+      "tags": [
+        {
+          "tag": "rock",
+          "basis": "database",
+          "confidence": 0.8,
+          "evidence": "Recording 'Black Is Back in Style' by Moonface on 'Julia With Blue Jeans On' (2013) carries community tags rock and indie rock.",
+          "sourceUrls": [
+            "https://musicbrainz.org/recording/09ae84d9-8fd8-4d48-ae2f-c1aef9d2203f"
+          ]
+        },
+        {
+          "tag": "indie-rock",
+          "basis": "database",
+          "confidence": 0.8,
+          "evidence": "Community tags on the matched Moonface recording list indie rock; artist credit Moonface (Spencer Krug project).",
+          "sourceUrls": [
+            "https://musicbrainz.org/recording/09ae84d9-8fd8-4d48-ae2f-c1aef9d2203f"
+          ]
+        }
+      ],
+      "uncertainty": "Original artist 'Moonfaec' was a typo; corrected to Moonface, whose recording of this title on this album matched cleanly. Identity is a metadata candidate, not fingerprint-verified. Vocal status unconfirmed; listening would confirm whether the piano/voice style implied by this album applies.",
+      "research": {
+        "artist_mbid": "356606f6-2a91-4366-bc68-713524ac6861",
+        "recording_mbid": "09ae84d9-8fd8-4d48-ae2f-c1aef9d2203f",
+        "status": "metadata-candidates-only"
+      }
+    },
+    {
+      "id": "t02",
+      "tags": [
+        {
+          "tag": "downtempo",
+          "basis": "database",
+          "confidence": 0.8,
+          "evidence": "Matched recording 'Two Thousand and Seventeen' by Four Tet carries community tag downtempo.",
+          "sourceUrls": [
+            "https://musicbrainz.org/recording/59feedf2-8212-4352-80c9-820b00bd36ce"
+          ]
+        },
+        {
+          "tag": "folktronica",
+          "basis": "database",
+          "confidence": 0.8,
+          "evidence": "Community tags on the matched Four Tet recording list folktronica.",
+          "sourceUrls": [
+            "https://musicbrainz.org/recording/59feedf2-8212-4352-80c9-820b00bd36ce"
+          ]
+        },
+        {
+          "tag": "electronic",
+          "basis": "inference",
+          "confidence": 0.6,
+          "evidence": "Artist matched to Four Tet (s2), widely associated with electronic music; broader-genre interpretation of the database tags, not directly a supplied tag.",
+          "sourceUrls": [
+            "https://musicbrainz.org/artist/3bcff06f-675a-451f-9075-99e8657047e8"
+          ]
+        }
+      ],
+      "uncertainty": "Filename decoration (' - Topic', '[Official Audio].mp3') was stripped; title/album/artist matched a 2017 Four Tet recording on 'New Energy'. Multiple 'New Energy' release entries exist, but the recording match appears unambiguous. Vocal status unconfirmed; artist tags may not describe the specific track, so listening would confirm the electronic/organic balance.",
+      "research": {
+        "artist_mbid": "3bcff06f-675a-451f-9075-99e8657047e8",
+        "recording_mbid": "59feedf2-8212-4352-80c9-820b00bd36ce",
+        "status": "metadata-candidates-only"
+      }
+    },
+    {
+      "id": "t03",
+      "tags": [
+        {
+          "tag": "folk",
+          "basis": "inference",
+          "confidence": 0.6,
+          "evidence": "Artist embedded in the title matched Robbie Basho (s10) and album 'Visions of the Country' (s13, 1978) matched his catalog; his body of work is acoustic folk. Inference from artist identity, since the recording's community tags could not be attached to this item.",
+          "sourceUrls": [
+            "https://musicbrainz.org/artist/0a326e5b-9332-4490-a37c-aa3692201401"
+          ]
+        },
+        {
+          "tag": "acoustic",
+          "basis": "inference",
+          "confidence": 0.5,
+          "evidence": "Robbie Basho's catalog (artist s10; release 'Visions of the Country' s13) is acoustic guitar-based; conservative stylistic inference, not a measured observation of this file.",
+          "sourceUrls": [
+            "https://musicbrainz.org/release/0004e4ca-dfe2-4dc3-a563-1de107b8eadb"
+          ]
+        }
+      ],
+      "uncertainty": "Artist name was only embedded in the filename and was extracted for search. Artist (s10) and album (s13/s12) matched cleanly, but the recording candidate 'Blue Crystal Fire' on 'Visions of the Country' was found in search yet is not eligible/attachable for this item, so its community tags (folk, experimental, folk rock, acoustic rock) cannot be cited. Vocal status unconfirmed; listening would confirm the track identity and whether Basho's vocal style appears.",
+      "research": {
+        "artist_mbid": "0a326e5b-9332-4490-a37c-aa3692201401",
+        "recording_mbid": null,
+        "status": "metadata-candidates-only"
+      }
+    },
+    {
+      "id": "t04",
+      "tags": [],
+      "uncertainty": "Only the title 'Barbarian' is present; no artist, album, or other anchor. The title is highly ambiguous: candidates include a metalcore recording by August Burns Red on 'Thrill Seeker', an electronic track by Tchami & Malaa, a Diablo III soundtrack piece by Neal Acree, a melodic death metal track by Atarka, and 1989 production music by Georges Bodossian. No candidate can be corroborated by the original metadata, so no identity or genre is asserted. Listening or additional file metadata is required to choose between them.",
+      "research": {
+        "artist_mbid": null,
+        "recording_mbid": null,
+        "status": "metadata-candidates-only"
+      }
+    },
+    {
+      "id": "t05",
+      "tags": [],
+      "uncertainty": "Title 'Zqxv Nebula Teapot 7319' with no artist or album returned no search candidates; the name appears arbitrary or obfuscated and does not correspond to any known recording. No artist, genre, or vocal status can be determined from metadata. Listening, duration, or embedded file tags would be needed for any identification.",
+      "research": {
+        "artist_mbid": null,
+        "recording_mbid": null,
+        "status": "metadata-candidates-only"
+      }
+    }
+  ],
+  "error": null,
+  "model_calls": 5,
+  "tool_calls": 8,
+  "recoveries": 0,
+  "reported_cost_usd": 0.00342763,
+  "missing_cost_records": 0,
+  "elapsed_seconds": 120.03559922,
+  "research": [
+    {
+      "attached": [
+        "t02"
+      ],
+      "eligible": [
+        "t02"
+      ],
+      "handle": "s1",
+      "kind": "recording",
+      "mbid": "59feedf2-8212-4352-80c9-820b00bd36ce"
+    },
+    {
+      "attached": [
+        "t02"
+      ],
+      "eligible": [
+        "t02"
+      ],
+      "handle": "s2",
+      "kind": "artist",
+      "mbid": "3bcff06f-675a-451f-9075-99e8657047e8"
+    },
+    {
+      "attached": [
+        "t02"
+      ],
+      "eligible": [
+        "t02"
+      ],
+      "handle": "s3",
+      "kind": "release",
+      "mbid": "33b99156-c740-4c5e-9557-5384a88ed9a1"
+    },
+    {
+      "attached": [
+        "t02"
+      ],
+      "eligible": [],
+      "handle": "s4",
+      "kind": "release",
+      "mbid": "542fff41-6460-4f5b-8eeb-15016af2fbdd"
+    },
+    {
+      "attached": [
+        "t02"
+      ],
+      "eligible": [
+        "t02"
+      ],
+      "handle": "s5",
+      "kind": "release",
+      "mbid": "15b3baa0-afd9-4607-a45f-3c9441c8d7ca"
+    },
+    {
+      "attached": [
+        "t02"
+      ],
+      "eligible": [
+        "t02"
+      ],
+      "handle": "s6",
+      "kind": "release",
+      "mbid": "ad18da95-7c3a-408c-958f-ff3dd7954440"
+    },
+    {
+      "attached": [
+        "t02"
+      ],
+      "eligible": [
+        "t02"
+      ],
+      "handle": "s7",
+      "kind": "release",
+      "mbid": "c3111ab9-2e00-45b1-85a1-e383010da1c3"
+    },
+    {
+      "attached": [
+        "t03"
+      ],
+      "eligible": [],
+      "handle": "s8",
+      "kind": "recording",
+      "mbid": "a5cfc087-a482-48f7-a8a7-dcf6a626d5b5"
+    },
+    {
+      "attached": [
+        "t03"
+      ],
+      "eligible": [],
+      "handle": "s9",
+      "kind": "recording",
+      "mbid": "5a972dd7-c014-4131-85bb-4dab49a22a22"
+    },
+    {
+      "attached": [
+        "t03"
+      ],
+      "eligible": [
+        "t03"
+      ],
+      "handle": "s10",
+      "kind": "artist",
+      "mbid": "0a326e5b-9332-4490-a37c-aa3692201401"
+    },
+    {
+      "attached": [
+        "t03"
+      ],
+      "eligible": [],
+      "handle": "s11",
+      "kind": "release",
+      "mbid": "ef63653c-8789-4e96-860c-7c25b5eacfcc"
+    },
+    {
+      "attached": [
+        "t03"
+      ],
+      "eligible": [
+        "t03"
+      ],
+      "handle": "s12",
+      "kind": "release",
+      "mbid": "b27a682d-86c1-44ef-a7a4-fdb8976f981b"
+    },
+    {
+      "attached": [
+        "t03"
+      ],
+      "eligible": [
+        "t03"
+      ],
+      "handle": "s13",
+      "kind": "release",
+      "mbid": "0004e4ca-dfe2-4dc3-a563-1de107b8eadb"
+    },
+    {
+      "attached": [
+        "t03"
+      ],
+      "eligible": [
+        "t03"
+      ],
+      "handle": "s14",
+      "kind": "release",
+      "mbid": "f9354b6a-ef9d-498c-8436-d88600362fe8"
+    },
+    {
+      "attached": [
+        "t03"
+      ],
+      "eligible": [
+        "t03"
+      ],
+      "handle": "s15",
+      "kind": "release",
+      "mbid": "db9bd378-8622-441e-a2b7-0e99d5f60819"
+    },
+    {
+      "attached": [
+        "t04"
+      ],
+      "eligible": [],
+      "handle": "s16",
+      "kind": "recording",
+      "mbid": "59a7d970-2563-4fa4-972e-dad542e1e372"
+    },
+    {
+      "attached": [
+        "t04"
+      ],
+      "eligible": [],
+      "handle": "s17",
+      "kind": "recording",
+      "mbid": "471fd3e8-9b77-4071-ac0c-7d1d11dae2aa"
+    },
+    {
+      "attached": [
+        "t04"
+      ],
+      "eligible": [],
+      "handle": "s18",
+      "kind": "recording",
+      "mbid": "7752c3fe-ee18-4d27-b283-7f3af15c0c4c"
+    },
+    {
+      "attached": [
+        "t04"
+      ],
+      "eligible": [],
+      "handle": "s19",
+      "kind": "recording",
+      "mbid": "548a9e04-c24e-488c-beb7-a213a85ce02d"
+    },
+    {
+      "attached": [
+        "t04"
+      ],
+      "eligible": [],
+      "handle": "s20",
+      "kind": "recording",
+      "mbid": "35d1439b-a8de-4708-853b-7e9d50d95bd5"
+    },
+    {
+      "attached": [
+        "t04"
+      ],
+      "eligible": [],
+      "handle": "s21",
+      "kind": "artist",
+      "mbid": "5bac9b4f-2f1c-4d39-8d11-231d5b6650ce"
+    },
+    {
+      "attached": [
+        "t04"
+      ],
+      "eligible": [],
+      "handle": "s22",
+      "kind": "release",
+      "mbid": "5f489d24-adda-4989-8d51-dc160a0ae784"
+    },
+    {
+      "attached": [
+        "t04"
+      ],
+      "eligible": [],
+      "handle": "s23",
+      "kind": "release",
+      "mbid": "0a41ab66-c9d2-4e14-b5fd-1cb5f717f8b6"
+    },
+    {
+      "attached": [
+        "t04"
+      ],
+      "eligible": [],
+      "handle": "s24",
+      "kind": "artist",
+      "mbid": "9010041c-7266-4220-99e9-d14913db6b02"
+    },
+    {
+      "attached": [
+        "t04"
+      ],
+      "eligible": [],
+      "handle": "s25",
+      "kind": "artist",
+      "mbid": "3f05df33-f3c4-4df4-ba17-d660b334c86f"
+    },
+    {
+      "attached": [
+        "t04"
+      ],
+      "eligible": [],
+      "handle": "s26",
+      "kind": "release",
+      "mbid": "562a943f-44a4-44b0-8fc2-20123c7534fc"
+    },
+    {
+      "attached": [
+        "t04"
+      ],
+      "eligible": [],
+      "handle": "s27",
+      "kind": "release",
+      "mbid": "281200a9-80f3-4ff4-84b0-5608eb23c8c4"
+    },
+    {
+      "attached": [
+        "t04"
+      ],
+      "eligible": [],
+      "handle": "s28",
+      "kind": "artist",
+      "mbid": "5a5f035d-7fd2-446c-b826-17e7a8c1afc1"
+    },
+    {
+      "attached": [
+        "t04"
+      ],
+      "eligible": [],
+      "handle": "s29",
+      "kind": "release",
+      "mbid": "13ac77b0-7021-484b-8bae-36985c0705e7"
+    },
+    {
+      "attached": [
+        "t04"
+      ],
+      "eligible": [],
+      "handle": "s30",
+      "kind": "artist",
+      "mbid": "374a63ed-2502-495a-8e31-139e3ed7507e"
+    },
+    {
+      "attached": [
+        "t04"
+      ],
+      "eligible": [],
+      "handle": "s31",
+      "kind": "artist",
+      "mbid": "a0d47559-6ffc-464a-a4d6-30777e5c76f7"
+    },
+    {
+      "attached": [
+        "t04"
+      ],
+      "eligible": [],
+      "handle": "s32",
+      "kind": "release",
+      "mbid": "33d274ce-029b-47a4-a262-666eade4842a"
+    },
+    {
+      "attached": [
+        "t04"
+      ],
+      "eligible": [],
+      "handle": "s33",
+      "kind": "release",
+      "mbid": "77f2457d-1b6a-4421-916e-5f02137088bc"
+    },
+    {
+      "attached": [
+        "t04"
+      ],
+      "eligible": [],
+      "handle": "s34",
+      "kind": "artist",
+      "mbid": "6647af6b-8ea2-48bd-9d24-a8c478ed45ce"
+    },
+    {
+      "attached": [
+        "t04"
+      ],
+      "eligible": [],
+      "handle": "s35",
+      "kind": "release",
+      "mbid": "376d1065-9dd1-4d76-8c20-b40bb94cd9b0"
+    },
+    {
+      "attached": [
+        "t04"
+      ],
+      "eligible": [],
+      "handle": "s36",
+      "kind": "release",
+      "mbid": "c1983437-b8b8-48a6-a648-f7d2191af1fd"
+    },
+    {
+      "attached": [
+        "t04"
+      ],
+      "eligible": [],
+      "handle": "s37",
+      "kind": "release",
+      "mbid": "e51ecc1e-d243-4a1d-a752-97da3faf5643"
+    },
+    {
+      "attached": [
+        "t01"
+      ],
+      "eligible": [
+        "t01"
+      ],
+      "handle": "s38",
+      "kind": "artist",
+      "mbid": "356606f6-2a91-4366-bc68-713524ac6861"
+    },
+    {
+      "attached": [
+        "t01"
+      ],
+      "eligible": [],
+      "handle": "s39",
+      "kind": "artist",
+      "mbid": "2db1d0ae-04db-4392-a530-e8a2587c1f00"
+    },
+    {
+      "attached": [
+        "t01"
+      ],
+      "eligible": [],
+      "handle": "s40",
+      "kind": "artist",
+      "mbid": "b2aafaee-0992-4c33-9a1d-8f9b196878a4"
+    },
+    {
+      "attached": [
+        "t01"
+      ],
+      "eligible": [
+        "t01"
+      ],
+      "handle": "s41",
+      "kind": "recording",
+      "mbid": "09ae84d9-8fd8-4d48-ae2f-c1aef9d2203f"
+    },
+    {
+      "attached": [
+        "t01"
+      ],
+      "eligible": [
+        "t01"
+      ],
+      "handle": "s42",
+      "kind": "release",
+      "mbid": "c28baa73-0333-45a3-8fd1-7a100d9b7b23"
+    },
+    {
+      "attached": [
+        "t01"
+      ],
+      "eligible": [
+        "t01"
+      ],
+      "handle": "s43",
+      "kind": "release",
+      "mbid": "899291f3-6903-455e-8863-cc6becc724f7"
+    },
+    {
+      "attached": [
+        "t01"
+      ],
+      "eligible": [
+        "t01"
+      ],
+      "handle": "s44",
+      "kind": "release",
+      "mbid": "d918a156-75af-4421-bdaf-9d401aab538d"
+    }
+  ]
+}

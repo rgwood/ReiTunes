@@ -23,6 +23,14 @@ The Windows client is a UWP application. It's quite polished but probably won't 
 
 Once upon a time I also had a Blazor client but that's been retired.
 
+### Smart Playlists and tags
+
+Create a Smart Playlist from the sidebar’s playlist menu. To collect every song with bookmarks, set **Bookmarks** to **Has bookmarks** and leave the other rules at their defaults. The playlist updates when bookmarks are added or removed. You can combine this with favourites, play count and date added, or select **No bookmarks** instead.
+
+Open **Tags** in the sidebar to browse tags, or right-click a song and choose **Edit tags…** to add or remove them. Clicking a tag searches the library; you can also type `tag:house` in search. Manual edits and saved suggestions work without an AI provider. Automatic suggestions require `OPENROUTER_API_KEY` at build time or runtime, and use song metadata rather than listening to the audio.
+
+The production publish command requires the tagging key to avoid silently disabling suggestions. It accepts `OPENROUTER_API_KEY`, a file named by `OPENROUTER_API_KEY_FILE`, or `openrouterkey.txt` in the repository root.
+
 ## Architecture
 
 I spent a lot of effort making ReiTunes work well offline and with multiple clients.

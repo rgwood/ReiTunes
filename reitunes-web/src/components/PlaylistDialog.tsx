@@ -22,9 +22,10 @@ export function PlaylistDialog({ draft, items, onClose, onSaved }: {
   const id = useId();
   const client = useQueryClient();
   const [name, setName] = useState(draft.playlist?.name ?? '');
-  const [rules, setRules] = useState<SmartPlaylistRules>(draft.playlist?.smart_rules ?? {
-    added_within_days: 30, play_state: 'unplayed', favourites_only: false,
-  });
+  const [rules, setRules] = useState<SmartPlaylistRules>(() => ({
+    added_within_days: null, play_state: 'any', favourites_only: false, bookmark_state: 'any',
+    ...draft.playlist?.smart_rules,
+  }));
   const [pending, setPending] = useState(false);
   const [error, setError] = useState('');
   const [now] = useState(Date.now);
@@ -70,6 +71,10 @@ export function PlaylistDialog({ draft, items, onClose, onSaved }: {
           value={rules.added_within_days || ''} onChange={event => setRules({ ...rules, added_within_days: Number(event.target.value) })} /></label>}
         <label>Play count<select value={rules.play_state} onChange={event => setRules({ ...rules, play_state: event.target.value as SmartPlaylistRules['play_state'] })}>
           <option value="any">Any</option><option value="unplayed">Is 0</option><option value="played">Is greater than 0</option>
+        </select></label>
+        <label>Bookmarks<select value={rules.bookmark_state ?? 'any'}
+          onChange={event => setRules({ ...rules, bookmark_state: event.target.value as SmartPlaylistRules['bookmark_state'] })}>
+          <option value="any">Any</option><option value="with">Has bookmarks</option><option value="without">No bookmarks</option>
         </select></label>
         <label className="playlist-favourites"><input type="checkbox" checked={rules.favourites_only}
           onChange={event => setRules({ ...rules, favourites_only: event.target.checked })} /> Favourites only</label>

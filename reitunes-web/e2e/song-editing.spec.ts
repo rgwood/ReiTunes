@@ -13,6 +13,7 @@ async function setup(page: Page, otherMetadata = false) {
   const plays: string[] = [];
   await page.route('**/api/items', route => route.fulfill({ json: items }));
   await page.route('**/api/playlists', route => route.fulfill({ json: [] }));
+  await page.route('**/api/tags', route => route.fulfill({ json: { enabled: false, items: {} } }));
   await page.route('**/api/log', route => route.fulfill({ status: 200 }));
   await page.route('**/ui/play', route => { plays.push(route.request().postDataJSON().id); return route.fulfill({ status: 200 }); });
   await page.route('**/audio/*.mp3', route => route.fulfill({ contentType: 'audio/mpeg', body: '' }));
@@ -192,6 +193,8 @@ test('artist and album complete from the full library in cells and Get Info', as
   await expect(album).toBeFocused();
   expect(await album.evaluate((input: HTMLInputElement) => input.selectionStart)).toBe(12);
   await album.press('Enter');
+  await expect(album).toHaveCount(0);
+  await expect(row).toBeFocused();
   await row.press('Control+i');
   const dialog = page.getByRole('dialog', { name: 'Song info' });
   const infoArtist = dialog.getByRole('textbox', { name: 'Artist', exact: true });

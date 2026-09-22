@@ -735,6 +735,7 @@ mod tests {
             cloud_queues: Arc::new(crate::cloud_queue::CloudQueueStore::with_base_url(
                 "https://reitunes.example.com/",
             )),
+            tagging: None,
         };
 
         let metadata = get_metadata(

@@ -10,11 +10,12 @@ const collections = [
   ['unplayed', 'Unplayed', 'play'], ['favourites', 'Favourites', 'heart'], ['bookmarks', 'Bookmarks', 'bookmark'],
 ] as const;
 
-export function LibrarySidebar({ active, items, playlists, now, discoveryCount, playlistError, onSelect, onEdit, onImport, onSettings, outputName, onOutput }: {
+export function LibrarySidebar({ active, items, playlists, now, discoveryCount, playlistError, onSelect, onEdit, onImport, onSettings, outputName, onOutput, tagsOpen, activeTagCount, failedTagCount, onTags }: {
   active: string; items: LibraryItem[]; playlists: Playlist[]; now: number; discoveryCount: number;
   playlistError: boolean; onSelect: (id: string) => void; onEdit: (draft: PlaylistDraft) => void;
   onImport: () => void; onSettings: () => void;
   outputName: string; onOutput: () => void;
+  tagsOpen: boolean; activeTagCount: number; failedTagCount: number; onTags: () => void;
 }) {
   const mutation = usePlaylistMutation();
   const [error, setError] = useState('');
@@ -77,6 +78,11 @@ export function LibrarySidebar({ active, items, playlists, now, discoveryCount, 
         aria-label={label} aria-current={active === id ? 'page' : undefined} onClick={() => onSelect(id)}>
         <span className="source-icon"><MusicIcon name={icon} size={16} /></span><span className="source-name">{label}</span><span className="source-count" aria-hidden="true">{count(id)}</span>
       </button>)}
+      <button className="source-item" aria-label="Tags" aria-pressed={tagsOpen} onClick={onTags}
+        title={activeTagCount ? `${activeTagCount} tracks getting tags` : failedTagCount ? `${failedTagCount} tracks could not be tagged` : 'Browse and manage tags'}>
+        <span className="source-icon"><MusicIcon name="tag" size={16} /></span><span className="source-name">Tags</span>
+        {(activeTagCount > 0 || failedTagCount > 0) && <span className="source-count" aria-hidden="true">{activeTagCount || '!'}</span>}
+      </button>
       <button className="source-item" aria-label="Discover" aria-current={active === 'discover' ? 'page' : undefined} onClick={() => onSelect('discover')}>
         <span className="source-icon"><MusicIcon name="discover" size={16} /></span><span className="source-name">Discover</span><span className="source-count" aria-hidden="true">{discoveryCount}</span>
       </button></section>

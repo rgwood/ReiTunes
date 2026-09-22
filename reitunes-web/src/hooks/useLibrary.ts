@@ -1,9 +1,23 @@
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { QueryClient, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { metadataSuggestions } from '../utils/metadataSuggestions';
-import type { LibraryItem, RealtimeUpdate } from '../types';
+import type { LibraryItem, LibraryUpdate, RealtimeUpdate } from '../types';
 
 export const SONOS_REALTIME_EVENT = 'reitunes:sonos';
+
+export function applyLibraryUpdate(queryClient: QueryClient, message: LibraryUpdate) {
+  const oldItems = queryClient.getQueryData<LibraryItem[]>(['library']);
+  const previous = oldItems?.find(item => item.id === (message.type === 'update' ? message.item.id : message.id));
+  const tagsChanged = message.type === 'delete' || !previous ||
+    (['name', 'artist', 'album', 'file_path'] as const).some(field => previous[field] !== message.item[field]);
+
+  queryClient.setQueryData<LibraryItem[]>(['library'], items => {
+    if (!items) return items;
+    if (message.type === 'delete') return items.filter(item => item.id !== message.id);
+    return previous ? items.map(item => item.id === message.item.id ? message.item : item) : [...items, message.item];
+  });
+  if (tagsChanged) void queryClient.invalidateQueries({ queryKey: ['tags'] });
+}
 
 export function getItemUrl(item: LibraryItem): string {
   // URL is now provided by the backend
@@ -61,26 +75,7 @@ export function useLibrary() {
           return;
         }
 
-        queryClient.setQueryData<LibraryItem[]>(['library'], (oldItems) => {
-          if (!oldItems) return oldItems;
-
-          if (message.type === 'update') {
-            const existingIndex = oldItems.findIndex(item => item.id === message.item.id);
-            if (existingIndex >= 0) {
-              // Update existing item
-              const newItems = [...oldItems];
-              newItems[existingIndex] = message.item;
-              return newItems;
-            } else {
-              // Add new item
-              return [...oldItems, message.item];
-            }
-          } else if (message.type === 'delete') {
-            return oldItems.filter(item => item.id !== message.id);
-          }
-
-          return oldItems;
-        });
+        applyLibraryUpdate(queryClient, message);
       };
 
       ws.onclose = () => {
@@ -119,6 +114,7 @@ export function useUpdateLibraryItem() {
     queryClient.setQueryData<LibraryItem[]>(['library'], items => items?.map(item =>
       item.id === id ? { ...item, [field]: field === 'track_number' ? (value === '' ? null : Number(value)) : value } : item
     ));
+    if (field !== 'track_number') void queryClient.invalidateQueries({ queryKey: ['tags'] });
   }, [queryClient]);
 }
 

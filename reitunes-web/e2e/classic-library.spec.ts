@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Page, type WebSocketRoute } from '@playwright/test';
 import type { LibraryItem, Playlist } from '../src/types';
 
 const sample: LibraryItem = {
@@ -105,11 +105,13 @@ test('Smart Playlists save rules, survive reload and can be edited', async ({ pa
   await page.goto('/');
   await page.getByRole('button', { name: /New Smart Playlist/ }).click();
   await page.getByRole('textbox', { name: 'Name', exact: true }).fill('Fresh favourites');
+  await page.getByRole('combobox', { name: 'Date added rule' }).selectOption('recent');
+  await page.getByRole('combobox', { name: 'Play count', exact: true }).selectOption('unplayed');
   await page.getByRole('checkbox', { name: 'Favourites only' }).check();
   await page.getByRole('button', { name: 'Create playlist', exact: true }).click();
   await expect(page.locator('tbody tr')).toHaveCount(1);
   await expect(page.locator('tbody tr')).toContainText('Apricots');
-  expect(playlists[1].smart_rules).toEqual({ added_within_days: 30, play_state: 'unplayed', favourites_only: true });
+  expect(playlists[1].smart_rules).toEqual({ added_within_days: 30, play_state: 'unplayed', favourites_only: true, bookmark_state: 'any' });
   await page.reload();
   await page.getByRole('button', { name: 'Fresh favourites', exact: true }).click();
   await expect(page.locator('tbody tr')).toHaveCount(1);
@@ -122,6 +124,48 @@ test('Smart Playlists save rules, survive reload and can be edited', async ({ pa
   await page.getByRole('textbox', { name: 'Name', exact: true }).fill('Played favourites');
   await page.getByRole('button', { name: 'Save changes', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Played favourites', exact: true })).toHaveAttribute('aria-current', 'page');
+});
+
+test('a bookmark Smart Playlist includes old played songs and updates live as bookmarks change', async ({ page }, testInfo) => {
+  const { playlists } = await backend(page);
+  const oldBookmarked = { ...sample, created_time_utc: '2020-01-01T00:00:00', play_count: 12, is_favorite: false };
+  await page.route('**/api/items', route => route.fulfill({ json: [oldBookmarked, ...songs.slice(1)] }));
+  let updates: WebSocketRoute | undefined;
+  await page.routeWebSocket('**/updates', socket => { updates = socket; });
+  await page.goto('/');
+  await page.getByRole('button', { name: /New Smart Playlist/ }).click();
+  const dialog = page.getByRole('dialog', { name: 'New Smart Playlist', exact: true });
+  await dialog.getByRole('textbox', { name: 'Name', exact: true }).fill('Bookmarked tracks');
+  await dialog.getByRole('combobox', { name: 'Bookmarks', exact: true }).selectOption('with');
+  await expect(dialog.getByText('1 matching tracks · updates automatically')).toBeVisible();
+  await page.screenshot({ path: testInfo.outputPath('bookmark-smart-playlist.png') });
+  await dialog.getByRole('button', { name: 'Create playlist', exact: true }).click();
+  const rows = page.locator('tbody tr');
+  await expect(rows).toHaveCount(1);
+  await expect(rows).toContainText('Apricots');
+  expect(playlists[1].smart_rules).toEqual({ added_within_days: null, play_state: 'any', favourites_only: false, bookmark_state: 'with' });
+
+  updates = undefined;
+  await page.reload();
+  const source = page.getByRole('button', { name: 'Bookmarked tracks', exact: true });
+  await source.click();
+  await expect(rows).toHaveCount(1);
+  await expect.poll(() => !!updates).toBe(true);
+  updates!.send(JSON.stringify({ type: 'update', item: { ...songs[1], bookmarks: sample.bookmarks } }));
+  await expect(rows).toHaveCount(2);
+  await expect(source.locator('.source-count')).toHaveText('2');
+  updates!.send(JSON.stringify({ type: 'update', item: { ...oldBookmarked, bookmarks: {} } }));
+  await expect(rows).toHaveCount(1);
+  await expect(rows).toContainText('Glue');
+  await expect(source.locator('.source-count')).toHaveText('1');
+
+  await page.getByRole('button', { name: 'Edit rules…', exact: true }).click();
+  const bookmarks = page.getByRole('combobox', { name: 'Bookmarks', exact: true });
+  await expect(bookmarks).toHaveValue('with');
+  await bookmarks.selectOption('without');
+  await page.getByRole('button', { name: 'Save changes', exact: true }).click();
+  await expect(rows).toHaveCount(2);
+  await expect(page.getByRole('row').filter({ hasText: 'Glue' })).toHaveCount(0);
 });
 
 for (const width of [1440, 1024, 390]) {

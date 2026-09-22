@@ -4,6 +4,9 @@ export const TRACK_DRAG_TYPE = 'application/x-reitunes-tracks';
 
 export function matchesSmartPlaylist(item: LibraryItem, rules: SmartPlaylistRules, now: number): boolean {
   if (rules.favourites_only && !item.is_favorite) return false;
+  const hasBookmarks = Object.keys(item.bookmarks).length > 0;
+  if (rules.bookmark_state === 'with' && !hasBookmarks) return false;
+  if (rules.bookmark_state === 'without' && hasBookmarks) return false;
   if (rules.play_state === 'unplayed' && item.play_count !== 0) return false;
   if (rules.play_state === 'played' && item.play_count === 0) return false;
   if (rules.added_within_days !== null) {

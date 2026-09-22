@@ -58,3 +58,49 @@ CREATE TABLE IF NOT EXISTS discovery_imports (
     SourceId TEXT PRIMARY KEY NOT NULL,
     LibraryItemId TEXT NOT NULL
 );
+
+-- Model suggestions are replaceable; human decisions survive reclassification.
+CREATE TABLE IF NOT EXISTS tagging_items (
+    ItemId TEXT PRIMARY KEY NOT NULL,
+    MetadataHash TEXT NOT NULL,
+    Status TEXT NOT NULL,
+    Serialized TEXT NOT NULL,
+    UpdatedAt INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS tagging_labels (
+    ItemId TEXT NOT NULL,
+    Tag TEXT NOT NULL,
+    Serialized TEXT NOT NULL,
+    PRIMARY KEY (ItemId, Tag)
+);
+-- Exact evidence, prompt and response are retained locally for reproducibility.
+CREATE TABLE IF NOT EXISTS tagging_runs (
+    Id TEXT PRIMARY KEY NOT NULL,
+    ItemId TEXT NOT NULL,
+    MetadataHash TEXT NOT NULL,
+    StartedAt INTEGER NOT NULL,
+    FinishedAt INTEGER,
+    Request TEXT NOT NULL,
+    Evidence TEXT NOT NULL,
+    Response TEXT,
+    Error TEXT,
+    CostUsd REAL
+);
+-- A run is a batch agent session; each model request/response has its own trace event.
+-- ItemId/MetadataHash on tagging_runs retain the first member for legacy readers.
+CREATE TABLE IF NOT EXISTS tagging_run_items (
+    RunId TEXT NOT NULL,
+    RequestItemId TEXT NOT NULL,
+    ItemId TEXT NOT NULL,
+    MetadataHash TEXT NOT NULL,
+    Status TEXT NOT NULL,
+    Error TEXT,
+    PRIMARY KEY (RunId, RequestItemId)
+);
+CREATE TABLE IF NOT EXISTS tagging_agent_events (
+    RunId TEXT NOT NULL,
+    Sequence INTEGER NOT NULL,
+    CreatedAt INTEGER NOT NULL,
+    Serialized TEXT NOT NULL,
+    PRIMARY KEY (RunId, Sequence)
+);

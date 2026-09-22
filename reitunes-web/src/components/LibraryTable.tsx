@@ -22,6 +22,7 @@ import { draggedTrackIds, moveTracksBefore, TRACK_DRAG_TYPE } from '../utils/pla
 import { SongInfoDialog } from './SongInfoDialog';
 import { MetadataInput } from './MetadataInput';
 import { useLibraryPreferences } from '../stores/libraryPreferences';
+import { effectiveTags, tagProgress, type ItemTags } from '../hooks/useTags';
 
 const editableFields = ['name', 'artist', 'album'] as const;
 type EditableField = typeof editableFields[number];
@@ -41,11 +42,17 @@ interface LibraryTableProps {
   revealRequest?: { itemId: string } | null;
   onRevealed?: () => void;
   onManageBookmarks?: (item: LibraryItem) => void;
+  onManageTags?: (item: LibraryItem) => void;
+  onFilterTag?: (tag: string) => void;
+  tagItems?: Record<string, ItemTags>;
+  selectedTagItemId?: string | null;
   contextName?: string;
   allowReordering?: boolean;
   onNewPlaylist?: (itemIds: string[]) => void;
   viewId?: string;
 }
+
+type TagTableMeta = Pick<LibraryTableProps, 'tagItems' | 'selectedTagItemId' | 'onManageTags' | 'onFilterTag'>;
 
 interface ParsedSearch {
   artist: string | null;
@@ -126,7 +133,7 @@ function formatCreatedTime(value: string, short = false): string {
   });
 }
 
-export function LibraryTable({ items, searchQuery, playlistId, onSearchChange, revealRequest, onRevealed, onManageBookmarks, contextName: sourceName, allowReordering, onNewPlaylist, viewId = 'all' }: LibraryTableProps) {
+export function LibraryTable({ items, searchQuery, playlistId, onSearchChange, revealRequest, onRevealed, onManageBookmarks, onManageTags, onFilterTag, tagItems, selectedTagItemId, contextName: sourceName, allowReordering, onNewPlaylist, viewId = 'all' }: LibraryTableProps) {
   // TanStack Table v8 exposes mutable state through stable methods. Remove this
   // opt-out when useReactTable supports React Compiler memoization.
   'use no memo';
@@ -306,6 +313,27 @@ export function LibraryTable({ items, searchQuery, playlistId, onSearchChange, r
       size: 100,
       enableSorting: false,
     }),
+    columnHelper.display({
+      id: 'tags', header: 'Tags', size: 160,
+      cell: ({ row, table }) => {
+        const { tagItems, selectedTagItemId, onManageTags, onFilterTag } = table.options.meta as TagTableMeta;
+        const data = tagItems?.[row.original.id];
+        const itemTags = effectiveTags(data);
+        return <div className="row-tags">
+          <span className="row-tag-links">{itemTags.slice(0, 2).map(tag => <button key={tag} className="row-tag-link"
+            title={`Browse all music tagged ${tag}`} aria-label={`Browse music tagged ${tag}`}
+            onClick={event => { event.stopPropagation(); onFilterTag?.(tag); }}>{tag}</button>)}
+            {!itemTags.length && <span className="row-tags-empty" title={tagProgress(data)}>
+              {data?.status === 'running' ? 'Generating…' : data?.status === 'queued' ? 'Waiting…' : data?.status === 'failed' ? 'Failed' : '—'}
+            </span>}
+          </span>
+          <button type="button" className={`row-tag-edit${itemTags.length > 2 ? ' has-more' : ''}`}
+            aria-label={`Edit tags for ${row.original.name}`} aria-pressed={selectedTagItemId === row.original.id}
+            title={itemTags.length > 2 ? `${itemTags.join(', ')} — manage tags` : 'Add or remove tags'}
+            onClick={event => { event.stopPropagation(); onManageTags?.(row.original); }}>{itemTags.length > 2 ? `+${itemTags.length - 2}` : '…'}</button>
+        </div>;
+      },
+    }),
     columnHelper.accessor('created_time_utc', {
       header: 'Created',
       cell: (info) => {
@@ -325,8 +353,9 @@ export function LibraryTable({ items, searchQuery, playlistId, onSearchChange, r
       columnFilters,
       columnSizing,
       columnVisibility: { track_number: showDetails, created_time_utc: showDetails },
-      columnOrder: ['is_favorite', 'name', 'artist', 'album', 'bookmarks', 'play_count', 'track_number', 'created_time_utc'],
+      columnOrder: ['is_favorite', 'name', 'artist', 'album', 'bookmarks', 'play_count', 'tags', 'track_number', 'created_time_utc'],
     },
+    meta: { tagItems, selectedTagItemId, onManageTags, onFilterTag } satisfies TagTableMeta,
     onSortingChange: setSorting,
     onColumnFiltersChange: setColumnFilters,
     onColumnSizingChange: setColumnSizing,
@@ -579,6 +608,7 @@ export function LibraryTable({ items, searchQuery, playlistId, onSearchChange, r
                 <tr
                   key={row.id}
                   data-item-id={row.id}
+                  data-tag-selected={selectedTagItemId === row.id || undefined}
                   ref={row.original.id === revealRequest?.itemId ? revealRowRef : undefined}
                   aria-current={isCurrentlyPlaying ? 'true' : undefined}
                   aria-selected={selectedIds.has(row.id)}
@@ -801,6 +831,8 @@ export function LibraryTable({ items, searchQuery, playlistId, onSearchChange, r
               Manage bookmarks
             </button>
           )}
+          {contextIds.length === 1 && onManageTags && <button type="button" className="w-full text-left px-3 py-2 text-solarized-base1 hover:bg-solarized-blue"
+            onClick={() => { onManageTags(contextMenu.item); setContextMenu(null); }}>Edit tags…</button>}
           <div className="border-t border-solarized-base01 my-1" />
           {onSearchChange && (
             <>

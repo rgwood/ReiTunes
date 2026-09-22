@@ -3025,6 +3025,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2",
+ "tagging-engine",
  "tempfile",
  "thiserror 1.0.69",
  "tokio",
@@ -3895,6 +3896,25 @@ checksum = "8e1d1b10ced5ca923a1fcb8d03e96b8d3268065d724548c0211415ff6ac6bac4"
 dependencies = [
  "core-foundation-sys",
  "libc",
+]
+
+[[package]]
+name = "tagging-engine"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "jiff",
+ "r2d2",
+ "r2d2_sqlite",
+ "reqwest 0.12.22",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "tracing",
+ "uuid",
 ]
 
 [[package]]

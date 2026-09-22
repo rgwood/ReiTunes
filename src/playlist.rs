@@ -49,6 +49,8 @@ pub struct SmartPlaylistRules {
     pub added_within_days: Option<u32>,
     pub play_state: PlayState,
     pub favourites_only: bool,
+    #[serde(default)]
+    pub bookmark_state: BookmarkState,
 }
 
 impl SmartPlaylistRules {
@@ -63,6 +65,15 @@ pub enum PlayState {
     Any,
     Unplayed,
     Played,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum BookmarkState {
+    #[default]
+    Any,
+    With,
+    Without,
 }
 
 /// Playlist item (reference to a library item)
@@ -248,8 +259,9 @@ mod tests {
         let conn = Connection::open_in_memory()?;
         conn.execute_batch(include_str!("../schema.sql"))?;
         let id = Uuid::new_v4();
-        let initial = SmartPlaylistRules { added_within_days: Some(30), play_state: PlayState::Unplayed, favourites_only: false };
-        let updated = SmartPlaylistRules { added_within_days: None, play_state: PlayState::Played, favourites_only: true };
+        let initial: SmartPlaylistRules = serde_json::from_str(r#"{"added_within_days":30,"play_state":"unplayed","favourites_only":false}"#)?;
+        assert_eq!(initial.bookmark_state, BookmarkState::Any);
+        let updated = SmartPlaylistRules { added_within_days: None, play_state: PlayState::Played, favourites_only: true, bookmark_state: BookmarkState::With };
         for event in [
             PlaylistEvent::PlaylistCreatedEvent { name: "Fresh music".into(), smart_rules: Some(initial.clone()) },
             PlaylistEvent::SmartPlaylistRulesChangedEvent { rules: updated.clone() },

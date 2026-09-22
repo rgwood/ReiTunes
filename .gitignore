@@ -369,6 +369,9 @@ FodyWeavers.xsd
 
 target/
 
+# Rust command-line tools are source, unlike the old .NET bin directories.
+!tagging-engine/src/bin/
+
 # Local music files uploaded during development
 reitunes/music/
 
