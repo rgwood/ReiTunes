@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useSyncExternalStore } from 'react';
+import { useEffect, useId, useRef, useState, useSyncExternalStore } from 'react';
 import {
   THEMES,
   getSnapshot,
@@ -10,6 +10,7 @@ import {
 import { MusicIcon } from './MusicIcon';
 import './SettingsDialog.css';
 import { useLibraryPreferences, type GridDensity } from '../stores/libraryPreferences';
+import { ColumnsDialog } from './ColumnsDialog';
 
 interface SettingsDialogProps {
   isOpen: boolean;
@@ -25,7 +26,8 @@ export function SettingsDialog({
   onChooseOutput,
 }: SettingsDialogProps) {
   const preference = useSyncExternalStore(subscribe, getSnapshot);
-  const { density, setDensity, showDetails, setShowDetails } = useLibraryPreferences();
+  const { density, setDensity } = useLibraryPreferences();
+  const [choosingColumns, setChoosingColumns] = useState(false);
   const dialogRef = useRef<HTMLDialogElement>(null);
   const modeRef = useRef<HTMLSelectElement>(null);
   const id = useId();
@@ -136,15 +138,15 @@ export function SettingsDialog({
               <option value="comfortable">Comfortable</option>
             </select>
           </label>
-          <label className="settings-field">
-            <span>Show track number and date added</span>
-            <input type="checkbox" checked={showDetails} onChange={event => setShowDetails(event.target.checked)} />
-          </label>
+          <div className="settings-field"><span>Columns</span>
+            <button className="columns-choose" onClick={() => setChoosingColumns(true)}>Choose columns…</button>
+          </div>
         </section>
         <footer>
           <button onClick={onClose}>Done</button>
         </footer>
       </div>
+      {choosingColumns && <ColumnsDialog onClose={() => setChoosingColumns(false)} />}
     </dialog>
   );
 }

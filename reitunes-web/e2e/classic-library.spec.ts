@@ -255,7 +255,10 @@ for (const mode of ['light', 'dark']) {
     await expect(page.locator('.playback-scrubber button')).toBeVisible();
     await page.screenshot({ path: testInfo.outputPath('compact-' + mode + '.png'), fullPage: true });
     await page.getByRole('button', { name: 'Settings', exact: true }).click();
-    await page.getByRole('checkbox', { name: 'Show track number and date added' }).check();
+    await page.getByRole('button', { name: 'Choose columns…' }).click();
+    await page.getByRole('checkbox', { name: 'Date added' }).check();
+    await page.getByRole('checkbox', { name: 'Track number' }).check();
+    await page.getByRole('dialog', { name: 'Choose columns' }).getByRole('button', { name: 'Done', exact: true }).click();
     await page.getByRole('button', { name: 'Done', exact: true }).click();
     await expect(page.getByRole('columnheader', { name: /Created/ })).toBeVisible();
   });

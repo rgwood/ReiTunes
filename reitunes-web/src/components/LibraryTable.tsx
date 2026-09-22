@@ -1,4 +1,4 @@
-import { useMemo, useState, useCallback, useEffect, useLayoutEffect, useRef } from 'react';
+import { useMemo, useState, useCallback, useEffect, useLayoutEffect, useRef, useId } from 'react';
 import {
   useReactTable,
   getCoreRowModel,
@@ -8,7 +8,6 @@ import {
   createColumnHelper,
   type SortingState,
   type ColumnFiltersState,
-  type ColumnSizingState,
 } from '@tanstack/react-table';
 import type { LibraryItem, Bookmark } from '../types';
 import { usePlayerStore } from '../stores/playerStore';
@@ -21,7 +20,8 @@ import { usePlaylists, usePlaylistMutation } from '../hooks/usePlaylists';
 import { draggedTrackIds, moveTracksBefore, TRACK_DRAG_TYPE } from '../utils/playlists';
 import { SongInfoDialog } from './SongInfoDialog';
 import { MetadataInput } from './MetadataInput';
-import { useLibraryPreferences } from '../stores/libraryPreferences';
+import { fitColumnWidths, libraryColumns, maxColumnWidth, useLibraryPreferences, type LibraryColumnId } from '../stores/libraryPreferences';
+import { ColumnsDialog } from './ColumnsDialog';
 import type { ItemTags } from '../hooks/useTags';
 import { RowTags } from './RowTags';
 
@@ -33,7 +33,8 @@ function editableField(target: HTMLElement): EditableField {
 }
 
 const columnHelper = createColumnHelper<LibraryItem>();
-const savedViews = new Map<string, { sorting: SortingState; columnSizing: ColumnSizingState; scrollTop: number }>();
+const savedViews = new Map<string, { sorting: SortingState; scrollTop: number }>();
+const COLUMN_DRAG_TYPE = 'application/x-reitunes-column';
 
 interface LibraryTableProps {
   items: LibraryItem[];
@@ -138,9 +139,30 @@ export function LibraryTable({ items, searchQuery, playlistId, onSearchChange, r
   // TanStack Table v8 exposes mutable state through stable methods. Remove this
   // opt-out when useReactTable supports React Compiler memoization.
   'use no memo';
-  const showDetails = useLibraryPreferences(state => state.showDetails);
+  const headerId = useId();
+  const { columnOrder, columnVisibility, columnWidths, resizeColumn, moveColumn } = useLibraryPreferences();
+  const [choosingColumns, setChoosingColumns] = useState(false);
+  const [columnDrop, setColumnDrop] = useState<{ id: string; after: boolean } | null>(null);
+  const draggedColumn = useRef<string | null>(null);
+  const columnResize = useRef<{ id: string; x: number; width: number } | null>(null);
+  const [resizingColumn, setResizingColumn] = useState(false);
+  const [availableWidth, setAvailableWidth] = useState(900);
+  const visibleEditableFields = columnOrder.filter((id): id is EditableField =>
+    editableFields.includes(id as EditableField) && columnVisibility[id] !== false);
+  function selectedField(field?: EditableField): EditableField {
+    return field && visibleEditableFields.includes(field) ? field : 'name';
+  }
+  const columnSizing = fitColumnWidths(columnOrder, columnVisibility, columnWidths, availableWidth);
 
   const scrollRef = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const scroller = scrollRef.current;
+    if (!scroller) return;
+    const observer = new ResizeObserver(() => setAvailableWidth(scroller.clientWidth));
+    observer.observe(scroller);
+    setAvailableWidth(scroller.clientWidth);
+    return () => observer.disconnect();
+  }, []);
   const revealRowRef = useRef<HTMLTableRowElement>(null);
   useLayoutEffect(() => {
     if (scrollRef.current) scrollRef.current.scrollTop = savedViews.get(viewId)?.scrollTop ?? 0;
@@ -164,10 +186,9 @@ export function LibraryTable({ items, searchQuery, playlistId, onSearchChange, r
   const [sorting, setSorting] = useState<SortingState>(savedViews.get(viewId)?.sorting ?? (playlistId ? [] : [
     { id: 'created_time_utc', desc: true },
   ]));
-  const [columnSizing, setColumnSizing] = useState<ColumnSizingState>(savedViews.get(viewId)?.columnSizing ?? {});
   useEffect(() => {
-    savedViews.set(viewId, { sorting, columnSizing, scrollTop: scrollRef.current?.scrollTop ?? 0 });
-  }, [viewId, sorting, columnSizing]);
+    savedViews.set(viewId, { sorting, scrollTop: scrollRef.current?.scrollTop ?? 0 });
+  }, [viewId, sorting]);
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
   const [selection, setSelection] = useState<{ rowId: string; field: EditableField } | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -344,19 +365,27 @@ export function LibraryTable({ items, searchQuery, playlistId, onSearchChange, r
       sorting,
       columnFilters,
       columnSizing,
-      columnVisibility: { track_number: showDetails, created_time_utc: showDetails },
-      columnOrder: ['is_favorite', 'name', 'artist', 'album', 'bookmarks', 'play_count', 'tags', 'track_number', 'created_time_utc'],
+      columnVisibility,
+      columnOrder,
     },
     meta: { tagItems, selectedTagItemId, onManageTags, onFilterTag } satisfies TagTableMeta,
     onSortingChange: setSorting,
     onColumnFiltersChange: setColumnFilters,
-    onColumnSizingChange: setColumnSizing,
+    defaultColumn: { minSize: 40 },
     getCoreRowModel: getCoreRowModel(),
     getSortedRowModel: getSortedRowModel(),
     getFilteredRowModel: getFilteredRowModel(),
     getRowId: (row) => row.id,
-    columnResizeMode: 'onChange',
   });
+
+  function holdPrecedingWidths(id: string) {
+    // Keep the dragged edge under the pointer. Only columns to its right may
+    // absorb spare space; resizing the last column can widen the whole table.
+    for (const column of table.getVisibleLeafColumns()) {
+      if (column.id === id) break;
+      if (column.getCanResize()) resizeColumn(column.id, column.getSize());
+    }
+  }
 
   const handleRowPlay = useCallback((item: LibraryItem, rowIndex: number, e: React.MouseEvent | React.KeyboardEvent) => {
     // Don't play if clicking a bookmark or editing
@@ -426,11 +455,11 @@ export function LibraryTable({ items, searchQuery, playlistId, onSearchChange, r
     if (!editingCell || editSaving.current) return;
     const visibleRows = table.getRowModel().rows;
     let rowIndex = visibleRows.findIndex(row => row.id === editingCell.rowId) + rowOffset;
-    let columnIndex = editableFields.indexOf(editingCell.field) + columnOffset;
-    if (wrap && columnIndex < 0) { rowIndex--; columnIndex = editableFields.length - 1; }
-    if (wrap && columnIndex >= editableFields.length) { rowIndex++; columnIndex = 0; }
+    let columnIndex = visibleEditableFields.indexOf(editingCell.field) + columnOffset;
+    if (wrap && columnIndex < 0) { rowIndex--; columnIndex = visibleEditableFields.length - 1; }
+    if (wrap && columnIndex >= visibleEditableFields.length) { rowIndex++; columnIndex = 0; }
     const destination = visibleRows[rowIndex]?.original;
-    const field = editableFields[columnIndex];
+    const field = visibleEditableFields[columnIndex];
     if (!destination || !field) return;
     const input = editInputRef.current;
     if (await saveCellEdit(false) !== 'focused') return;
@@ -545,6 +574,7 @@ export function LibraryTable({ items, searchQuery, playlistId, onSearchChange, r
 
   return (
     <div className="px-5 h-full flex flex-col">
+      {choosingColumns && <ColumnsDialog onClose={() => setChoosingColumns(false)} />}
       {editError && <div role="alert" className="library-edit-error">{editError}</div>}
       {playlistError && <div role="alert" className="library-edit-error">{playlistError}</div>}
       {infoItem && <SongInfoDialog key={infoItem.id} item={infoItem} onClose={() => {
@@ -555,15 +585,11 @@ export function LibraryTable({ items, searchQuery, playlistId, onSearchChange, r
         const saved = savedViews.get(viewId);
         if (saved) saved.scrollTop = event.currentTarget.scrollTop;
       }}>
-        <table aria-label="Tracks" aria-description="Click to select; Ctrl-click, Shift-click or Ctrl+A to select several. Click a selected text cell again or press F2 to edit. Double-click or Enter to play. Ctrl+I opens song info." className={`w-full border-collapse table-fixed ${table.getState().columnSizingInfo.isResizingColumn ? 'select-none' : ''}`}>
+        <table style={{ width: Object.values(columnSizing).reduce((sum, width) => sum + width, 0) }} aria-label="Tracks" aria-description="Right-click a column header to choose columns. Drag headers to reorder or their edges to resize. Click to select; Ctrl-click, Shift-click or Ctrl+A to select several. Click a selected text cell again or press F2 to edit. Double-click or Enter to play. Ctrl+I opens song info." className={`border-collapse table-fixed ${resizingColumn ? 'select-none' : ''}`}>
           <colgroup>
             {table.getVisibleLeafColumns().map(column => (
               <col key={column.id} style={{
-                // Pixel widths on every column get stretched by table layout.
-                // Reserve the heart's space and share the rest among text columns.
-                width: column.id === 'is_favorite'
-                  ? 28
-                  : `${100 * column.getSize() / (table.getVisibleLeafColumns().reduce((total, column) => total + column.getSize(), 0) - 28)}%`,
+                width: column.getSize(),
               }} />
             ))}
           </colgroup>
@@ -573,10 +599,44 @@ export function LibraryTable({ items, searchQuery, playlistId, onSearchChange, r
                 {headerGroup.headers.map((header) => (
                   <th
                     key={header.id}
+                    aria-labelledby={`${headerId}-${header.id}`}
+                    data-column={header.column.id}
+                    data-column-drop={columnDrop?.id === header.column.id ? (columnDrop.after ? 'after' : 'before') : undefined}
+                    aria-sort={header.column.getIsSorted() === 'asc' ? 'ascending' : header.column.getIsSorted() === 'desc' ? 'descending' : undefined}
+                    onContextMenu={event => {
+                      event.preventDefault();
+                      event.currentTarget.querySelector('button')?.focus();
+                      setChoosingColumns(true);
+                    }}
+                    onKeyDown={event => {
+                      if (event.key === 'ContextMenu' || (event.shiftKey && event.key === 'F10')) {
+                        event.preventDefault(); setChoosingColumns(true);
+                      }
+                    }}
+                    onDragOver={event => {
+                      if (!event.dataTransfer.types.includes(COLUMN_DRAG_TYPE)) return;
+                      event.preventDefault(); event.dataTransfer.dropEffect = 'move';
+                      setColumnDrop({ id: header.column.id, after: columnOrder.indexOf(draggedColumn.current as LibraryColumnId) < columnOrder.indexOf(header.column.id as LibraryColumnId) });
+                    }}
+                    onDragLeave={event => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setColumnDrop(null); }}
+                    onDrop={event => {
+                      const id = event.dataTransfer.getData(COLUMN_DRAG_TYPE) as LibraryColumnId;
+                      if (!columnOrder.includes(id)) return;
+                      event.preventDefault(); setColumnDrop(null); moveColumn(id, header.column.id as LibraryColumnId);
+                    }}
                     className="relative text-left px-2 py-1 border-b border-solarized-base01 cursor-pointer hover:bg-solarized-base01 whitespace-nowrap overflow-hidden text-ellipsis"
                   >
                     <button
                       type="button"
+                      id={`${headerId}-${header.id}`}
+                      title="Drag to reorder. Right-click to choose columns."
+                      draggable
+                      onDragStart={event => {
+                        draggedColumn.current = header.column.id;
+                        event.dataTransfer.setData(COLUMN_DRAG_TYPE, header.column.id);
+                        event.dataTransfer.effectAllowed = 'move';
+                      }}
+                      onDragEnd={() => { setColumnDrop(null); draggedColumn.current = null; }}
                       className="flex items-center gap-1"
                       onClick={header.column.getToggleSortingHandler()}
                     >
@@ -587,12 +647,38 @@ export function LibraryTable({ items, searchQuery, playlistId, onSearchChange, r
                       }[header.column.getIsSorted() as string] ?? null}
                     </button>
                     {header.column.getCanResize() && <div
-                      onMouseDown={header.getResizeHandler()}
-                      onTouchStart={header.getResizeHandler()}
+                      role="separator" tabIndex={0} aria-orientation="vertical"
+                      aria-label={`Resize ${libraryColumns.find(column => column.id === header.column.id)?.label}`}
+                      aria-valuenow={Math.round(header.column.getSize())}
+                      aria-valuemin={libraryColumns.find(column => column.id === header.column.id)?.min} aria-valuemax={maxColumnWidth}
+                      title="Drag to resize. Double-click to reset. Arrow keys adjust width; Home resets."
+                      onDoubleClick={() => resizeColumn(header.column.id)}
+                      onKeyDown={event => {
+                        if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
+                          event.preventDefault(); event.stopPropagation();
+                          holdPrecedingWidths(header.column.id);
+                          resizeColumn(header.column.id, header.column.getSize() + (event.key === 'ArrowLeft' ? -10 : 10));
+                        } else if (event.key === 'Home') { event.preventDefault(); resizeColumn(header.column.id); }
+                      }}
+                      onPointerDown={event => {
+                        if (event.button !== 0) return;
+                        event.preventDefault(); event.stopPropagation(); event.currentTarget.focus();
+                        event.currentTarget.setPointerCapture(event.pointerId);
+                        columnResize.current = { id: header.column.id, x: event.clientX, width: header.column.getSize() };
+                        holdPrecedingWidths(header.column.id);
+                        setResizingColumn(true);
+                      }}
+                      onPointerMove={event => {
+                        const resize = columnResize.current;
+                        if (resize) resizeColumn(resize.id, resize.width + event.clientX - resize.x);
+                      }}
+                      onPointerUp={event => {
+                        columnResize.current = null; setResizingColumn(false);
+                        if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+                      }}
+                      onLostPointerCapture={() => { columnResize.current = null; setResizingColumn(false); }}
                       onClick={(e) => e.stopPropagation()}
-                      className={`absolute right-0 top-0 h-full w-1 cursor-col-resize hover:bg-solarized-blue ${
-                        header.column.getIsResizing() ? 'bg-solarized-blue' : ''
-                      }`}
+                      className="absolute right-0 top-0 h-full w-1 cursor-col-resize hover:bg-solarized-blue touch-none"
                     />}
                   </th>
                 ))}
@@ -642,13 +728,13 @@ export function LibraryTable({ items, searchQuery, playlistId, onSearchChange, r
                   }}
                   tabIndex={tabStopId === row.id ? 0 : -1}
                   onFocus={event => {
-                    if (event.target === event.currentTarget) setSelection(previous => ({ rowId: row.id, field: previous?.field ?? 'name' }));
+                    if (event.target === event.currentTarget) setSelection(previous => ({ rowId: row.id, field: selectedField(previous?.field) }));
                   }}
                   onKeyDown={(event) => {
                     cancelClickEdit();
                     if (event.target !== event.currentTarget || editingCell) return;
                     returnFocusRef.current = event.currentTarget;
-                    const field = selection?.rowId === row.id ? selection.field : 'name';
+                    const field = selectedField(selection?.rowId === row.id ? selection.field : undefined);
                     if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'a') {
                       event.preventDefault(); setSelectedIds(new Set(rows.map(row => row.id)));
                     } else if (event.key === 'Escape') {
@@ -663,8 +749,8 @@ export function LibraryTable({ items, searchQuery, playlistId, onSearchChange, r
                     } else if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(event.key)) {
                       event.preventDefault();
                       if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
-                        const index = Math.max(0, Math.min(2, editableFields.indexOf(field) + (event.key === 'ArrowLeft' ? -1 : 1)));
-                        setSelection({ rowId: row.id, field: editableFields[index] });
+                        const index = Math.max(0, Math.min(visibleEditableFields.length - 1, visibleEditableFields.indexOf(field) + (event.key === 'ArrowLeft' ? -1 : 1)));
+                        setSelection({ rowId: row.id, field: visibleEditableFields[index] });
                       } else {
                         const next = event.key === 'ArrowUp' ? event.currentTarget.previousElementSibling : event.currentTarget.nextElementSibling;
                         if (next instanceof HTMLTableRowElement) {
@@ -758,7 +844,7 @@ export function LibraryTable({ items, searchQuery, playlistId, onSearchChange, r
                               if (event.key === 'Tab' && !event.ctrlKey && !event.metaKey && !event.altKey && !event.repeat) {
                                 // At the ends of the table, let Tab leave normally.
                                 // Blur saves the edit without trapping keyboard focus.
-                                if (event.shiftKey ? rowIndex === 0 && field === 'name' : rowIndex === rows.length - 1 && field === 'album') return;
+                                if (event.shiftKey ? rowIndex === 0 && field === visibleEditableFields[0] : rowIndex === rows.length - 1 && field === visibleEditableFields.at(-1)) return;
                                 event.preventDefault(); void moveCellEdit(event.shiftKey ? -1 : 1, 0, true); return;
                               }
                               if (!event.shiftKey && !event.ctrlKey && !event.metaKey && !event.altKey && !event.repeat) {

@@ -119,3 +119,15 @@
 .settings-dialog footer button {
   min-width: 60px;
 }
+.columns-help { margin: 8px 0; color: var(--muted); }
+.columns-list { list-style: none; padding: 0; margin: 0; }
+.columns-list li { display: flex; gap: 4px; align-items: center; min-height: 32px; border-bottom: 1px solid var(--line); }
+.columns-list label { flex: 1; display: flex; align-items: center; gap: 7px; cursor: pointer; }
+.columns-list small { color: var(--muted); font-size: 10px; }
+.columns-list button, .columns-choose { border: 1px solid var(--border-strong); border-radius: 2px; padding: 3px 7px; background: var(--panel); font: inherit; }
+.columns-list button { width: 27px; height: 25px; }
+.columns-list button:disabled { opacity: .35; cursor: default; }
+.columns-list button:hover:not(:disabled), .columns-choose:hover { background: var(--hover); }
+.columns-list input { accent-color: var(--accent); }
+.columns-dialog .columns-reset { margin-right: auto; }
+.columns-list button:focus-visible, .columns-choose:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
