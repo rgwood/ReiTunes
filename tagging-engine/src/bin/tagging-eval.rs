@@ -32,10 +32,24 @@ enum Command {
         /// Optional JSON cases file using the checked-in case schema and batch field.
         #[arg(long)]
         cases: Option<PathBuf>,
+        /// Model request profile; production GLM settings remain unchanged by default.
+        #[arg(long, value_enum, default_value_t = ModelProfile::Glm)]
+        model_profile: ModelProfile,
+        /// Evaluate only the agent used by production, skipping the fixed baseline.
+        #[arg(long)]
+        agent_only: bool,
     },
     Replay {
         #[arg(long)]
         dir: PathBuf,
+    },
+    /// Recheck recorded responses with the current parser, without any live calls.
+    Recheck {
+        #[arg(long)]
+        dir: PathBuf,
+        /// New output file; original reports and traces are never changed.
+        #[arg(long)]
+        out: PathBuf,
     },
     Score {
         #[arg(long)]
@@ -75,36 +89,115 @@ impl MusicBrainz for RecordedMb<'_> {
 }
 struct ReplayModel {
     pairs: VecDeque<(Value, Value)>,
+    divergence: Option<String>,
 }
 impl Model for ReplayModel {
     async fn complete(&mut self, request: Value) -> Result<Value> {
-        let (expected, response) = self
-            .pairs
-            .pop_front()
-            .context("Unexpected extra model call")?;
-        if expected != request {
-            bail!("Replay request diverged from saved production-engine request");
+        let error = match self.pairs.front() {
+            None => Some("Unexpected extra model call; no saved response is available"),
+            Some((expected, _)) if *expected != request => {
+                Some("Replay request diverged from saved production-engine request")
+            }
+            _ => None,
+        };
+        if let Some(error) = error {
+            self.divergence = Some(error.into());
+            bail!("{error}");
         }
-        Ok(response)
+        Ok(self.pairs.pop_front().unwrap().1)
     }
 }
 struct ReplayMb {
     calls: VecDeque<Value>,
+    divergence: Option<String>,
 }
 impl MusicBrainz for ReplayMb {
     async fn get(&mut self, kind: &str, id: Option<&str>, query: Option<&str>) -> Result<Value> {
-        let call = self
-            .calls
-            .pop_front()
-            .context("Unexpected extra MusicBrainz call")?;
-        if call["kind"] != kind || call["id"] != json!(id) || call["query"] != json!(query) {
-            bail!("MusicBrainz replay query diverged");
+        let error = match self.calls.front() {
+            None => Some("Unexpected extra MusicBrainz call"),
+            Some(call)
+                if call["kind"] != kind
+                    || call["id"] != json!(id)
+                    || call["query"] != json!(query) =>
+            {
+                Some("MusicBrainz replay query diverged")
+            }
+            _ => None,
+        };
+        if let Some(error) = error {
+            self.divergence = Some(error.into());
+            bail!("{error}");
         }
+        let call = self.calls.pop_front().unwrap();
         if let Some(error) = call["error"].as_str() {
             bail!("{error}");
         }
         Ok(call["result"].clone())
     }
+}
+
+async fn recheck(dir: &Path) -> Result<Value> {
+    let inputs: Vec<Input> = serde_json::from_slice(&fs::read(dir.join("inputs.json"))?)?;
+    let previous: Report = serde_json::from_slice(&fs::read(dir.join("report.json"))?)?;
+    let events = read_lines(&dir.join("trace.jsonl"))?;
+    let requests: Vec<_> = events.iter().filter(|e| e["event"] == "request").collect();
+    let responses: Vec<_> = events.iter().filter(|e| e["event"] == "response").collect();
+    if responses.len() > requests.len()
+        || requests
+            .iter()
+            .zip(&responses)
+            .any(|(request, response)| request["round"] != response["round"])
+    {
+        bail!("Recorded request/response rounds do not pair correctly");
+    }
+    let mut model = ReplayModel {
+        pairs: requests
+            .iter()
+            .zip(&responses)
+            .map(|(request, response)| (request["request"].clone(), response["response"].clone()))
+            .collect(),
+        divergence: None,
+    };
+    let mut mb = ReplayMb {
+        calls: read_lines(&dir.join("musicbrainz.jsonl"))?,
+        divergence: None,
+    };
+    let mut report = run(
+        &inputs,
+        previous.config.clone(),
+        &mut model,
+        &mut mb,
+        |_| Ok(()),
+    )
+    .await?;
+    let divergence: Vec<_> = [model.divergence, mb.divergence]
+        .into_iter()
+        .flatten()
+        .collect();
+    if !divergence.is_empty() {
+        // A changed future prompt or query requires a live experiment. Do not let
+        // a caught tool error make an unsupported counterfactual look accepted.
+        report.predictions = None;
+        report.error = Some(format!(
+            "Offline recheck diverged: {}",
+            divergence.join("; ")
+        ));
+    }
+    Ok(json!({
+        "original_directory":dir,
+        "recheck_revision":REVISION,
+        "report":report,
+        "diverged":!divergence.is_empty(),
+        "divergence_errors":divergence,
+        "unused_model_responses":model.pairs.len(),
+        "unused_musicbrainz_calls":mb.calls.len(),
+        "saved_requests_without_responses":requests.len()-responses.len(),
+        "original_accepted":previous.predictions.is_some(),
+        "original_reported_cost_usd":previous.reported_cost_usd,
+        "original_missing_cost_records":previous.missing_cost_records,
+        "original_elapsed_seconds":previous.elapsed_seconds,
+        "note":"Offline counterfactual using exact recorded requests and responses. Report cost covers only consumed saved responses; the original reported cost includes all actual calls. Missing costs stay unknown. Report elapsed_seconds measures offline replay, not model latency."
+    }))
 }
 fn score(cases: &[Value], inputs: &[Input], report: &Report) -> Value {
     let mut retrieved = 0;
@@ -176,7 +269,7 @@ fn score(cases: &[Value], inputs: &[Input], report: &Report) -> Value {
             }
         }
     }
-    json!({"accepted":report.predictions.is_some(),"expected_artists":cases.iter().filter(|c|c["expected_artist"].is_string()).count(),"retrieved_expected_artists":retrieved,
+    json!({"accepted":report.predictions.is_some(),"model_profile":report.config.model_profile,"expected_artists":cases.iter().filter(|c|c["expected_artist"].is_string()).count(),"retrieved_expected_artists":retrieved,
         "correct_final_artist_candidates":if report.config.mode==Mode::Agent {json!(identities)} else {Value::Null},
         "unsupported_final_artist_claims":unsupported,"recording_claims_on_version_or_identity_traps":traps,
         "items_with_rubric_useful_tags":useful,"negative_full_abstentions":negative_abstentions,
@@ -188,6 +281,22 @@ fn score(cases: &[Value], inputs: &[Input], report: &Report) -> Value {
 #[tokio::main]
 async fn main() -> Result<()> {
     match Args::parse().command {
+        Command::Recheck { dir, out } => {
+            let result = recheck(&dir).await?;
+            if let Some(parent) = out.parent() {
+                fs::create_dir_all(parent)?;
+            }
+            let mut file = OpenOptions::new().create_new(true).write(true).open(&out)?;
+            file.write_all(&serde_json::to_vec_pretty(&result)?)?;
+            file.sync_all()?;
+            println!(
+                "{}",
+                serde_json::to_string(&json!({
+                    "output":out,"accepted":result["report"]["predictions"].is_array(),
+                    "diverged":result["diverged"],"unused_model_responses":result["unused_model_responses"]
+                }))?
+            );
+        }
         Command::Score { dir } => {
             let cases: Vec<Value> = serde_json::from_slice(&fs::read(dir.join("cases.json"))?)?;
             let mut directories: Vec<_> =
@@ -241,9 +350,11 @@ async fn main() -> Result<()> {
             }
             let mut model = ReplayModel {
                 pairs: requests.into_iter().zip(responses).collect(),
+                divergence: None,
             };
             let mut mb = ReplayMb {
                 calls: read_lines(&dir.join("musicbrainz.jsonl"))?,
+                divergence: None,
             };
             let replay = run(
                 &inputs,
@@ -272,6 +383,8 @@ async fn main() -> Result<()> {
             cache,
             repeats,
             cases: cases_file,
+            model_profile,
+            agent_only,
         } => {
             if !(1..=3).contains(&repeats) {
                 bail!("repeats must be 1–3");
@@ -314,7 +427,7 @@ async fn main() -> Result<()> {
             save(out.join("cases.json"), &cases)?;
             save(
                 out.join("manifest.json"),
-                &json!({"revision":REVISION,"version":VERSION,"contract":*CONTRACT,"prompt":include_str!("../../agent-prompt.txt"),"repeats":repeats,"cache":cache,"note":"Fixed and agent use identical Rust collector evidence. Cache is shared and later rounds are warm. Tag usefulness is a predeclared narrow rubric, not human listening accuracy."}),
+                &json!({"revision":REVISION,"version":VERSION,"contract":*CONTRACT,"prompt":include_str!("../../agent-prompt.txt"),"repeats":repeats,"cache":cache,"model_profile":model_profile,"agent_only":agent_only,"note":"Fixed and agent use identical Rust collector evidence. Cache is shared and later rounds are warm. Tag usefulness is a predeclared narrow rubric, not human listening accuracy."}),
             )?;
             // Retain exact source text as well as the revision, including dirty eval builds.
             for (name, content) in [
@@ -362,7 +475,12 @@ async fn main() -> Result<()> {
                 }
                 let collector_seconds = began.elapsed().as_secs_f64();
                 save(out.join(format!("batch-{batch}-evidence.json")), &inputs)?;
-                for mode in [Mode::Fixed, Mode::Agent] {
+                let modes = if agent_only {
+                    vec![Mode::Agent]
+                } else {
+                    vec![Mode::Fixed, Mode::Agent]
+                };
+                for mode in modes {
                     for repeat in 1..=repeats {
                         let dir = out.join(format!("batch-{batch}-{mode:?}-{repeat}"));
                         fs::create_dir(&dir)?;
@@ -385,6 +503,7 @@ async fn main() -> Result<()> {
                         };
                         let config = Config {
                             mode,
+                            model_profile: Some(model_profile),
                             ..Default::default()
                         };
                         let report = run(&inputs, config, &mut model, &mut mb, |event| {
@@ -413,4 +532,98 @@ async fn main() -> Result<()> {
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn saved_run(directory: &Path, request_drift: bool) {
+        let inputs = vec![Input {
+            id: "t01".into(),
+            name: "Live set".into(),
+            artist: "".into(),
+            album: "".into(),
+            musicbrainz: json!({}),
+        }];
+        let research = Research::new(&inputs).unwrap();
+        let mut request = research.initial_request().unwrap();
+        request.as_object_mut().unwrap().remove("response_format");
+        request["tools"] = research.tools();
+        request["tool_choice"] = json!("auto");
+        if request_drift {
+            request["model"] = json!("different-model");
+        }
+        let content = json!({"items":[{
+            "id":"t01","tags":[{"tag":"live","basis":"metadata","confidence":0.8,"evidence":"Title says live"}],
+            "uncertainty":"Recording identity unknown","research":{"artist":null,"recording":null}
+        }]}).to_string();
+        let response = json!({"choices":[{"finish_reason":"stop","message":{"content":content}}],"usage":{"cost":0.001}});
+        let original = Report {
+            version: VERSION.into(),
+            config: Config::default(),
+            predictions: None,
+            error: Some("Original run was interrupted".into()),
+            model_calls: 3,
+            tool_calls: 0,
+            recoveries: 2,
+            reported_cost_usd: 0.003,
+            missing_cost_records: 1,
+            elapsed_seconds: 80.0,
+            research: json!([]),
+        };
+        save(directory.join("inputs.json"), &inputs).unwrap();
+        save(directory.join("report.json"), &original).unwrap();
+        let events = [
+            json!({"event":"request","round":0,"request":request}),
+            json!({"event":"response","round":0,"response":response}),
+            json!({"event":"request","round":1,"request":{"later":"unused recovery prompt"}}),
+            json!({"event":"response","round":1,"response":response}),
+            json!({"event":"request","round":2,"request":{"later":"no saved response"}}),
+        ];
+        fs::write(
+            directory.join("trace.jsonl"),
+            events
+                .iter()
+                .map(Value::to_string)
+                .collect::<Vec<_>>()
+                .join("\n"),
+        )
+        .unwrap();
+        fs::write(directory.join("musicbrainz.jsonl"), "").unwrap();
+    }
+
+    #[tokio::test]
+    async fn recheck_accepts_earlier_response_without_erasing_original_cost_or_missing_response() {
+        let directory = tempfile::tempdir().unwrap();
+        saved_run(directory.path(), false);
+        let before = fs::read(directory.path().join("trace.jsonl")).unwrap();
+        let result = recheck(directory.path()).await.unwrap();
+        assert_eq!(result["diverged"], false);
+        assert!(result["report"]["predictions"].is_array());
+        assert_eq!(result["report"]["model_calls"], 1);
+        assert_eq!(result["unused_model_responses"], 1);
+        assert_eq!(result["saved_requests_without_responses"], 1);
+        assert_eq!(result["report"]["reported_cost_usd"], 0.001);
+        assert_eq!(result["original_reported_cost_usd"], 0.003);
+        assert_eq!(result["original_missing_cost_records"], 1);
+        assert_eq!(
+            fs::read(directory.path().join("trace.jsonl")).unwrap(),
+            before
+        );
+    }
+
+    #[tokio::test]
+    async fn recheck_does_not_apply_saved_response_to_a_different_request() {
+        let directory = tempfile::tempdir().unwrap();
+        saved_run(directory.path(), true);
+        let result = recheck(directory.path()).await.unwrap();
+        assert_eq!(result["diverged"], true);
+        assert!(result["report"]["predictions"].is_null());
+        assert_eq!(result["unused_model_responses"], 2);
+        assert!(result["divergence_errors"][0]
+            .as_str()
+            .unwrap()
+            .contains("request diverged"));
+    }
 }

@@ -49,6 +49,73 @@ fn artist() -> Value {
     json!({"id":ARTIST,"name":"Moonface","tags":[{"name":"folk","count":2}]})
 }
 
+#[test]
+fn historic_config_keeps_the_production_request_profile() {
+    let original = json!({
+        "mode":"agent", "max_model_calls":6, "max_tool_calls":16,
+        "max_recoveries":2, "max_request_bytes":160000
+    });
+    let restored: Config = serde_json::from_value(original.clone()).unwrap();
+    assert_eq!(restored.model_profile, None);
+    assert_eq!(serde_json::to_value(restored).unwrap(), original);
+    assert_eq!(serde_json::to_value(Config::default()).unwrap(), original);
+}
+
+#[tokio::test]
+async fn model_profiles_record_and_send_the_same_effective_request() {
+    let inputs = vec![input("t01", "Zqxv Nebula Teapot 7319", "")];
+    for profile in [
+        None,
+        Some(ModelProfile::Glm),
+        Some(ModelProfile::Luna),
+        Some(ModelProfile::LunaLow),
+    ] {
+        let research = Research::new(&inputs).unwrap();
+        let mut expected = research.initial_request().unwrap();
+        expected.as_object_mut().unwrap().remove("response_format");
+        expected["tools"] = research.tools();
+        expected["tool_choice"] = json!("auto");
+        if matches!(profile, Some(ModelProfile::Luna | ModelProfile::LunaLow)) {
+            expected["model"] = json!("openai/gpt-6-luna");
+            expected["reasoning"] = json!({"effort":if profile == Some(ModelProfile::LunaLow) { "low" } else { "none" }});
+            expected["provider"] = json!({"require_parameters":true});
+        }
+        let mut model = Replay {
+            answers: VecDeque::from([final_answer(json!([{
+                "id":"t01", "tags":[], "uncertainty":"Unidentified recording",
+                "research":{"artist":null,"recording":null}
+            }]))]),
+            requests: vec![],
+        };
+        let mut mb = Mb {
+            calls: 0,
+            answers: VecDeque::new(),
+        };
+        let mut trace = vec![];
+        let report = run(
+            &inputs,
+            Config {
+                model_profile: profile,
+                ..Default::default()
+            },
+            &mut model,
+            &mut mb,
+            |event| {
+                trace.push(event);
+                Ok(())
+            },
+        )
+        .await
+        .unwrap();
+        assert!(report.error.is_none(), "{:?}", report.error);
+        assert_eq!(report.config.model_profile, profile);
+        assert_eq!(model.requests, vec![expected.clone()]);
+        assert_eq!(trace[1]["event"], "request");
+        assert_eq!(trace[1]["request"], expected);
+        assert_eq!(mb.calls, 0);
+    }
+}
+
 #[tokio::test]
 async fn production_engine_replays_tool_search_lookup_sharing_and_handle_resolution() {
     let inputs = vec![

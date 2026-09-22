@@ -50,9 +50,49 @@ pub enum Mode {
     Agent,
     Fixed,
 }
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq, clap::ValueEnum)]
+#[serde(rename_all = "snake_case")]
+pub enum ModelProfile {
+    Glm,
+    Luna,
+    LunaLow,
+}
+impl ModelProfile {
+    fn apply(self, request: &mut Value) {
+        match self {
+            // The production contract remains the source of truth for GLM.
+            Self::Glm => {}
+            Self::Luna | Self::LunaLow => {
+                request["model"] = json!("openai/gpt-6-luna");
+                request["reasoning"] =
+                    json!({"effort":if self == Self::LunaLow { "low" } else { "none" }});
+                // GLM's provider pin and price ceiling do not apply to Luna.
+                request["provider"] = json!({"require_parameters":true});
+                if let Some(object) = request.as_object_mut() {
+                    for parameter in [
+                        "temperature",
+                        "top_p",
+                        "top_k",
+                        "min_p",
+                        "top_a",
+                        "frequency_penalty",
+                        "presence_penalty",
+                        "repetition_penalty",
+                        "seed",
+                    ] {
+                        object.remove(parameter);
+                    }
+                }
+            }
+        }
+    }
+}
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Config {
     pub mode: Mode,
+    // Missing in historic reports and production defaults; keep replay compatible.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model_profile: Option<ModelProfile>,
     pub max_model_calls: usize,
     pub max_tool_calls: usize,
     pub max_recoveries: usize,
@@ -62,6 +102,7 @@ impl Default for Config {
     fn default() -> Self {
         Self {
             mode: Mode::Agent,
+            model_profile: None,
             max_model_calls: 6,
             max_tool_calls: 16,
             max_recoveries: 2,
@@ -170,10 +211,11 @@ pub async fn run<M: Model, B: MusicBrainz>(
         for (index, item) in items.iter().enumerate() {
             if item.id != format!("t{:02}", index + 1) { bail!("Item IDs must be issued by the server in order"); }
         }
-        let initial = match config.mode {
+        let mut initial = match config.mode {
             Mode::Fixed => baseline::build_request(items)?,
             Mode::Agent => research.initial_request()?,
         };
+        if let Some(profile) = config.model_profile { profile.apply(&mut initial); }
         let mut messages = initial["messages"].as_array().context("Missing messages")?.clone();
         let mut force_final = false;
         let mut tool_results = std::collections::HashMap::<String,Value>::new();
