@@ -484,7 +484,7 @@ test('switches between Sonos and browser playback without playing twice', async 
     playOnCompletion: true,
   });
   await expect(page.getByText('Sonos · Downstairs · Playing')).toBeVisible();
-  await expect(page.getByText(/^0:4[2-9]$/)).toBeVisible();
+  await expect(page.locator('.player-timing')).toContainText(/^0:4[2-9]\s*\//);
   expect(
     await page.evaluate(() => (window as typeof window & { __playCalls: number }).__playCalls)
   ).toBe(0);
@@ -583,12 +583,12 @@ test('switches between Sonos and browser playback without playing twice', async 
         titleAfterTransport: title.left >= transport.right,
         titleBeforeSearch: title.right <= rect('.player-tools').left,
         progressBelowTitle: progress.top >= title.bottom,
-        titleAlignedWithProgress: title.left === progress.left && title.width === progress.width,
+        titleAlignedWithProgress: title.left === progress.left && rect('.player-track').width === progress.width,
         fits: document.documentElement.scrollWidth <= window.innerWidth,
       };
     });
-    expect(dimensions.height).toBeLessThanOrEqual(width > 650 ? 80 : 150);
-    expect(dimensions.volumeWidth).toBe(110);
+    expect(dimensions.height).toBeLessThanOrEqual(width > 650 ? 64 : 120);
+    expect(dimensions.volumeWidth).toBe(width > 650 ? 110 : 74);
     if (width > 650) {
       expect(dimensions.titleAfterTransport).toBe(true);
       expect(dimensions.titleBeforeSearch).toBe(true);
@@ -733,9 +733,9 @@ test('player keeps its transport buttons and a contained current-track display',
       };
     });
     if (width > 650) {
-      expect(layout.height).toBeLessThanOrEqual(80);
+      expect(layout.height).toBeLessThanOrEqual(64);
     }
-    expect(layout.progressWidth).toBeLessThanOrEqual(420);
+    expect(layout.progressWidth).toBeGreaterThan(width >= 1000 ? width * 0.4 : 250);
     expect(layout.titleAlignedWithProgress).toBe(true);
     expect(layout.controlsFit).toBe(true);
     expect(layout.fits).toBe(true);

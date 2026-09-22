@@ -269,14 +269,18 @@ test('keeps appearance usable when theme storage is blocked', async ({ page }) =
 for (const theme of themeIds) for (const mode of ['light', 'dark'] as const) {
   test(`${theme} ${mode} keeps compact surfaces and overlays readable`, async ({ page }, testInfo) => {
     await page.setViewportSize({ width: 1440, height: 900 });
+    // Check enabled playback controls with a restored, paused song.
+    await page.addInitScript(id => localStorage.setItem('reitunes-player', JSON.stringify({
+      version: 1, state: { currentItemId: id, resumePosition: 0, volume: 0.5, isMuted: false },
+    })), fixtureItems[0].id);
     await page.goto('/');
     await expect(page.locator('tbody tr')).toHaveCount(120);
     const originalDensity = await density(page);
     await chooseTheme(page, theme, mode);
     expect(await density(page)).toEqual(originalDensity);
-    expect(originalDensity.rowHeight).toBe(28);
+    expect(originalDensity.rowHeight).toBe(24);
     expect(originalDensity.top).toBeLessThan(90);
-    expect(originalDensity.visibleRows).toBeGreaterThanOrEqual(27);
+    expect(originalDensity.visibleRows).toBeGreaterThanOrEqual(31);
     const samples = [];
     for (const name of ['Play', 'Previous', 'Back 30s', 'Add bookmark', 'Settings']) {
       samples.push(await readable(page.getByRole('button', { name, exact: true }), `${name} control`, 3));

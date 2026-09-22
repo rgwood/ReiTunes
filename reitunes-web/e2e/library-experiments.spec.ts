@@ -391,6 +391,6 @@ test('keeps the approved compact row spacing even with an old visual-view prefer
   await page.screenshot({ path: testInfo.outputPath('density-after.png'), animations: 'disabled' });
   expect(measurements.tableTop).toBeLessThanOrEqual(90);
   expect(measurements.tableLeft).toBe((await page.locator('.source-sidebar').boundingBox())!.width);
-  expect(measurements.rowHeight).toBe(28);
-  expect(measurements.visibleRows).toBeGreaterThanOrEqual(27);
+  expect(measurements.rowHeight).toBe(24);
+  expect(measurements.visibleRows).toBeGreaterThanOrEqual(31);
 });

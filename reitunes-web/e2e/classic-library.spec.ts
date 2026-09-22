@@ -207,7 +207,7 @@ for (const mode of ['light', 'dark']) {
       height: row.getBoundingClientRect().height,
       border: getComputedStyle(row.querySelector('td')!).borderRightWidth,
     }));
-    expect(dimensions).toEqual({ height: 28, border: '0px' });
+    expect(dimensions).toEqual({ height: 24, border: '0px' });
     await expect(page.locator('.playback-scrubber button')).toBeVisible();
     await page.screenshot({ path: testInfo.outputPath('compact-' + mode + '.png'), fullPage: true });
     await page.getByRole('button', { name: 'Settings', exact: true }).click();

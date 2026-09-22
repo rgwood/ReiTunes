@@ -96,8 +96,6 @@ input::placeholder { color: var(--muted); opacity: 1; }
 .sonos-volume > span { width: 22px; font-size: 10px; }
 .sonos-player-layout button { padding: 4px; border-radius: 2px; }
 .sonos-player-layout button svg { width: 15px; height: 15px; }
-.sonos-play-toggle { width: 26px; height: 26px; background: var(--header); color: var(--text); }
-.sonos-play-toggle:hover { background: var(--hover); }
 .sonos-status:not(.sr-only) { grid-column: 1 / -1; grid-row: 3; font-size: 11px; padding-top: 3px; overflow-wrap: anywhere; }
 .player-bar .playback-scrubber { height: 20px; min-width: 0; background: transparent; }
 .playback-scrubber::before { content: ''; position: absolute; left: 0; right: 0; top: 8px; height: 4px; border-radius: 2px; background: var(--chrome-progress-track, var(--border-strong)); }
@@ -110,13 +108,6 @@ input::placeholder { color: var(--muted); opacity: 1; }
 .timeline-slider:disabled { cursor: default; opacity: .5; }
 .sonos-player-layout .timeline-bookmark { padding: 0; z-index: 1; }
 
-.player-bar button:is([title='Previous'], [title='Next']) { color: var(--chrome-primary, var(--text)); }
-.player-bar button:is([title='Back 30s'], [title='Forward 30s']) { color: var(--chrome-secondary, var(--text)); }
-.player-bar button:is([title='Play'], [title='Pause']), .player-bar .sonos-play-toggle {
-  background: var(--chrome-primary, var(--header));
-  color: var(--chrome-on-primary, var(--text));
-}
-.player-bar button:is([title='Add bookmark'], [title='Bookmark current Sonos time']):not(.text-solarized-green):not(.text-solarized-red) { color: var(--chrome-tertiary, var(--muted)); }
 .player-bar .output-button, .player-bar .settings-button { color: var(--chrome-secondary, var(--text)); }
 .player-bar .volume-step { color: var(--chrome-tertiary, var(--text)); }
 .player-bar .volume-slider::-webkit-slider-thumb { background: var(--chrome-tertiary, var(--accent)); }
