@@ -21,6 +21,8 @@ pub fn load_playlists_from_db(conn: &Connection) -> Result<PlaylistStore> {
 pub enum PlaylistEvent {
     PlaylistCreatedEvent {
         name: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        smart_rules: Option<SmartPlaylistRules>,
     },
     PlaylistRenamedEvent {
         new_name: String,
@@ -37,6 +39,30 @@ pub enum PlaylistEvent {
         library_item_id: Uuid,
         new_position: u32,
     },
+    SmartPlaylistRulesChangedEvent {
+        rules: SmartPlaylistRules,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SmartPlaylistRules {
+    pub added_within_days: Option<u32>,
+    pub play_state: PlayState,
+    pub favourites_only: bool,
+}
+
+impl SmartPlaylistRules {
+    pub fn is_valid(&self) -> bool {
+        self.added_within_days.is_none_or(|days| (1..=3650).contains(&days))
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PlayState {
+    Any,
+    Unplayed,
+    Played,
 }
 
 /// Playlist item (reference to a library item)
@@ -54,6 +80,7 @@ pub struct Playlist {
     pub created_time_utc: DateTime,
     pub items: IndexMap<Uuid, PlaylistItem>,
     pub is_deleted: bool,
+    pub smart_rules: Option<SmartPlaylistRules>,
 }
 
 impl Playlist {
@@ -64,14 +91,19 @@ impl Playlist {
             created_time_utc,
             items: IndexMap::new(),
             is_deleted: false,
+            smart_rules: None,
         }
     }
 
     /// Apply an event to update the playlist state
     pub fn apply(&mut self, event: &PlaylistEvent) {
         match event {
-            PlaylistEvent::PlaylistCreatedEvent { name } => {
+            PlaylistEvent::PlaylistCreatedEvent { name, smart_rules } => {
                 self.name = name.clone();
+                self.smart_rules = smart_rules.clone();
+            }
+            PlaylistEvent::SmartPlaylistRulesChangedEvent { rules } => {
+                self.smart_rules = Some(rules.clone());
             }
             PlaylistEvent::PlaylistRenamedEvent { new_name } => {
                 self.name = new_name.clone();
@@ -129,10 +161,12 @@ impl PlaylistStore {
 
         for event in events {
             match &event.event {
-                PlaylistEvent::PlaylistCreatedEvent { name } => {
+                PlaylistEvent::PlaylistCreatedEvent { name, .. } => {
+                    let mut playlist = Playlist::new(event.aggregate_id, name.clone(), event.created_time_utc);
+                    playlist.apply(&event.event);
                     store.playlists.insert(
                         event.aggregate_id,
-                        Playlist::new(event.aggregate_id, name.clone(), event.created_time_utc),
+                        playlist,
                     );
                 }
                 playlist_event => {
@@ -208,6 +242,28 @@ mod tests {
     use crate::database::save_playlist_event_to_db;
 
     #[test]
+    fn old_playlists_and_smart_rules_survive_reload() -> Result<()> {
+        let old: PlaylistEvent = serde_json::from_str(r#"{"$type":"PlaylistCreatedEvent","Name":"Old playlist"}"#)?;
+        assert!(matches!(old, PlaylistEvent::PlaylistCreatedEvent { smart_rules: None, .. }));
+        let conn = Connection::open_in_memory()?;
+        conn.execute_batch(include_str!("../schema.sql"))?;
+        let id = Uuid::new_v4();
+        let initial = SmartPlaylistRules { added_within_days: Some(30), play_state: PlayState::Unplayed, favourites_only: false };
+        let updated = SmartPlaylistRules { added_within_days: None, play_state: PlayState::Played, favourites_only: true };
+        for event in [
+            PlaylistEvent::PlaylistCreatedEvent { name: "Fresh music".into(), smart_rules: Some(initial.clone()) },
+            PlaylistEvent::SmartPlaylistRulesChangedEvent { rules: updated.clone() },
+        ] {
+            save_playlist_event_to_db(&conn, &PlaylistEventWithMetadata::new(id, event)?)?;
+        }
+        let store = load_playlists_from_db(&conn)?;
+        assert_eq!(store.playlists[&id].smart_rules, Some(updated));
+        assert!(store.playlists[&id].items.is_empty());
+        assert!(!SmartPlaylistRules { added_within_days: Some(0), ..initial }.is_valid());
+        Ok(())
+    }
+
+    #[test]
     fn playlists_survive_database_reload() -> Result<()> {
         let conn = Connection::open_in_memory()?;
         conn.execute_batch(include_str!("../schema.sql"))?;
@@ -217,6 +273,7 @@ mod tests {
         for event in [
             PlaylistEvent::PlaylistCreatedEvent {
                 name: "Morning music".to_string(),
+                smart_rules: None,
             },
             PlaylistEvent::PlaylistItemAddedEvent {
                 library_item_id: item_id,
@@ -247,6 +304,7 @@ mod tests {
         for event in [
             PlaylistEvent::PlaylistCreatedEvent {
                 name: "Temporary".to_string(),
+                smart_rules: None,
             },
             PlaylistEvent::PlaylistDeletedEvent,
         ] {

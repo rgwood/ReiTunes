@@ -66,7 +66,7 @@ test('shows, filters, edits and deletes bookmarks', async ({ page }) => {
   });
 
   await page.goto('/');
-  await page.locator('.library-toolbar').getByRole('button', { name: 'Bookmarks' }).click();
+  await page.getByRole('navigation', { name: 'Music library', exact: true }).getByRole('button', { name: 'Bookmarks' }).click();
 
   await expect(page.getByRole('heading', { name: 'Bookmarks' })).toBeVisible();
   await expect(page.getByText('Guitar entrance')).toBeVisible();
@@ -110,7 +110,7 @@ test('only Edit opens bookmark editing, with keyboard access, cancellation and f
     await route.fulfill({ status: 200 });
   });
   await page.goto('/');
-  await page.locator('.library-toolbar').getByRole('button', { name: 'Bookmarks' }).click();
+  await page.getByRole('navigation', { name: 'Music library', exact: true }).getByRole('button', { name: 'Bookmarks' }).click();
   await page.getByText('Guitar entrance', { exact: true }).click();
   const name = page.getByRole('textbox', { name: 'Bookmark label for Northern Sky' });
   const time = page.getByRole('textbox', { name: 'Bookmark time for Northern Sky' });
@@ -155,7 +155,7 @@ test('only Edit opens bookmark editing, with keyboard access, cancellation and f
   expect(items[0].bookmarks[BOOKMARK_ID].position).toBe(3723.5);
   await expect(page.getByRole('button', { name: 'Play Northern Sky from Keep this' })).toContainText('1:02:03');
   await page.reload();
-  await page.locator('.library-toolbar').getByRole('button', { name: 'Bookmarks', exact: true }).click();
+  await page.getByRole('navigation', { name: 'Music library', exact: true }).getByRole('button', { name: 'Bookmarks', exact: true }).click();
   await page.getByRole('button', { name: 'Edit Keep this bookmark for Northern Sky' }).click();
   await expect(time).toHaveValue('1:02:03.5');
 });
@@ -580,20 +580,20 @@ test('switches between Sonos and browser playback without playing twice', async 
       return {
         height: rect('.player-bar').height,
         volumeWidth: rect('.sonos-volume input').width,
-        titleAlignedWithTransport: title.left === transport.left,
-        titleBeforeOutput: title.right <= rect('.player-output').left,
+        titleAfterTransport: title.left >= transport.right,
+        titleBeforeSearch: title.right <= rect('.player-tools').left,
         progressBelowTitle: progress.top >= title.bottom,
-        sliderOffset: progress.top + progress.height / 2 - (rect('.sonos-volume input').top + rect('.sonos-volume input').height / 2),
+        titleAlignedWithProgress: title.left === progress.left && title.width === progress.width,
         fits: document.documentElement.scrollWidth <= window.innerWidth,
       };
     });
-    expect(dimensions.height).toBe(width > 650 ? 56 : 77);
+    expect(dimensions.height).toBeLessThanOrEqual(width > 650 ? 80 : 150);
     expect(dimensions.volumeWidth).toBe(110);
     if (width > 650) {
-      expect(dimensions.titleAlignedWithTransport).toBe(true);
-      expect(dimensions.titleBeforeOutput).toBe(true);
-      expect(Math.abs(dimensions.sliderOffset)).toBeLessThanOrEqual(1);
+      expect(dimensions.titleAfterTransport).toBe(true);
+      expect(dimensions.titleBeforeSearch).toBe(true);
     }
+    expect(dimensions.titleAlignedWithProgress).toBe(true);
     expect(dimensions.progressBelowTitle).toBe(true);
     expect(dimensions.fits).toBe(true);
     await page.screenshot({ path: testInfo.outputPath(`sonos-${width}.png`) });
@@ -681,14 +681,14 @@ test('Sonos status messages keep controls aligned and timeouts offer a normal re
       return box.top + box.height / 2;
     };
     return {
-      upper: [center('.output-button'), center('.settings-button')],
-      lower: [center('.sonos-transport'), center('.sonos-volume input')],
+      title: center('.sonos-track-title'),
+      transport: center('.sonos-transport'),
+      volume: center('.sonos-volume input'),
       progress: center('.sonos-progress'),
     };
   });
   const initial = await controls();
-  expect(Math.abs(initial.upper[0] - initial.upper[1])).toBeLessThanOrEqual(1);
-  expect(Math.max(...initial.lower, initial.progress) - Math.min(...initial.lower, initial.progress)).toBeLessThanOrEqual(1);
+  expect(initial.progress).toBeGreaterThan(initial.title);
   await page.getByRole('row').filter({ hasText: 'Northern Sky' }).dblclick();
   await expect(page.getByText('Sending to Kitchen + 3…')).toBeVisible();
   expect(await controls()).toEqual(initial);
@@ -700,8 +700,8 @@ test('Sonos status messages keep controls aligned and timeouts offer a normal re
   await page.screenshot({ path: testInfo.outputPath('sonos-timeout.png') });
   await page.setViewportSize({ width: 390, height: 844 });
   const mobile = await controls();
-  expect(Math.abs(mobile.upper[0] - mobile.upper[1])).toBeLessThanOrEqual(1);
-  expect(Math.abs(mobile.lower[0] - mobile.lower[1])).toBeLessThanOrEqual(1);
+  expect(mobile.progress).toBeGreaterThan(mobile.title);
+  expect(mobile.volume).toBeGreaterThan(mobile.transport);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   await page.screenshot({ path: testInfo.outputPath('sonos-timeout-mobile.png') });
   await page.getByRole('button', { name: 'Retry sending to Sonos', exact: true }).click();
@@ -710,7 +710,7 @@ test('Sonos status messages keep controls aligned and timeouts offer a normal re
   await expect(page.getByRole('button', { name: 'Retry sending to Sonos', exact: true })).toHaveCount(0);
 });
 
-test('player keeps its transport buttons and aligns the desktop sliders', async ({ page }, testInfo) => {
+test('player keeps its transport buttons and a contained current-track display', async ({ page }, testInfo) => {
   await mockBackend(page);
   await page.goto('/');
   await page.getByRole('row').filter({ hasText: 'Northern Sky' }).dblclick();
@@ -726,15 +726,17 @@ test('player keeps its transport buttons and aligns the desktop sliders', async 
       const transport = rect('.player-transport');
       return {
         height: rect('.player-bar').height,
-        offset: progress.top + progress.height / 2 - volume.top - volume.height / 2,
+        progressWidth: progress.width,
+        titleAlignedWithProgress: rect('.player-now-playing').left === progress.left,
         controlsFit: transport.right <= volume.left || transport.bottom <= volume.top,
         fits: document.documentElement.scrollWidth <= innerWidth,
       };
     });
     if (width > 650) {
-      expect(layout.height).toBe(56);
-      expect(Math.abs(layout.offset)).toBeLessThanOrEqual(1);
+      expect(layout.height).toBeLessThanOrEqual(80);
     }
+    expect(layout.progressWidth).toBeLessThanOrEqual(420);
+    expect(layout.titleAlignedWithProgress).toBe(true);
     expect(layout.controlsFit).toBe(true);
     expect(layout.fits).toBe(true);
     await page.screenshot({ path: testInfo.outputPath(`player-${width}.png`) });

@@ -42,3 +42,16 @@ export interface QueueItem {
   // Optional bookmark to start from
   bookmarkPosition?: number;
 }
+
+export interface SmartPlaylistRules {
+  added_within_days: number | null;
+  play_state: 'any' | 'unplayed' | 'played';
+  favourites_only: boolean;
+}
+
+export interface Playlist {
+  id: string;
+  name: string;
+  items: Record<string, { library_item_id: string; position: number }>;
+  smart_rules?: SmartPlaylistRules | null;
+}

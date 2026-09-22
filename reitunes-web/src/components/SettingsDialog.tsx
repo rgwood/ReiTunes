@@ -9,6 +9,7 @@ import {
 } from '../themes';
 import { MusicIcon } from './MusicIcon';
 import './SettingsDialog.css';
+import { useLibraryPreferences, type GridDensity } from '../stores/libraryPreferences';
 
 interface SettingsDialogProps {
   isOpen: boolean;
@@ -24,6 +25,7 @@ export function SettingsDialog({
   onChooseOutput,
 }: SettingsDialogProps) {
   const preference = useSyncExternalStore(subscribe, getSnapshot);
+  const { density, setDensity, showDetails, setShowDetails } = useLibraryPreferences();
   const dialogRef = useRef<HTMLDialogElement>(null);
   const modeRef = useRef<HTMLSelectElement>(null);
   const id = useId();
@@ -123,6 +125,21 @@ export function SettingsDialog({
               Choose output
             </button>
           </div>
+        </section>
+        <section aria-labelledby={`${id}-library`}>
+          <h3 id={`${id}-library`}>Library</h3>
+          <label className="settings-field" htmlFor={`${id}-density`}>
+            <span>Grid density</span>
+            <select id={`${id}-density`} value={density}
+              onChange={event => setDensity(event.target.value as GridDensity)}>
+              <option value="compact">Compact</option>
+              <option value="comfortable">Comfortable</option>
+            </select>
+          </label>
+          <label className="settings-field">
+            <span>Show track number and date added</span>
+            <input type="checkbox" checked={showDetails} onChange={event => setShowDetails(event.target.checked)} />
+          </label>
         </section>
         <footer>
           <button onClick={onClose}>Done</button>

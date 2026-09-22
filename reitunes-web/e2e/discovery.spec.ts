@@ -60,7 +60,7 @@ test('follows a source, listens externally and imports without replacing the pla
   expect(requests.filter((r) => r.path.endsWith('/import'))).toHaveLength(1);
   // Navigation must not remount the audio element or reset playback state.
   await expect(page.locator('audio')).toHaveAttribute('data-test-marker', 'same-player');
-  await page.getByRole('button', { name: 'Back to library', exact: true }).click();
+  await page.getByRole('button', { name: 'All music', exact: true }).click();
   await expect(page.getByRole('main', { name: 'Music library' })).toBeVisible();
   await expect(page.locator('audio')).toHaveAttribute('data-test-marker', 'same-player');
 });

@@ -250,7 +250,9 @@ async fn main() -> Result<()> {
                 .route("/log", post(frontend_log_handler))
                 .route("/playlists", get(list_playlists_handler).post(create_playlist_handler))
                 .route("/playlists/{id}", axum::routing::put(rename_playlist_handler).delete(delete_playlist_handler))
-                .route("/playlists/{id}/items", post(add_playlist_item_handler))
+                .route("/playlists/{id}/items", post(add_playlist_item_handler).delete(remove_playlist_items_handler))
+                .route("/playlists/{id}/rules", axum::routing::put(update_playlist_rules_handler))
+                .route("/playlists/{id}/order", axum::routing::put(reorder_playlist_handler))
                 .route("/playlists/{playlist_id}/items/{item_id}", axum::routing::delete(remove_playlist_item_handler))
                 .route("/sonos/status", get(sonos_status_handler))
                 .route("/sonos/authorize", get(sonos_authorize_handler))
@@ -1265,16 +1267,21 @@ async fn list_playlists_handler(
 #[derive(Debug, Deserialize)]
 struct CreatePlaylistRequest {
     name: String,
+    smart_rules: Option<SmartPlaylistRules>,
 }
 
 /// Create a new playlist
 async fn create_playlist_handler(
     State(app_state): State<AppState>,
     JsonExtractor(request): JsonExtractor<CreatePlaylistRequest>,
-) -> Result<impl IntoResponse, AppError> {
+) -> Result<Response, AppError> {
+    if request.name.trim().is_empty() || request.smart_rules.as_ref().is_some_and(|rules| !rules.is_valid()) {
+        return Ok(StatusCode::BAD_REQUEST.into_response());
+    }
     let playlist_id = Uuid::new_v4();
     let event = PlaylistEvent::PlaylistCreatedEvent {
-        name: request.name.clone(),
+        name: request.name.trim().to_string(),
+        smart_rules: request.smart_rules,
     };
     let event_with_metadata = PlaylistEventWithMetadata::new(playlist_id, event)?;
 
@@ -1283,10 +1290,11 @@ async fn create_playlist_handler(
 
     // Apply to in-memory store
     let mut playlists = app_state.playlists.write().await;
-    let playlist = Playlist::new(playlist_id, request.name, event_with_metadata.created_time_utc);
+    let mut playlist = Playlist::new(playlist_id, request.name, event_with_metadata.created_time_utc);
+    playlist.apply(&event_with_metadata.event);
     playlists.playlists.insert(playlist_id, playlist.clone());
 
-    Ok((StatusCode::CREATED, Json(playlist)))
+    Ok((StatusCode::CREATED, Json(playlist)).into_response())
 }
 
 #[derive(Debug, Deserialize)]
@@ -1300,19 +1308,18 @@ async fn rename_playlist_handler(
     Path(id): Path<Uuid>,
     JsonExtractor(request): JsonExtractor<RenamePlaylistRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let event = PlaylistEvent::PlaylistRenamedEvent {
-        new_name: request.name,
-    };
-    let event_with_metadata = PlaylistEventWithMetadata::new(id, event.clone())?;
-
-    let conn = DB.get()?;
-    save_playlist_event_to_db(&conn, &event_with_metadata)?;
-
-    // Apply to in-memory store
-    let mut playlists = app_state.playlists.write().await;
-    if let Some(playlist) = playlists.playlists.get_mut(&id) {
-        playlist.apply(&event);
+    if request.name.trim().is_empty() {
+        return Ok(StatusCode::BAD_REQUEST);
     }
+    let mut playlists = app_state.playlists.write().await;
+    let Some(playlist) = playlists.playlists.get_mut(&id).filter(|p| !p.is_deleted) else {
+        return Ok(StatusCode::NOT_FOUND);
+    };
+    let event = PlaylistEvent::PlaylistRenamedEvent {
+        new_name: request.name.trim().to_string(),
+    };
+    save_playlist_events(id, std::slice::from_ref(&event))?;
+    playlist.apply(&event);
 
     Ok(StatusCode::OK)
 }
@@ -1322,24 +1329,22 @@ async fn delete_playlist_handler(
     State(app_state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
-    let event = PlaylistEvent::PlaylistDeletedEvent;
-    let event_with_metadata = PlaylistEventWithMetadata::new(id, event.clone())?;
-
-    let conn = DB.get()?;
-    save_playlist_event_to_db(&conn, &event_with_metadata)?;
-
-    // Apply to in-memory store
     let mut playlists = app_state.playlists.write().await;
-    if let Some(playlist) = playlists.playlists.get_mut(&id) {
-        playlist.apply(&event);
-    }
+    let Some(playlist) = playlists.playlists.get_mut(&id).filter(|p| !p.is_deleted) else {
+        return Ok(StatusCode::NOT_FOUND);
+    };
+    let event = PlaylistEvent::PlaylistDeletedEvent;
+    save_playlist_events(id, std::slice::from_ref(&event))?;
+    playlist.apply(&event);
 
     Ok(StatusCode::OK)
 }
 
 #[derive(Debug, Deserialize)]
 struct AddPlaylistItemRequest {
-    library_item_id: Uuid,
+    library_item_id: Option<Uuid>,
+    #[serde(default)]
+    library_item_ids: Vec<Uuid>,
     position: Option<u32>,
 }
 
@@ -1349,34 +1354,101 @@ async fn add_playlist_item_handler(
     Path(id): Path<Uuid>,
     JsonExtractor(request): JsonExtractor<AddPlaylistItemRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    // Get current position if not specified
-    let position = {
-        let playlists = app_state.playlists.read().await;
-        request.position.unwrap_or_else(|| {
-            playlists
-                .playlists
-                .get(&id)
-                .map(|p| p.items.len() as u32)
-                .unwrap_or(0)
-        })
-    };
-
-    let event = PlaylistEvent::PlaylistItemAddedEvent {
-        library_item_id: request.library_item_id,
-        position,
-    };
-    let event_with_metadata = PlaylistEventWithMetadata::new(id, event.clone())?;
-
-    let conn = DB.get()?;
-    save_playlist_event_to_db(&conn, &event_with_metadata)?;
-
-    // Apply to in-memory store
-    let mut playlists = app_state.playlists.write().await;
-    if let Some(playlist) = playlists.playlists.get_mut(&id) {
-        playlist.apply(&event);
+    let ids: Vec<_> = request.library_item_id.into_iter().chain(request.library_item_ids).collect();
+    if ids.is_empty() || ids.len() > 10000 { return Ok(StatusCode::BAD_REQUEST); }
+    {
+        let library = app_state.library.read().await;
+        if ids.iter().any(|id| !library.items.contains_key(id)) {
+            return Ok(StatusCode::NOT_FOUND);
+        }
     }
-
+    let mut playlists = app_state.playlists.write().await;
+    let Some(playlist) = playlists.playlists.get_mut(&id).filter(|p| !p.is_deleted) else {
+        return Ok(StatusCode::NOT_FOUND);
+    };
+    if playlist.smart_rules.is_some() { return Ok(StatusCode::BAD_REQUEST); }
+    let mut updated = playlist.clone();
+    let mut events = Vec::new();
+    let mut position = request.position.unwrap_or_else(|| updated.items.values().map(|i| i.position).max().map_or(0, |p| p.saturating_add(1)));
+    for library_item_id in ids {
+        if updated.items.contains_key(&library_item_id) { continue; }
+        let event = PlaylistEvent::PlaylistItemAddedEvent { library_item_id, position };
+        updated.apply(&event);
+        events.push(event);
+        position = position.saturating_add(1);
+    }
+    save_playlist_events(id, &events)?;
+    *playlist = updated;
     Ok(StatusCode::CREATED)
+}
+
+fn save_playlist_events(id: Uuid, events: &[PlaylistEvent]) -> Result<(), AppError> {
+    let mut conn = DB.get()?;
+    let transaction = conn.transaction()?;
+    for event in events {
+        save_playlist_event_to_db(&transaction, &PlaylistEventWithMetadata::new(id, event.clone())?)?;
+    }
+    transaction.commit()?;
+    Ok(())
+}
+
+async fn update_playlist_rules_handler(
+    State(app_state): State<AppState>,
+    Path(id): Path<Uuid>,
+    JsonExtractor(rules): JsonExtractor<SmartPlaylistRules>,
+) -> Result<StatusCode, AppError> {
+    if !rules.is_valid() { return Ok(StatusCode::BAD_REQUEST); }
+    let mut playlists = app_state.playlists.write().await;
+    let Some(playlist) = playlists.playlists.get_mut(&id).filter(|p| !p.is_deleted) else {
+        return Ok(StatusCode::NOT_FOUND);
+    };
+    if playlist.smart_rules.is_none() { return Ok(StatusCode::BAD_REQUEST); }
+    let event = PlaylistEvent::SmartPlaylistRulesChangedEvent { rules };
+    save_playlist_events(id, std::slice::from_ref(&event))?;
+    playlist.apply(&event);
+    Ok(StatusCode::OK)
+}
+
+#[derive(Deserialize)]
+struct PlaylistOrderRequest { library_item_ids: Vec<Uuid> }
+
+async fn remove_playlist_items_handler(
+    State(app_state): State<AppState>,
+    Path(id): Path<Uuid>,
+    JsonExtractor(request): JsonExtractor<PlaylistOrderRequest>,
+) -> Result<StatusCode, AppError> {
+    let mut playlists = app_state.playlists.write().await;
+    let Some(playlist) = playlists.playlists.get_mut(&id).filter(|p| !p.is_deleted) else {
+        return Ok(StatusCode::NOT_FOUND);
+    };
+    if playlist.smart_rules.is_some() { return Ok(StatusCode::BAD_REQUEST); }
+    let events: Vec<_> = request.library_item_ids.into_iter().filter(|id| playlist.items.contains_key(id))
+        .map(|library_item_id| PlaylistEvent::PlaylistItemRemovedEvent { library_item_id }).collect();
+    save_playlist_events(id, &events)?;
+    for event in events { playlist.apply(&event); }
+    Ok(StatusCode::OK)
+}
+
+async fn reorder_playlist_handler(
+    State(app_state): State<AppState>,
+    Path(id): Path<Uuid>,
+    JsonExtractor(request): JsonExtractor<PlaylistOrderRequest>,
+) -> Result<StatusCode, AppError> {
+    let mut playlists = app_state.playlists.write().await;
+    let Some(playlist) = playlists.playlists.get_mut(&id).filter(|p| !p.is_deleted) else {
+        return Ok(StatusCode::NOT_FOUND);
+    };
+    let ids = request.library_item_ids;
+    let unique: std::collections::HashSet<_> = ids.iter().collect();
+    if playlist.smart_rules.is_some() || ids.len() != playlist.items.len()
+        || unique.len() != ids.len() || ids.iter().any(|id| !playlist.items.contains_key(id)) {
+        return Ok(StatusCode::BAD_REQUEST);
+    }
+    let events: Vec<_> = ids.into_iter().enumerate().map(|(position, library_item_id)|
+        PlaylistEvent::PlaylistItemMovedEvent { library_item_id, new_position: position as u32 }).collect();
+    save_playlist_events(id, &events)?;
+    for event in events { playlist.apply(&event); }
+    Ok(StatusCode::OK)
 }
 
 /// Remove item from a playlist
@@ -1384,21 +1456,11 @@ async fn remove_playlist_item_handler(
     State(app_state): State<AppState>,
     Path((playlist_id, item_id)): Path<(Uuid, Uuid)>,
 ) -> Result<impl IntoResponse, AppError> {
-    let event = PlaylistEvent::PlaylistItemRemovedEvent {
-        library_item_id: item_id,
-    };
-    let event_with_metadata = PlaylistEventWithMetadata::new(playlist_id, event.clone())?;
-
-    let conn = DB.get()?;
-    save_playlist_event_to_db(&conn, &event_with_metadata)?;
-
-    // Apply to in-memory store
-    let mut playlists = app_state.playlists.write().await;
-    if let Some(playlist) = playlists.playlists.get_mut(&playlist_id) {
-        playlist.apply(&event);
-    }
-
-    Ok(StatusCode::OK)
+    remove_playlist_items_handler(
+        State(app_state),
+        Path(playlist_id),
+        JsonExtractor(PlaylistOrderRequest { library_item_ids: vec![item_id] }),
+    ).await
 }
 
 #[derive(Debug, Deserialize)]
@@ -1821,6 +1883,48 @@ impl fmt::Debug for AppError {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn playlist_mutations_reject_invalid_rules_membership_and_order() {
+        let state = AppState {
+            library: Arc::new(RwLock::new(Library::new())),
+            playlists: Arc::new(RwLock::new(PlaylistStore::new())),
+            update_tx: broadcast::channel(16).0,
+            storage: Arc::new(S3Storage::new("https://storage.example.test", "test", None, "test", "test").await.unwrap()),
+            sonos: None,
+            cloud_queues: Arc::new(cloud_queue::CloudQueueStore::with_base_url("http://localhost")),
+        };
+        let id = Uuid::new_v4();
+        let item_id = Uuid::new_v4();
+        let rules = SmartPlaylistRules { added_within_days: Some(0), play_state: PlayState::Any, favourites_only: false };
+        let response = create_playlist_handler(State(state.clone()), JsonExtractor(CreatePlaylistRequest {
+            name: "Invalid".into(), smart_rules: Some(rules),
+        })).await.unwrap();
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        let response = rename_playlist_handler(State(state.clone()), Path(id), JsonExtractor(RenamePlaylistRequest {
+            name: "   ".into(),
+        })).await.unwrap().into_response();
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        let response = add_playlist_item_handler(State(state.clone()), Path(id), JsonExtractor(AddPlaylistItemRequest {
+            library_item_id: Some(item_id), library_item_ids: vec![], position: None,
+        })).await.unwrap().into_response();
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+
+        let mut playlist = Playlist::new(id, "Manual".into(), "2026-09-01T12:00:00".parse().unwrap());
+        playlist.apply(&PlaylistEvent::PlaylistItemAddedEvent { library_item_id: item_id, position: 0 });
+        state.playlists.write().await.playlists.insert(id, playlist);
+        for ids in [vec![], vec![item_id, item_id], vec![Uuid::new_v4()]] {
+            let response = reorder_playlist_handler(State(state.clone()), Path(id), JsonExtractor(PlaylistOrderRequest { library_item_ids: ids })).await.unwrap();
+            assert_eq!(response, StatusCode::BAD_REQUEST);
+        }
+        let valid_rules = SmartPlaylistRules { added_within_days: None, play_state: PlayState::Any, favourites_only: false };
+        let response = update_playlist_rules_handler(State(state.clone()), Path(id), JsonExtractor(valid_rules.clone())).await.unwrap();
+        assert_eq!(response, StatusCode::BAD_REQUEST);
+        state.playlists.write().await.playlists.get_mut(&id).unwrap().smart_rules = Some(valid_rules);
+        let response = remove_playlist_items_handler(State(state.clone()), Path(id), JsonExtractor(PlaylistOrderRequest { library_item_ids: vec![item_id] })).await.unwrap();
+        assert_eq!(response, StatusCode::BAD_REQUEST);
+        assert_eq!(state.playlists.read().await.playlists[&id].items[&item_id].position, 0);
+    }
 
     #[tokio::test]
     async fn bookmark_updates_reject_invalid_times_and_missing_bookmarks() {

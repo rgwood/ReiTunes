@@ -9,6 +9,10 @@ interface BookmarkSidebarProps {
   selectedItem?: LibraryItem;
   onClearItem: () => void;
   onPlay: (item: LibraryItem, position: number) => void;
+  query?: string;
+  onQueryChange?: (query: string) => void;
+  hideSearch?: boolean;
+  onNextMoment?: () => void;
 }
 
 interface EditState {
@@ -19,9 +23,11 @@ interface EditState {
   originalPosition: string;
 }
 
-export function BookmarkSidebar({ items, selectedItem, onClearItem, onPlay }: BookmarkSidebarProps) {
+export function BookmarkSidebar({ items, selectedItem, onClearItem, onPlay, query: externalQuery, onQueryChange, hideSearch, onNextMoment }: BookmarkSidebarProps) {
   const queryClient = useQueryClient();
-  const [query, setQuery] = useState('');
+  const [localQuery, setLocalQuery] = useState('');
+  const query = externalQuery ?? localQuery;
+  const setQuery = onQueryChange ?? setLocalQuery;
   const [editing, setEditing] = useState<EditState | null>(null);
   const [pendingKey, setPendingKey] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -76,8 +82,9 @@ export function BookmarkSidebar({ items, selectedItem, onClearItem, onPlay }: Bo
             <button type="button" onClick={onClearItem} disabled={pendingKey !== null}>All bookmarks</button>
           </div>
         )}
-        <input type="search" value={query} onChange={event => setQuery(event.target.value)}
-          placeholder="Filter bookmarks…" aria-label="Filter bookmarks" />
+        {!hideSearch && <input type="search" value={query} onChange={event => setQuery(event.target.value)}
+          placeholder="Filter bookmarks…" aria-label="Filter bookmarks" />}
+        {onNextMoment && <button className="next-bookmark" onClick={onNextMoment} disabled={!entries.length}>Next saved moment</button>}
       </header>
       {error && <div role="alert" className="bookmark-error">{error}</div>}
       <div className="bookmark-list">

@@ -663,6 +663,7 @@ export function AudioPlayer({ audioRef: sharedAudioRef, items, onPlaybackPositio
         </div>
 
         <div className="sonos-progress flex items-center gap-3">
+          <span className="player-album" title={currentItem?.album}>{currentItem?.album}</span>
           <span className="text-xs text-solarized-base0 w-10 text-right tabular-nums">
             {formatTime(displayedSonosPosition)}
           </span>
@@ -833,6 +834,7 @@ export function AudioPlayer({ audioRef: sharedAudioRef, items, onPlaybackPositio
 
       {/* Progress bar */}
       <div className="player-progress flex items-center gap-3 mb-2">
+        <span className="player-album" title={currentItem?.album}>{currentItem?.album}</span>
         <span className="text-xs text-solarized-base0 w-10 text-right tabular-nums">
           {formatTime(currentTime)}
         </span>

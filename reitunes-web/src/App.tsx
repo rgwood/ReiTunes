@@ -9,14 +9,17 @@ import {
 import {
   QueryClient,
   QueryClientProvider,
-  useQuery,
 } from '@tanstack/react-query';
 import { AudioPlayer } from './components/AudioPlayer';
 import { LibraryTable } from './components/LibraryTable';
 import { MusicIcon } from './components/MusicIcon';
 import { ImportMusic } from './components/ImportMusic';
 import { QueuePanel } from './components/QueuePanel';
-import { PlaylistSidebar } from './components/PlaylistSidebar';
+import { LibrarySidebar } from './components/LibrarySidebar';
+import { PlaylistDialog, type PlaylistDraft } from './components/PlaylistDialog';
+import { usePlaylists } from './hooks/usePlaylists';
+import { playlistItems } from './utils/playlists';
+import { useLibraryPreferences } from './stores/libraryPreferences';
 import { BookmarkSidebar } from './components/BookmarkSidebar';
 import { SonosModal } from './components/SonosModal';
 import { SettingsDialog } from './components/SettingsDialog';
@@ -29,21 +32,25 @@ import { usePlayerStore } from './stores/playerStore';
 import { usePlaybackTargetStore } from './stores/playbackTargetStore';
 import { matchesLibrarySearch } from './utils/libraryBrowser';
 import './App.css';
+import './LibraryLayout.css';
 
 const queryClient = new QueryClient();
 type Collection = 'all' | 'favourites' | 'recent' | 'unplayed';
-interface Playlist {
-  id: string;
-  name: string;
-  items: Record<string, { library_item_id: string; position: number }>;
-}
 
 function AppContent() {
-  const [view, setView] = useState<'library' | 'discover'>('library');
+  const [view, setView] = useState<'library' | 'discover' | 'bookmarks'>('library');
   const [librarySearch, setLibrarySearch] = useState('');
   const [discoverySearch, setDiscoverySearch] = useState('');
-  const searchQuery = view === 'discover' ? discoverySearch : librarySearch;
-  const setSearchQuery = view === 'discover' ? setDiscoverySearch : setLibrarySearch;
+  const [bookmarkSearch, setBookmarkSearch] = useState('');
+  const [playlistDraft, setPlaylistDraft] = useState<PlaylistDraft | null>(null);
+  const [now, setNow] = useState(Date.now);
+  const density = useLibraryPreferences(state => state.density);
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), 60000);
+    return () => window.clearInterval(timer);
+  }, []);
+  const searchQuery = view === 'discover' ? discoverySearch : view === 'bookmarks' ? bookmarkSearch : librarySearch;
+  const setSearchQuery = view === 'discover' ? setDiscoverySearch : view === 'bookmarks' ? setBookmarkSearch : setLibrarySearch;
   const deferredSearch = useDeferredValue(searchQuery);
   const deferredLibrarySearch = useDeferredValue(librarySearch);
   const [collection, setCollection] = useState<Collection>('all');
@@ -53,7 +60,7 @@ function AppContent() {
     () => Date.now() - 30 * 24 * 60 * 60 * 1000
   );
   const [panel, setPanel] = useState<
-    'queue' | 'bookmarks' | 'playlists' | null
+    'queue' | 'bookmarks' | null
   >(null);
   const [bookmarkItemId, setBookmarkItemId] = useState<string | null>(null);
   const [isImportOpen, setIsImportOpen] = useState(false);
@@ -94,14 +101,7 @@ function AppContent() {
   } = usePlayerStore();
   const playbackTarget = usePlaybackTargetStore((state) => state.target);
   const { reconcileWithLibrary, setContext, manualQueue } = useQueueStore();
-  const { data: playlists = [] } = useQuery<Playlist[]>({
-    queryKey: ['playlists'],
-    queryFn: async () => {
-      const response = await fetch('/api/playlists');
-      if (!response.ok) throw new Error('Failed to fetch playlists');
-      return response.json();
-    },
-  });
+  const { data: playlists = [], isError: playlistError } = usePlaylists();
 
   useEffect(() => {
     if (isLoading || error) return;
@@ -140,15 +140,8 @@ function AppContent() {
     (playlist) => playlist.id === selectedPlaylistId
   );
   const filteredItems = useMemo(() => {
-    const playlistIds = selectedPlaylist
-      ? new Set(
-          Object.values(selectedPlaylist.items).map(
-            (item) => item.library_item_id
-          )
-        )
-      : null;
-    return items.filter((item) => {
-      if (playlistIds && !playlistIds.has(item.id)) return false;
+    const candidates = selectedPlaylist ? playlistItems(selectedPlaylist, items, now) : items;
+    return candidates.filter((item) => {
       if (collection === 'favourites' && !item.is_favorite) return false;
       if (collection === 'unplayed' && item.play_count !== 0) return false;
       if (
@@ -162,15 +155,15 @@ function AppContent() {
         return false;
       return matchesLibrarySearch(item, deferredLibrarySearch);
     });
-  }, [items, selectedPlaylist, collection, deferredLibrarySearch, recentCutoff]);
+  }, [items, selectedPlaylist, collection, deferredLibrarySearch, recentCutoff, now]);
   const moments = useMemo(
     () =>
-      filteredItems.flatMap((item) =>
+      (view === 'bookmarks' ? items : filteredItems).flatMap((item) =>
         Object.values(item.bookmarks)
           .sort((a, b) => a.position - b.position)
           .map((bookmark) => ({ item, bookmark }))
       ),
-    [filteredItems]
+    [filteredItems, items, view]
   );
   const nextMoment = useCallback(() => {
     if (!moments.length) return;
@@ -190,14 +183,15 @@ function AppContent() {
       if (entry.item.id === currentItemId) currentIndex = index;
     });
     const next = inCurrent || moments[(currentIndex + 1) % moments.length];
+    const context = view === 'bookmarks' ? items : filteredItems;
     setContext(
-      filteredItems,
-      filteredItems.findIndex((item) => item.id === next.item.id),
+      context,
+      context.findIndex((item) => item.id === next.item.id),
       'Saved moments',
       true
     );
     void play(next.item, next.bookmark.position);
-  }, [moments, currentItemId, setContext, filteredItems, play]);
+  }, [moments, currentItemId, setContext, filteredItems, play, view, items]);
   const randomFavourite = useCallback(() => {
     const targets = items.flatMap((item) => [
       ...Object.values(item.bookmarks).map((bookmark) => ({
@@ -253,17 +247,22 @@ function AppContent() {
     if (next === 'recent')
       setRecentCutoff(Date.now() - 30 * 24 * 60 * 60 * 1000);
   };
-  const togglePanel = (next: typeof panel) => {
-    if (next === 'bookmarks') setBookmarkItemId(null);
-    if (view === 'discover' && (next === 'playlists' || next === 'bookmarks')) {
-      setView('library');
-      setPanel(next);
-    } else setPanel(panel === next ? null : next);
+  const activeSource = view !== 'library' ? view : selectedPlaylistId ? `playlist:${selectedPlaylistId}` : collection;
+  const selectSource = (source: string) => {
+    if (source === 'discover' || source === 'bookmarks') {
+      setView(source);
+      if (source === 'bookmarks') setBookmarkItemId(null);
+    } else if (source.startsWith('playlist:')) {
+      setSelectedPlaylistId(source.slice(9)); setCollection('all'); setView('library');
+    } else chooseCollection(source as Collection);
   };
+  const toggleQueue = () => setPanel(panel === 'queue' ? null : 'queue');
+
 
   return (
     <div
       className="music-app"
+      data-density={density}
       onDragEnter={(event) => {
         if (isImportOpen || !event.dataTransfer.types.includes('Files')) return;
         event.preventDefault();
@@ -290,257 +289,73 @@ function AppContent() {
       }}
     >
       <header className="player-bar">
-        <AudioPlayer
-          audioRef={audioRef}
-          onPlaybackPosition={reportPlaybackPosition}
-          items={items}
-        />
-        <div className="player-output">
-          <button
-            className="output-button"
-            onClick={() => setIsSonosOpen(true)}
-            aria-label="Sonos"
-            title="Choose playback output"
-          >
-            <MusicIcon name="speaker" size={14} />
-            <span>
-              {playbackTarget.kind === 'sonos'
-                ? playbackTarget.groupName
-                : 'This browser'}
-            </span>
-          </button>
-          <button
-            className="settings-button"
-            aria-label="Settings"
-            title="Settings"
-            onClick={() => setIsSettingsOpen(true)}
-          >
-            <MusicIcon name="settings" size={16} />
+        <div className="player-audio">
+          <AudioPlayer audioRef={audioRef} onPlaybackPosition={reportPlaybackPosition} items={items} />
+        </div>
+        <div className="player-tools">
+          <div className="library-search">
+            <MusicIcon name="search" size={14} />
+            <input ref={searchRef} type="search"
+              aria-label={view === 'discover' ? 'Search discovery' : view === 'bookmarks' ? 'Filter bookmarks' : 'Search library'}
+              placeholder={view === 'discover' ? 'Search sets and sources' : view === 'bookmarks' ? 'Filter bookmarks' : selectedPlaylist ? `Search ${selectedPlaylist.name}` : 'Search library'}
+              value={searchQuery} autoComplete="off" onChange={event => setSearchQuery(event.target.value)}
+              onKeyDown={event => { if (event.key === 'Escape') { setSearchQuery(''); searchRef.current?.blur(); } }} />
+            {searchQuery ? <button aria-label="Clear search" onClick={() => { setSearchQuery(''); searchRef.current?.focus(); }}><MusicIcon name="close" size={13} /></button> : <kbd>/</kbd>}
+          </div>
+          <button className="queue-toggle" aria-label="Queue" title={panel === 'queue' ? 'Hide Up next' : 'Show Up next'} aria-pressed={panel === 'queue'} onClick={toggleQueue}>
+            <MusicIcon name="queue" size={18} />
+            {manualQueue.length > 0 && <span className="queue-count" aria-hidden="true">{manualQueue.length}</span>}
           </button>
         </div>
       </header>
 
-      <div className="library-toolbar">
-        <div className="library-search">
-          <MusicIcon name="search" size={14} />
-          <input
-            ref={searchRef}
-            type="search"
-            aria-label={view === 'discover' ? 'Search discovery' : 'Search library'}
-            placeholder={view === 'discover' ? 'Search sets and sources' : 'Search library'}
-            value={searchQuery}
-            autoComplete="off"
-            onChange={(event) => setSearchQuery(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === 'Escape') {
-                setSearchQuery('');
-                searchRef.current?.blur();
-              }
-            }}
-          />
-          {searchQuery ? (
-            <button
-              onClick={() => {
-                setSearchQuery('');
-                searchRef.current?.focus();
-              }}
-              aria-label="Clear search"
-            >
-              <MusicIcon name="close" size={13} />
-            </button>
-          ) : (
-            <kbd>/</kbd>
-          )}
-        </div>
-        {view === 'library' ? <select
-          aria-label="Collection"
-          value={
-            selectedPlaylistId ? `playlist:${selectedPlaylistId}` : collection
-          }
-          onChange={(event) =>
-            chooseCollection(event.target.value as Collection)
-          }
-        >
-          <option value="all">All music</option>
-          <option value="favourites">Favourites</option>
-          <option value="recent">Recently added</option>
-          <option value="unplayed">Unplayed</option>
-          {selectedPlaylist && (
-            <option value={`playlist:${selectedPlaylist.id}`}>
-              {selectedPlaylist.name}
-            </option>
-          )}
-        </select> : <button className="library-back" onClick={() => setView('library')}>
-          <span aria-hidden="true">←</span> Back to library
-        </button>}
-        <div className="toolbar-actions">
-          {view === 'library' && <button data-tone="primary" onClick={() => setView('discover')}>
-            Discover{discoveryCount > 0 && <span className="discovery-count" aria-hidden="true">{discoveryCount}</span>}
-            <span aria-hidden="true">→</span>
-          </button>}
-          <button data-tone="secondary" onClick={() => setIsImportOpen(true)}>
-            <MusicIcon name="plus" size={14} />
-            Import music
-          </button>
-          {view === 'library' && <><button
-            data-tone="tertiary"
-            onClick={() => togglePanel('playlists')}
-            aria-pressed={panel === 'playlists'}
-          >
-            Playlists
-          </button>
-          <button
-            data-tone="primary"
-            onClick={() => togglePanel('bookmarks')}
-            aria-pressed={panel === 'bookmarks'}
-          >
-            Bookmarks
-          </button>
-          <button
-            data-tone="secondary"
-            onClick={nextMoment}
-            disabled={!moments.length}
-            title="Jump to the next bookmark"
-          >
-            Next saved moment
-          </button></>}
-          <button
-            data-tone="tertiary"
-            aria-label="Queue"
-            aria-pressed={panel === 'queue'}
-            onClick={() => togglePanel('queue')}
-          >
-            Queue{manualQueue.length > 0 && ` (${manualQueue.length})`}
-          </button>
-        </div>
-      </div>
-
       <main className="library-content" aria-label={view === 'discover' ? 'Music discovery' : 'Music library'}>
-        {panel === 'playlists' && view === 'library' && (
-          <aside className="library-sidepanel">
-            <button
-              className="panel-close"
-              aria-label="Close playlists"
-              onClick={() => setPanel(null)}
-            >
-              <MusicIcon name="close" size={14} />
-            </button>
-            <PlaylistSidebar
-              selectedPlaylistId={selectedPlaylistId}
-              onSelectPlaylist={(id) => {
-                setSelectedPlaylistId(id);
-                setCollection('all');
-              }}
-            />
-          </aside>
-        )}
-        {panel === 'bookmarks' && view === 'library' && (
-          <aside className="library-sidepanel">
-            <button
-              className="panel-close"
-              aria-label="Close bookmarks"
-              onClick={() => setPanel(null)}
-            >
-              <MusicIcon name="close" size={14} />
-            </button>
-            <BookmarkSidebar key={bookmarkItemId || 'all'} items={filteredItems} onPlay={play}
-              selectedItem={items.find(item => item.id === bookmarkItemId)}
-              onClearItem={() => setBookmarkItemId(null)} />
-          </aside>
-        )}
-        <div
-          className="library-results"
-          aria-busy={(view === 'library' && isLoading) || searchQuery !== deferredSearch}
-        >
-          {view === 'discover' ? (
-            <Discover searchQuery={deferredSearch} onOpenLibrary={(id) => {
-              chooseCollection('all');
-              setLibrarySearch('');
-              setRevealRequest({ itemId: id });
-            }} />
-          ) : error ? (
-            <div className="library-message" role="alert">
-              Couldn’t load the library.{' '}
-              <button
-                onClick={() =>
-                  void queryClient.invalidateQueries({ queryKey: ['library'] })
-                }
-              >
-                Retry
-              </button>
-            </div>
-          ) : isLoading ? (
-            <div className="library-message" role="status">
-              Loading…
-            </div>
-          ) : (
-            <>
+        <LibrarySidebar active={activeSource} items={items} playlists={playlists} now={now} discoveryCount={discoveryCount}
+          playlistError={playlistError} onSelect={selectSource} onEdit={setPlaylistDraft}
+          outputName={playbackTarget.kind === 'sonos' ? playbackTarget.groupName : 'This browser'} onOutput={() => setIsSonosOpen(true)}
+          onImport={() => setIsImportOpen(true)} onSettings={() => setIsSettingsOpen(true)} />
+        <div className="library-results" aria-busy={(view !== 'discover' && isLoading) || searchQuery !== deferredSearch}>
+          {view === 'discover' ? <Discover searchQuery={deferredSearch} onOpenLibrary={id => {
+            chooseCollection('all'); setLibrarySearch(''); setRevealRequest({ itemId: id });
+          }} /> : error ? <div className="library-message" role="alert">Couldn’t load the library. <button onClick={() => void queryClient.invalidateQueries({ queryKey: ['library'] })}>Retry</button></div>
+            : isLoading ? <div className="library-message" role="status">Loading…</div>
+            : view === 'bookmarks' ? <div className="bookmark-main-view">
+              <BookmarkSidebar items={items} onPlay={play} onClearItem={() => setBookmarkItemId(null)}
+                query={deferredSearch} onQueryChange={setBookmarkSearch} hideSearch onNextMoment={nextMoment} />
+            </div> : <>
               <div className="song-table">
-                <LibraryTable
-                  key={selectedPlaylistId || 'library'}
-                  items={filteredItems}
-                  searchQuery=""
-                  playlistId={selectedPlaylistId}
-                  onSearchChange={setSearchQuery}
-                  revealRequest={revealRequest}
-                  onRevealed={finishReveal}
-                  onManageBookmarks={item => {
-                    setBookmarkItemId(item.id);
-                    setPanel('bookmarks');
-                  }}
-                />
+                <LibraryTable key={selectedPlaylistId || collection} items={filteredItems} searchQuery=""
+                  viewId={selectedPlaylistId || collection}
+                  playlistId={selectedPlaylist?.smart_rules ? null : selectedPlaylistId}
+                  contextName={selectedPlaylist?.name} allowReordering={!librarySearch && !!selectedPlaylist && !selectedPlaylist.smart_rules}
+                  onNewPlaylist={itemIds => setPlaylistDraft({ smart: false, itemIds })}
+                  onSearchChange={setLibrarySearch} revealRequest={revealRequest} onRevealed={finishReveal}
+                  onManageBookmarks={item => { setBookmarkItemId(item.id); setPanel('bookmarks'); }} />
               </div>
-              {!filteredItems.length && (
-                <div className="library-message empty-grid-message">
-                  {items.length === 0 ? (
-                    <>
-                      No music.{' '}
-                      <button onClick={() => setIsImportOpen(true)}>
-                        Import files or a link
-                      </button>
-                    </>
-                  ) : (
-                    <>
-                      No matching tracks.{' '}
-                      {searchQuery && (
-                        <button onClick={() => setSearchQuery('')}>
-                          Clear search
-                        </button>
-                      )}
-                    </>
-                  )}
-                </div>
-              )}
-            </>
-          )}
+              {!filteredItems.length && <div className="library-message empty-grid-message">
+                {items.length === 0 ? <>No music. <button onClick={() => setIsImportOpen(true)}>Import files or a link</button></>
+                  : <>No matching tracks. {searchQuery && <button onClick={() => setSearchQuery('')}>Clear search</button>}</>}
+              </div>}
+            </>}
+          <footer className="library-status" role="status">
+            {view === 'discover' ? <span>{discoveryCount} sets in inbox · {discovery?.sources.length ?? 0} sources</span>
+              : view === 'bookmarks' ? <span>{items.reduce((n, item) => n + Object.keys(item.bookmarks).length, 0)} bookmarks</span>
+              : <span>{filteredItems.length.toLocaleString()}{filteredItems.length !== items.length && ` of ${items.length.toLocaleString()}`} {filteredItems.length === 1 ? 'track' : 'tracks'}{selectedPlaylist && ` · ${selectedPlaylist.name}`}</span>}
+            {view === 'library' && selectedPlaylist?.smart_rules && <button onClick={() => setPlaylistDraft({ playlist: selectedPlaylist, smart: true })}>Edit rules…</button>}
+          </footer>
         </div>
-        {panel === 'queue' && (
-          <aside className="library-sidepanel queue-sidepanel">
-            <button
-              className="panel-close"
-              aria-label="Close queue"
-              onClick={() => setPanel(null)}
-            >
-              <MusicIcon name="close" size={14} />
-            </button>
-            <QueuePanel />
-          </aside>
-        )}
+        {panel === 'bookmarks' && <aside className="library-sidepanel bookmark-sidepanel">
+          <button className="panel-close" aria-label="Close bookmarks" onClick={() => setPanel(null)}><MusicIcon name="close" size={14} /></button>
+          <BookmarkSidebar key={bookmarkItemId || 'all'} items={items} onPlay={play}
+            selectedItem={items.find(item => item.id === bookmarkItemId)} onClearItem={() => setBookmarkItemId(null)} onNextMoment={nextMoment} />
+        </aside>}
+        {panel === 'queue' && <aside className="library-sidepanel queue-sidepanel">
+          <button className="panel-close" aria-label="Close queue" onClick={() => setPanel(null)}><MusicIcon name="close" size={14} /></button><QueuePanel />
+        </aside>}
       </main>
-
-      <footer className="library-status" role="status">
-        {view === 'discover' ? <span>{discoveryCount} sets in inbox · {discovery?.sources.length ?? 0} sources</span> : <span>
-          {filteredItems.length.toLocaleString()}
-          {filteredItems.length !== items.length &&
-            ` of ${items.length.toLocaleString()}`}{' '}
-          {items.length === 1 ? 'track' : 'tracks'}
-          {selectedPlaylist && ` · ${selectedPlaylist.name}`}
-        </span>}
-        {view === 'library' && collection === 'recent' && <span>Last 30 days</span>}
-      </footer>
-      {isDragging && (
-        <div className="global-drop-overlay">Drop audio files to import</div>
-      )}
+      {playlistDraft && <PlaylistDialog draft={playlistDraft} items={items} onClose={() => setPlaylistDraft(null)}
+        onSaved={id => { setPlaylistDraft(null); selectSource('playlist:' + id); }} />}
+      {isDragging && <div className="global-drop-overlay">Drop audio files to import</div>}
       <ImportMusic
         isOpen={isImportOpen}
         onClose={() => setIsImportOpen(false)}

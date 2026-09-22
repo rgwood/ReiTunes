@@ -213,8 +213,7 @@ test('migrates the previous shared theme into both appearance choices', async ({
 test('closes settings with Escape, restores focus and opens output settings', async ({ page }) => {
   await page.goto('/');
   const settingsButton = page.getByRole('button', { name: 'Settings', exact: true });
-  await expect(settingsButton).toHaveAttribute('title', 'Settings');
-  await expect(settingsButton).toHaveText('');
+  await expect(settingsButton).toHaveText('Settings');
   await expect(settingsButton.locator('svg')).toBeVisible();
   const dialog = await openSettings(page);
   await expect(dialog.getByRole('combobox', { name: 'Mode', exact: true })).toBeFocused();
@@ -275,13 +274,16 @@ for (const theme of themeIds) for (const mode of ['light', 'dark'] as const) {
     const originalDensity = await density(page);
     await chooseTheme(page, theme, mode);
     expect(await density(page)).toEqual(originalDensity);
-    expect(originalDensity).toEqual({ top: 90, rowHeight: 24, visibleRows: 31 });
+    expect(originalDensity.rowHeight).toBe(28);
+    expect(originalDensity.top).toBeLessThan(90);
+    expect(originalDensity.visibleRows).toBeGreaterThanOrEqual(27);
     const samples = [];
     for (const name of ['Play', 'Previous', 'Back 30s', 'Add bookmark', 'Settings']) {
       samples.push(await readable(page.getByRole('button', { name, exact: true }), `${name} control`, 3));
     }
-    for (const name of ['Import music', 'Playlists', 'Bookmarks', 'Queue']) {
-      samples.push(await readable(page.locator('.toolbar-actions').getByRole('button', { name, exact: true }), `${name} toolbar text`));
+    for (const name of ['Import music', 'Bookmarks', 'Queue']) {
+      const target = name === 'Bookmarks' ? page.getByRole('navigation', { name: 'Music library', exact: true }) : page;
+      samples.push(await readable(target.getByRole('button', { name, exact: true }), `${name} navigation text`));
     }
     const row = page.locator('tbody tr').first();
     const nameCell = row.locator('td').nth(1);
@@ -292,11 +294,11 @@ for (const theme of themeIds) for (const mode of ['light', 'dark'] as const) {
     samples.push(await readable(page.locator('.library-status'), 'muted status text'));
     samples.push(await readable(page.getByRole('searchbox', { name: 'Search library' }), 'search text'));
     samples.push(await readable(page.getByRole('searchbox', { name: 'Search library' }), 'search placeholder', 4.5, '::placeholder'));
-    samples.push(await readable(page.getByRole('combobox', { name: 'Collection', exact: true }), 'collection dropdown'));
+    samples.push(await readable(page.getByRole('button', { name: 'All music', exact: true }), 'selected collection'));
     const discoverButton = page.getByRole('button', { name: 'Discover', exact: true });
     samples.push(await readable(discoverButton, 'Discover navigation'));
     await discoverButton.click();
-    const backButton = page.getByRole('button', { name: 'Back to library', exact: true });
+    const backButton = page.getByRole('button', { name: 'All music', exact: true });
     samples.push(await readable(backButton, 'Back to library navigation'));
     await backButton.click();
     expect(await density(page)).toEqual(originalDensity);
@@ -306,7 +308,7 @@ for (const theme of themeIds) for (const mode of ['light', 'dark'] as const) {
     samples.push(await readable(nameCell, 'playing track text'));
     samples.push(await readable(row.locator('td').nth(2), 'playing artist text'));
     samples.push(await readable(row.locator('[data-column="album"]'), 'playing album text'));
-    samples.push(await readable(row.locator('td').last(), 'playing created time'));
+    samples.push(await readable(row.locator('[data-column="play_count"]'), 'playing play count'));
     await nameCell.hover();
     const tooltip = page.locator('[data-floating-ui-portal] > div').filter({ hasText: longTitle });
     await expect(tooltip).toBeVisible();

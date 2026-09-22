@@ -118,6 +118,30 @@ async function playingRowIsRevealed(page: Page) {
   });
 }
 
+test('returning to a collection restores its sorting, column widths and scroll position', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 600 });
+  await mockLibrary(page, densityItems);
+  await page.goto('/');
+  await expect(page.locator('tbody tr')).toHaveCount(120);
+  await page.getByRole('columnheader', { name: 'Name', exact: true }).getByRole('button').click();
+  const handle = page.locator('thead th').nth(1).locator('.cursor-col-resize');
+  const box = (await handle.boundingBox())!;
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(box.x + 80, box.y + box.height / 2);
+  await page.mouse.up();
+  const width = (await page.locator('thead th').nth(1).boundingBox())!.width;
+  await page.locator('table').evaluate(table => { table.parentElement!.scrollTop = 900; });
+  await expect.poll(() => page.locator('table').evaluate(table => table.parentElement!.scrollTop)).toBe(900);
+  await page.getByRole('button', { name: 'Favourites', exact: true }).click();
+  await expect(page.locator('tbody tr')).not.toHaveCount(120);
+  await page.getByRole('button', { name: 'All music', exact: true }).click();
+  await expect(page.locator('tbody tr')).toHaveCount(120);
+  await expect(page.getByRole('columnheader', { name: /Name/ })).toContainText('▲');
+  await expect.poll(() => page.locator('table').evaluate(table => table.parentElement!.scrollTop)).toBe(900);
+  expect((await page.locator('thead th').nth(1).boundingBox())!.width).toBeCloseTo(width);
+});
+
 test('random jumps reveal the highlighted row in both directions, including the same song', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 600 });
   await mockLibrary(page, randomJumpItems);
@@ -145,8 +169,6 @@ test('random jumps escape hiding filters but preserve a search that includes the
   }] }));
   await page.goto('/');
   const search = page.getByRole('searchbox', { name: 'Search library' });
-  const collection = page.getByRole('combobox', { name: 'Collection', exact: true });
-  await page.getByRole('button', { name: 'Playlists', exact: true }).click();
   await page.getByText('Other songs', { exact: true }).click();
   await expect(page.locator('tbody tr')).toHaveCount(1);
   await search.fill('no matching music');
@@ -157,11 +179,11 @@ test('random jumps escape hiding filters but preserve a search that includes the
   await expect(page.locator('tbody tr')).toHaveCount(120);
   await expect.poll(() => playingRowIsRevealed(page)).toBe(true);
 
-  await collection.selectOption('favourites');
-  await collection.blur();
+  await page.getByRole('button', { name: 'Favourites', exact: true }).click();
+  await page.getByRole('button', { name: 'Favourites', exact: true }).blur();
   await expect(page.locator('tbody tr')).toHaveCount(0);
   await page.keyboard.press('Control+e');
-  await expect(collection).toHaveValue('all');
+  await expect(page.getByRole('button', { name: 'All music', exact: true })).toHaveAttribute('aria-current', 'page');
   await expect.poll(() => playingRowIsRevealed(page)).toBe(true);
 
   await search.fill(randomJumpItems[60].name);
@@ -189,14 +211,13 @@ test('searches artists, albums and bookmark labels in one grid', async ({ page }
   await expect(rows.first()).toContainText('Northern Sky');
   await search.fill('');
 
-  const collection = page.getByRole('combobox', { name: 'Collection', exact: true });
-  await collection.selectOption({ label: 'Favourites' });
+  await page.getByRole('button', { name: 'Favourites', exact: true }).click();
   await expect(rows).toHaveCount(1);
   await expect(rows.first()).toContainText('Northern Sky');
-  await collection.selectOption({ label: 'Unplayed' });
+  await page.getByRole('button', { name: 'Unplayed', exact: true }).click();
   await expect(rows).toHaveCount(2);
   await expect(page.getByRole('row').filter({ hasText: 'Late-night radio' })).toBeVisible();
-  await collection.selectOption({ label: 'All music' });
+  await page.getByRole('button', { name: 'All music', exact: true }).click();
   await expect(rows).toHaveCount(34);
 });
 
@@ -230,6 +251,7 @@ test('moves to the next saved moment from the live position and keeps queued mus
     audio.currentTime = 95;
     audio.dispatchEvent(new Event('timeupdate'));
   });
+  await page.getByRole('navigation', { name: 'Music library' }).getByRole('button', { name: 'Bookmarks', exact: true }).click();
   await page.getByRole('button', { name: 'Next saved moment', exact: true }).click();
   await expect.poll(() => page.evaluate(() => {
     const player = JSON.parse(localStorage.getItem('reitunes-player') || '{}');
@@ -252,7 +274,6 @@ test('opens a playlist in its saved order and uses its name for playback', async
     items: Object.fromEntries(orderedItems.map((item, position) => [item.id, { library_item_id: item.id, position }])),
   }] }));
   await page.goto('/');
-  await page.getByRole('button', { name: 'Playlists', exact: true }).click();
   await page.getByText('Evening rotation', { exact: true }).click();
   const rows = page.locator('tbody tr');
   await expect(rows).toHaveCount(3);
@@ -313,7 +334,7 @@ test('reviews file imports, skips non-audio files and retries only failures', as
   expect(uploadCount).toBe(3);
   await dialog.getByRole('button', { name: 'View recent imports' }).click();
   await expect(dialog).not.toBeVisible();
-  await expect(page.getByRole('combobox', { name: 'Collection', exact: true })).toHaveValue('recent');
+  await expect(page.getByRole('button', { name: 'Recently added', exact: true })).toHaveAttribute('aria-current', 'page');
 });
 
 test('queues a link and distinguishes acceptance from completed import', async ({ page }) => {
@@ -335,13 +356,13 @@ test('queues a link and distinguishes acceptance from completed import', async (
   await expect(dialog.getByText('Added to library', { exact: true })).toHaveCount(0);
 });
 
-test('shows at least thirty compact rows even with an old visual-view preference', async ({ page }, testInfo) => {
+test('keeps the approved compact row spacing even with an old visual-view preference', async ({ page }, testInfo) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await mockLibrary(page, densityItems);
   await page.addInitScript(() => localStorage.setItem('reitunes-library-view', 'sleeves'));
   await page.goto('/?view=sleeves');
   await expect(page.locator('tbody tr')).toHaveCount(120);
-  await expect(page.getByRole('heading')).toHaveCount(0);
+  await expect(page.locator('.library-results').getByRole('heading')).toHaveCount(0);
   await expect(page.getByRole('complementary')).toHaveCount(0);
   await expect(page.getByRole('button', { name: /^(Gallery|Columns|Sleeves|Songs)$/ })).toHaveCount(0);
   const measurements = await page.evaluate(() => {
@@ -369,7 +390,7 @@ test('shows at least thirty compact rows even with an old visual-view preference
   await writeFile(testInfo.outputPath('density.json'), JSON.stringify(measurements, null, 2));
   await page.screenshot({ path: testInfo.outputPath('density-after.png'), animations: 'disabled' });
   expect(measurements.tableTop).toBeLessThanOrEqual(90);
-  expect(measurements.tableLeft).toBeLessThanOrEqual(8);
-  expect(measurements.rowHeight).toBeLessThanOrEqual(25);
-  expect(measurements.visibleRows).toBeGreaterThanOrEqual(30);
+  expect(measurements.tableLeft).toBe((await page.locator('.source-sidebar').boundingBox())!.width);
+  expect(measurements.rowHeight).toBe(28);
+  expect(measurements.visibleRows).toBeGreaterThanOrEqual(27);
 });

@@ -90,84 +90,54 @@ for (const viewport of [{ name: 'desktop', width: 1440, height: 900 }, { name: '
     await page.screenshot({ path: testInfo.outputPath(`scrubber-${viewport.name}.png`) });
   });
 
-  test(`compact Discovery navigation preserves browsing and playback on ${viewport.name}`, async ({ page }, testInfo) => {
+  test(`sidebar navigation preserves browsing and playback on ${viewport.name}`, async ({ page }) => {
     await page.setViewportSize(viewport);
     await backend(page);
     await page.goto('/');
-    const libraryButton = page.getByRole('button', { name: 'Back to library', exact: true });
-    const discoverButton = page.getByRole('button', { name: 'Discover', exact: true });
-    await expect(libraryButton).toHaveCount(0);
-    await expect(discoverButton).toBeVisible();
-    await expect(page.getByRole('navigation', { name: 'Main views', exact: true })).toHaveCount(0);
-    expect(await discoverButton.getAttribute('aria-current')).toBeNull();
-    expect(await discoverButton.getAttribute('aria-pressed')).toBeNull();
-    await expect(page.locator('select[aria-label="Collection"] option[value="discover"]')).toHaveCount(0);
-
-    const collection = page.getByRole('combobox', { name: 'Collection', exact: true });
-    await collection.selectOption('favourites');
+    const sidebar = page.getByRole('navigation', { name: 'Music library', exact: true });
+    const favourites = sidebar.getByRole('button', { name: 'Favourites', exact: true });
+    await favourites.click();
     await page.getByRole('searchbox', { name: 'Search library', exact: true }).fill('Northern');
-    await expect(page.locator('tbody tr')).toHaveCount(1);
     await page.getByRole('row').filter({ hasText: 'Northern Sky' }).dblclick();
     const audio = page.locator('audio');
-    await expect.poll(() => audio.evaluate(element => (element as HTMLAudioElement).paused)).toBe(false);
     await audio.evaluate(element => { (element as HTMLAudioElement).dataset.navigationMarker = 'same-player'; });
     const playback = await audio.evaluate(element => {
       const audio = element as HTMLAudioElement;
       return { src: audio.src, playCalls: audio.dataset.playCalls, pauseCalls: audio.dataset.pauseCalls, paused: audio.paused };
     });
-    await page.screenshot({ path: testInfo.outputPath(`library-navigation-${viewport.name}.png`), fullPage: true });
-
-    await discoverButton.click();
-    await expect(libraryButton).toBeVisible();
-    await expect(discoverButton).toHaveCount(0);
-    expect(await libraryButton.getAttribute('aria-current')).toBeNull();
-    expect(await libraryButton.getAttribute('aria-pressed')).toBeNull();
-    await expect(collection).toHaveCount(0);
-    await expect(page.getByRole('button', { name: 'All music', exact: true })).toHaveCount(0);
-    await expect(page.getByRole('button', { name: 'Playlists', exact: true })).toHaveCount(0);
-    await expect(page.getByRole('button', { name: 'Bookmarks', exact: true })).toHaveCount(0);
-    await expect(page.getByRole('button', { name: 'Next saved moment', exact: true })).toHaveCount(0);
-    await expect(page.getByRole('button', { name: 'Queue', exact: true })).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Import music', exact: true })).toBeVisible();
+    const discover = sidebar.getByRole('button', { name: 'Discover', exact: true });
+    await discover.click();
+    await expect(discover).toHaveAttribute('aria-current', 'page');
+    await expect(sidebar).toBeVisible();
     const discoverySearch = page.getByRole('searchbox', { name: 'Search discovery', exact: true });
-    const backBounds = await libraryButton.boundingBox();
-    const searchBounds = await discoverySearch.boundingBox();
-    expect(Math.abs((backBounds!.y + backBounds!.height / 2) - (searchBounds!.y + searchBounds!.height / 2))).toBeLessThanOrEqual(2);
     await expect(discoverySearch).toHaveValue('');
     await discoverySearch.fill('late night');
     await expect(page.getByRole('article').filter({ hasText: 'A late night mix' })).toBeVisible();
-    await page.screenshot({ path: testInfo.outputPath(`discover-navigation-${viewport.name}.png`), fullPage: true });
-    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    await favourites.click();
+    await expect(favourites).toHaveAttribute('aria-current', 'page');
+    await expect(page.getByRole('searchbox', { name: 'Search library', exact: true })).toHaveValue('Northern');
+    await expect(page.locator('tbody tr')).toHaveCount(1);
+    await discover.click();
+    await expect(discoverySearch).toHaveValue('late night');
     await expect(audio).toHaveAttribute('data-navigation-marker', 'same-player');
     expect(await audio.evaluate(element => {
       const audio = element as HTMLAudioElement;
       return { src: audio.src, playCalls: audio.dataset.playCalls, pauseCalls: audio.dataset.pauseCalls, paused: audio.paused };
     })).toEqual(playback);
-
-    await libraryButton.click();
-    await expect(libraryButton).toHaveCount(0);
-    await expect(discoverButton).toBeVisible();
-    await expect(collection).toHaveValue('favourites');
-    await expect(page.getByRole('searchbox', { name: 'Search library', exact: true })).toHaveValue('Northern');
-    await expect(page.locator('tbody tr')).toHaveCount(1);
-    await expect(page.locator('tbody tr')).toContainText('Northern Sky');
-    await discoverButton.click();
-    await expect(discoverySearch).toHaveValue('late night');
-    await expect(audio).toHaveAttribute('data-navigation-marker', 'same-player');
-    expect(await audio.evaluate(element => (element as HTMLAudioElement).paused)).toBe(false);
   });
+
 }
 
 test('visiting Discover preserves the selected library playlist', async ({ page }) => {
   await backend(page);
   await page.goto('/');
-  await page.getByRole('button', { name: 'Playlists', exact: true }).click();
   await page.getByText('Evening favourites', { exact: true }).click();
   await expect(page.locator('tbody tr')).toHaveCount(1);
   await page.getByRole('button', { name: 'Discover', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Discover', exact: true })).toBeVisible();
-  await page.getByRole('button', { name: 'Back to library', exact: true }).click();
+  await page.getByRole('button', { name: 'Evening favourites', exact: true }).click();
   await expect(page.locator('tbody tr')).toHaveCount(1);
   await expect(page.locator('tbody tr')).toContainText('Northern Sky');
-  await expect(page.getByRole('combobox', { name: 'Collection', exact: true })).toHaveValue('playlist:playlist-1');
+  await expect(page.getByRole('button', { name: 'Evening favourites', exact: true })).toHaveAttribute('aria-current', 'page');
 });

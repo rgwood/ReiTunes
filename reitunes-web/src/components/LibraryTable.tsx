@@ -8,8 +8,8 @@ import {
   createColumnHelper,
   type SortingState,
   type ColumnFiltersState,
+  type ColumnSizingState,
 } from '@tanstack/react-table';
-import { useQuery } from '@tanstack/react-query';
 import type { LibraryItem, Bookmark } from '../types';
 import { usePlayerStore } from '../stores/playerStore';
 import { useQueueStore } from '../hooks/useQueue';
@@ -17,9 +17,11 @@ import { usePlayback } from '../hooks/usePlayback';
 import { useMetadataSuggestions, useUpdateLibraryItem, deleteItem as apiDeleteItem } from '../hooks/useLibrary';
 import { FavoriteButton } from './FavoriteButton';
 import { Tooltip } from './Tooltip';
-import { useAddToPlaylist } from '../hooks/useAddToPlaylist';
+import { usePlaylists, usePlaylistMutation } from '../hooks/usePlaylists';
+import { draggedTrackIds, moveTracksBefore, TRACK_DRAG_TYPE } from '../utils/playlists';
 import { SongInfoDialog } from './SongInfoDialog';
 import { MetadataInput } from './MetadataInput';
+import { useLibraryPreferences } from '../stores/libraryPreferences';
 
 const editableFields = ['name', 'artist', 'album'] as const;
 type EditableField = typeof editableFields[number];
@@ -28,13 +30,8 @@ function editableField(target: HTMLElement): EditableField {
   return editableFields.find(value => value === field) ?? 'name';
 }
 
-interface Playlist {
-  id: string;
-  name: string;
-  items: Record<string, { library_item_id: string; position: number }>;
-}
-
 const columnHelper = createColumnHelper<LibraryItem>();
+const savedViews = new Map<string, { sorting: SortingState; columnSizing: ColumnSizingState; scrollTop: number }>();
 
 interface LibraryTableProps {
   items: LibraryItem[];
@@ -44,6 +41,10 @@ interface LibraryTableProps {
   revealRequest?: { itemId: string } | null;
   onRevealed?: () => void;
   onManageBookmarks?: (item: LibraryItem) => void;
+  contextName?: string;
+  allowReordering?: boolean;
+  onNewPlaylist?: (itemIds: string[]) => void;
+  viewId?: string;
 }
 
 interface ParsedSearch {
@@ -125,13 +126,17 @@ function formatCreatedTime(value: string, short = false): string {
   });
 }
 
-export function LibraryTable({ items, searchQuery, playlistId, onSearchChange, revealRequest, onRevealed, onManageBookmarks }: LibraryTableProps) {
+export function LibraryTable({ items, searchQuery, playlistId, onSearchChange, revealRequest, onRevealed, onManageBookmarks, contextName: sourceName, allowReordering, onNewPlaylist, viewId = 'all' }: LibraryTableProps) {
   // TanStack Table v8 exposes mutable state through stable methods. Remove this
   // opt-out when useReactTable supports React Compiler memoization.
   'use no memo';
+  const showDetails = useLibraryPreferences(state => state.showDetails);
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const revealRowRef = useRef<HTMLTableRowElement>(null);
+  useLayoutEffect(() => {
+    if (scrollRef.current) scrollRef.current.scrollTop = savedViews.get(viewId)?.scrollTop ?? 0;
+  }, [viewId]);
   useLayoutEffect(() => {
     const scroller = scrollRef.current;
     const row = revealRowRef.current;
@@ -148,11 +153,19 @@ export function LibraryTable({ items, searchQuery, playlistId, onSearchChange, r
     }
     onRevealed?.();
   }, [revealRequest, items, onRevealed]);
-  const [sorting, setSorting] = useState<SortingState>(playlistId ? [] : [
+  const [sorting, setSorting] = useState<SortingState>(savedViews.get(viewId)?.sorting ?? (playlistId ? [] : [
     { id: 'created_time_utc', desc: true },
-  ]);
+  ]));
+  const [columnSizing, setColumnSizing] = useState<ColumnSizingState>(savedViews.get(viewId)?.columnSizing ?? {});
+  useEffect(() => {
+    savedViews.set(viewId, { sorting, columnSizing, scrollTop: scrollRef.current?.scrollTop ?? 0 });
+  }, [viewId, sorting, columnSizing]);
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
   const [selection, setSelection] = useState<{ rowId: string; field: EditableField } | null>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const anchor = useRef<string | null>(null);
+  const [playlistError, setPlaylistError] = useState('');
+  const [dropRow, setDropRow] = useState<{ id: string; after: boolean } | null>(null);
   const [editingCell, setEditingCell] = useState<{ rowId: string; field: EditableField } | null>(null);
   const [editValue, setEditValue] = useState('');
   const [editError, setEditError] = useState<string | null>(null);
@@ -182,8 +195,8 @@ export function LibraryTable({ items, searchQuery, playlistId, onSearchChange, r
     const bounds = menu.getBoundingClientRect();
     menu.style.left = `${Math.max(4, Math.min(contextMenu.x, innerWidth - bounds.width - 4))}px`;
     menu.style.top = `${Math.max(4, Math.min(contextMenu.y, innerHeight - bounds.height - 4))}px`;
-    menu.querySelector('button')?.focus();
-  }, [contextMenu]);
+    if (!menu.contains(document.activeElement)) menu.querySelector('button')?.focus();
+  }, [contextMenu, showPlaylistSubmenu]);
   useEffect(() => {
     if (editingCell && !editPending) editInputRef.current?.focus();
   }, [editingCell, editPending]);
@@ -193,16 +206,13 @@ export function LibraryTable({ items, searchQuery, playlistId, onSearchChange, r
   const { addToQueue, addNext, setContext } = useQueueStore();
 
   // Fetch playlists for context menu and filtering
-  const { data: playlists = [] } = useQuery<Playlist[]>({
-    queryKey: ['playlists'],
-    queryFn: async () => {
-      const response = await fetch('/api/playlists');
-      if (!response.ok) throw new Error('Failed to fetch playlists');
-      return response.json();
-    },
-  });
-
-  const addToPlaylistMutation = useAddToPlaylist();
+  const { data: playlists = [] } = usePlaylists();
+  const playlistMutation = usePlaylistMutation();
+  async function changePlaylist(path: string, method: string, body?: unknown) {
+    setPlaylistError('');
+    try { await playlistMutation.mutateAsync({ path, method, body }); }
+    catch { setPlaylistError('Could not update the playlist. Please try again.'); }
+  }
 
   // Get the selected playlist (if any)
   const selectedPlaylist = playlistId ? playlists.find(p => p.id === playlistId) : null;
@@ -313,9 +323,13 @@ export function LibraryTable({ items, searchQuery, playlistId, onSearchChange, r
     state: {
       sorting,
       columnFilters,
+      columnSizing,
+      columnVisibility: { track_number: showDetails, created_time_utc: showDetails },
+      columnOrder: ['is_favorite', 'name', 'artist', 'album', 'bookmarks', 'play_count', 'track_number', 'created_time_utc'],
     },
     onSortingChange: setSorting,
     onColumnFiltersChange: setColumnFilters,
+    onColumnSizingChange: setColumnSizing,
     getCoreRowModel: getCoreRowModel(),
     getSortedRowModel: getSortedRowModel(),
     getFilteredRowModel: getFilteredRowModel(),
@@ -332,10 +346,10 @@ export function LibraryTable({ items, searchQuery, playlistId, onSearchChange, r
     // Get all visible items in their current sorted order
     const sortedItems = table.getRowModel().rows.map(row => row.original);
     // Set the context to the library or playlist name
-    const contextName = selectedPlaylist ? selectedPlaylist.name : 'Library';
+    const contextName = sourceName || selectedPlaylist?.name || 'Library';
     setContext(sortedItems, rowIndex, contextName);
     void play(item);
-  }, [play, editingCell, table, setContext, selectedPlaylist]);
+  }, [play, editingCell, table, setContext, selectedPlaylist, sourceName]);
 
   const handleBookmarkClick = useCallback((item: LibraryItem, position: number, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -344,6 +358,7 @@ export function LibraryTable({ items, searchQuery, playlistId, onSearchChange, r
 
   const beginCellEdit = useCallback((item: LibraryItem, field: EditableField) => {
     cancelClickEdit();
+    setSelectedIds(new Set([item.id]));
     editFinished.current = false;
     setEditingCell({ rowId: item.id, field });
     setEditValue(item[field]);
@@ -410,11 +425,12 @@ export function LibraryTable({ items, searchQuery, playlistId, onSearchChange, r
     e.preventDefault();
     cancelClickEdit();
     if (editingCell) return;
+    if (!selectedIds.has(item.id)) setSelectedIds(new Set([item.id]));
     setSelection({ rowId: item.id, field: editableField(e.target as HTMLElement) });
     returnFocusRef.current = e.currentTarget as HTMLTableRowElement;
     returnFocusRef.current.focus();
     setContextMenu({ x: e.clientX, y: e.clientY, item });
-  }, [editingCell, cancelClickEdit]);
+  }, [editingCell, selectedIds, cancelClickEdit]);
 
   const handleDelete = useCallback(async () => {
     if (contextMenu) {
@@ -433,17 +449,19 @@ export function LibraryTable({ items, searchQuery, playlistId, onSearchChange, r
 
   const handleAddToQueue = useCallback(() => {
     if (contextMenu) {
-      addToQueue(contextMenu.item);
+      const selected = table.getRowModel().rows.map(row => row.original).filter(item => selectedIds.has(item.id));
+      (selected.length ? selected : [contextMenu.item]).forEach(addToQueue);
       setContextMenu(null);
     }
-  }, [contextMenu, addToQueue]);
+  }, [contextMenu, addToQueue, selectedIds, table]);
 
   const handlePlayNext = useCallback(() => {
     if (contextMenu) {
-      addNext(contextMenu.item);
+      const selected = table.getRowModel().rows.map(row => row.original).filter(item => selectedIds.has(item.id));
+      (selected.length ? selected : [contextMenu.item]).slice().reverse().forEach(addNext);
       setContextMenu(null);
     }
-  }, [contextMenu, addNext]);
+  }, [contextMenu, addNext, selectedIds, table]);
 
   const handleFilterByArtist = useCallback(() => {
     if (contextMenu && onSearchChange) {
@@ -483,17 +501,34 @@ export function LibraryTable({ items, searchQuery, playlistId, onSearchChange, r
   }, []);
 
   const rows = table.getRowModel().rows;
+  const contextItems = contextMenu ? rows.filter(row => selectedIds.has(row.id)).map(row => row.original) : [];
+  const contextIds = contextItems.length ? contextItems.map(item => item.id) : contextMenu ? [contextMenu.item.id] : [];
+  const manualPlaylists = playlists.filter(playlist => !playlist.smart_rules);
+  function selectRows(id: string, extend: boolean, toggle: boolean) {
+    if (extend && anchor.current && rows.some(row => row.id === anchor.current)) {
+      const first = rows.findIndex(row => row.id === anchor.current);
+      const last = rows.findIndex(row => row.id === id);
+      setSelectedIds(new Set(rows.slice(Math.min(first, last), Math.max(first, last) + 1).map(row => row.id)));
+    } else if (toggle) {
+      setSelectedIds(previous => { const next = new Set(previous); if (next.has(id)) next.delete(id); else next.add(id); return next; });
+      anchor.current = id;
+    } else { setSelectedIds(new Set([id])); anchor.current = id; }
+  }
   const tabStopId = rows.find(row => row.id === selection?.rowId)?.id ?? rows[0]?.id;
 
   return (
     <div className="px-5 h-full flex flex-col">
       {editError && <div role="alert" className="library-edit-error">{editError}</div>}
+      {playlistError && <div role="alert" className="library-edit-error">{playlistError}</div>}
       {infoItem && <SongInfoDialog key={infoItem.id} item={infoItem} onClose={() => {
         setInfoItem(null);
         queueMicrotask(() => returnFocusRef.current?.focus());
       }} />}
-      <div ref={scrollRef} className="overflow-auto flex-grow">
-        <table aria-label="Tracks" aria-description="Click to select; click a selected text cell again or press F2 to edit. Double-click or Enter to play. Ctrl+I opens song info." className={`w-full border-collapse table-fixed ${table.getState().columnSizingInfo.isResizingColumn ? 'select-none' : ''}`}>
+      <div ref={scrollRef} className="overflow-auto flex-grow" onScroll={event => {
+        const saved = savedViews.get(viewId);
+        if (saved) saved.scrollTop = event.currentTarget.scrollTop;
+      }}>
+        <table aria-label="Tracks" aria-description="Click to select; Ctrl-click, Shift-click or Ctrl+A to select several. Click a selected text cell again or press F2 to edit. Double-click or Enter to play. Ctrl+I opens song info." className={`w-full border-collapse table-fixed ${table.getState().columnSizingInfo.isResizingColumn ? 'select-none' : ''}`}>
           <colgroup>
             {table.getVisibleLeafColumns().map(column => (
               <col key={column.id} style={{
@@ -501,7 +536,7 @@ export function LibraryTable({ items, searchQuery, playlistId, onSearchChange, r
                 // Reserve the heart's space and share the rest among text columns.
                 width: column.id === 'is_favorite'
                   ? 28
-                  : `${100 * column.getSize() / (table.getTotalSize() - 28)}%`,
+                  : `${100 * column.getSize() / (table.getVisibleLeafColumns().reduce((total, column) => total + column.getSize(), 0) - 28)}%`,
               }} />
             ))}
           </colgroup>
@@ -546,7 +581,37 @@ export function LibraryTable({ items, searchQuery, playlistId, onSearchChange, r
                   data-item-id={row.id}
                   ref={row.original.id === revealRequest?.itemId ? revealRowRef : undefined}
                   aria-current={isCurrentlyPlaying ? 'true' : undefined}
-                  aria-selected={selection?.rowId === row.id}
+                  aria-selected={selectedIds.has(row.id)}
+                  data-drop-target={dropRow?.id === row.id ? (dropRow.after ? 'after' : 'before') : undefined}
+                  draggable={!editingCell}
+                  onDragStart={event => {
+                    cancelClickEdit();
+                    if (editingCell) { event.preventDefault(); return; }
+                    const ids = selectedIds.has(row.id) ? rows.filter(row => selectedIds.has(row.id)).map(row => row.id) : [row.id];
+                    setSelectedIds(new Set(ids));
+                    event.dataTransfer.setData(TRACK_DRAG_TYPE, JSON.stringify(ids));
+                    event.dataTransfer.effectAllowed = 'copyMove';
+                  }}
+                  onDragOver={event => {
+                    if (allowReordering && sorting.length === 0 && event.dataTransfer.types.includes(TRACK_DRAG_TYPE)) {
+                      event.preventDefault(); event.dataTransfer.dropEffect = 'move';
+                      const bounds = event.currentTarget.getBoundingClientRect();
+                      setDropRow({ id: row.id, after: event.clientY > bounds.top + bounds.height / 2 });
+                    }
+                  }}
+                  onDragLeave={() => setDropRow(null)} onDragEnd={() => setDropRow(null)}
+                  onDrop={event => {
+                    setDropRow(null);
+                    if (!allowReordering || !selectedPlaylist || sorting.length || playlistMutation.isPending) return;
+                    const moving = draggedTrackIds(event.dataTransfer);
+                    if (!moving.length) return;
+                    event.preventDefault();
+                    const order = Object.values(selectedPlaylist.items).sort((a, b) => a.position - b.position).map(item => item.library_item_id);
+                    if (moving.includes(row.id)) return;
+                    const bounds = event.currentTarget.getBoundingClientRect();
+                    const before = event.clientY > bounds.top + bounds.height / 2 ? order[order.indexOf(row.id) + 1] ?? null : row.id;
+                    void changePlaylist('/' + selectedPlaylist.id + '/order', 'PUT', { library_item_ids: moveTracksBefore(order, moving, before) });
+                  }}
                   tabIndex={tabStopId === row.id ? 0 : -1}
                   onFocus={event => {
                     if (event.target === event.currentTarget) setSelection(previous => ({ rowId: row.id, field: previous?.field ?? 'name' }));
@@ -556,7 +621,11 @@ export function LibraryTable({ items, searchQuery, playlistId, onSearchChange, r
                     if (event.target !== event.currentTarget || editingCell) return;
                     returnFocusRef.current = event.currentTarget;
                     const field = selection?.rowId === row.id ? selection.field : 'name';
-                    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'i') {
+                    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'a') {
+                      event.preventDefault(); setSelectedIds(new Set(rows.map(row => row.id)));
+                    } else if (event.key === 'Escape') {
+                      setSelectedIds(new Set());
+                    } else if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'i') {
                       event.preventDefault();
                       setContextMenu(null);
                       setInfoItem(row.original);
@@ -572,7 +641,7 @@ export function LibraryTable({ items, searchQuery, playlistId, onSearchChange, r
                         const next = event.key === 'ArrowUp' ? event.currentTarget.previousElementSibling : event.currentTarget.nextElementSibling;
                         if (next instanceof HTMLTableRowElement) {
                           const nextId = rows[rowIndex + (event.key === 'ArrowUp' ? -1 : 1)]?.id;
-                          if (nextId) setSelection({ rowId: nextId, field });
+                          if (nextId) { setSelection({ rowId: nextId, field }); selectRows(nextId, event.shiftKey, false); }
                           next.focus();
                         }
                       }
@@ -580,6 +649,7 @@ export function LibraryTable({ items, searchQuery, playlistId, onSearchChange, r
                       event.preventDefault();
                       const rect = event.currentTarget.getBoundingClientRect();
                       setSelection({ rowId: row.id, field });
+                      if (!selectedIds.has(row.id)) setSelectedIds(new Set([row.id]));
                       setContextMenu({ x: rect.left + 10, y: rect.bottom, item: row.original });
                     } else if ((event.key === 'Enter' || event.key === ' ') && !event.repeat) {
                       event.preventDefault();
@@ -590,7 +660,7 @@ export function LibraryTable({ items, searchQuery, playlistId, onSearchChange, r
                   className={`hover:bg-solarized-base02 cursor-pointer ${isCurrentlyPlaying ? 'bg-solarized-base02' : ''}`}
                   onPointerDown={event => {
                     cancelClickEdit();
-                    clickWasSelected.current = selection?.rowId === row.id && selection.field === editableField(event.target as HTMLElement);
+                    clickWasSelected.current = selectedIds.size === 1 && selectedIds.has(row.id) && selection?.rowId === row.id && selection.field === editableField(event.target as HTMLElement);
                   }}
                   onBlur={event => { if (event.target === event.currentTarget) cancelClickEdit(); }}
                   onClick={event => {
@@ -599,8 +669,9 @@ export function LibraryTable({ items, searchQuery, playlistId, onSearchChange, r
                     const isTextCell = editableFields.some(value => value === (event.target as HTMLElement).closest('td')?.getAttribute('data-column'));
                     const rowElement = event.currentTarget;
                     setSelection({ rowId: row.id, field });
+                    selectRows(row.id, event.shiftKey, event.ctrlKey || event.metaKey);
                     rowElement.focus();
-                    if (!editingCell && clickWasSelected.current && isTextCell && event.detail === 1) {
+                    if (!editingCell && clickWasSelected.current && isTextCell && event.detail === 1 && !event.ctrlKey && !event.metaKey && !event.shiftKey) {
                       // Defer rename so a second click can still produce normal playback.
                       editClickTimer.current = setTimeout(() => {
                         editClickTimer.current = null;
@@ -699,14 +770,15 @@ export function LibraryTable({ items, searchQuery, playlistId, onSearchChange, r
             }
           }}
         >
-          <button type="button" className="w-full text-left px-3 py-2 text-solarized-base1 hover:bg-solarized-blue"
+          {contextIds.length > 1 && <div className="context-selection-count">{contextIds.length} selected tracks</div>}
+          {contextIds.length === 1 && <><button type="button" className="w-full text-left px-3 py-2 text-solarized-base1 hover:bg-solarized-blue"
             onClick={() => { setInfoItem(contextMenu.item); setContextMenu(null); }}>
             Get Info… <span className="menu-shortcut">Ctrl+I</span>
           </button>
           <button type="button" className="w-full text-left px-3 py-2 text-solarized-base1 hover:bg-solarized-blue"
             onClick={() => { beginCellEdit(contextMenu.item, selection?.field ?? 'name'); setContextMenu(null); }}>
             Edit {selection?.field ?? 'name'} <span className="menu-shortcut">F2</span>
-          </button>
+          </button></>}
           <div
             className="px-3 py-2 text-solarized-base1 hover:bg-solarized-blue hover:bg-opacity-30 cursor-pointer"
             onClick={handlePlayNext}
@@ -751,41 +823,46 @@ export function LibraryTable({ items, searchQuery, playlistId, onSearchChange, r
             onMouseEnter={() => setShowPlaylistSubmenu(true)}
             onMouseLeave={() => setShowPlaylistSubmenu(false)}
           >
-            <div className="px-3 py-2 text-solarized-base1 hover:bg-solarized-blue hover:bg-opacity-30 cursor-pointer flex justify-between items-center">
+            <button type="button" aria-expanded={showPlaylistSubmenu} onClick={() => setShowPlaylistSubmenu(!showPlaylistSubmenu)} className="w-full px-3 py-2 text-solarized-base1 hover:bg-solarized-blue hover:bg-opacity-30 cursor-pointer flex justify-between items-center">
               <span>&#9835; Add to Playlist</span>
               <span>&#9656;</span>
-            </div>
+            </button>
             {showPlaylistSubmenu && (
-              <div className="absolute left-full top-0 bg-solarized-base02 border border-solarized-blue rounded shadow-lg py-1 min-w-32">
-                {playlists.length === 0 ? (
+              <div className="playlist-submenu bg-solarized-base02 py-1 min-w-32">
+                {manualPlaylists.length === 0 ? (
                   <div className="px-3 py-2 text-solarized-base0 italic">No playlists</div>
                 ) : (
-                  playlists.map((playlist) => (
-                    <div
+                  manualPlaylists.map((playlist) => (
+                    <button type="button"
                       key={playlist.id}
-                      className="px-3 py-2 text-solarized-base1 hover:bg-solarized-blue hover:bg-opacity-30 cursor-pointer"
+                      className="w-full text-left px-3 py-2 text-solarized-base1 hover:bg-solarized-blue hover:bg-opacity-30 cursor-pointer"
+                      disabled={playlistMutation.isPending}
                       onClick={() => {
-                        addToPlaylistMutation.mutate({
-                          playlistId: playlist.id,
-                          libraryItemId: contextMenu.item.id,
-                        });
+                        void changePlaylist('/' + playlist.id + '/items', 'POST', { library_item_ids: contextIds });
                         setContextMenu(null);
                         setShowPlaylistSubmenu(false);
                       }}
                     >
                       {playlist.name}
-                    </div>
+                    </button>
                   ))
                 )}
               </div>
             )}
           </div>
-          <div
+          {onNewPlaylist && <button type="button" className="w-full text-left px-3 py-2" onClick={() => {
+            onNewPlaylist(contextIds); setContextMenu(null);
+          }}>New playlist from selection…</button>}
+          {selectedPlaylist && <button type="button" className="w-full text-left px-3 py-2" disabled={playlistMutation.isPending} onClick={() => {
+            void changePlaylist('/' + selectedPlaylist.id + '/items', 'DELETE', { library_item_ids: contextIds });
+            setContextMenu(null);
+          }}>Remove from playlist</button>}
+          {contextIds.length === 1 && <div
             className="px-3 py-2 text-solarized-base1 hover:bg-solarized-red hover:text-solarized-base3 cursor-pointer"
             onClick={handleDelete}
           >
-            &#128465; Delete
-          </div>
+            &#128465; Delete from Library
+          </div>}
         </div>
       )}
     </div>
