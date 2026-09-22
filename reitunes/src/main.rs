@@ -38,6 +38,7 @@ mod smapi;
 mod sonos;
 mod cloud_queue;
 mod storage;
+mod storage_cleanup;
 mod systemd;
 mod discovery;
 mod downloads;
@@ -211,6 +212,7 @@ async fn main() -> Result<()> {
 
             let discovery = discovery::Discovery::new(DB.clone(), app_state.library.clone())?;
             discovery.start_refresh_loop();
+            storage_cleanup::start(DB.clone(), app_state.library.clone(), app_state.storage.clone());
 
             if app_state.sonos.is_some() {
                 info!("Sonos Direct Control is configured");
@@ -1154,10 +1156,10 @@ async fn upload_handler(
         let event_with_metadata = EventWithMetadata::new(item_id, event)?;
 
         // Save and broadcast
+        let mut library = app_state.library.write().await;
         let conn = DB.get()?;
         save_event_to_db(&conn, &event_with_metadata)?;
 
-        let mut library = app_state.library.write().await;
         library.apply(&event_with_metadata);
 
         if let Some(updated_item) = library.items.get(&item_id) {
@@ -1483,12 +1485,12 @@ async fn update_handler(
 }
 
 async fn save_and_broadcast_event(event: EventWithMetadata, app_state: AppState) -> Result<()> {
+    let mut library = app_state.library.write().await;
     // Save the event to the database
     let conn = DB.get()?;
     save_event_to_db(&conn, &event)?;
 
     // Apply the event to the library
-    let mut library = app_state.library.write().await;
     library.apply(&event);
 
     match &event.event {
@@ -1550,7 +1552,8 @@ async fn add_item_handler(
     };
     let event_with_metadata = EventWithMetadata::new(item_id, event)?;
 
-    // Save the event to the database
+    // Serialize file-reference changes with object storage cleanup.
+    let mut library = app_state.library.write().await;
     {
         let mut conn = DB.get()?;
         let transaction = conn.transaction()?;
@@ -1565,7 +1568,6 @@ async fn add_item_handler(
     }
 
     // Apply the event to the library
-    let mut library = app_state.library.write().await;
     library.apply(&event_with_metadata);
 
     if let Some(updated_item) = library.items.get(&item_id) {
@@ -1592,11 +1594,11 @@ async fn play_handler(
     let event_with_metadata = EventWithMetadata::new(request.id, event)?;
 
     // Save the event to the database
+    let mut library = app_state.library.write().await;
     let conn = DB.get()?;
     save_event_to_db(&conn, &event_with_metadata)?;
 
     // Apply the event to the library
-    let mut library = app_state.library.write().await;
     library.apply(&event_with_metadata);
 
     if let Some(updated_item) = library.items.get(&request.id) {

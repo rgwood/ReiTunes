@@ -8,6 +8,16 @@ events(
     Serialized TEXT NOT NULL
 );
 
+-- The event log is the durable cleanup queue. Receipts are written only after
+-- object deletion succeeds, so interrupted or failed requests can be retried.
+CREATE TABLE IF NOT EXISTS storage_deletions (
+    StorageScope TEXT NOT NULL,
+    DeletionEventId TEXT NOT NULL,
+    FilePath TEXT NOT NULL,
+    CompletedAt TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (StorageScope, DeletionEventId)
+);
+
 -- Sonos OAuth tokens are encrypted before they reach SQLite. This singleton row
 -- survives application restarts without putting a refresh token in source or in
 -- a browser cookie.

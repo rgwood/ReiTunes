@@ -33,6 +33,12 @@ Library metadata changes are treated as events; they are serialized to JSON and 
 
 The entire library is rebuilt from events on launch (more than fast enough; sub-10ms in the Rust version).
 
+### Deleting audio
+
+Deleting a song also permanently removes its audio from object storage, unless another song still uses the same file. The server checks deletion history on startup and every 30 seconds, including songs deleted before storage cleanup was added.
+
+The event log stays intact. A `storage_deletions` receipt is saved after each successful object deletion, so storage failures and interrupted requests are retried after a restart. Cleanup only deletes exact paths from deleted songs within the configured bucket and prefix; it does not scan for unrelated objects. Bucket versioning must be disabled: a versioned bucket needs a separate purge of retained versions to actually free storage, so cleanup refuses to mark those deletions complete.
+
 ## Acknowledgments
 
 The library synchronization approach is heavily influenced by [Building offline-first web and mobile apps using event-sourcing](https://flpvsk.com/blog/2019-07-20-offline-first-apps-event-sourcing/) by Andrey Salomatin.

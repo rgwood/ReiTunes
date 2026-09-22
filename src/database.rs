@@ -107,7 +107,7 @@ pub fn save_playlist_event_to_db(
 #[instrument(skip(conn))]
 pub fn load_all_events_from_db(conn: &Connection) -> Result<Vec<EventWithMetadata>> {
     let mut stmt = conn.prepare_cached(
-        "SELECT * FROM events e WHERE e.AggregateType == 'LibraryItem' ORDER BY CreatedTimeUtc",
+        "SELECT * FROM events e WHERE e.AggregateType == 'LibraryItem' ORDER BY CreatedTimeUtc, rowid",
     )?;
 
     // do the easy thing and load each row into a struct

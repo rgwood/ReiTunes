@@ -435,7 +435,7 @@ export function LibraryTable({ items, searchQuery, playlistId, onSearchChange, r
   const handleDelete = useCallback(async () => {
     if (contextMenu) {
       const item = contextMenu.item;
-      if (confirm(`Are you sure you want to delete "${item.name}"?`)) {
+      if (confirm(`Delete "${item.name}"? Its audio file will also be permanently deleted unless another song uses it.`)) {
         try {
           await apiDeleteItem(item.id);
         } catch (err) {

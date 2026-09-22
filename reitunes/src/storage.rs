@@ -1,4 +1,4 @@
-use anyhow::{Context, Result};
+use anyhow::{ensure, Context, Result};
 use aws_sdk_s3::primitives::ByteStream;
 use std::path::Path;
 use tracing::info;
@@ -12,6 +12,26 @@ pub struct S3Storage {
 }
 
 impl S3Storage {
+    pub fn scope(&self) -> &str {
+        &self.base_url
+    }
+
+    /// Delete only an exact relative library path in this storage prefix.
+    pub async fn delete(&self, file_path: &str) -> Result<()> {
+        ensure!(valid_file_path(file_path), "Refusing to delete an invalid storage path");
+        // DeleteObject only creates a delete marker in a versioned bucket. Do
+        // not record that as reclaimed storage; it needs a version-aware purge.
+        let versioning = self.client.get_bucket_versioning().bucket(&self.bucket).send().await?;
+        ensure!(versioning.status().is_none(), "Storage cleanup requires an unversioned bucket");
+        let key = match &self.prefix {
+            Some(prefix) => format!("{prefix}/{file_path}"),
+            None => file_path.to_string(),
+        };
+        self.client.delete_object().bucket(&self.bucket).key(key).send().await
+            .context("Failed to delete audio from object storage")?;
+        Ok(())
+    }
+
     pub async fn new(
         endpoint: &str,
         bucket: &str,
@@ -115,4 +135,9 @@ impl S3Storage {
         let encoded = urlencoding::encode(file_path);
         format!("{}/{}", self.base_url, encoded)
     }
+}
+
+pub fn valid_file_path(path: &str) -> bool {
+    !path.is_empty() && !path.contains('\\') && !path.contains("://") &&
+        !path.split('/').any(|part| matches!(part, "" | "." | ".."))
 }
