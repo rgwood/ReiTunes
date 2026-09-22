@@ -22,7 +22,8 @@ import { draggedTrackIds, moveTracksBefore, TRACK_DRAG_TYPE } from '../utils/pla
 import { SongInfoDialog } from './SongInfoDialog';
 import { MetadataInput } from './MetadataInput';
 import { useLibraryPreferences } from '../stores/libraryPreferences';
-import { effectiveTags, tagProgress, type ItemTags } from '../hooks/useTags';
+import type { ItemTags } from '../hooks/useTags';
+import { RowTags } from './RowTags';
 
 const editableFields = ['name', 'artist', 'album'] as const;
 type EditableField = typeof editableFields[number];
@@ -321,21 +322,8 @@ export function LibraryTable({ items, searchQuery, playlistId, onSearchChange, r
       id: 'tags', header: 'Tags', size: 160,
       cell: ({ row, table }) => {
         const { tagItems, selectedTagItemId, onManageTags, onFilterTag } = table.options.meta as TagTableMeta;
-        const data = tagItems?.[row.original.id];
-        const itemTags = effectiveTags(data);
-        return <div className="row-tags">
-          <span className="row-tag-links">{itemTags.slice(0, 2).map(tag => <button key={tag} className="row-tag-link"
-            title={`Browse all music tagged ${tag}`} aria-label={`Browse music tagged ${tag}`}
-            onClick={event => { event.stopPropagation(); onFilterTag?.(tag); }}>{tag}</button>)}
-            {!itemTags.length && <span className="row-tags-empty" title={tagProgress(data)}>
-              {data?.status === 'running' ? 'Generating…' : data?.status === 'queued' ? 'Waiting…' : data?.status === 'failed' ? 'Failed' : '—'}
-            </span>}
-          </span>
-          <button type="button" className={`row-tag-edit${itemTags.length > 2 ? ' has-more' : ''}`}
-            aria-label={`Edit tags for ${row.original.name}`} aria-pressed={selectedTagItemId === row.original.id}
-            title={itemTags.length > 2 ? `${itemTags.join(', ')} — manage tags` : 'Add or remove tags'}
-            onClick={event => { event.stopPropagation(); onManageTags?.(row.original); }}>{itemTags.length > 2 ? `+${itemTags.length - 2}` : '…'}</button>
-        </div>;
+        return <RowTags name={row.original.name} data={tagItems?.[row.original.id]} selected={selectedTagItemId === row.original.id}
+          onEdit={() => onManageTags?.(row.original)} onFilter={tag => onFilterTag?.(tag)} />;
       },
     }),
     columnHelper.accessor('created_time_utc', {

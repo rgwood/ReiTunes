@@ -169,7 +169,7 @@ for (const width of [1200, 968, 640, 390]) {
     const { writes } = await backend(page);
     await page.goto('/');
     const first = page.getByRole('button', { name: 'Edit tags for Evening set', exact: true });
-    await expect(first).toHaveText('…');
+    await expect(first).toBeVisible();
     await first.click();
     await expect(first).toBeFocused();
     await expect(page.getByRole('heading', { name: 'Evening set', exact: true })).toBeVisible();
@@ -213,6 +213,77 @@ for (const width of [1200, 968, 640, 390]) {
     await expect(page.getByRole('button', { name: 'Edit tags for Morning piano', exact: true })).toBeFocused();
   });
 }
+
+test('the Tags column uses its width and counts only tags that do not fit', async ({ page }, testInfo) => {
+  await page.setViewportSize({ width: 1920, height: 900 });
+  await page.addInitScript(() => localStorage.setItem('reitunes-theme', JSON.stringify({ lightTheme: 'neutral', darkTheme: 'forest-palace', mode: 'dark' })));
+  const { data, writes } = await backend(page);
+  const tags = ['ambient', 'dub', 'folk', 'house', 'jazz', 'piano'];
+  data.items[tracks[0].id].tags = tags.map(tag => ({ tag, confidence: .7, basis: 'metadata', evidence: 'Track metadata.', sourceUrls: [] }));
+  await page.goto('/');
+  const row = page.locator(`tr[data-item-id="${tracks[0].id}"]`);
+  const cell = row.locator('[data-column=tags]');
+  const chips = cell.getByRole('button', { name: /^Browse music tagged / });
+  const edit = cell.getByRole('button', { name: 'Edit tags for Evening set' });
+  await expect(chips).toHaveCount(tags.length);
+  await expect(edit).toHaveText('…');
+  expect(await row.evaluate(element => element.getBoundingClientRect().height)).toBe(24);
+  await page.screenshot({ path: testInfo.outputPath('tags-fill-wide-column.png'), animations: 'disabled' });
+
+  // Resizing a different column also changes how much room Tags receives.
+  const handle = page.getByRole('columnheader', { name: 'Name', exact: true }).locator('.cursor-col-resize');
+  const grip = (await handle.boundingBox())!;
+  await page.mouse.move(grip.x + grip.width / 2, grip.y + grip.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(grip.x + 650, grip.y + grip.height / 2, { steps: 12 });
+  await page.mouse.up();
+  await expect.poll(() => chips.count()).toBeLessThan(tags.length);
+  const resizedCount = await chips.count();
+  await expect(edit).toHaveText(`+${tags.length - resizedCount}`);
+
+  await page.setViewportSize({ width: 1000, height: 900 });
+  await expect.poll(() => chips.count()).toBeLessThan(resizedCount);
+  const visibleCount = await chips.count();
+  await expect(edit).toHaveText(`+${tags.length - visibleCount}`);
+  await expect(cell.locator('.row-tag-link[aria-hidden=true]')).toHaveCount(tags.length - visibleCount);
+  const hiddenTabStops = await cell.locator('.row-tag-link[aria-hidden=true]').evaluateAll(buttons => buttons.some(button => (button as HTMLButtonElement).tabIndex >= 0));
+  expect(hiddenTabStops).toBe(false);
+  expect(await row.evaluate(element => element.getBoundingClientRect().height)).toBe(24);
+  await edit.click();
+  await expect(page.getByRole('region', { name: 'Library tags' }).getByRole('article')).toHaveCount(tags.length);
+  await page.getByRole('button', { name: 'Close tags' }).click();
+
+  await page.setViewportSize({ width: 2880, height: 900 });
+  await expect(chips).toHaveCount(tags.length);
+  await expect(edit).toHaveText('…');
+  await chips.last().click();
+  await expect(page.getByRole('searchbox', { name: 'Search library' })).toHaveValue('tag:piano');
+  expect(writes).toEqual([]);
+  await expect(page.getByText('No song selected', { exact: true })).toBeVisible();
+});
+
+test('a long leading tag truncates without covering the count or hiding keyboard focus', async ({ page }) => {
+  await page.setViewportSize({ width: 2880, height: 900 });
+  const { data } = await backend(page);
+  const tags = ['a-very-long-descriptive-tag-that-does-not-fit-in-a-narrow-column', 'dub', 'folk', 'jazz'];
+  data.items[tracks[0].id].tags = tags.map(tag => ({ tag, confidence: .7, basis: 'metadata', evidence: 'Track metadata.', sourceUrls: [] }));
+  await page.goto('/');
+  const cell = page.locator(`tr[data-item-id="${tracks[0].id}"] [data-column=tags]`);
+  const chips = cell.getByRole('button', { name: /^Browse music tagged / });
+  await expect(chips).toHaveCount(tags.length);
+  await chips.last().focus();
+  await page.setViewportSize({ width: 1000, height: 900 });
+  await expect(chips).toHaveCount(1);
+  const edit = cell.getByRole('button', { name: 'Edit tags for Evening set' });
+  await expect(edit).toHaveText('+3');
+  await expect(edit).toBeFocused();
+  expect(await chips.first().evaluate(element => element.scrollWidth > element.clientWidth)).toBe(true);
+  const chipBox = (await chips.first().boundingBox())!;
+  const editBox = (await edit.boundingBox())!;
+  expect(chipBox.x + chipBox.width).toBeLessThanOrEqual(editBox.x);
+  await edit.press('Enter');
+  await expect(page.getByRole('article', { name: `Tag ${tags[0]}`, exact: true })).toBeVisible();
+});
 
 test('tag chips browse the whole library, while Edit opens corrections without playback', async ({ page }) => {
   await backend(page);

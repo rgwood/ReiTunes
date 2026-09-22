@@ -6,10 +6,10 @@
 .tag-track-heading p { color: var(--muted); }
 .tag-panel-footer { border-top: 1px solid var(--line); margin-top: 16px; padding-top: 8px; color: var(--muted); }
 .song-table .row-tags { display: flex; align-items: center; gap: 5px; width: 100%; min-width: 0; height: 20px; font: inherit; text-align: left; }
-.row-tag-links { display: flex; gap: 4px; min-width: 0; flex: 1; overflow: hidden; }
-.song-table .row-tag-link { color: var(--accent); min-width: 0; height: 20px; line-height: 20px; overflow: hidden; text-overflow: ellipsis; background: var(--accent-soft); padding: 0 4px; border-radius: 3px; font-size: 11px; }
+.row-tag-links { display: flex; gap: 4px; min-width: 0; flex: 1; overflow: clip; }
+.song-table .row-tag-link { flex-shrink: 0; color: var(--accent); min-width: 0; height: 20px; line-height: 20px; overflow: hidden; text-overflow: ellipsis; background: var(--accent-soft); padding: 0 4px; border-radius: 3px; font-size: 11px; }
 .song-table .row-tag-link:first-child { flex-shrink: 0; max-width: 100%; }
-.row-tag-edit { flex-shrink: 0; color: var(--muted); padding: 0 3px; height: 20px; line-height: 20px; }
+.row-tag-edit { flex-shrink: 0; color: var(--muted); padding: 0 3px; height: 20px; line-height: 20px; font-variant-numeric: tabular-nums; }
 .row-tag-edit:not(.has-more) { opacity: 0; }
 tr:hover .row-tag-edit, tr:focus-within .row-tag-edit, .row-tag-edit[aria-pressed='true'] { opacity: 1; }
 @media (hover: none) { .row-tag-edit:not(.has-more) { opacity: 1; } }
