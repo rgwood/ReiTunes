@@ -74,13 +74,14 @@ function formatTime(seconds: number): string {
   return `${mins}:${secs.toString().padStart(2, '0')}`;
 }
 
-function PlayerTrack({ item, position, duration, sonos = false }: {
-  item: LibraryItem | null; position: number; duration: number; sonos?: boolean;
+function PlayerTrack({ item, position, duration, sonos = false, status }: {
+  item: LibraryItem | null; position: number; duration: number; sonos?: boolean; status?: string;
 }) {
   return <div className="player-track">
     <div className={`player-title ${sonos ? 'sonos-track-title' : 'player-now-playing'}`}
-      title={item ? [item.name, item.artist, item.album].filter(Boolean).join(' — ') : undefined}>
-      {item ? <><span>{item.name}</span>{item.artist && <span className="player-artist"> — {item.artist}</span>}</>
+      title={status ?? (item ? [item.name, item.artist, item.album].filter(Boolean).join(' — ') : undefined)}>
+      {status ? <span role="status">{status}</span>
+        : item ? <><span>{item.name}</span>{item.artist && <span className="player-artist"> — {item.artist}</span>}</>
         : <span>No song selected</span>}
     </div>
     <span className="player-timing">{formatTime(position)} <span aria-hidden="true">/</span> {duration > 0 ? formatTime(duration) : '—:—'}</span>
@@ -124,9 +125,10 @@ interface AudioPlayerProps {
   audioRef: RefObject<HTMLAudioElement | null>;
   items: LibraryItem[];
   onPlaybackPosition?: (itemId: string, position: number) => void;
+  previewPauseRef?: RefObject<(() => Promise<boolean>) | null>;
 }
 
-export function AudioPlayer({ audioRef: sharedAudioRef, items, onPlaybackPosition }: AudioPlayerProps) {
+export function AudioPlayer({ audioRef: sharedAudioRef, items, onPlaybackPosition, previewPauseRef }: AudioPlayerProps) {
   const audioRef = useRef<HTMLAudioElement>(null);
   const attachAudio = useCallback((audio: HTMLAudioElement | null) => {
     audioRef.current = audio;
@@ -175,6 +177,25 @@ export function AudioPlayer({ audioRef: sharedAudioRef, items, onPlaybackPositio
     (sonosSessionActive && sonosPlayback?.sourceItemId === currentItem.id));
   const mediaPosition = target.kind === 'sonos' ? sonos.positionMillis / 1000 : currentTime;
   const refreshSonosPlayback = sonos.refreshPlayback;
+  useEffect(() => {
+    if (!previewPauseRef) return;
+    const pauseForPreview = async () => {
+      const output = usePlaybackTargetStore.getState();
+      if (output.target !== target || output.isSending || output.isSwitchingOutput || output.isTransportPending) return false;
+      if (target.kind === 'sonos') {
+        if (!sonosPlayback) return false;
+        const paused = ['PLAYBACK_STATE_PAUSED', 'PLAYBACK_STATE_IDLE'].includes(sonosPlayback.playbackState);
+        if (!paused && (!sonosSessionActive || sonosPlayback.availablePlaybackActions?.canPause === false || !await pauseSonos())) return false;
+      } else {
+        audioRef.current?.pause();
+        setIsPlaying(false);
+      }
+      const latest = usePlaybackTargetStore.getState();
+      return latest.target === target && !latest.isSending && !latest.isSwitchingOutput && !latest.isTransportPending;
+    };
+    previewPauseRef.current = pauseForPreview;
+    return () => { if (previewPauseRef.current === pauseForPreview) previewPauseRef.current = null; };
+  }, [previewPauseRef, target, sonosPlayback, sonosSessionActive, pauseSonos, setIsPlaying]);
   const { playNext, playPrevious, shuffleEnabled, repeatMode, toggleShuffle, cycleRepeatMode } = useQueueStore();
   const finishingRange = useRef<PlaybackRange | null>(null);
   const finishRange = useCallback(async (range: PlaybackRange) => {
@@ -684,6 +705,12 @@ export function AudioPlayer({ audioRef: sharedAudioRef, items, onPlaybackPositio
     (sonosIsPlaying && sonos.playback?.availablePlaybackActions?.canPause === false);
 
   if (target.kind === 'sonos') {
+    // Transient speaker state shares the title's fixed line instead of adding a grid row.
+    const connectionStatus = isSwitchingOutput ? 'Moving playback to this browser…'
+      : isSending ? `Sending to ${target.groupName}…`
+      : playbackError || sonos.error ? undefined
+      : !sonos.playback ? `Reading ${target.groupName}…`
+      : !sonosSessionActive ? `Choose a song to play on ${target.groupName}.` : undefined;
     return (
       <div className="player-chrome sonos-player-layout" aria-busy={isSwitchingOutput}>
         <audio
@@ -692,13 +719,9 @@ export function AudioPlayer({ audioRef: sharedAudioRef, items, onPlaybackPositio
           onLoadStart={handleLoadStart}
           onLoadedMetadata={handleLoadedMetadata}
         />
-        <PlayerTrack item={currentItem} position={displayedSonosPosition} duration={duration} sonos />
-        <div role="status" className={`sonos-status ${!isSending && !isSwitchingOutput && !playbackError && !sonos.error && sonosSessionActive ? 'sr-only' : ''}`}>
-          {isSwitchingOutput ? (
-            <span>Moving playback to this browser…</span>
-          ) : isSending ? (
-            <span className="text-solarized-yellow">Sending to {target.groupName}…</span>
-          ) : playbackError ? (
+        <PlayerTrack item={currentItem} position={displayedSonosPosition} duration={duration} status={connectionStatus} sonos />
+        {!connectionStatus && <div role="status" className={`sonos-status ${!playbackError && !sonos.error ? 'sr-only' : ''}`}>
+          {playbackError ? (
             <span className="text-solarized-red">
               {playbackError}
               {currentItem && (
@@ -713,18 +736,12 @@ export function AudioPlayer({ audioRef: sharedAudioRef, items, onPlaybackPositio
             </span>
           ) : sonos.error ? (
             <span className="text-solarized-red">{sonos.error}</span>
-          ) : !sonos.playback ? (
-            <span className="text-solarized-yellow">Reading {target.groupName}…</span>
-          ) : !sonosSessionActive ? (
-            <span className="text-solarized-base0">
-              Choose a song to play on {target.groupName}.
-            </span>
           ) : (
             <span className="text-solarized-base0">
               Sonos · {target.groupName} · {sonosIsPlaying ? 'Playing' : 'Paused'}
             </span>
           )}
-        </div>
+        </div>}
 
         <div className="sonos-progress player-timeline">
           <div className="playback-scrubber flex-grow relative">
