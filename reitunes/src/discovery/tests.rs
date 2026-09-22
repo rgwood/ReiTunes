@@ -415,11 +415,139 @@ async fn saved_sets_survive_dismissal_refresh_and_restart() {
 fn older_discovery_entries_remain_importable_after_upgrade() {
     let mut raw = serde_json::to_value(entry("older")).unwrap();
     let fields = raw.as_object_mut().unwrap();
-    for key in ["saved", "description", "genres", "downloadUrl", "canImport"] { fields.remove(key); }
+    for key in ["saved", "description", "genres", "downloadUrl", "canImport", "artworkUrl", "metadataCheckedAt", "metadataAttemptedAt", "importCompleted"] { fields.remove(key); }
     let decoded: Entry = serde_json::from_value(raw).unwrap();
     assert!(!decoded.saved);
     assert!(decoded.can_import);
     assert_eq!(decoded.download_url, None);
+    assert_eq!(decoded.artwork_url, None);
+    assert!(!decoded.import_completed);
+}
+
+#[test]
+fn artwork_uses_provider_images_and_picks_a_useful_thumbnail_size() {
+    let youtube = entry("abc123def45");
+    assert_eq!(youtube.artwork_url.as_deref(), Some("https://i.ytimg.com/vi/abc123def45/hqdefault.jpg"));
+    assert!(youtube_artwork("https://www.youtube.com/watch?v=too-short").is_none());
+    let soundcloud = parse_entry(&serde_json::json!({
+        "id":"123", "title":"Set", "webpage_url":"https://soundcloud.com/dj/set",
+        "thumbnail":"https://i1.sndcdn.com/artwork-large.jpg",
+        "thumbnails":[
+            {"url":"https://i1.sndcdn.com/artwork-100.jpg","width":100},
+            {"url":"https://i1.sndcdn.com/artwork-400.jpg","width":400},
+            {"url":"https://i1.sndcdn.com/artwork-2000.jpg","width":2000},
+            {"url":"http://localhost/private","width":400}
+        ]
+    }), "SoundCloud").unwrap();
+    assert_eq!(soundcloud.artwork_url.as_deref(), Some("https://i1.sndcdn.com/artwork-400.jpg"));
+    for unsafe_url in ["javascript:alert(1)", "https://user@i1.sndcdn.com/art.jpg",
+        "https://sndcdn.com.evil.test/image.jpg", "http://i.ytimg.com/image.jpg", "https://127.0.0.1/image.jpg"] {
+        assert_eq!(artwork_url(unsafe_url), None, "{unsafe_url}");
+    }
+}
+
+#[test]
+fn publication_dates_are_validated_and_timestamp_fallbacks_are_supported() {
+    assert_eq!(publication_date(&serde_json::json!({"upload_date":"20260922"})).as_deref(), Some("20260922"));
+    assert_eq!(publication_date(&serde_json::json!({"upload_date":"20260231","release_date":"20260228"})).as_deref(), Some("20260228"));
+    assert_eq!(publication_date(&serde_json::json!({"timestamp":1751328000})).as_deref(), Some("20250701"));
+    assert_eq!(publication_date(&serde_json::json!({"upload_date":"invalid"})), None);
+}
+
+#[tokio::test]
+async fn old_snapshots_get_youtube_artwork_without_contacting_a_provider() {
+    let directory = tempfile::tempdir().unwrap();
+    let pool = reitunes_workspace::open_connection_pool(directory.path().join("library.db").to_str().unwrap()).unwrap();
+    let discovery = Discovery::new(pool, Arc::new(RwLock::new(Library::build_from_events(vec![])))).unwrap();
+    discovery.change(|data| {
+        let mut older = entry("olderArt123"); older.artwork_url = None;
+        data.entries.push(older); Ok(())
+    }).await.unwrap();
+    assert_eq!(discovery.snapshot().await.unwrap().data.entries[0].artwork_url.as_deref(), Some("https://i.ytimg.com/vi/olderArt123/hqdefault.jpg"));
+}
+
+#[tokio::test]
+async fn background_metadata_backfill_is_bounded_cached_and_preserves_user_choices() {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    let calls = Arc::new(AtomicUsize::new(0));
+    let worker = Router::new().route("/metadata", post({
+        let calls = calls.clone();
+        move |Json(body): Json<Value>| { let calls = calls.clone(); async move {
+            calls.fetch_add(1, Ordering::SeqCst);
+            assert_eq!(body["flat"], false);
+            let url = reqwest::Url::parse(body["url"].as_str().unwrap()).unwrap();
+            let id = url.query_pairs().find(|(key, _)| key == "v").unwrap().1.to_string();
+            Json(serde_json::json!({"id":id,"title":"Provider title","duration":7200,"upload_date":"20260922",
+                "description":"","thumbnail":"https://i.ytimg.com/vi/abc/hqdefault.jpg"}))
+        }}
+    }));
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let endpoint = format!("http://{}/metadata", listener.local_addr().unwrap());
+    let server = tokio::spawn(axum::serve(listener, worker).into_future());
+    let directory = tempfile::tempdir().unwrap();
+    let pool = reitunes_workspace::open_connection_pool(directory.path().join("library.db").to_str().unwrap()).unwrap();
+    let mut discovery = Discovery::new(pool, Arc::new(RwLock::new(Library::build_from_events(vec![])))).unwrap();
+    Arc::get_mut(&mut discovery).unwrap().metadata_endpoint = endpoint;
+    discovery.change(|data| {
+        merge_entries(data, "source", (0..8).map(|n| entry(&n.to_string())).collect(), 10);
+        data.entries[0].saved = true;
+        data.entries[1].status = "dismissed".into();
+        Ok(())
+    }).await.unwrap();
+    let permit = discovery.scanner.acquire().await.unwrap();
+    discovery.enrich_entries().await.unwrap();
+    assert_eq!(calls.load(Ordering::SeqCst), 0, "backfill waits for an active source scan");
+    drop(permit);
+    discovery.enrich_entries().await.unwrap();
+    assert_eq!(calls.load(Ordering::SeqCst), 6);
+    let items = discovery.snapshot().await.unwrap().data.entries;
+    assert_eq!(items[0].title, "Set 0");
+    assert!(items[0].saved);
+    assert_eq!(items[0].published.as_deref(), Some("20260922"));
+    assert_eq!(items[1].status, "dismissed");
+    assert!(items[1].metadata_checked_at.is_none());
+    discovery.enrich_entries().await.unwrap();
+    assert_eq!(calls.load(Ordering::SeqCst), 7);
+    discovery.enrich_entries().await.unwrap();
+    assert_eq!(calls.load(Ordering::SeqCst), 7, "missing descriptions are cached rather than fetched every minute");
+    server.abort();
+}
+
+#[tokio::test]
+async fn completed_imports_are_reconciled_and_survive_restart_without_a_library_match() {
+    let worker = Router::new().route("/jobs/42", get(|| async {
+        Json(serde_json::json!({"id":42,"url":"https://www.youtube.com/watch?v=imported","dl_type":"Audio","stage":"completed","download_percent":100,"error":null}))
+    }));
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let endpoint = format!("http://{}/download", listener.local_addr().unwrap());
+    let server = tokio::spawn(axum::serve(listener, worker).into_future());
+    let directory = tempfile::tempdir().unwrap();
+    let pool = reitunes_workspace::open_connection_pool(directory.path().join("library.db").to_str().unwrap()).unwrap();
+    let library = Arc::new(RwLock::new(Library::build_from_events(vec![])));
+    let mut discovery = Discovery::new(pool.clone(), library.clone()).unwrap();
+    Arc::get_mut(&mut discovery).unwrap().downloads = crate::downloads::Downloads::new(&endpoint).unwrap();
+    discovery.change(|data| {
+        let mut imported = entry("imported");
+        imported.status = "queued".into(); imported.download_job_id = Some(42);
+        data.entries.push(imported);
+        let mut missing = entry("missing");
+        missing.status = "queued".into(); missing.download_job_id = Some(43);
+        data.entries.push(missing); Ok(())
+    }).await.unwrap();
+    discovery.reconcile_imports().await.unwrap();
+    let snapshot = discovery.snapshot().await.unwrap();
+    assert!(snapshot.data.entries[0].import_completed);
+    assert!(snapshot.data.entries[0].library_item_id.is_none());
+    assert_eq!(snapshot.data.entries[1].status, "import_failed");
+    assert!(!snapshot.data.entries[1].import_completed);
+    assert!(snapshot.data.entries[1].error.as_deref().unwrap().contains("Check your library"));
+    drop(discovery);
+    server.abort();
+    let discovery = Discovery::new(pool, library).unwrap();
+    assert!(discovery.snapshot().await.unwrap().data.entries[0].import_completed);
+    discovery.reconcile_imports().await.unwrap();
+    assert_eq!(restore(State(discovery.clone()), Path(entry("imported").id)).await.unwrap_err().0, StatusCode::CONFLICT);
+    assert_eq!(import(State(discovery), Path(entry("imported").id)).await.unwrap_err().0, StatusCode::CONFLICT);
 }
 
 #[tokio::test]

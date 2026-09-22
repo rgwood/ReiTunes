@@ -15,6 +15,7 @@ async function backend(page: Page, initial: DiscoveryData) {
   const requests: { path: string; body: unknown }[] = [];
   await page.route('**/api/items', (route) => route.fulfill({ json: [] }));
   await page.route('**/api/playlists', (route) => route.fulfill({ json: [] }));
+  await page.route('**/api/tags', (route) => route.fulfill({ json: [] }));
   await page.route('**/api/sonos/status', (route) => route.fulfill({ json: { configured: false, connected: false } }));
   await page.route('**/api/log', (route) => route.fulfill({ status: 200 }));
   await page.routeWebSocket('**/updates', () => {});
@@ -49,13 +50,16 @@ test('follows a source, listens externally and imports without replacing the pla
   await page.getByRole('button', { name: 'Follow this source' }).click();
   const card = page.getByRole('article').filter({ hasText: set.title });
   await expect(card).toBeVisible();
+  await card.getByRole('button', { name: set.title, exact: true }).click();
+  const details = page.getByRole('complementary', { name: 'Set details' });
   await page.screenshot({ path: testInfo.outputPath('discovery-desktop.png'), fullPage: true });
-  await expect(card.getByRole('link', { name: 'Listen on SoundCloud ↗' })).toHaveAttribute('target', '_blank');
-  await expect(card.getByRole('link', { name: 'Listen on SoundCloud ↗' })).toHaveAttribute('href', set.url);
-  await card.getByRole('button', { name: 'Import', exact: true }).click();
+  await expect(details.getByRole('link', { name: 'Open on SoundCloud ↗' })).toHaveAttribute('target', '_blank');
+  await expect(details.getByRole('link', { name: 'Open on SoundCloud ↗' })).toHaveAttribute('href', set.url);
+  await card.getByRole('button', { name: 'Add to library', exact: true }).click();
   await expect(page.getByText('You’re all caught up')).toBeVisible();
   await page.getByRole('button', { name: 'History', exact: true }).click();
   await expect(page.getByText('Sent to downloader', { exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Add to library', exact: true })).toHaveCount(0);
   expect(requests.find((r) => r.path.endsWith('/preview'))?.body).toEqual({ url: source.url, minMinutes: 30 });
   expect(requests.filter((r) => r.path.endsWith('/import'))).toHaveLength(1);
   // Navigation must not remount the audio element or reset playback state.
@@ -93,9 +97,9 @@ test('failed imports remain retryable and queued sets cannot be submitted again'
   await page.route('**/api/discovery/entries/set-1/import', (route) => route.fulfill({ status: 502, body: 'Downloader is unavailable.' }));
   await page.goto('/');
   await page.getByRole('button', { name: 'Discover', exact: true }).click();
-  await page.getByRole('button', { name: 'Import', exact: true }).click();
+  await page.getByRole('button', { name: 'Add to library', exact: true }).click();
   await expect(page.getByRole('alert')).toContainText('Downloader is unavailable');
-  await expect(page.getByRole('button', { name: 'Import', exact: true })).toBeEnabled();
+  await expect(page.getByRole('button', { name: 'Add to library', exact: true })).toBeEnabled();
 });
 
 test('source errors, filters and narrow layouts remain usable', async ({ page }, testInfo) => {
@@ -106,7 +110,7 @@ test('source errors, filters and narrow layouts remain usable', async ({ page },
   await page.getByRole('searchbox', { name: 'Search discovery' }).fill('not a match');
   await expect(page.getByText('No matching sets')).toBeVisible();
   await page.getByRole('searchbox', { name: 'Search discovery' }).fill('late night');
-  await expect(page.getByRole('link', { name: set.title, exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: set.title, exact: true })).toBeVisible();
   await page.screenshot({ path: testInfo.outputPath('discovery-mobile.png'), fullPage: true });
   await page.getByRole('button', { name: 'See source errors' }).click();
   await expect(page.getByRole('alert')).toContainText('Source is temporarily unavailable.');
@@ -131,7 +135,7 @@ test('discovery tracks download jobs in History after reload and retries a faile
   } }));
   await page.goto('/');
   await page.getByRole('button', { name: 'Discover', exact: true }).click();
-  await page.getByRole('button', { name: 'Import', exact: true }).click();
+  await page.getByRole('button', { name: 'Add to library', exact: true }).click();
   await page.getByRole('button', { name: 'History', exact: true }).click();
   await expect(page.getByText('Downloading 28%', { exact: true })).toBeVisible();
   await page.reload();
@@ -157,12 +161,12 @@ test('older imports can return to the inbox or be resent from History', async ({
   await page.screenshot({ path: testInfo.outputPath('discovery-recovery-mobile.png'), fullPage: true });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   await page.getByRole('button', { name: 'Return to inbox', exact: true }).click();
-  await expect(page.getByRole('button', { name: 'Import', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Add to library', exact: true })).toBeVisible();
   expect(requests.filter(request => request.path.endsWith('/import'))).toHaveLength(0);
   await page.reload();
   await page.getByRole('button', { name: 'Discover', exact: true }).click();
-  await expect(page.getByRole('button', { name: 'Import', exact: true })).toBeVisible();
-  await page.getByRole('button', { name: 'Import', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Add to library', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Add to library', exact: true }).click();
   await page.getByRole('button', { name: 'History', exact: true }).click();
   await page.route('**/api/discovery/entries/set-1/import', route => {
     requests.push({ path: '/api/discovery/entries/set-1/import', body: null });
@@ -192,7 +196,7 @@ for (const missing of [false, true]) {
     await page.getByRole('button', { name: 'Discover', exact: true }).click();
     await page.getByRole('button', { name: 'History', exact: true }).click();
     await page.getByRole('button', { name: 'Return to inbox', exact: true }).click();
-    await expect(page.getByRole('button', { name: 'Import', exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Add to library', exact: true })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Retry import', exact: true })).toHaveCount(0);
     expect(requests.filter(request => request.path.endsWith('/import'))).toHaveLength(0);
   });

@@ -12,7 +12,7 @@ use serde_json::Value;
 use sha2::{Digest, Sha256};
 use std::{
     collections::HashMap,
-    sync::Arc,
+    sync::{atomic::{AtomicUsize, Ordering}, Arc},
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 use tokio::sync::{Mutex, RwLock, Semaphore};
@@ -25,6 +25,10 @@ const PAGE_SIZE: usize = 50;
 
 fn default_importable() -> bool { true }
 const REFRESH_SECONDS: i64 = 3 * 60 * 60;
+const METADATA_RECHECK_SECONDS: i64 = 7 * 24 * 60 * 60;
+// The downloader accepts two metadata processes. Share that budget between
+// explicit source scans and background artwork/description lookups.
+static METADATA_REQUESTS: Semaphore = Semaphore::const_new(2);
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -65,6 +69,14 @@ pub struct Entry {
     saved: bool,
     #[serde(default)]
     description: String,
+    #[serde(default)]
+    artwork_url: Option<String>,
+    #[serde(default)]
+    metadata_checked_at: Option<i64>,
+    #[serde(default)]
+    metadata_attempted_at: Option<i64>,
+    #[serde(default)]
+    import_completed: bool,
     #[serde(default)]
     genres: Vec<String>,
     #[serde(default)]
@@ -117,6 +129,7 @@ pub struct Discovery {
     data: Mutex<Data>,
     previews: Mutex<HashMap<String, Preview>>,
     import_locks: Mutex<HashMap<String, Arc<Mutex<()>>>>,
+    import_poll_cursor: AtomicUsize,
     // Only one scan at a time, including manual refresh and preview requests.
     scanner: Arc<Semaphore>,
     library: Arc<RwLock<Library>>,
@@ -239,6 +252,51 @@ fn text_field(value: &Value, key: &str) -> Option<String> {
         .map(str::to_owned)
 }
 
+// Artwork is rendered by the browser. Only accept HTTPS images from the
+// providers' image CDNs, never arbitrary URLs supplied by a source.
+fn artwork_url(input: &str) -> Option<String> {
+    let url = reqwest::Url::parse(input).ok()?;
+    let host = url.host_str()?;
+    (url.scheme() == "https" && url.username().is_empty() && url.password().is_none()
+        && url.port().is_none()
+        && ["ytimg.com", "ggpht.com", "sndcdn.com", "ntslive.co.uk"].iter()
+            .any(|domain| host == *domain || host.ends_with(&format!(".{domain}"))))
+        .then(|| url.to_string())
+}
+
+fn youtube_artwork(url: &str) -> Option<String> {
+    let url = reqwest::Url::parse(url).ok()?;
+    if !matches!(url.host_str(), Some("youtube.com" | "www.youtube.com")) { return None; }
+    let id = url.query_pairs().find(|(key, _)| key == "v")?.1.into_owned();
+    (id.len() == 11 && id.chars().all(|c| c.is_ascii_alphanumeric() || "_-".contains(c)))
+        .then(|| format!("https://i.ytimg.com/vi/{id}/hqdefault.jpg"))
+}
+
+fn thumbnail(value: &Value) -> Option<String> {
+    value["thumbnails"].as_array().into_iter().flatten()
+        .filter_map(|image| {
+            let url = artwork_url(image["url"].as_str()?)?;
+            let width = image["width"].as_u64().unwrap_or(400);
+            Some((width.abs_diff(400), url))
+        })
+        .min_by_key(|(distance, _)| *distance)
+        .map(|(_, url)| url)
+        .or_else(|| value["thumbnail"].as_str().and_then(artwork_url))
+}
+
+fn publication_date(value: &Value) -> Option<String> {
+    for field in ["upload_date", "release_date"] {
+        if let Some(date) = value[field].as_str().filter(|date| date.len() == 8 && date.bytes().all(|c| c.is_ascii_digit())) {
+            if format!("{}-{}-{}", &date[..4], &date[4..6], &date[6..]).parse::<jiff::civil::Date>().is_ok() {
+                return Some(date.into());
+            }
+        }
+    }
+    value["timestamp"].as_i64().or_else(|| value["release_timestamp"].as_i64())
+        .and_then(|timestamp| jiff::Timestamp::from_second(timestamp).ok())
+        .map(|timestamp| timestamp.to_zoned(jiff::tz::TimeZone::UTC).strftime("%Y%m%d").to_string())
+}
+
 fn parse_entry(value: &Value, provider: &str) -> Option<Entry> {
     let entry = parse_candidate(value, provider)?;
     // API references are temporary lookup targets, never listening/import links.
@@ -301,6 +359,7 @@ fn parse_candidate(value: &Value, provider: &str) -> Option<Entry> {
         url.set_fragment(None);
         url.to_string().trim_end_matches('/').to_string()
     };
+    let artwork_url = thumbnail(value).or_else(|| youtube_artwork(&url));
     Some(Entry {
         id: identifier(&url),
         media_id,
@@ -313,7 +372,7 @@ fn parse_candidate(value: &Value, provider: &str) -> Option<Entry> {
             .get("duration")
             .and_then(Value::as_f64)
             .filter(|n| n.is_finite() && *n >= 0.0),
-        published: text_field(value, "upload_date"),
+        published: publication_date(value),
         sources: vec![],
         inbox: false,
         status: "new".into(),
@@ -323,6 +382,10 @@ fn parse_candidate(value: &Value, provider: &str) -> Option<Entry> {
         error: None,
         saved: false,
         description: text_field(value, "description").unwrap_or_default().chars().take(2000).collect(),
+        artwork_url,
+        metadata_checked_at: None,
+        metadata_attempted_at: None,
+        import_completed: false,
         genres: Vec::new(),
         download_url: None,
         can_import: true,
@@ -342,6 +405,7 @@ fn metadata_endpoint() -> Result<String> {
 }
 
 async fn extract(endpoint: &str, url: &str, start: usize, flat: bool) -> Result<Value> {
+    let _permit = METADATA_REQUESTS.acquire().await.context("Metadata lookups are unavailable.")?;
     let response = reqwest::Client::new()
         .post(endpoint)
         .json(&serde_json::json!({ "url": url, "start": start, "flat": flat }))
@@ -430,6 +494,9 @@ async fn list(endpoint: &str, source: &Source, start: usize, known: &[Entry]) ->
                     entry.uploader.clone_from(&cached.uploader);
                 }
                 entry.published = entry.published.or_else(|| cached.published.clone());
+                entry.artwork_url = entry.artwork_url.or_else(|| cached.artwork_url.clone());
+                entry.metadata_checked_at = cached.metadata_checked_at;
+                entry.metadata_attempted_at = cached.metadata_attempted_at;
             }
             if entry.url.starts_with("https://api-v2.soundcloud.com/") || entry.title.is_empty()
                 || (entry.duration.is_none() && source.min_minutes > 0) {
@@ -439,7 +506,10 @@ async fn list(endpoint: &str, source: &Source, start: usize, known: &[Entry]) ->
                 details.spawn(async move {
                     let _permit = slots.acquire().await.ok()?;
                     let detail = extract(&endpoint, &entry.url, 1, false).await.ok()?;
-                    parse_entry(&detail, &provider).map(|entry| (index, entry))
+                    parse_entry(&detail, &provider).map(|mut entry| {
+                        entry.metadata_checked_at = Some(now());
+                        (index, entry)
+                    })
                 });
             } else {
                 entries.push((index, entry));
@@ -491,6 +561,7 @@ impl Discovery {
             data: Mutex::new(data),
             previews: Mutex::new(HashMap::new()),
             import_locks: Mutex::new(HashMap::new()),
+            import_poll_cursor: AtomicUsize::new(0),
             scanner: Arc::new(Semaphore::new(1)),
             library,
         }))
@@ -523,6 +594,8 @@ impl Discovery {
             .map_err(internal)?;
         let library = self.library.read().await;
         for entry in &mut data.entries {
+            // Old snapshots predate artwork. YouTube needs no lookup at all.
+            entry.artwork_url = entry.artwork_url.take().or_else(|| youtube_artwork(&entry.url));
             // The existing downloader uses yt-dlp's default title [id].ext name.
             // Do not infer successful downloads just from a queue acknowledgement.
             let suffix = format!("[{}].", entry.media_id);
@@ -539,6 +612,7 @@ impl Discovery {
                         .find(|item| item.file_path.contains(&suffix))
                         .map(|item| item.id.to_string())
                 });
+            entry.import_completed |= entry.library_item_id.is_some();
         }
         Ok(Snapshot {
             data,
@@ -596,16 +670,141 @@ impl Discovery {
         .await
     }
 
+    // Neither worker status nor enrichment is needed to render a snapshot.
+    // Reconcile in the background so a slow provider cannot hold up Discover.
+    async fn reconcile_imports(self: &Arc<Self>) -> Result<(), ApiError> {
+        let mut pending: Vec<_> = self.data.lock().await.entries.iter()
+            .filter(|entry| entry.status == "queued" && !entry.import_completed)
+            .filter_map(|entry| entry.download_job_id.map(|job| (entry.id.clone(), job)))
+            .collect();
+        if pending.len() > 20 {
+            let offset = self.import_poll_cursor.fetch_add(20, Ordering::Relaxed) % pending.len();
+            pending.rotate_left(offset);
+            pending.truncate(20);
+        }
+        let slots = Arc::new(Semaphore::new(2));
+        let mut requests = tokio::task::JoinSet::new();
+        for (id, job_id) in pending {
+            let discovery = self.clone();
+            let slots = slots.clone();
+            requests.spawn(async move {
+                let _permit = slots.acquire().await.ok()?;
+                match discovery.downloads.get(job_id).await {
+                    Ok(job) if matches!(job.stage.as_str(), "completed" | "failed") =>
+                        Some((id, job_id, job.stage == "completed", job.error)),
+                    Err((StatusCode::NOT_FOUND, message)) => Some((id, job_id, false, Some(message))),
+                    _ => None,
+                }
+            });
+        }
+        let mut updates = Vec::new();
+        while let Some(result) = requests.join_next().await {
+            if let Ok(Some(update)) = result { updates.push(update); }
+        }
+        if updates.is_empty() { return Ok(()); }
+        self.change(|data| {
+            for (id, job_id, completed, error) in updates {
+                if let Some(entry) = data.entries.iter_mut().find(|entry| entry.id == id
+                    && entry.download_job_id == Some(job_id) && entry.status == "queued") {
+                    entry.import_completed = completed;
+                    if !completed {
+                        entry.status = "import_failed".into();
+                        entry.error = error;
+                    }
+                }
+            }
+            Ok(())
+        }).await
+    }
+
+    async fn enrich_entries(&self) -> Result<(), ApiError> {
+        let checked_at = now();
+        let mut candidates: Vec<_> = self.data.lock().await.entries.iter()
+            .filter(|entry| entry.saved || (entry.status != "dismissed" && !entry.sources.is_empty()))
+            .filter(|entry| entry.metadata_checked_at.is_none_or(|checked| checked_at - checked >= METADATA_RECHECK_SECONDS))
+            .filter(|entry| entry.metadata_attempted_at.is_none_or(|attempt| checked_at - attempt >= 15 * 60))
+            .filter(|entry| entry.artwork_url.is_none() || entry.published.is_none() || entry.description.is_empty())
+            .cloned().collect();
+        candidates.sort_by_key(|entry| (!entry.saved && !entry.inbox,
+            entry.artwork_url.is_some() || youtube_artwork(&entry.url).is_some(), !entry.saved));
+        let slots = Arc::new(Semaphore::new(1));
+        let mut requests = tokio::task::JoinSet::new();
+        for entry in candidates.into_iter().take(6) {
+            let endpoint = self.metadata_endpoint.clone();
+            let slots = slots.clone();
+            let scanner = self.scanner.clone();
+            requests.spawn(async move {
+                let _permit = slots.acquire().await.ok()?;
+                // Give an explicit refresh/follow priority over the remaining
+                // backfill batch. An already running lookup is time bounded.
+                if scanner.available_permits() == 0 { return None; }
+                let metadata = tokio::time::timeout(Duration::from_secs(30), async {
+                    if nts::canonical_episode_url(&entry.url).is_ok() {
+                        nts::metadata(&entry.url, &entry.uploader).await.ok()
+                    } else {
+                        let provider = if entry.url.starts_with("https://www.youtube.com/watch?") { "YouTube" } else { "SoundCloud" };
+                        extract(&endpoint, &entry.url, 1, false).await.ok()
+                            .and_then(|value| parse_entry(&value, provider))
+                    }
+                }).await.ok().flatten();
+                Some((entry.id, metadata))
+            });
+        }
+        let mut updates = Vec::new();
+        while let Some(result) = requests.join_next().await {
+            if let Ok(Some(update)) = result { updates.push(update); }
+        }
+        if updates.is_empty() { return Ok(()); }
+        self.change(|data| {
+            for (id, metadata) in updates {
+                if let Some(entry) = data.entries.iter_mut().find(|entry| entry.id == id) {
+                    // Also remember empty metadata, so sources with no description
+                    // don't launch another lookup on every polling cycle.
+                    entry.metadata_attempted_at = Some(checked_at);
+                    if let Some(metadata) = metadata {
+                        entry.metadata_checked_at = Some(checked_at);
+                        entry.artwork_url = metadata.artwork_url.or_else(|| entry.artwork_url.clone());
+                        entry.published = metadata.published.or_else(|| entry.published.clone());
+                        entry.duration = metadata.duration.or(entry.duration);
+                        if !metadata.description.is_empty() { entry.description = metadata.description; }
+                        if !metadata.uploader.is_empty() { entry.uploader = metadata.uploader; }
+                    }
+                }
+            }
+            Ok(())
+        }).await
+    }
+
     pub fn start_refresh_loop(self: &Arc<Self>) {
+        let discovery = self.clone();
+        tokio::spawn(async move {
+            let mut interval = tokio::time::interval(Duration::from_secs(15));
+            interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+            loop {
+                interval.tick().await;
+                if let Err(error) = discovery.reconcile_imports().await {
+                    tracing::warn!(?error, "Discovery import reconciliation failed");
+                }
+            }
+        });
         let discovery = self.clone();
         tokio::spawn(async move {
             let mut interval = tokio::time::interval(Duration::from_secs(60));
             interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
             loop {
                 interval.tick().await;
-                let Ok(_permit) = discovery.scanner.clone().try_acquire_owned() else {
-                    continue;
-                };
+                if discovery.scanner.available_permits() == 0 { continue; }
+                if let Err(error) = discovery.enrich_entries().await {
+                    tracing::warn!(?error, "Discovery metadata enrichment failed");
+                }
+            }
+        });
+        let discovery = self.clone();
+        tokio::spawn(async move {
+            let mut interval = tokio::time::interval(Duration::from_secs(60));
+            interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+            loop {
+                interval.tick().await;
                 let ids: Vec<_> = discovery
                     .data
                     .lock()
@@ -615,6 +814,10 @@ impl Discovery {
                     .filter(|s| s.last_attempt.is_none_or(|t| now() - t >= REFRESH_SECONDS))
                     .map(|s| s.id.clone())
                     .collect();
+                if ids.is_empty() { continue; }
+                let Ok(_permit) = discovery.scanner.clone().try_acquire_owned() else {
+                    continue;
+                };
                 for id in ids {
                     if let Err(error) = discovery.scan(&id, false).await {
                         tracing::warn!(?error, "Discovery refresh failed");
@@ -640,6 +843,9 @@ fn merge_entries(data: &mut Data, source_id: &str, entries: Vec<Entry>, inbox_li
             existing.duration = entry.duration.or(existing.duration);
             existing.media_id = entry.media_id;
             existing.published = entry.published.or_else(|| existing.published.clone());
+            existing.artwork_url = entry.artwork_url.or_else(|| existing.artwork_url.clone());
+            existing.metadata_checked_at = entry.metadata_checked_at.or(existing.metadata_checked_at);
+            existing.metadata_attempted_at = entry.metadata_attempted_at.or(existing.metadata_attempted_at);
             if !entry.uploader.is_empty() { existing.uploader = entry.uploader; }
             if !entry.description.is_empty() { existing.description = entry.description; }
             existing.genres = entry.genres;
@@ -882,6 +1088,7 @@ async fn set_status(discovery: &Discovery, id: &str, status: &str) -> Result<(),
             if status == "new" {
                 entry.inbox = true;
                 entry.download_job_id = None;
+                entry.import_completed = false;
             }
             Ok(())
         })
@@ -919,6 +1126,9 @@ async fn ensure_recoverable(discovery: &Discovery, id: &str) -> Result<(), ApiEr
         .ok_or_else(|| (StatusCode::NOT_FOUND, "Set not found.".into()))?;
     if entry.library_item_id.is_some() {
         return Err((StatusCode::CONFLICT, "This set is already in your library.".into()));
+    }
+    if entry.import_completed {
+        return Err((StatusCode::CONFLICT, "This download has completed. Check your library before importing again.".into()));
     }
     if let Some(job_id) = entry.download_job_id {
         match discovery.downloads.get(job_id).await {
@@ -962,6 +1172,7 @@ async fn import_locked(discovery: Arc<Discovery>, id: String) -> Result<StatusCo
             // another request from restoring or resending it in the meantime.
             entry.status = "queued".into();
             entry.download_job_id = None;
+            entry.import_completed = false;
             entry.error = None;
             Ok(entry.download_url.clone().unwrap_or_else(|| entry.url.clone()))
         })

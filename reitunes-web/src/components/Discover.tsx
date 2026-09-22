@@ -1,8 +1,13 @@
-import { useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { discoveryRequest, isInboxEntry, useDiscovery, type DiscoveryEntry, type DiscoverySource } from '../hooks/useDiscovery';
 import { DownloadProgress } from './DownloadProgress';
 import { NtsTracklist } from './NtsTracklist';
+import { useDownloadJob, useDownloads } from '../hooks/useDownloads';
+import { usePlayerStore } from '../stores/playerStore';
+import { usePlaybackTargetStore } from '../stores/playbackTargetStore';
+import { discoveryEmbed, mixDiscoverySources } from '../utils/discovery';
+import { DiscoveryArtwork } from './DiscoveryArtwork';
 import './Discover.css';
 
 interface Preview {
@@ -11,10 +16,10 @@ interface Preview {
 }
 
 type View = 'inbox' | 'saved' | 'sources' | 'all' | 'history';
-type Sort = 'found' | 'published' | 'shortest' | 'longest' | 'shuffle';
-type Length = 'any' | 'hour' | 'two-hours' | 'long';
+type Sort = 'mixed' | 'found' | 'published' | 'shortest' | 'longest' | 'shuffle';
+type Length = 'any' | 'short' | 'hour' | 'two-hours' | 'long';
 const lengths: { value: Length; label: string }[] = [
-  { value: 'any', label: 'Any length' }, { value: 'hour', label: '30–60 min' },
+  { value: 'any', label: 'Any length' }, { value: 'short', label: 'Under 30 min' }, { value: 'hour', label: '30–60 min' },
   { value: 'two-hours', label: '1–2 hours' }, { value: 'long', label: '2+ hours' },
 ];
 
@@ -40,8 +45,10 @@ function shuffleRank(id: string, seed: number) {
 }
 
 function isSavedEntry(entry: DiscoveryEntry) {
-  return Boolean(entry.saved) && !entry.libraryItemId;
+  return Boolean(entry.saved) && !entry.libraryItemId && !entry.importCompleted;
 }
+
+function WatchImport({ id }: { id: number }) { useDownloadJob(id); return null; }
 
 function isNtsEpisode(input: string) {
   try {
@@ -54,15 +61,22 @@ function isNtsEpisode(input: string) {
   }
 }
 
-export function Discover({ searchQuery, onOpenLibrary }: { searchQuery: string; onOpenLibrary: (id: string) => void }) {
+export function Discover({ searchQuery, onOpenLibrary, pauseForPreview }: {
+  searchQuery: string; onOpenLibrary: (id: string) => void; pauseForPreview: () => Promise<boolean>;
+}) {
   const { data, isLoading, error: loadError, refetch } = useDiscovery();
   const queryClient = useQueryClient();
-  const [view, setView] = useState<View>('inbox');
+  const [view, changeView] = useState<View>('inbox');
   const [sourceId, setSourceId] = useState('');
   const [length, setLength] = useState<Length>('any');
-  const [sort, setSort] = useState<Sort>('found');
+  const [sort, setSort] = useState<Sort>('mixed');
   const [shuffleSeed, setShuffleSeed] = useState(0);
-  const [showImports, setShowImports] = useState(true);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [listeningId, setListeningId] = useState<string | null>(null);
+  const [preparingId, setPreparingId] = useState<string | null>(null);
+  const previewRequest = useRef(0);
+  const pausingForPreview = useRef(false);
+  const selectedRow = useRef<HTMLElement | null>(null);
   const [showFollow, setShowFollow] = useState(false);
   const [url, setUrl] = useState('');
   const [minMinutes, setMinMinutes] = useState('30');
@@ -71,15 +85,66 @@ export function Discover({ searchQuery, onOpenLibrary }: { searchQuery: string; 
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [undoEntry, setUndoEntry] = useState<DiscoveryEntry | null>(null);
+  const jobs = useDownloads(state => state.jobs);
   const sources = data?.sources ?? [];
   const hasFollowedSource = (entry: DiscoveryEntry) => entry.sources.some(id => sources.some(source => source.id === id));
   const entries = (data?.entries ?? []).filter(entry => hasFollowedSource(entry) || entry.saved || entry.status !== 'new' || entry.libraryItemId);
   const selectedSource = sources.find(source => source.id === sourceId);
   const inboxCount = entries.filter(entry => hasFollowedSource(entry) && isInboxEntry(entry)).length;
   const savedCount = entries.filter(isSavedEntry).length;
-  const imports = entries.filter(entry => entry.status === 'queued' && !entry.libraryItemId)
+  const importCandidates = entries.filter(entry => entry.status === 'queued' && !entry.libraryItemId && !entry.importCompleted);
+  const imports = importCandidates.filter(entry => jobs.find(job => job.id === entry.downloadJobId)?.stage !== 'completed')
     .sort((a, b) => (b.downloadJobId ?? 0) - (a.downloadJobId ?? 0) || b.discoveredAt - a.discoveredAt || a.id.localeCompare(b.id));
   const hasActivity = view !== 'history' && imports.length > 0;
+  const failedImports = imports.filter(entry => !entry.downloadJobId || jobs.find(job => job.id === entry.downloadJobId)?.stage === 'failed');
+  const selectedEntry = entries.find(entry => entry.id === selectedId);
+  const selectedEmbed = selectedEntry ? discoveryEmbed(selectedEntry) : null;
+
+  useEffect(() => {
+    if (!notice) return;
+    const timeout = setTimeout(() => { setNotice(''); setUndoEntry(null); }, undoEntry ? 15_000 : 7_000);
+    return () => clearTimeout(timeout);
+  }, [notice, undoEntry]);
+  useEffect(() => {
+    const requestState = previewRequest;
+    const stop = () => { previewRequest.current++; setListeningId(null); setPreparingId(null); };
+    const unsubscribePlayer = usePlayerStore.subscribe((state, previous) => {
+      if (state.isPlaying && !previous.isPlaying || state.currentItemId !== previous.currentItemId) stop();
+    });
+    const unsubscribeOutput = usePlaybackTargetStore.subscribe((state, previous) => {
+      if (state.target !== previous.target || state.isSending && !previous.isSending || state.isTransportPending && !previous.isTransportPending && !pausingForPreview.current) stop();
+    });
+    return () => { requestState.current++; unsubscribePlayer(); unsubscribeOutput(); };
+  }, []);
+
+  function selectEntry(entry: DiscoveryEntry, row?: HTMLElement) {
+    if (row) selectedRow.current = row;
+    if (entry.id !== selectedId) { previewRequest.current++; setListeningId(null); setPreparingId(null); }
+    setSelectedId(entry.id);
+  }
+  function closeDetails() {
+    previewRequest.current++; setSelectedId(null); setListeningId(null); setPreparingId(null);
+    selectedRow.current?.focus();
+  }
+  function setView(next: View) {
+    previewRequest.current++; setSelectedId(null); setListeningId(null); setPreparingId(null); changeView(next);
+  }
+  async function listen(entry: DiscoveryEntry) {
+    if (pausingForPreview.current) return;
+    selectEntry(entry);
+    if (!discoveryEmbed(entry)) return;
+    const request = ++previewRequest.current;
+    setPreparingId(entry.id); setListeningId(null); setError('');
+    // Pausing may update the output store; only this explicit request may start a preview.
+    try {
+      pausingForPreview.current = true;
+      const paused = await pauseForPreview();
+      if (request !== previewRequest.current) return;
+      if (!paused) throw new Error('Could not pause the current player. Pause it, then try Listen again.');
+      setListeningId(entry.id);
+    } catch (error) { if (request === previewRequest.current) setError(error instanceof Error ? error.message : 'Could not start the preview.'); }
+    finally { pausingForPreview.current = false; if (request === previewRequest.current) setPreparingId(null); }
+  }
 
   async function act(key: string, operation: () => Promise<void>) {
     setBusy(key);
@@ -115,6 +180,7 @@ export function Discover({ searchQuery, onOpenLibrary }: { searchQuery: string; 
     if (!matchesSearch) return false;
     if (length !== 'any') {
       if (entry.duration === null) return false;
+      if (length === 'short' && entry.duration >= 1800) return false;
       if (length === 'hour' && (entry.duration < 1800 || entry.duration >= 3600)) return false;
       if (length === 'two-hours' && (entry.duration < 3600 || entry.duration >= 7200)) return false;
       if (length === 'long' && entry.duration < 7200) return false;
@@ -124,7 +190,7 @@ export function Discover({ searchQuery, onOpenLibrary }: { searchQuery: string; 
     if (view === 'history') return entry.status !== 'new' || Boolean(entry.libraryItemId);
     return true;
   });
-  const visibleEntries = matchingEntries.filter(entry => !hasActivity || entry.status !== 'queued' || entry.libraryItemId)
+  const sortedEntries = matchingEntries.filter(entry => view === 'history' || entry.status !== 'queued' || entry.libraryItemId || entry.importCompleted)
     .sort((a, b) => {
       const fallback = a.title.localeCompare(b.title) || a.id.localeCompare(b.id);
       if (sort === 'shuffle') return shuffleRank(a.id, shuffleSeed) - shuffleRank(b.id, shuffleSeed) || fallback;
@@ -136,9 +202,11 @@ export function Discover({ searchQuery, onOpenLibrary }: { searchQuery: string; 
       if (sort === 'published') return (b.published ?? '').localeCompare(a.published ?? '') || b.discoveredAt - a.discoveredAt || fallback;
       return b.discoveredAt - a.discoveredAt || fallback;
     });
+  const visibleEntries = sort === 'mixed' ? mixDiscoverySources(sortedEntries) : sortedEntries;
 
   function importControls(entry: DiscoveryEntry) {
     if (entry.libraryItemId) return <button onClick={() => onOpenLibrary(entry.libraryItemId!)}>In library</button>;
+    if (entry.importCompleted || jobs.find(job => job.id === entry.downloadJobId)?.stage === 'completed') return <span className="discovery-completed">✓ Added to library</span>;
     if (entry.downloadJobId) return <DownloadProgress key={entry.downloadJobId} id={entry.downloadJobId}
       canRestore={hasFollowedSource(entry)}
       onRestore={async () => {
@@ -167,17 +235,17 @@ export function Discover({ searchQuery, onOpenLibrary }: { searchQuery: string; 
     if (entry.canImport === false) return <span className="discovery-unavailable">No downloadable audio available for this episode.</span>;
     return <button className="discovery-import" disabled={Boolean(busy)} onClick={() => void act(entry.id, async () => {
       await discoveryRequest(`/entries/${entry.id}/import`);
-      setShowImports(true); setNotice(`Queued “${entry.title}”. Its progress is shown in Imports.`);
-    })}>{busy === entry.id ? 'Sending…' : entry.status === 'import_failed' ? 'Retry import' : 'Import'}</button>;
+      setNotice(`Adding “${entry.title}” to your library. You can keep browsing.`);
+    })}>{busy === entry.id ? 'Adding…' : entry.status === 'import_failed' ? 'Retry import' : 'Add to library'}</button>;
   }
 
   return (
     <section className="discovery" aria-label="Discover sets">
       <header className="discovery-heading">
-        <h1>Discover</h1>
+        <h1 className="sr-only">Discover</h1>
         <nav className="discovery-tabs" aria-label="Discovery views">
           <button aria-pressed={view === 'inbox'} onClick={() => setView('inbox')}>Inbox{inboxCount > 0 ? ` (${inboxCount})` : ''}</button>
-          <button aria-pressed={view === 'saved'} onClick={() => setView('saved')}>Saved{savedCount > 0 ? ` (${savedCount})` : ''}</button>
+          <button aria-pressed={view === 'saved'} onClick={() => setView('saved')}>Listen later ({savedCount})</button>
           <button aria-pressed={view === 'all'} onClick={() => setView('all')}>All sets</button>
           <button aria-pressed={view === 'sources'} onClick={() => setView('sources')}>Sources{sources.length > 0 ? ` (${sources.length})` : ''}</button>
           <button aria-pressed={view === 'history'} onClick={() => setView('history')}>History</button>
@@ -225,22 +293,13 @@ export function Discover({ searchQuery, onOpenLibrary }: { searchQuery: string; 
       {error && <p className="discovery-error" role="alert">{error}</p>}
       {notice && <div className="discovery-notice" role="status"><span>{notice}</span>{undoEntry && <button disabled={Boolean(busy)} onClick={() => void act(undoEntry.id, async () => {
         await discoveryRequest(`/entries/${undoEntry.id}/restore`); setNotice(`Returned “${undoEntry.title}” to the inbox.`);
-      })}>Undo</button>}</div>}
+      })}>Undo</button>}<button aria-label="Dismiss notification" onClick={() => { setNotice(''); setUndoEntry(null); }}>×</button></div>}
 
-      {!loadError && hasActivity && <section className="discovery-activity" aria-label="Imports">
-        <div className="discovery-activity-heading">
-          <button className="discovery-activity-toggle" aria-expanded={showImports} aria-controls="discovery-imports" onClick={() => setShowImports(!showImports)}>
-            <span aria-hidden="true">{showImports ? '▾' : '▸'}</span> Imports ({imports.length})
-          </button>
-          <button onClick={showHistory}>View import history</button>
-        </div>
-        {showImports && <div id="discovery-imports" className="discovery-activity-list">
-          {imports.slice(0, 5).map(entry => <div key={entry.id} className="discovery-activity-item">
-            <a href={entry.url} target="_blank" rel="noopener noreferrer">{entry.title}</a>
-            {importControls(entry)}
-          </div>)}
-          {imports.length > 5 && <p>Showing 5 of {imports.length} imports. Open History for the rest.</p>}
-        </div>}
+      {importCandidates.map(entry => entry.downloadJobId ? <WatchImport key={entry.downloadJobId} id={entry.downloadJobId} /> : null)}
+      {!loadError && hasActivity && <section className="discovery-activity" aria-label="Import activity">
+        <span>{imports.length - failedImports.length > 0 && `${imports.length - failedImports.length} adding to library`}
+          {failedImports.length > 0 && `${imports.length > failedImports.length ? ' · ' : ''}${failedImports.length} need attention`}</span>
+        <button onClick={showHistory}>View progress</button>
       </section>}
 
       {loadError ? <p className="discovery-error" role="alert">Could not load discovery. <button onClick={() => void refetch()}>Retry</button></p>
@@ -266,59 +325,92 @@ export function Discover({ searchQuery, onOpenLibrary }: { searchQuery: string; 
         })}</div> : <>
           {sources.some(source => source.error) && <p className="discovery-error">Some sources could not refresh. <button onClick={() => setView('sources')}>See source errors</button></p>}
           <div className="discovery-browse">
-            <div className="discovery-lengths" role="group" aria-label="Filter by duration">{lengths.map(option => <button key={option.value} aria-pressed={length === option.value} onClick={() => setLength(option.value)}>{option.label}</button>)}</div>
             <div className="discovery-browse-selects">
               <select aria-label="Filter by source" value={sourceId} onChange={event => setSourceId(event.target.value)}>
                 <option value="">All sources</option>
                 {sources.map(source => <option key={source.id} value={source.id}>{source.title}</option>)}
               </select>
+              <select aria-label="Filter by duration" value={length} onChange={event => setLength(event.target.value as Length)}>
+                {lengths.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+              </select>
               <select aria-label="Sort sets" value={sort} onChange={event => setSort(event.target.value as Sort)}>
-                <option value="found">Recently found</option><option value="published">Newest release</option>
+                <option value="mixed">Mixed sources</option><option value="published">Newest release</option><option value="found">Recently found</option>
                 <option value="shortest">Shortest first</option><option value="longest">Longest first</option><option value="shuffle">Shuffled</option>
               </select>
               <button onClick={() => { setShuffleSeed(seed => seed + 1); setSort('shuffle'); }}>{sort === 'shuffle' ? 'Shuffle again' : 'Shuffle'}</button>
             </div>
             {(view !== 'inbox' || visibleEntries.length !== inboxCount) && <span className="discovery-result-count">{visibleEntries.length} {visibleEntries.length === 1 ? 'set' : 'sets'}</span>}
           </div>
-          {!visibleEntries.length && <div className="discovery-empty"><h2>{searchQuery || sourceId || length !== 'any' ? 'No matching sets' : view === 'inbox' ? 'You’re all caught up' : view === 'saved' ? 'No saved sets' : 'Nothing here yet'}</h2><p>{view === 'saved' ? 'Choose Save on a set to keep it here without downloading.'
+          {view === 'saved' && <p className="discovery-view-help">Your listening shortlist. Nothing downloads until you choose Add to library.</p>}
+          {!visibleEntries.length && <div className="discovery-empty"><h2>{searchQuery || sourceId || length !== 'any' ? 'No matching sets' : view === 'inbox' ? 'You’re all caught up' : view === 'saved' ? 'Nothing saved for later' : 'Nothing here yet'}</h2><p>{view === 'saved' ? 'Choose Listen later on a set to keep it here without downloading.'
             : view === 'inbox' ? 'Check your sources or browse All sets for something older.' : 'Sets you import or dismiss stay in History.'}</p>
             {(sourceId || length !== 'any') && <button onClick={() => { setSourceId(''); setLength('any'); }}>Clear filters</button>}
             {!searchQuery && !sourceId && length === 'any' && (view === 'inbox' || view === 'saved') && <button onClick={() => setView('all')}>Explore all sets</button>}
           </div>}
-          <div className="discovery-entries">{visibleEntries.map(entry => {
+          <div className="discovery-workspace"><div className="discovery-entries" aria-label="Discovered sets">{visibleEntries.map((entry, index) => {
             const entrySources = sources.filter(source => entry.sources.includes(source.id));
             const published = publishedLabel(entry.published);
-            const ntsEpisode = isNtsEpisode(entry.url);
             const uploader = [entry.title, ...entrySources.map(source => source.title)].some(label => sameLabel(label, entry.uploader)) ? '' : entry.uploader;
-            const listenLabel = `Listen on ${ntsEpisode ? 'NTS' : entrySources[0]?.provider ?? 'source'} ↗`;
-            return <article className={`discovery-entry${entry.saved ? ' discovery-entry-saved' : ''}`} key={entry.id}>
+            const provider = isNtsEpisode(entry.url) ? 'NTS' : entrySources[0]?.provider ?? discoveryEmbed(entry)?.provider ?? 'Source';
+            return <article className="discovery-entry" key={entry.id} data-entry-id={entry.id} data-selected={selectedId === entry.id || undefined}
+              tabIndex={selectedId === entry.id || !selectedId && index === 0 ? 0 : -1}
+              onClick={event => { if (!(event.target as HTMLElement).closest('button, a')) { selectEntry(entry, event.currentTarget); event.currentTarget.focus(); } }}
+              onDoubleClick={event => { if (!(event.target as HTMLElement).closest('button, a')) void listen(entry); }}
+              onKeyDown={event => {
+                if (event.target !== event.currentTarget) return;
+                if (event.key === 'Enter') { event.preventDefault(); void listen(entry); }
+                if (event.key === 'Escape') { event.preventDefault(); closeDetails(); }
+                if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+                  event.preventDefault(); const next = visibleEntries[index + (event.key === 'ArrowDown' ? 1 : -1)];
+                  const row = event.key === 'ArrowDown' ? event.currentTarget.nextElementSibling : event.currentTarget.previousElementSibling;
+                  if (next && row instanceof HTMLElement) { selectEntry(next, row); row.focus(); row.scrollIntoView({ block: 'nearest' }); }
+                }
+              }}>
+              <button className="discovery-artwork" disabled={!!preparingId} aria-label={`Listen to ${entry.title}`} title="Listen before adding to your library" onClick={event => {
+                selectedRow.current = event.currentTarget.closest('article'); void listen(entry);
+              }}><DiscoveryArtwork entry={entry} provider={provider} /><span className="discovery-artwork-play" aria-hidden="true">▶</span></button>
               <div className="discovery-entry-info">
-                <h2><a href={entry.url} target="_blank" rel="noopener noreferrer">{entry.title}</a></h2>
+                <h2><button title={entry.title} onClick={event => selectEntry(entry, event.currentTarget.closest('article')!)} onDoubleClick={() => void listen(entry)}>{entry.title}</button></h2>
                 <div className="discovery-entry-meta">
-                  <span>{[uploader, durationLabel(entry.duration), published].filter(Boolean).join(' · ')}</span>
+                  {uploader && <span>{uploader}</span>}
                   {entrySources.map(source => <button key={source.id} aria-label={`Browse ${source.title}`} title={`Browse ${source.title}`} onClick={() => { setSourceId(source.id); setView('all'); setLength('any'); }}>{sameLabel(source.title, entry.title) ? source.provider : source.title}</button>)}
+                  <span>{published || provider}</span>
                 </div>
-                {Boolean(entry.genres?.length) && <p className="discovery-genres">{entry.genres!.join(' · ')}</p>}
+                <p className="discovery-description">{entry.description || entry.genres?.join(' · ')}</p>
               </div>
-              <div className="discovery-entry-description">
-                {entry.description && <p className="discovery-description">{entry.description}</p>}
-                {ntsEpisode && <NtsTracklist entryId={entry.id} />}
-                {entry.error && <p className="discovery-error">{entry.error}</p>}
-              </div>
+              <span className="discovery-duration">{durationLabel(entry.duration)}</span>
               <div className="discovery-entry-actions">
-                <a className="discovery-listen" href={entry.url} target="_blank" rel="noopener noreferrer" aria-label={listenLabel} title={listenLabel}>Listen ↗</a>
                 {importControls(entry)}
-                {!entry.libraryItemId && <button aria-label={entry.saved ? 'Saved for later' : 'Save for later'} title={entry.saved ? 'Remove from saved sets' : 'Save for later'} aria-pressed={Boolean(entry.saved)} className="discovery-save" disabled={Boolean(busy)} onClick={() => void act(`save-${entry.id}`, async () => {
+                {!entry.libraryItemId && !entry.importCompleted && <button aria-label={entry.saved ? 'Remove from Listen later' : 'Listen later'} title={entry.saved ? 'Remove from your shortlist' : 'Keep on your shortlist without downloading'} aria-pressed={Boolean(entry.saved)} className="discovery-save" disabled={Boolean(busy)} onClick={() => void act(`save-${entry.id}`, async () => {
                   await discoveryRequest(`/entries/${entry.id}/save`, { saved: !entry.saved });
-                  setNotice(entry.saved ? `Removed “${entry.title}” from Saved.` : `Saved “${entry.title}” for later.`);
-                })}>{entry.saved ? 'Saved' : 'Save'}</button>}
+                  setNotice(entry.saved ? `Removed “${entry.title}” from Listen later.` : `Kept “${entry.title}” in Listen later. Nothing downloaded.`);
+                })}>{entry.saved ? '✓ Later' : 'Listen later'}</button>}
                 {entry.status === 'dismissed' ? hasFollowedSource(entry) && <button disabled={Boolean(busy)} onClick={() => void act(entry.id, async () => { await discoveryRequest(`/entries/${entry.id}/restore`); setNotice('Returned to inbox.'); })}>Restore</button>
-                  : hasFollowedSource(entry) && entry.status !== 'queued' && !entry.libraryItemId && <button className="discovery-dismiss" disabled={Boolean(busy)} onClick={() => void act(entry.id, async () => {
+                  : hasFollowedSource(entry) && entry.status !== 'queued' && !entry.libraryItemId && <button className="discovery-dismiss" aria-label="Dismiss" title="Dismiss this set" disabled={Boolean(busy)} onClick={() => void act(entry.id, async () => {
                     await discoveryRequest(`/entries/${entry.id}/dismiss`); setNotice(`Dismissed “${entry.title}”.`); setUndoEntry(entry);
-                  })}>Dismiss</button>}
+                  })}>×</button>}
               </div>
             </article>;
           })}</div>
+          {selectedEntry && <aside className="discovery-details" aria-label="Set details" onKeyDown={event => { if (event.key === 'Escape') { event.stopPropagation(); closeDetails(); } }}>
+            <header><span>{listeningId ? 'Listening · This device' : 'Set details'}</span><button aria-label="Close details" onClick={closeDetails}>×</button></header>
+            <h2>{selectedEntry.title}</h2>
+            <p>{[selectedEntry.uploader, durationLabel(selectedEntry.duration), publishedLabel(selectedEntry.published)].filter(Boolean).join(' · ')}</p>
+            <div className="discovery-detail-actions">
+              {selectedEmbed && listeningId !== selectedEntry.id && <button className="discovery-listen" disabled={!!preparingId} onClick={() => void listen(selectedEntry)}>{preparingId ? 'Pausing player…' : 'Listen here'}</button>}
+              <a href={selectedEntry.url} target="_blank" rel="noopener noreferrer">Open on {isNtsEpisode(selectedEntry.url) ? 'NTS' : sources.find(source => selectedEntry.sources.includes(source.id))?.provider ?? selectedEmbed?.provider ?? 'source'} ↗</a>
+            </div>
+            {listeningId === selectedEntry.id && selectedEmbed && <div className="discovery-player">
+              <iframe key={selectedEntry.id} title={`Listen to ${selectedEntry.title}`} src={selectedEmbed.url} allow="autoplay; encrypted-media; fullscreen; picture-in-picture" allowFullScreen referrerPolicy="strict-origin-when-cross-origin" />
+              <p>Preview plays on this device. If it won’t play here, use the source link above.</p>
+            </div>}
+            {!selectedEmbed && <p className="discovery-view-help">This set is available to listen to on its source page.</p>}
+            <div className="discovery-detail-actions">{importControls(selectedEntry)}</div>
+            {selectedEntry.genres?.length ? <p className="discovery-detail-genres">{selectedEntry.genres.join(' · ')}</p> : null}
+            <h3>About this set</h3><p className="discovery-full-description">{selectedEntry.description || 'The source has not provided a description for this set.'}</p>
+            {isNtsEpisode(selectedEntry.url) && <NtsTracklist entryId={selectedEntry.id} />}
+            {selectedEntry.error && <p className="discovery-error" role="alert">{selectedEntry.error}</p>}
+          </aside>}</div>
           {view === 'all' && selectedSource && <div className="discovery-archive-more">
             <button disabled={Boolean(busy) || data?.refreshing || selectedSource.archiveFinished} onClick={() => void act('archive', async () => {
               await discoveryRequest(`/sources/${selectedSource.id}/archive`); setNotice('Another batch requested. Older sets will appear here when ready.');

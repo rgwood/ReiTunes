@@ -17,6 +17,7 @@ async function backend(page: Page, initial: Partial<DiscoveryData> = {}) {
   const requests: { path: string; body: unknown }[] = [];
   await page.route('**/api/items', route => route.fulfill({ json: [] }));
   await page.route('**/api/playlists', route => route.fulfill({ json: [] }));
+  await page.route('**/api/tags', route => route.fulfill({ json: [] }));
   await page.route('**/api/sonos/status', route => route.fulfill({ json: { configured: false, connected: false } }));
   await page.route('**/api/log', route => route.fulfill({ status: 200 }));
   await page.routeWebSocket('**/updates', () => {});
@@ -53,34 +54,38 @@ const titles = (page: Page) => page.locator('.discovery-entries article h2').all
 test('a listening shortlist survives reload without submitting a download', async ({ page }) => {
   const { requests } = await backend(page);
   await discover(page);
-  await page.getByRole('button', { name: 'Save for later', exact: true }).click();
+  await page.getByRole('article').getByRole('button', { name: 'Listen later', exact: true }).click();
   await page.getByRole('button', { name: 'Dismiss', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'You’re all caught up' })).toBeVisible();
-  await page.getByRole('button', { name: 'Saved (1)', exact: true }).click();
+  await page.getByRole('button', { name: 'Listen later (1)', exact: true }).click();
+  await expect(page.getByText('Your listening shortlist. Nothing downloads until you choose Add to library.')).toBeVisible();
   await expect(page.getByRole('article').filter({ hasText: 'Set A' })).toBeVisible();
   await page.reload();
   await page.getByRole('button', { name: 'Discover', exact: true }).click();
-  await page.getByRole('button', { name: 'Saved (1)', exact: true }).click();
-  await page.getByRole('button', { name: 'Saved for later', exact: true }).click();
-  await expect(page.getByRole('heading', { name: 'No saved sets' })).toBeVisible();
+  await page.getByRole('button', { name: 'Listen later (1)', exact: true }).click();
+  await page.getByRole('button', { name: 'Remove from Listen later', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Nothing saved for later' })).toBeVisible();
   expect(requests.filter(request => request.path.endsWith('/save')).map(request => request.body)).toEqual([{ saved: true }, { saved: false }]);
   expect(requests.some(request => request.path.endsWith('/import'))).toBe(false);
 });
 
 test('duration filters have clear boundaries and unknown durations sort last', async ({ page }) => {
-  await backend(page, { entries: [episode('A', 3599), episode('B', 3600), episode('C', 7199), episode('D', 7200), episode('E', null)] });
+  await backend(page, { entries: [episode('A', 3599), episode('B', 3600), episode('C', 7199), episode('D', 7200), episode('E', null), episode('F', 1799), episode('G', 1800)] });
   await discover(page);
-  await page.getByRole('button', { name: '30–60 min', exact: true }).click();
-  await expect.poll(() => titles(page)).toEqual(['Set A']);
-  await page.getByRole('button', { name: '1–2 hours', exact: true }).click();
+  const duration = page.getByRole('combobox', { name: 'Filter by duration' });
+  await duration.selectOption('hour');
+  await expect.poll(() => titles(page)).toEqual(['Set A', 'Set G']);
+  await duration.selectOption('two-hours');
   await expect.poll(() => titles(page)).toEqual(['Set B', 'Set C']);
-  await page.getByRole('button', { name: '2+ hours', exact: true }).click();
+  await duration.selectOption('long');
   await expect.poll(() => titles(page)).toEqual(['Set D']);
-  await page.getByRole('button', { name: 'Any length', exact: true }).click();
+  await duration.selectOption('short');
+  await expect.poll(() => titles(page)).toEqual(['Set F']);
+  await duration.selectOption('any');
   await page.getByRole('combobox', { name: 'Sort sets' }).selectOption('longest');
-  await expect.poll(() => titles(page)).toEqual(['Set D', 'Set C', 'Set B', 'Set A', 'Set E']);
+  await expect.poll(() => titles(page)).toEqual(['Set D', 'Set C', 'Set B', 'Set A', 'Set G', 'Set F', 'Set E']);
   await page.getByRole('combobox', { name: 'Sort sets' }).selectOption('shortest');
-  await expect.poll(() => titles(page)).toEqual(['Set A', 'Set B', 'Set C', 'Set D', 'Set E']);
+  await expect.poll(() => titles(page)).toEqual(['Set F', 'Set G', 'Set A', 'Set B', 'Set C', 'Set D', 'Set E']);
 });
 
 test('shuffle stays put across refresh and changes only when requested again', async ({ page }) => {
@@ -95,7 +100,7 @@ test('shuffle stays put across refresh and changes only when requested again', a
   await expect.poll(() => titles(page)).not.toEqual(shuffled);
 });
 
-test('imports show progress and failure recovery without leaving the inbox', async ({ page }, testInfo) => {
+test('import activity stays compact and leads to progress and failure recovery in History', async ({ page }, testInfo) => {
   const { requests } = await backend(page);
   let failed = false;
   await page.route('**/api/downloads/7', route => route.fulfill({ json: {
@@ -103,21 +108,25 @@ test('imports show progress and failure recovery without leaving the inbox', asy
     download_percent: failed ? null : 28, error: failed ? 'The download failed.' : null,
   } }));
   await discover(page);
-  await page.getByRole('button', { name: 'Import', exact: true }).click();
-  const activity = page.getByRole('region', { name: 'Imports', exact: true });
-  await expect(activity.getByText('Downloading 28%', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Add to library', exact: true }).click();
+  const activity = page.getByRole('region', { name: 'Import activity', exact: true });
+  await expect(activity).toContainText('1 adding to library');
   await expect(page.getByRole('button', { name: 'Inbox', exact: true })).toHaveAttribute('aria-pressed', 'true');
   await expect(page.getByRole('heading', { name: 'You’re all caught up' })).toBeVisible();
-  await activity.getByRole('button', { name: 'Imports (1)', exact: true }).click();
-  await expect(activity.getByText('Downloading 28%', { exact: true })).toHaveCount(0);
-  await activity.getByRole('button', { name: 'Imports (1)', exact: true }).click();
+  await activity.getByRole('button', { name: 'View progress', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'History', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByText('Downloading 28%', { exact: true })).toBeVisible();
+  await expect(activity).toHaveCount(0);
+  await page.getByRole('button', { name: 'Inbox', exact: true }).click();
   failed = true;
-  await expect(activity.getByText('Import failed', { exact: true })).toBeVisible();
+  await expect(activity).toContainText('1 need attention');
   await page.setViewportSize({ width: 390, height: 844 });
   await page.screenshot({ path: testInfo.outputPath('discovery-imports-mobile.png'), fullPage: true });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
-  await activity.getByRole('button', { name: 'Return to inbox', exact: true }).click();
-  await expect(page.getByRole('button', { name: 'Import', exact: true })).toBeVisible();
+  await activity.getByRole('button', { name: 'View progress', exact: true }).click();
+  await expect(page.getByText('Import failed', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Return to inbox', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Add to library', exact: true })).toBeVisible();
   await expect(activity).toHaveCount(0);
   expect(requests.filter(request => request.path.endsWith('/import'))).toHaveLength(1);
 });
@@ -138,6 +147,23 @@ test('dismissal can be undone and source chips filter the complete collection', 
   await expect(page.getByRole('article').filter({ hasText: source.title })).toContainText('1 in inbox · 1 set found');
 });
 
+test('finished imports disappear from activity while completion remains in History', async ({ page }) => {
+  await backend(page, { entries: [episode('A', 5400, { status: 'queued', downloadJobId: 7 })] });
+  let completed = false;
+  await page.route('**/api/downloads/7', route => route.fulfill({ json: {
+    id: 7, url: episode('A', 5400).url, dl_type: 'Audio', stage: completed ? 'completed' : 'downloading',
+    download_percent: completed ? 100 : 28, error: null,
+  } }));
+  await discover(page);
+  const activity = page.getByRole('region', { name: 'Import activity', exact: true });
+  await expect(activity).toContainText('1 adding to library');
+  completed = true;
+  await expect(activity).toHaveCount(0);
+  await page.getByRole('button', { name: 'History', exact: true }).click();
+  await expect(page.getByRole('article').filter({ hasText: 'Set A' })).toContainText('Added to library');
+  await expect(page.getByRole('button', { name: 'Retry import' })).toHaveCount(0);
+});
+
 test('NTS episodes expose descriptions and lazy tracklists without a false import promise', async ({ page }, testInfo) => {
   const ntsSource = { ...source, provider: 'NTS', title: 'NTS selections', url: 'https://www.nts.live/shows/test-show' };
   const { requests } = await backend(page, { sources: [ntsSource], entries: [episode('A', 7200, {
@@ -151,20 +177,26 @@ test('NTS episodes expose descriptions and lazy tracklists without a false impor
   });
   await discover(page);
   expect(tracklistRequests).toBe(0);
-  await expect(page.getByRole('button', { name: 'Import', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Add to library', exact: true })).toHaveCount(0);
   await expect(page.getByText('No downloadable audio available for this episode.')).toBeVisible();
-  await expect(page.getByRole('link', { name: 'Listen on NTS ↗' })).toHaveAttribute('target', '_blank');
   await expect(page.getByText('About this set', { exact: true })).toHaveCount(0);
   await expect(page.getByText('A patient journey through Brazilian records.')).toBeVisible();
-  await page.getByRole('button', { name: 'Tracklist', exact: true }).click();
-  await expect(page.getByRole('list', { name: 'Episode tracklist' })).toContainText('Arthur Verocai');
+  await page.getByRole('button', { name: 'Set A', exact: true }).click();
+  const details = page.getByRole('complementary', { name: 'Set details' });
+  await expect(details.getByRole('link', { name: 'Open on NTS ↗' })).toHaveAttribute('target', '_blank');
+  await expect(details.getByRole('heading', { name: 'About this set' })).toBeVisible();
+  await expect(details.getByText('A patient journey through Brazilian records.')).toBeVisible();
+  await details.getByRole('button', { name: 'Tracklist', exact: true }).click();
+  await expect(details.getByRole('list', { name: 'Episode tracklist' })).toContainText('Arthur Verocai');
   expect(tracklistRequests).toBe(1);
-  await page.getByRole('button', { name: 'Hide tracklist (1)', exact: true }).click();
-  await page.getByRole('button', { name: 'Tracklist (1)', exact: true }).click();
+  await details.getByRole('button', { name: 'Hide tracklist (1)', exact: true }).click();
+  await details.getByRole('button', { name: 'Tracklist (1)', exact: true }).click();
   expect(tracklistRequests).toBe(1);
-  await page.getByRole('button', { name: 'Save for later', exact: true }).click();
-  await page.getByRole('button', { name: 'Saved (1)', exact: true }).click();
+  await page.getByRole('article').getByRole('button', { name: 'Listen later', exact: true }).click();
+  await page.getByRole('button', { name: 'Listen later (1)', exact: true }).click();
   await page.setViewportSize({ width: 390, height: 844 });
+  await page.getByRole('button', { name: 'Set A', exact: true }).click();
+  await expect(details.getByRole('link', { name: 'Open on NTS ↗' })).toBeVisible();
   await page.screenshot({ path: testInfo.outputPath('discovery-nts-mobile.png'), fullPage: true });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   expect(requests.some(request => request.path.endsWith('/import'))).toBe(false);
@@ -189,11 +221,12 @@ test('saved NTS episodes and history remain accessible after unfollowing the las
   await page.getByRole('button', { name: 'Inbox', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'No sources yet' })).toBeVisible();
   await expect(page.locator('.discovery-entries article')).toHaveCount(0);
-  await page.getByRole('button', { name: 'Saved (1)', exact: true }).click();
+  await page.getByRole('button', { name: 'Listen later (1)', exact: true }).click();
   await expect.poll(() => titles(page)).toEqual(['Set A']);
-  await expect(page.getByRole('link', { name: 'Listen on NTS ↗' })).toBeVisible();
+  await page.getByRole('button', { name: 'Set A', exact: true }).click();
+  await expect(page.getByRole('link', { name: 'Open on NTS ↗' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Dismiss', exact: true })).toHaveCount(0);
-  await expect(page.getByRole('button', { name: 'Saved for later', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Remove from Listen later', exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Tracklist', exact: true }).click();
   await expect(page.getByRole('list', { name: 'Episode tracklist' })).toContainText('Arthur Verocai');
   await page.getByRole('button', { name: 'History', exact: true }).click();
@@ -206,9 +239,10 @@ test('saved NTS episodes and history remain accessible after unfollowing the las
   await expect.poll(() => titles(page)).toEqual(['Set A', 'Set B', 'Set C']);
   await page.reload();
   await page.getByRole('button', { name: 'Discover', exact: true }).click();
-  await page.getByRole('button', { name: 'Saved (1)', exact: true }).click();
+  await page.getByRole('button', { name: 'Listen later (1)', exact: true }).click();
   await expect.poll(() => titles(page)).toEqual(['Set A']);
-  await expect(page.getByRole('link', { name: 'Listen on NTS ↗' })).toBeVisible();
+  await page.getByRole('button', { name: 'Set A', exact: true }).click();
+  await expect(page.getByRole('link', { name: 'Open on NTS ↗' })).toBeVisible();
 });
 
 // Representative show notes, not copies of actual NTS episode listings.
@@ -235,7 +269,7 @@ const longShowNotes = 'This month starts with a stack of records collected while
   + 'The final selection is an unhurried favourite saved for the journey home.';
 const showIntroduction = 'A monthly selection moving between electronic music, dub and sounds from further afield, assembled from new discoveries and records collected along the way.';
 
-test('Discovery keeps show notes visible in a dense list on desktop and phone', async ({ page }, testInfo) => {
+test('Discovery keeps rows compact and full show notes readable in details across screen sizes and themes', async ({ page }, testInfo) => {
   const ntsSource = { ...source, provider: 'NTS', title: 'Yu Su', url: 'https://www.nts.live/shows/yu-su' };
   const entries = [...compactDescriptions.map(notes => `${showIntroduction} ${notes}`), longShowNotes].map((description, index) => episode(`yu-su-${index}`, 7200, {
     title: 'Yu Su', uploader: 'Yu Su', description, genres: ['Leftfield', 'Electronic'],
@@ -249,7 +283,7 @@ test('Discovery keeps show notes visible in a dense list on desktop and phone', 
   await discover(page);
   const rows = page.locator('.discovery-entries article');
   await expect(rows).toHaveCount(15);
-  await expect(page.getByText(entries[0].description!, { exact: true })).toBeVisible();
+  await expect(rows.first().getByText(entries[0].description!, { exact: true })).toBeVisible();
   await expect(page.getByText('About this set', { exact: true })).toHaveCount(0);
   const showNamesPerRow = await rows.evaluateAll(elements => elements.map(element => ((element as HTMLElement).innerText.match(/Yu Su/g) ?? []).length));
   expect(showNamesPerRow).toEqual(Array(15).fill(1));
@@ -267,51 +301,58 @@ test('Discovery keeps show notes visible in a dense list on desktop and phone', 
     }
     return {
       firstRowTop: bounds[0].top,
-      normalRowHeight: Math.max(...bounds.slice(0, -1).map(box => box.height)),
+      maxRowHeight: Math.max(...bounds.map(box => box.height)),
       visibleRows: bounds.filter(box => box.top >= clipTop - 0.5 && box.bottom <= clipBottom + 0.5).length,
     };
   });
   expect(measurements.firstRowTop).toBeLessThanOrEqual(170);
-  expect(measurements.normalRowHeight).toBeLessThanOrEqual(70);
+  expect(measurements.maxRowHeight).toBeLessThanOrEqual(68);
   expect(measurements.visibleRows).toBeGreaterThan(10);
   await testInfo.attach('Discovery density', { body: JSON.stringify(measurements, null, 2), contentType: 'application/json' });
   await writeFile(testInfo.outputPath('discovery-density.json'), JSON.stringify(measurements, null, 2));
   await page.screenshot({ path: testInfo.outputPath('discovery-dense-desktop.png'), fullPage: true });
 
-  const longDescription = page.getByText(longShowNotes, { exact: true });
   const search = page.getByRole('searchbox', { name: 'Search discovery', exact: true });
   await search.fill('rough edges kept intact');
   await expect(rows).toHaveCount(1);
-  await expect(longDescription).toBeVisible();
+  expect(await rows.first().evaluate(element => element.getBoundingClientRect().height)).toBeLessThanOrEqual(68);
+  expect(await rows.first().locator('.discovery-description').evaluate(element => element.scrollWidth > element.clientWidth)).toBe(true);
+  await rows.first().getByRole('button', { name: 'Yu Su', exact: true }).click();
+  const details = page.getByRole('complementary', { name: 'Set details' });
+  const longDescription = details.getByText(longShowNotes, { exact: true });
+  const expectReadableNotes = async () => {
+    await longDescription.scrollIntoViewIfNeeded();
+    await expect(longDescription).toBeVisible();
+    expect(await longDescription.evaluate(element => {
+      const range = document.createRange();
+      range.selectNodeContents(element);
+      const textRects = Array.from(range.getClientRects());
+      const notes = element.getBoundingClientRect();
+      return textRects.length > 1 && textRects[0].top >= notes.top - 1
+        && textRects.at(-1)!.bottom <= notes.bottom + 1
+        && textRects.every(rect => rect.right <= notes.right + 1)
+        && element.scrollHeight <= element.clientHeight + 1;
+    })).toBe(true);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  };
+  await expectReadableNotes();
+  await page.screenshot({ path: testInfo.outputPath('discovery-details-desktop.png'), fullPage: true });
+  await details.getByRole('button', { name: 'Close details' }).click();
   await search.fill('');
   await expect(rows).toHaveCount(15);
-  await longDescription.scrollIntoViewIfNeeded();
-  await expect(longDescription).toBeVisible();
-  expect(await longDescription.evaluate(element => {
-    const range = document.createRange();
-    range.selectNodeContents(element);
-    const textRects = Array.from(range.getClientRects());
-    const row = element.closest('article')!.getBoundingClientRect();
-    return textRects.length > 0 && textRects[0].top >= row.top && textRects.at(-1)!.bottom <= row.bottom + 1;
-  })).toBe(true);
+
   await page.setViewportSize({ width: 390, height: 844 });
   await rows.first().scrollIntoViewIfNeeded();
-  await expect(page.getByText(entries[0].description!, { exact: true })).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   expect(await rows.evaluateAll(elements => elements.every(element => {
     const box = element.getBoundingClientRect();
-    return box.left >= 0 && box.right <= window.innerWidth;
+    return box.left >= 0 && box.right <= window.innerWidth && box.height <= 90;
   }))).toBe(true);
   await page.screenshot({ path: testInfo.outputPath('discovery-dense-mobile.png'), fullPage: true });
-  await longDescription.scrollIntoViewIfNeeded();
-  await expect(longDescription).toBeVisible();
-  expect(await longDescription.evaluate(element => {
-    const range = document.createRange();
-    range.selectNodeContents(element);
-    const textRects = Array.from(range.getClientRects());
-    const row = element.closest('article')!.getBoundingClientRect();
-    return textRects.length > 0 && textRects[0].top >= row.top && textRects.at(-1)!.bottom <= row.bottom + 1;
-  })).toBe(true);
+  await rows.last().getByRole('button', { name: 'Yu Su', exact: true }).click();
+  await expectReadableNotes();
+  await page.screenshot({ path: testInfo.outputPath('discovery-details-mobile.png'), fullPage: true });
+  await details.getByRole('button', { name: 'Close details' }).click();
 
   await page.getByRole('button', { name: 'Settings', exact: true }).click();
   const settings = page.getByRole('dialog', { name: 'Settings', exact: true });
@@ -322,11 +363,19 @@ test('Discovery keeps show notes visible in a dense list on desktop and phone', 
   await expect(page.locator('html')).toHaveAttribute('data-theme-mode', 'dark');
   await page.setViewportSize({ width: 1440, height: 900 });
   await rows.first().scrollIntoViewIfNeeded();
-  await expect(page.getByText(entries[0].description!, { exact: true })).toBeVisible();
+  await expect(rows.first().getByText(entries[0].description!, { exact: true })).toBeVisible();
   expect(await rows.first().evaluate(element => element.getBoundingClientRect().top)).toBe(measurements.firstRowTop);
+  expect(await rows.evaluateAll(elements => Math.max(...elements.map(element => element.getBoundingClientRect().height)))).toBeLessThanOrEqual(68);
   await page.screenshot({ path: testInfo.outputPath('discovery-dense-dark-desktop.png'), fullPage: true });
+  await rows.last().getByRole('button', { name: 'Yu Su', exact: true }).click();
+  await expectReadableNotes();
+  await page.screenshot({ path: testInfo.outputPath('discovery-details-dark-desktop.png'), fullPage: true });
+  await details.getByRole('button', { name: 'Close details' }).click();
   await page.setViewportSize({ width: 390, height: 844 });
   await rows.first().scrollIntoViewIfNeeded();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   await page.screenshot({ path: testInfo.outputPath('discovery-dense-dark-mobile.png'), fullPage: true });
+  await rows.last().getByRole('button', { name: 'Yu Su', exact: true }).click();
+  await expectReadableNotes();
+  await page.screenshot({ path: testInfo.outputPath('discovery-details-dark-mobile.png'), fullPage: true });
 });

@@ -1,7 +1,7 @@
 //! NTS archive metadata comes from the same unauthenticated API as its website.
 //! This API is undocumented, so keep parsing defensive and failures recoverable.
 //! We only offer imports for public SoundCloud recordings advertised by NTS.
-use super::{identifier, now, Entry, Listing, Source, PAGE_SIZE};
+use super::{artwork_url, identifier, now, Entry, Listing, Source, PAGE_SIZE};
 use anyhow::{bail, Context, Result};
 use reqwest::{Client, Url};
 use serde::Serialize;
@@ -170,6 +170,11 @@ fn parse_episode(value: &Value, show: &str, show_title: &str) -> Option<Entry> {
         error: None,
         saved: false,
         description: text(value, "description", 2000),
+        artwork_url: ["picture_medium", "picture_small", "picture_large", "background_medium"].iter()
+            .find_map(|field| value["media"][*field].as_str().and_then(artwork_url)),
+        metadata_checked_at: Some(now()),
+        metadata_attempted_at: None,
+        import_completed: false,
         genres: genres(value),
         can_import: download_url.is_some(),
         download_url,
@@ -294,6 +299,13 @@ pub(super) async fn details(episode_url: &str) -> Result<EpisodeDetails> {
     Ok(parse_details(&value))
 }
 
+pub(super) async fn metadata(episode_url: &str, show_title: &str) -> Result<Entry> {
+    let url = canonical_episode_url(episode_url)?;
+    let path = url.strip_prefix("https://www.nts.live").context("Invalid NTS episode")?;
+    let show = path.split('/').nth(2).context("Invalid NTS show")?;
+    parse_episode(&fetch(path).await?, show, show_title).context("NTS episode is no longer available")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -304,6 +316,7 @@ mod tests {
             "status": "published", "name": "Guest selects", "show_alias": "a-show",
             "episode_alias": "a-show-1st-july-2026", "broadcast": "2026-07-01T12:00:00+00:00",
             "description": "A trip through house and jazz.",
+            "media":{"picture_medium":"https://media.ntslive.co.uk/resize/400x400/episode.jpeg"},
             "genres": [{"value":"Deep House"},{"value":"Jazz"}],
             "audio_sources":[{"source":"soundcloud","url":"https://soundcloud.com/host/recording?utm_source=nts"}]
         })
@@ -359,6 +372,7 @@ mod tests {
         assert_eq!(entry.genres, ["Deep House", "Jazz"]);
         assert!(entry.can_import);
         assert_eq!(entry.duration, None);
+        assert_eq!(entry.artwork_url.as_deref(), Some("https://media.ntslive.co.uk/resize/400x400/episode.jpeg"));
     }
 
     #[test]

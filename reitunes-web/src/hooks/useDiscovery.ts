@@ -32,6 +32,8 @@ export interface DiscoveryEntry {
   genres?: string[];
   downloadUrl?: string | null;
   canImport?: boolean;
+  artworkUrl?: string | null;
+  importCompleted?: boolean;
   error: string | null;
 }
 
@@ -56,7 +58,7 @@ export async function discoveryRequest<T>(path = '', body?: unknown, method = 'P
 }
 
 export function isInboxEntry(entry: DiscoveryEntry) {
-  return entry.inbox && entry.sources.length > 0 && !entry.libraryItemId
+  return entry.inbox && entry.sources.length > 0 && !entry.libraryItemId && !entry.importCompleted
     && (entry.status === 'new' || entry.status === 'import_failed');
 }
 

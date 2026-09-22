@@ -79,6 +79,7 @@ function AppContent() {
   const dragDepth = useRef(0);
   const searchRef = useRef<HTMLInputElement>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
+  const previewPauseRef = useRef<(() => Promise<boolean>) | null>(null);
   const playbackPosition = useRef<{ itemId: string; position: number } | null>(
     null
   );
@@ -335,7 +336,7 @@ function AppContent() {
     >
       <header className="player-bar">
         <div className="player-audio">
-          <AudioPlayer audioRef={audioRef} onPlaybackPosition={reportPlaybackPosition} items={items} />
+          <AudioPlayer audioRef={audioRef} previewPauseRef={previewPauseRef} onPlaybackPosition={reportPlaybackPosition} items={items} />
         </div>
         <div className="player-tools">
           <div className="library-search">
@@ -362,7 +363,7 @@ function AppContent() {
           outputName={playbackTarget.kind === 'sonos' ? playbackTarget.groupName : 'This browser'} onOutput={() => setIsSonosOpen(true)}
           onImport={() => setIsImportOpen(true)} onSettings={() => setIsSettingsOpen(true)} />
         <div className="library-results" aria-busy={(view !== 'discover' && isLoading) || searchQuery !== deferredSearch}>
-          {view === 'discover' ? <Discover searchQuery={deferredSearch} onOpenLibrary={id => {
+          {view === 'discover' ? <Discover searchQuery={deferredSearch} pauseForPreview={() => previewPauseRef.current?.() ?? Promise.resolve(false)} onOpenLibrary={id => {
             chooseCollection('all'); setLibrarySearch(''); setRevealRequest({ itemId: id });
           }} /> : error ? <div className="library-message" role="alert">Couldn’t load the library. <button onClick={() => void queryClient.invalidateQueries({ queryKey: ['library'] })}>Retry</button></div>
             : isLoading ? <div className="library-message" role="status">Loading…</div>
