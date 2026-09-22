@@ -88,7 +88,7 @@ for (const fails of [false, true]) {
     const gate = deferred();
     sonos.delayedQueue = gate;
     sonos.queueFails = fails;
-    await page.getByRole('row').filter({ hasText: 'Northern Sky' }).click();
+    await page.getByRole('row').filter({ hasText: 'Northern Sky' }).dblclick();
     await expect.poll(() => sonos.queueRequests.length).toBe(1);
     await page.evaluate(async () => {
       const modulePath = '/src/stores/playbackTargetStore.ts';
@@ -123,7 +123,7 @@ for (const message of [
       requests.push(route.request().postDataJSON());
       return route.fulfill(recovered ? { json: { groupId: 'group-1' } } : { status: 502, json: { error: message } });
     });
-    await page.getByRole('row').filter({ hasText: 'Northern Sky' }).click();
+    await page.getByRole('row').filter({ hasText: 'Northern Sky' }).dblclick();
     await expect(page.getByText(message)).toBeVisible();
     await expect(page.getByRole('button', { name: 'Replace Sonos playback and retry' })).toHaveCount(0);
     recovered = true;

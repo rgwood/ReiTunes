@@ -33,7 +33,7 @@ for (const playing of [true, false]) {
       await route.fulfill({ json: { groupId: 'group-1' } });
     });
 
-    await page.getByRole('row').filter({ hasText: 'First track' }).click();
+    await page.getByRole('row').filter({ hasText: 'First track' }).dblclick();
     await expect(page.getByRole('button', { name: 'Pause', exact: true })).toBeVisible();
     if (!playing) await page.getByRole('button', { name: 'Pause', exact: true }).click();
     // Deliberately do not emit timeupdate: the handoff needs the live media position.
@@ -219,7 +219,7 @@ test('an old play rejection cannot stop a newer Ctrl+E bookmark request', async 
       window as unknown as { playbackHarness: { deferFirst: boolean } }
     ).playbackHarness.deferFirst = true;
   });
-  await page.getByRole('row').filter({ hasText: 'First track' }).click();
+  await page.getByRole('row').filter({ hasText: 'First track' }).dblclick();
   await page.keyboard.press('Control+e');
   await expect(page.locator('.player-now-playing')).toContainText(
     'Bookmarked track'

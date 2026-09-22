@@ -473,7 +473,7 @@ test('switches between Sonos and browser playback without playing twice', async 
   await expect(dialog.getByRole('button', { name: 'Selected' })).toBeVisible();
   await dialog.getByRole('button', { name: 'Close', exact: true }).click();
 
-  await trackRow.click();
+  await trackRow.dblclick();
   await expect.poll(() => sonosPlayRequests.length).toBe(1);
   expect(sonosPlayRequests[0]).toEqual({
     groupId: 'group-1',
@@ -562,7 +562,7 @@ test('switches between Sonos and browser playback without playing twice', async 
   await expect(page.getByRole('button', { name: 'Unmute Sonos' })).toBeVisible();
 
   rejectNextPlay = true;
-  await trackRow.click();
+  await trackRow.dblclick();
   await expect.poll(() => sonosPlayRequests.length).toBe(2);
   expect(sonosPlayRequests[1].allowTakeover).toBe(false);
   await page.getByRole('button', { name: 'Replace Sonos playback and retry' }).click();
@@ -689,7 +689,7 @@ test('Sonos status messages keep controls aligned and timeouts offer a normal re
   const initial = await controls();
   expect(Math.abs(initial.upper[0] - initial.upper[1])).toBeLessThanOrEqual(1);
   expect(Math.max(...initial.lower, initial.progress) - Math.min(...initial.lower, initial.progress)).toBeLessThanOrEqual(1);
-  await page.getByRole('row').filter({ hasText: 'Northern Sky' }).click();
+  await page.getByRole('row').filter({ hasText: 'Northern Sky' }).dblclick();
   await expect(page.getByText('Sending to Kitchen + 3…')).toBeVisible();
   expect(await controls()).toEqual(initial);
   await page.screenshot({ path: testInfo.outputPath('sonos-sending.png') });
@@ -713,7 +713,7 @@ test('Sonos status messages keep controls aligned and timeouts offer a normal re
 test('player keeps its transport buttons and aligns the desktop sliders', async ({ page }, testInfo) => {
   await mockBackend(page);
   await page.goto('/');
-  await page.getByRole('row').filter({ hasText: 'Northern Sky' }).click();
+  await page.getByRole('row').filter({ hasText: 'Northern Sky' }).dblclick();
   for (const width of [1440, 736, 390, 320]) {
     await page.setViewportSize({ width, height: 900 });
     for (const title of ['Previous', 'Back 30s', 'Forward 30s', 'Next', 'Shuffle off', 'Repeat off', 'Add bookmark']) {
@@ -765,7 +765,7 @@ test('Sonos next and previous follow the queue without reverting to stale speake
     await route.fulfill({ json: { groupId: 'group-1', sessionCreated: false } });
   });
   await page.goto('/');
-  await page.getByRole('row').filter({ hasText: 'Northern Sky' }).click();
+  await page.getByRole('row').filter({ hasText: 'Northern Sky' }).dblclick();
   const next = page.getByRole('button', { name: 'Next on Sonos', exact: true });
   const previous = page.getByRole('button', { name: 'Previous on Sonos', exact: true });
   await expect.poll(() => requests.length).toBe(1);

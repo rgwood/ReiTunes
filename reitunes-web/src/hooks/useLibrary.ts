@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import type { LibraryItem, RealtimeUpdate } from '../types';
 
 export const SONOS_REALTIME_EVENT = 'reitunes:sonos';
@@ -103,6 +103,16 @@ export function useLibrary() {
 }
 
 // API functions for mutations
+export function useUpdateLibraryItem() {
+  const queryClient = useQueryClient();
+  return useCallback(async (id: string, field: 'name' | 'artist' | 'album' | 'track_number', value: string) => {
+    await updateLibraryItem(id, field, value);
+    queryClient.setQueryData<LibraryItem[]>(['library'], items => items?.map(item =>
+      item.id === id ? { ...item, [field]: field === 'track_number' ? (value === '' ? null : Number(value)) : value } : item
+    ));
+  }, [queryClient]);
+}
+
 export async function updateLibraryItem(
   id: string,
   field: string,

@@ -296,7 +296,7 @@ for (const theme of themeIds) for (const mode of ['light', 'dark'] as const) {
     await backButton.click();
     expect(await density(page)).toEqual(originalDensity);
     samples.push(await readable(row.getByRole('button', { name: '♥', exact: true }), 'favourite icon', 3));
-    await row.click();
+    await row.dblclick();
     await expect(row).toHaveAttribute('aria-current', 'true');
     samples.push(await readable(nameCell, 'playing track text'));
     samples.push(await readable(row.locator('td').nth(2), 'playing artist text'));

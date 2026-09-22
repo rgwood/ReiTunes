@@ -14,10 +14,18 @@ import type { LibraryItem, Bookmark } from '../types';
 import { usePlayerStore } from '../stores/playerStore';
 import { useQueueStore } from '../hooks/useQueue';
 import { usePlayback } from '../hooks/usePlayback';
-import { updateLibraryItem, deleteItem as apiDeleteItem } from '../hooks/useLibrary';
+import { useUpdateLibraryItem, deleteItem as apiDeleteItem } from '../hooks/useLibrary';
 import { FavoriteButton } from './FavoriteButton';
 import { Tooltip } from './Tooltip';
 import { useAddToPlaylist } from '../hooks/useAddToPlaylist';
+import { SongInfoDialog } from './SongInfoDialog';
+
+const editableFields = ['name', 'artist', 'album'] as const;
+type EditableField = typeof editableFields[number];
+function editableField(target: HTMLElement): EditableField {
+  const field = target.closest('td')?.getAttribute('data-column');
+  return editableFields.find(value => value === field) ?? 'name';
+}
 
 interface Playlist {
   id: string;
@@ -143,12 +151,33 @@ export function LibraryTable({ items, searchQuery, playlistId, onSearchChange, r
     { id: 'created_time_utc', desc: true },
   ]);
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
-  const [editingCell, setEditingCell] = useState<{ rowId: string; field: string } | null>(null);
+  const [selection, setSelection] = useState<{ rowId: string; field: EditableField } | null>(null);
+  const [editingCell, setEditingCell] = useState<{ rowId: string; field: EditableField } | null>(null);
   const [editValue, setEditValue] = useState('');
+  const [editError, setEditError] = useState<string | null>(null);
+  const [editPending, setEditPending] = useState(false);
+  const editSaving = useRef(false);
+  const editFinished = useRef(false);
+  const editInputRef = useRef<HTMLInputElement>(null);
+  const [infoItem, setInfoItem] = useState<LibraryItem | null>(null);
+  const returnFocusRef = useRef<HTMLTableRowElement | null>(null);
+  const updateItem = useUpdateLibraryItem();
 
   // Context menu state
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; item: LibraryItem } | null>(null);
   const [showPlaylistSubmenu, setShowPlaylistSubmenu] = useState(false);
+  const contextMenuRef = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const menu = contextMenuRef.current;
+    if (!contextMenu || !menu) return;
+    const bounds = menu.getBoundingClientRect();
+    menu.style.left = `${Math.max(4, Math.min(contextMenu.x, innerWidth - bounds.width - 4))}px`;
+    menu.style.top = `${Math.max(4, Math.min(contextMenu.y, innerHeight - bounds.height - 4))}px`;
+    menu.querySelector('button')?.focus();
+  }, [contextMenu]);
+  useEffect(() => {
+    if (editingCell && !editPending) editInputRef.current?.focus();
+  }, [editingCell, editPending]);
 
   const { currentItem } = usePlayerStore();
   const play = usePlayback();
@@ -269,7 +298,6 @@ export function LibraryTable({ items, searchQuery, playlistId, onSearchChange, r
     }),
   ], []);
 
-  // eslint-disable-next-line react-hooks/incompatible-library -- LibraryTable opts out of compiler memoization above.
   const table = useReactTable({
     data: filteredItems,
     columns,
@@ -286,10 +314,10 @@ export function LibraryTable({ items, searchQuery, playlistId, onSearchChange, r
     columnResizeMode: 'onChange',
   });
 
-  const handleRowClick = useCallback((item: LibraryItem, rowIndex: number, e: React.MouseEvent | React.KeyboardEvent) => {
+  const handleRowPlay = useCallback((item: LibraryItem, rowIndex: number, e: React.MouseEvent | React.KeyboardEvent) => {
     // Don't play if clicking a bookmark or editing
     const target = e.target as HTMLElement;
-    if (target.classList.contains('bookmark-emoji') || editingCell) {
+    if (target.closest('button, input') || editingCell) {
       return;
     }
     // Get all visible items in their current sorted order
@@ -305,43 +333,53 @@ export function LibraryTable({ items, searchQuery, playlistId, onSearchChange, r
     void play(item, position);
   }, [play]);
 
-  const handleCellDoubleClick = useCallback((rowId: string, field: string, currentValue: string) => {
-    if (['name', 'artist', 'album'].includes(field)) {
-      setEditingCell({ rowId, field });
-      setEditValue(currentValue);
-    }
+  const beginCellEdit = useCallback((item: LibraryItem, field: EditableField) => {
+    editFinished.current = false;
+    setEditingCell({ rowId: item.id, field });
+    setEditValue(item[field]);
+    setEditError(null);
   }, []);
 
-  const handleEditBlur = useCallback(async () => {
-    if (editingCell) {
-      const item = items.find(i => i.id === editingCell.rowId);
-      if (item) {
-        const originalValue = item[editingCell.field as keyof LibraryItem] as string;
-        if (editValue !== originalValue) {
-          try {
-            await updateLibraryItem(editingCell.rowId, editingCell.field, editValue);
-          } catch (err) {
-            console.error('Failed to update:', err);
-            alert('Failed to update field');
-          }
-        }
-      }
-      setEditingCell(null);
-    }
-  }, [editingCell, editValue, items]);
+  const closeCellEdit = (restoreFocus = true) => {
+    editFinished.current = true;
+    setEditingCell(null);
+    setEditError(null);
+    if (restoreFocus) returnFocusRef.current?.focus();
+  };
 
-  const handleEditKeyDown = useCallback((e: React.KeyboardEvent) => {
-    if (e.key === 'Enter') {
-      handleEditBlur();
-    } else if (e.key === 'Escape') {
-      setEditingCell(null);
+  const saveCellEdit = async (restoreFocus = true) => {
+    if (!editingCell || editSaving.current || editFinished.current) return;
+    if (editingCell.field === 'name' && !editValue.trim()) {
+      setEditError('Enter a song name.');
+      editInputRef.current?.focus();
+      return;
     }
-  }, [handleEditBlur]);
+    editSaving.current = true;
+    setEditPending(true);
+    setEditError(null);
+    try {
+      const item = items.find(item => item.id === editingCell.rowId);
+      if (!item) throw new Error('Song no longer exists');
+      if (editValue !== item[editingCell.field]) {
+        await updateItem(item.id, editingCell.field, editValue);
+      }
+      closeCellEdit(restoreFocus);
+    } catch {
+      setEditError('Could not save this field. Your edit is still here; press Enter to retry or Escape to cancel.');
+    } finally {
+      editSaving.current = false;
+      setEditPending(false);
+    }
+  };
 
   const handleContextMenu = useCallback((e: React.MouseEvent, item: LibraryItem) => {
     e.preventDefault();
-    setContextMenu({ x: e.pageX, y: e.pageY, item });
-  }, []);
+    if (editingCell) return;
+    setSelection({ rowId: item.id, field: editableField(e.target as HTMLElement) });
+    returnFocusRef.current = e.currentTarget as HTMLTableRowElement;
+    returnFocusRef.current.focus();
+    setContextMenu({ x: e.clientX, y: e.clientY, item });
+  }, [editingCell]);
 
   const handleDelete = useCallback(async () => {
     if (contextMenu) {
@@ -409,10 +447,18 @@ export function LibraryTable({ items, searchQuery, playlistId, onSearchChange, r
     };
   }, []);
 
+  const rows = table.getRowModel().rows;
+  const tabStopId = rows.find(row => row.id === selection?.rowId)?.id ?? rows[0]?.id;
+
   return (
     <div className="px-5 h-full flex flex-col">
+      {editError && <div role="alert" className="library-edit-error">{editError}</div>}
+      {infoItem && <SongInfoDialog key={infoItem.id} item={infoItem} onClose={() => {
+        setInfoItem(null);
+        queueMicrotask(() => returnFocusRef.current?.focus());
+      }} />}
       <div ref={scrollRef} className="overflow-auto flex-grow">
-        <table aria-label="Tracks" className={`w-full border-collapse table-fixed ${table.getState().columnSizingInfo.isResizingColumn ? 'select-none' : ''}`}>
+        <table aria-label="Tracks" aria-description="Click to select. Double-click or Enter to play. F2 edits the selected text field. Ctrl+I opens song info." className={`w-full border-collapse table-fixed ${table.getState().columnSizingInfo.isResizingColumn ? 'select-none' : ''}`}>
           <colgroup>
             {table.getVisibleLeafColumns().map(column => (
               <col key={column.id} style={{
@@ -457,39 +503,72 @@ export function LibraryTable({ items, searchQuery, playlistId, onSearchChange, r
             ))}
           </thead>
           <tbody>
-            {table.getRowModel().rows.map((row, rowIndex) => {
+            {rows.map((row, rowIndex) => {
               const isCurrentlyPlaying = currentItem?.id === row.original.id;
               return (
                 <tr
                   key={row.id}
                   ref={row.original.id === revealRequest?.itemId ? revealRowRef : undefined}
                   aria-current={isCurrentlyPlaying ? 'true' : undefined}
-                  tabIndex={0}
+                  aria-selected={selection?.rowId === row.id}
+                  tabIndex={tabStopId === row.id ? 0 : -1}
+                  onFocus={event => {
+                    if (event.target === event.currentTarget) setSelection(previous => ({ rowId: row.id, field: previous?.field ?? 'name' }));
+                  }}
                   onKeyDown={(event) => {
-                    if (event.target === event.currentTarget && (event.key === 'Enter' || event.key === ' ')) {
+                    if (event.target !== event.currentTarget || editingCell) return;
+                    returnFocusRef.current = event.currentTarget;
+                    const field = selection?.rowId === row.id ? selection.field : 'name';
+                    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'i') {
                       event.preventDefault();
-                      handleRowClick(row.original, rowIndex, event);
+                      setContextMenu(null);
+                      setInfoItem(row.original);
+                    } else if (event.key === 'F2') {
+                      event.preventDefault();
+                      beginCellEdit(row.original, field);
+                    } else if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(event.key)) {
+                      event.preventDefault();
+                      if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
+                        const index = Math.max(0, Math.min(2, editableFields.indexOf(field) + (event.key === 'ArrowLeft' ? -1 : 1)));
+                        setSelection({ rowId: row.id, field: editableFields[index] });
+                      } else {
+                        const next = event.key === 'ArrowUp' ? event.currentTarget.previousElementSibling : event.currentTarget.nextElementSibling;
+                        if (next instanceof HTMLTableRowElement) {
+                          const nextId = rows[rowIndex + (event.key === 'ArrowUp' ? -1 : 1)]?.id;
+                          if (nextId) setSelection({ rowId: nextId, field });
+                          next.focus();
+                        }
+                      }
+                    } else if (event.key === 'ContextMenu' || (event.shiftKey && event.key === 'F10')) {
+                      event.preventDefault();
+                      const rect = event.currentTarget.getBoundingClientRect();
+                      setSelection({ rowId: row.id, field });
+                      setContextMenu({ x: rect.left + 10, y: rect.bottom, item: row.original });
+                    } else if ((event.key === 'Enter' || event.key === ' ') && !event.repeat) {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      handleRowPlay(row.original, rowIndex, event);
                     }
                   }}
                   className={`hover:bg-solarized-base02 cursor-pointer ${isCurrentlyPlaying ? 'bg-solarized-base02' : ''}`}
-                  onClick={(e) => handleRowClick(row.original, rowIndex, e)}
+                  onClick={event => {
+                    if ((event.target as HTMLElement).closest('button, input')) return;
+                    setSelection({ rowId: row.id, field: editableField(event.target as HTMLElement) });
+                    event.currentTarget.focus();
+                  }}
+                  onDoubleClick={event => handleRowPlay(row.original, rowIndex, event)}
                   onContextMenu={(e) => handleContextMenu(e, row.original)}
                 >
                   {row.getVisibleCells().map((cell) => {
                     const field = cell.column.id;
                     const isEditing = editingCell?.rowId === row.id && editingCell?.field === field;
-                    const isEditable = ['name', 'artist', 'album'].includes(field);
 
                     return (
                       <td
                         key={cell.id}
                         data-column={field}
+                        data-selected-cell={selection?.rowId === row.id && selection.field === field || undefined}
                         className="px-2 py-1 border-b border-solarized-base02 whitespace-nowrap overflow-hidden text-ellipsis max-w-0"
-                        onDoubleClick={() => {
-                          if (isEditable) {
-                            handleCellDoubleClick(row.id, field, cell.getValue() as string);
-                          }
-                        }}
                         onClick={(e) => {
                           // Handle bookmark clicks
                           const target = e.target as HTMLElement;
@@ -501,12 +580,20 @@ export function LibraryTable({ items, searchQuery, playlistId, onSearchChange, r
                       >
                         {isEditing ? (
                           <input
+                            ref={editInputRef}
                             type="text"
+                            aria-label={`Edit ${field}`}
+                            disabled={editPending}
                             value={editValue}
-                            onChange={(e) => setEditValue(e.target.value)}
-                            onBlur={handleEditBlur}
-                            onKeyDown={handleEditKeyDown}
+                            onChange={(e) => { setEditValue(e.target.value); setEditError(null); }}
+                            onBlur={() => { void saveCellEdit(false); }}
+                            onKeyDown={event => {
+                              event.stopPropagation();
+                              if (event.key === 'Enter') { event.preventDefault(); void saveCellEdit(); }
+                              if (event.key === 'Escape' && !editSaving.current) { event.preventDefault(); closeCellEdit(); }
+                            }}
                             className="w-full bg-solarized-base03 text-solarized-base1 border border-solarized-blue px-1"
+                            onFocus={event => event.target.select()}
                             autoFocus
                           />
                         ) : (
@@ -525,10 +612,25 @@ export function LibraryTable({ items, searchQuery, playlistId, onSearchChange, r
       {/* Context Menu */}
       {contextMenu && (
         <div
+          ref={contextMenuRef}
           className="library-context-menu fixed z-50 bg-solarized-base02 border border-solarized-blue rounded shadow-lg py-1 min-w-32"
           style={{ left: contextMenu.x, top: contextMenu.y }}
           onClick={(e) => e.stopPropagation()}
+          onKeyDown={event => {
+            if (event.key === 'Escape') {
+              event.preventDefault(); event.stopPropagation();
+              setContextMenu(null); returnFocusRef.current?.focus();
+            }
+          }}
         >
+          <button type="button" className="w-full text-left px-3 py-2 text-solarized-base1 hover:bg-solarized-blue"
+            onClick={() => { setInfoItem(contextMenu.item); setContextMenu(null); }}>
+            Get Info… <span className="menu-shortcut">Ctrl+I</span>
+          </button>
+          <button type="button" className="w-full text-left px-3 py-2 text-solarized-base1 hover:bg-solarized-blue"
+            onClick={() => { beginCellEdit(contextMenu.item, selection?.field ?? 'name'); setContextMenu(null); }}>
+            Edit {selection?.field ?? 'name'} <span className="menu-shortcut">F2</span>
+          </button>
           <div
             className="px-3 py-2 text-solarized-base1 hover:bg-solarized-blue hover:bg-opacity-30 cursor-pointer"
             onClick={handlePlayNext}

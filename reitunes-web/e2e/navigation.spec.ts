@@ -54,7 +54,7 @@ for (const viewport of [{ name: 'desktop', width: 1440, height: 900 }, { name: '
     await page.setViewportSize(viewport);
     await backend(page);
     await page.goto('/');
-    await page.getByRole('row').filter({ hasText: 'Northern Sky' }).click();
+    await page.getByRole('row').filter({ hasText: 'Northern Sky' }).dblclick();
     const audio = page.locator('audio');
     await audio.evaluate(element => {
       Object.defineProperty(element, 'duration', { configurable: true, value: 1200 });
@@ -107,7 +107,7 @@ for (const viewport of [{ name: 'desktop', width: 1440, height: 900 }, { name: '
     await collection.selectOption('favourites');
     await page.getByRole('searchbox', { name: 'Search library', exact: true }).fill('Northern');
     await expect(page.locator('tbody tr')).toHaveCount(1);
-    await page.getByRole('row').filter({ hasText: 'Northern Sky' }).click();
+    await page.getByRole('row').filter({ hasText: 'Northern Sky' }).dblclick();
     const audio = page.locator('audio');
     await expect.poll(() => audio.evaluate(element => (element as HTMLAudioElement).paused)).toBe(false);
     await audio.evaluate(element => { (element as HTMLAudioElement).dataset.navigationMarker = 'same-player'; });

@@ -112,7 +112,7 @@ test('Sonos stalled queue request releases controls and retry does not retain ta
   await sonos.open();
   const gate = deferred();
   sonos.delayedQueue = gate;
-  await page.getByRole('row').filter({ hasText: 'Northern Sky' }).click();
+  await page.getByRole('row').filter({ hasText: 'Northern Sky' }).dblclick();
   await expect(page.getByText('Sending to Kitchen…')).toBeVisible();
   await expect.poll(() => sonos.queueRequests.length).toBe(1);
   await page.clock.fastForward(50_001);
@@ -167,7 +167,7 @@ for (const fails of [false, true]) {
     const gate = deferred();
     sonos.delayedQueue = gate;
     sonos.queueFails = fails;
-    await page.getByRole('row').filter({ hasText: 'Northern Sky' }).click();
+    await page.getByRole('row').filter({ hasText: 'Northern Sky' }).dblclick();
     await expect.poll(() => sonos.queueRequests.length).toBe(1);
     // Inject an output change while the request is outstanding. The normal
     // picker disables this path, but async completion must still be harmless.

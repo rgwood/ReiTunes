@@ -204,7 +204,7 @@ test('plays a filtered album and queues another track from the grid', async ({ p
   await mockLibrary(page);
   await page.goto('/');
   await page.getByRole('searchbox', { name: 'Search library' }).fill('album:"Bryter Layter"');
-  await page.getByRole('row').filter({ hasText: 'Northern Sky' }).click();
+  await page.getByRole('row').filter({ hasText: 'Northern Sky' }).dblclick();
   await expect.poll(() => page.evaluate(() => {
     const player = JSON.parse(localStorage.getItem('reitunes-player') || '{}');
     const queue = JSON.parse(localStorage.getItem('reitunes-queue') || '{}');
@@ -221,7 +221,7 @@ test('plays a filtered album and queues another track from the grid', async ({ p
 test('moves to the next saved moment from the live position and keeps queued music', async ({ page }) => {
   await mockLibrary(page);
   await page.goto('/');
-  await page.getByRole('row').filter({ hasText: 'Northern Sky' }).click();
+  await page.getByRole('row').filter({ hasText: 'Northern Sky' }).dblclick();
   await queueTrack(page, 'Hazey Jane II');
   await page.evaluate(() => {
     const audio = document.querySelector('audio');
@@ -259,7 +259,7 @@ test('opens a playlist in its saved order and uses its name for playback', async
   for (const [index, item] of orderedItems.entries()) {
     await expect(rows.nth(index)).toContainText(item.name);
   }
-  await rows.first().click();
+  await rows.first().dblclick();
   await expect.poll(() => page.evaluate(() => {
     const queue = JSON.parse(localStorage.getItem('reitunes-queue') || '{}');
     return { name: queue.state?.contextName, items: queue.state?.contextItems?.map((item: { name: string }) => item.name) };
