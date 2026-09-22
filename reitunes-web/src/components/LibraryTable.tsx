@@ -179,6 +179,7 @@ export function LibraryTable({ items, searchQuery, playlistId, onSearchChange, r
   const [editPending, setEditPending] = useState(false);
   const editSaving = useRef(false);
   const editFinished = useRef(false);
+  const editComposing = useRef(false);
   const editInputRef = useRef<HTMLInputElement>(null);
   const [infoItem, setInfoItem] = useState<LibraryItem | null>(null);
   const returnFocusRef = useRef<HTMLTableRowElement | null>(null);
@@ -204,9 +205,12 @@ export function LibraryTable({ items, searchQuery, playlistId, onSearchChange, r
     menu.style.top = `${Math.max(4, Math.min(contextMenu.y, innerHeight - bounds.height - 4))}px`;
     if (!menu.contains(document.activeElement)) menu.querySelector('button')?.focus();
   }, [contextMenu, showPlaylistSubmenu]);
-  useEffect(() => {
-    if (editingCell && !editPending) editInputRef.current?.focus();
-  }, [editingCell, editPending]);
+  useLayoutEffect(() => {
+    if (editingCell) {
+      editInputRef.current?.focus();
+      editInputRef.current?.select();
+    }
+  }, [editingCell]);
 
   const { currentItem } = usePlayerStore();
   const play = usePlayback();
@@ -389,6 +393,7 @@ export function LibraryTable({ items, searchQuery, playlistId, onSearchChange, r
     cancelClickEdit();
     setSelectedIds(new Set([item.id]));
     editFinished.current = false;
+    editComposing.current = false;
     setEditingCell({ rowId: item.id, field });
     setEditValue(item[field]);
     setEditError(null);
@@ -417,8 +422,9 @@ export function LibraryTable({ items, searchQuery, playlistId, onSearchChange, r
       if (editValue !== item[editingCell.field]) {
         await updateItem(item.id, editingCell.field, editValue);
       }
-      closeCellEdit(restoreFocus);
-      return true;
+      const ownsFocus = document.activeElement === editInputRef.current;
+      closeCellEdit(restoreFocus && ownsFocus);
+      return ownsFocus ? 'focused' : 'blurred';
     } catch {
       setEditError('Could not save this field. Your edit is still here; press Enter to retry or Escape to cancel.');
       return false;
@@ -438,15 +444,19 @@ export function LibraryTable({ items, searchQuery, playlistId, onSearchChange, r
     const destination = visibleRows[rowIndex]?.original;
     const field = editableFields[columnIndex];
     if (!destination || !field) return;
-    if (!await saveCellEdit(false)) return;
+    const input = editInputRef.current;
+    if (await saveCellEdit(false) !== 'focused') return;
     // A save may reorder or filter the rows. Follow the destination's identity,
     // after React has rendered the updated library, rather than its old index.
     requestAnimationFrame(() => {
+      // Respect a click or Tab made while the save was finishing.
+      if (document.activeElement !== document.body && document.activeElement !== input) return;
       const row = scrollRef.current?.querySelector<HTMLTableRowElement>(`tr[data-item-id="${CSS.escape(destination.id)}"]`);
-      if (!row) return;
+      const item = table.getRowModel().rows.find(row => row.id === destination.id)?.original;
+      if (!row || !item) return;
       returnFocusRef.current = row;
       setSelection({ rowId: destination.id, field });
-      beginCellEdit(destination, field);
+      beginCellEdit(item, field);
     });
   };
 
@@ -740,38 +750,48 @@ export function LibraryTable({ items, searchQuery, playlistId, onSearchChange, r
                             suggestions={field === 'artist' || field === 'album' ? suggestions[field] : undefined}
                             type="text"
                             aria-label={`Edit ${field}`}
-                            disabled={editPending}
+                            readOnly={editPending}
+                            aria-busy={editPending || undefined}
+                            aria-invalid={!!editError}
                             value={editValue}
                             onValueChange={value => { setEditValue(value); setEditError(null); }}
+                            onCompositionStart={() => { editComposing.current = true; }}
+                            onCompositionEnd={() => { editComposing.current = false; }}
                             onBlur={() => { void saveCellEdit(false); }}
                             onKeyDown={event => {
                               event.stopPropagation();
-                              if (event.nativeEvent.isComposing) return;
+                              if (editComposing.current || event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229) return;
+                              if (editSaving.current) {
+                                if (['Tab', 'Enter', 'Escape', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(event.key)) event.preventDefault();
+                                return;
+                              }
                               const input = event.currentTarget;
-                              const allSelected = input.selectionStart === 0 && input.selectionEnd === input.value.length;
                               const caret = input.selectionStart === input.selectionEnd;
-                              if (event.key === 'Tab') {
+                              if (event.key === 'Tab' && !event.ctrlKey && !event.metaKey && !event.altKey && !event.repeat) {
                                 // At the ends of the table, let Tab leave normally.
                                 // Blur saves the edit without trapping keyboard focus.
                                 if (event.shiftKey ? rowIndex === 0 && field === 'name' : rowIndex === rows.length - 1 && field === 'album') return;
                                 event.preventDefault(); void moveCellEdit(event.shiftKey ? -1 : 1, 0, true); return;
                               }
-                              if (!event.shiftKey && !event.ctrlKey && !event.metaKey && !event.altKey) {
+                              if (!event.shiftKey && !event.ctrlKey && !event.metaKey && !event.altKey && !event.repeat) {
                                 if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
                                   event.preventDefault(); void moveCellEdit(0, event.key === 'ArrowUp' ? -1 : 1); return;
                                 }
-                                if (event.key === 'ArrowLeft' && (allSelected || (caret && input.selectionStart === 0))) {
+                                if (event.key === 'ArrowLeft' && caret && input.selectionStart === 0) {
                                   event.preventDefault(); void moveCellEdit(-1, 0); return;
                                 }
-                                if (event.key === 'ArrowRight' && (allSelected || (caret && input.selectionEnd === input.value.length))) {
+                                if (event.key === 'ArrowRight' && caret && input.selectionEnd === input.value.length) {
                                   event.preventDefault(); void moveCellEdit(1, 0); return;
                                 }
                               }
-                              if (event.key === 'Enter') { event.preventDefault(); void saveCellEdit(); }
+                              if (event.key === 'Enter') { event.preventDefault(); if (!event.repeat) void saveCellEdit(); }
                               if (event.key === 'Escape' && !editSaving.current) { event.preventDefault(); closeCellEdit(); }
                             }}
                             className="library-cell-editor"
-                            onFocus={event => event.target.select()}
+                            onFocus={() => {
+                              setSelection({ rowId: row.id, field: field as EditableField });
+                              setSelectedIds(new Set([row.id]));
+                            }}
                             autoFocus
                           />
                         ) : (

@@ -1,4 +1,4 @@
-import type { ComponentProps } from 'react';
+import { useRef, type ComponentProps } from 'react';
 import { completeMetadata } from '../utils/metadataSuggestions';
 
 type MetadataInputProps = Omit<ComponentProps<'input'>, 'value' | 'onChange'> & {
@@ -7,13 +7,18 @@ type MetadataInputProps = Omit<ComponentProps<'input'>, 'value' | 'onChange'> & 
   suggestions?: readonly string[];
 };
 
-export function MetadataInput({ value, onValueChange, suggestions = [], ...props }: MetadataInputProps) {
+export function MetadataInput({ value, onValueChange, suggestions = [], onCompositionStart, onCompositionEnd, ...props }: MetadataInputProps) {
+  const composing = useRef(false);
   return <input {...props} value={value} autoComplete="off" aria-autocomplete={suggestions.length ? 'inline' : undefined}
+    onCompositionStart={event => { composing.current = true; onCompositionStart?.(event); }}
+    onCompositionEnd={event => { composing.current = false; onCompositionEnd?.(event); }}
     onChange={event => {
       const input = event.currentTarget;
       const typed = input.value;
       const native = event.nativeEvent as InputEvent;
-      const canComplete = !native.isComposing && native.inputType?.startsWith('insert') &&
+      // Only complete ordinary typing. Pasted, dropped, and composed text is
+      // already the user's chosen value and must stay unchanged.
+      const canComplete = !composing.current && !native.isComposing && native.inputType === 'insertText' &&
         input.selectionStart === typed.length && input.selectionEnd === typed.length;
       const completed = canComplete ? completeMetadata(typed, suggestions) : typed;
       onValueChange(completed);

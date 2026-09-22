@@ -118,6 +118,9 @@ test('arrow keys save and move between cells, while text caret movement still wo
   await album.press('ArrowDown');
   await expect(second.getByRole('textbox', { name: 'Edit album' })).toBeFocused();
   await album.press('ArrowLeft'); // Whole value is selected on entry.
+  await expect(album).toBeFocused();
+  expect(await album.evaluate((input: HTMLInputElement) => [input.selectionStart, input.selectionEnd])).toEqual([0, 0]);
+  await album.press('ArrowLeft'); // A fresh press at the boundary moves cells.
   await expect(second.getByRole('textbox', { name: 'Edit artist' })).toBeFocused();
   await artist.press('ArrowUp');
   await expect(first.getByRole('textbox', { name: 'Edit artist' })).toBeFocused();

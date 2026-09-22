@@ -14,6 +14,7 @@ export function SongInfoDialog({ item, onClose }: { item: LibraryItem; onClose: 
   const [draft, setDraft] = useState({ name: item.name, artist: item.artist, album: item.album, track_number: item.track_number?.toString() ?? '' });
   const saved = useRef(draft);
   const saving = useRef(false);
+  const composing = useRef(false);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const updateItem = useUpdateLibraryItem();
@@ -56,8 +57,18 @@ export function SongInfoDialog({ item, onClose }: { item: LibraryItem; onClose: 
 
   return (
     <dialog ref={dialogRef} className="song-info-dialog" aria-labelledby={`${id}-title`}
-      onCancel={event => { event.preventDefault(); if (!saving.current) onClose(); }}>
-      <form onSubmit={event => { event.preventDefault(); void save(); }}>
+      onCancel={event => { event.preventDefault(); if (!saving.current && !composing.current) onClose(); }}>
+      <form
+        onCompositionStart={() => { composing.current = true; }}
+        onCompositionEnd={() => { composing.current = false; }}
+        onKeyDown={event => {
+          // IME confirmation/cancellation must not submit or close the dialog.
+          // Safari can report isComposing=false for that keydown, but keeps 229.
+          if (['Enter', 'Escape'].includes(event.key) && (composing.current || event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229)) {
+            event.preventDefault();
+          }
+        }}
+        onSubmit={event => { event.preventDefault(); if (!composing.current) void save(); }}>
         <h2 id={`${id}-title`}>Song info</h2>
         <fieldset disabled={pending}>
           {fields.map(field => (
