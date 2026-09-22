@@ -1,6 +1,7 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import type { LibraryItem } from '../types';
-import { useUpdateLibraryItem } from '../hooks/useLibrary';
+import { useMetadataSuggestions, useUpdateLibraryItem } from '../hooks/useLibrary';
+import { MetadataInput } from './MetadataInput';
 import './SongInfoDialog.css';
 
 const fields = ['name', 'artist', 'album', 'track_number'] as const;
@@ -16,6 +17,7 @@ export function SongInfoDialog({ item, onClose }: { item: LibraryItem; onClose: 
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const updateItem = useUpdateLibraryItem();
+  const suggestions = useMetadataSuggestions();
 
   useEffect(() => {
     const dialog = dialogRef.current!;
@@ -61,11 +63,12 @@ export function SongInfoDialog({ item, onClose }: { item: LibraryItem; onClose: 
           {fields.map(field => (
             <label key={field}>
               <span>{labels[field]}</span>
-              <input ref={field === 'name' ? nameRef : undefined} value={draft[field]}
+              <MetadataInput ref={field === 'name' ? nameRef : undefined} value={draft[field]}
+                suggestions={field === 'artist' || field === 'album' ? suggestions[field] : undefined}
                 type={field === 'track_number' ? 'number' : 'text'} required={field === 'name'}
                 min={field === 'track_number' ? 0 : undefined} max={field === 'track_number' ? 4294967295 : undefined}
                 step={field === 'track_number' ? 1 : undefined}
-                onChange={event => { setDraft({ ...draft, [field]: event.target.value }); setError(null); }} />
+                onValueChange={value => { setDraft({ ...draft, [field]: value }); setError(null); }} />
             </label>
           ))}
         </fieldset>

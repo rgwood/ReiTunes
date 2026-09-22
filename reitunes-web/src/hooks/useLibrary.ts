@@ -1,5 +1,6 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
+import { metadataSuggestions } from '../utils/metadataSuggestions';
 import type { LibraryItem, RealtimeUpdate } from '../types';
 
 export const SONOS_REALTIME_EVENT = 'reitunes:sonos';
@@ -18,6 +19,14 @@ async function fetchLibraryItems(): Promise<LibraryItem[]> {
     throw new Error('Failed to fetch library items');
   }
   return response.json();
+}
+
+export function useMetadataSuggestions() {
+  const { data } = useQuery({ queryKey: ['library'], queryFn: fetchLibraryItems, staleTime: Infinity });
+  return useMemo(() => ({
+    artist: metadataSuggestions(data ?? [], 'artist'),
+    album: metadataSuggestions(data ?? [], 'album'),
+  }), [data]);
 }
 
 export function useLibrary() {

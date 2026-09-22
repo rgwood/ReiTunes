@@ -14,11 +14,12 @@ import type { LibraryItem, Bookmark } from '../types';
 import { usePlayerStore } from '../stores/playerStore';
 import { useQueueStore } from '../hooks/useQueue';
 import { usePlayback } from '../hooks/usePlayback';
-import { useUpdateLibraryItem, deleteItem as apiDeleteItem } from '../hooks/useLibrary';
+import { useMetadataSuggestions, useUpdateLibraryItem, deleteItem as apiDeleteItem } from '../hooks/useLibrary';
 import { FavoriteButton } from './FavoriteButton';
 import { Tooltip } from './Tooltip';
 import { useAddToPlaylist } from '../hooks/useAddToPlaylist';
 import { SongInfoDialog } from './SongInfoDialog';
+import { MetadataInput } from './MetadataInput';
 
 const editableFields = ['name', 'artist', 'album'] as const;
 type EditableField = typeof editableFields[number];
@@ -162,6 +163,14 @@ export function LibraryTable({ items, searchQuery, playlistId, onSearchChange, r
   const [infoItem, setInfoItem] = useState<LibraryItem | null>(null);
   const returnFocusRef = useRef<HTMLTableRowElement | null>(null);
   const updateItem = useUpdateLibraryItem();
+  const suggestions = useMetadataSuggestions();
+  const editClickTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const clickWasSelected = useRef(false);
+  const cancelClickEdit = useCallback(() => {
+    if (editClickTimer.current !== null) clearTimeout(editClickTimer.current);
+    editClickTimer.current = null;
+  }, []);
+  useEffect(() => cancelClickEdit, [cancelClickEdit]);
 
   // Context menu state
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; item: LibraryItem } | null>(null);
@@ -334,11 +343,12 @@ export function LibraryTable({ items, searchQuery, playlistId, onSearchChange, r
   }, [play]);
 
   const beginCellEdit = useCallback((item: LibraryItem, field: EditableField) => {
+    cancelClickEdit();
     editFinished.current = false;
     setEditingCell({ rowId: item.id, field });
     setEditValue(item[field]);
     setEditError(null);
-  }, []);
+  }, [cancelClickEdit]);
 
   const closeCellEdit = (restoreFocus = true) => {
     editFinished.current = true;
@@ -348,11 +358,11 @@ export function LibraryTable({ items, searchQuery, playlistId, onSearchChange, r
   };
 
   const saveCellEdit = async (restoreFocus = true) => {
-    if (!editingCell || editSaving.current || editFinished.current) return;
+    if (!editingCell || editSaving.current || editFinished.current) return false;
     if (editingCell.field === 'name' && !editValue.trim()) {
       setEditError('Enter a song name.');
       editInputRef.current?.focus();
-      return;
+      return false;
     }
     editSaving.current = true;
     setEditPending(true);
@@ -364,22 +374,47 @@ export function LibraryTable({ items, searchQuery, playlistId, onSearchChange, r
         await updateItem(item.id, editingCell.field, editValue);
       }
       closeCellEdit(restoreFocus);
+      return true;
     } catch {
       setEditError('Could not save this field. Your edit is still here; press Enter to retry or Escape to cancel.');
+      return false;
     } finally {
       editSaving.current = false;
       setEditPending(false);
     }
   };
 
+  const moveCellEdit = async (columnOffset: number, rowOffset: number, wrap = false) => {
+    if (!editingCell || editSaving.current) return;
+    const visibleRows = table.getRowModel().rows;
+    let rowIndex = visibleRows.findIndex(row => row.id === editingCell.rowId) + rowOffset;
+    let columnIndex = editableFields.indexOf(editingCell.field) + columnOffset;
+    if (wrap && columnIndex < 0) { rowIndex--; columnIndex = editableFields.length - 1; }
+    if (wrap && columnIndex >= editableFields.length) { rowIndex++; columnIndex = 0; }
+    const destination = visibleRows[rowIndex]?.original;
+    const field = editableFields[columnIndex];
+    if (!destination || !field) return;
+    if (!await saveCellEdit(false)) return;
+    // A save may reorder or filter the rows. Follow the destination's identity,
+    // after React has rendered the updated library, rather than its old index.
+    requestAnimationFrame(() => {
+      const row = scrollRef.current?.querySelector<HTMLTableRowElement>(`tr[data-item-id="${CSS.escape(destination.id)}"]`);
+      if (!row) return;
+      returnFocusRef.current = row;
+      setSelection({ rowId: destination.id, field });
+      beginCellEdit(destination, field);
+    });
+  };
+
   const handleContextMenu = useCallback((e: React.MouseEvent, item: LibraryItem) => {
     e.preventDefault();
+    cancelClickEdit();
     if (editingCell) return;
     setSelection({ rowId: item.id, field: editableField(e.target as HTMLElement) });
     returnFocusRef.current = e.currentTarget as HTMLTableRowElement;
     returnFocusRef.current.focus();
     setContextMenu({ x: e.clientX, y: e.clientY, item });
-  }, [editingCell]);
+  }, [editingCell, cancelClickEdit]);
 
   const handleDelete = useCallback(async () => {
     if (contextMenu) {
@@ -458,7 +493,7 @@ export function LibraryTable({ items, searchQuery, playlistId, onSearchChange, r
         queueMicrotask(() => returnFocusRef.current?.focus());
       }} />}
       <div ref={scrollRef} className="overflow-auto flex-grow">
-        <table aria-label="Tracks" aria-description="Click to select. Double-click or Enter to play. F2 edits the selected text field. Ctrl+I opens song info." className={`w-full border-collapse table-fixed ${table.getState().columnSizingInfo.isResizingColumn ? 'select-none' : ''}`}>
+        <table aria-label="Tracks" aria-description="Click to select; click a selected text cell again or press F2 to edit. Double-click or Enter to play. Ctrl+I opens song info." className={`w-full border-collapse table-fixed ${table.getState().columnSizingInfo.isResizingColumn ? 'select-none' : ''}`}>
           <colgroup>
             {table.getVisibleLeafColumns().map(column => (
               <col key={column.id} style={{
@@ -508,6 +543,7 @@ export function LibraryTable({ items, searchQuery, playlistId, onSearchChange, r
               return (
                 <tr
                   key={row.id}
+                  data-item-id={row.id}
                   ref={row.original.id === revealRequest?.itemId ? revealRowRef : undefined}
                   aria-current={isCurrentlyPlaying ? 'true' : undefined}
                   aria-selected={selection?.rowId === row.id}
@@ -516,6 +552,7 @@ export function LibraryTable({ items, searchQuery, playlistId, onSearchChange, r
                     if (event.target === event.currentTarget) setSelection(previous => ({ rowId: row.id, field: previous?.field ?? 'name' }));
                   }}
                   onKeyDown={(event) => {
+                    cancelClickEdit();
                     if (event.target !== event.currentTarget || editingCell) return;
                     returnFocusRef.current = event.currentTarget;
                     const field = selection?.rowId === row.id ? selection.field : 'name';
@@ -551,12 +588,29 @@ export function LibraryTable({ items, searchQuery, playlistId, onSearchChange, r
                     }
                   }}
                   className={`hover:bg-solarized-base02 cursor-pointer ${isCurrentlyPlaying ? 'bg-solarized-base02' : ''}`}
+                  onPointerDown={event => {
+                    cancelClickEdit();
+                    clickWasSelected.current = selection?.rowId === row.id && selection.field === editableField(event.target as HTMLElement);
+                  }}
+                  onBlur={event => { if (event.target === event.currentTarget) cancelClickEdit(); }}
                   onClick={event => {
                     if ((event.target as HTMLElement).closest('button, input')) return;
-                    setSelection({ rowId: row.id, field: editableField(event.target as HTMLElement) });
-                    event.currentTarget.focus();
+                    const field = editableField(event.target as HTMLElement);
+                    const isTextCell = editableFields.some(value => value === (event.target as HTMLElement).closest('td')?.getAttribute('data-column'));
+                    const rowElement = event.currentTarget;
+                    setSelection({ rowId: row.id, field });
+                    rowElement.focus();
+                    if (!editingCell && clickWasSelected.current && isTextCell && event.detail === 1) {
+                      // Defer rename so a second click can still produce normal playback.
+                      editClickTimer.current = setTimeout(() => {
+                        editClickTimer.current = null;
+                        if (!rowElement.isConnected || document.activeElement !== rowElement) return;
+                        returnFocusRef.current = rowElement;
+                        beginCellEdit(row.original, field);
+                      }, 500);
+                    }
                   }}
-                  onDoubleClick={event => handleRowPlay(row.original, rowIndex, event)}
+                  onDoubleClick={event => { cancelClickEdit(); handleRowPlay(row.original, rowIndex, event); }}
                   onContextMenu={(e) => handleContextMenu(e, row.original)}
                 >
                   {row.getVisibleCells().map((cell) => {
@@ -579,16 +633,38 @@ export function LibraryTable({ items, searchQuery, playlistId, onSearchChange, r
                         }}
                       >
                         {isEditing ? (
-                          <input
+                          <MetadataInput
                             ref={editInputRef}
+                            suggestions={field === 'artist' || field === 'album' ? suggestions[field] : undefined}
                             type="text"
                             aria-label={`Edit ${field}`}
                             disabled={editPending}
                             value={editValue}
-                            onChange={(e) => { setEditValue(e.target.value); setEditError(null); }}
+                            onValueChange={value => { setEditValue(value); setEditError(null); }}
                             onBlur={() => { void saveCellEdit(false); }}
                             onKeyDown={event => {
                               event.stopPropagation();
+                              if (event.nativeEvent.isComposing) return;
+                              const input = event.currentTarget;
+                              const allSelected = input.selectionStart === 0 && input.selectionEnd === input.value.length;
+                              const caret = input.selectionStart === input.selectionEnd;
+                              if (event.key === 'Tab') {
+                                // At the ends of the table, let Tab leave normally.
+                                // Blur saves the edit without trapping keyboard focus.
+                                if (event.shiftKey ? rowIndex === 0 && field === 'name' : rowIndex === rows.length - 1 && field === 'album') return;
+                                event.preventDefault(); void moveCellEdit(event.shiftKey ? -1 : 1, 0, true); return;
+                              }
+                              if (!event.shiftKey && !event.ctrlKey && !event.metaKey && !event.altKey) {
+                                if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
+                                  event.preventDefault(); void moveCellEdit(0, event.key === 'ArrowUp' ? -1 : 1); return;
+                                }
+                                if (event.key === 'ArrowLeft' && (allSelected || (caret && input.selectionStart === 0))) {
+                                  event.preventDefault(); void moveCellEdit(-1, 0); return;
+                                }
+                                if (event.key === 'ArrowRight' && (allSelected || (caret && input.selectionEnd === input.value.length))) {
+                                  event.preventDefault(); void moveCellEdit(1, 0); return;
+                                }
+                              }
                               if (event.key === 'Enter') { event.preventDefault(); void saveCellEdit(); }
                               if (event.key === 'Escape' && !editSaving.current) { event.preventDefault(); closeCellEdit(); }
                             }}

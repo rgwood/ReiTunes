@@ -1,13 +1,14 @@
 import { expect, test, type Page } from '@playwright/test';
 import type { LibraryItem } from '../src/types';
 
-async function setup(page: Page) {
+async function setup(page: Page, otherMetadata = false) {
   const items: LibraryItem[] = ['Northern Sky', 'Pink Moon'].map((name, index) => ({
     id: `11111111-1111-4111-8111-11111111111${index}`,
     name, artist: 'Nick Drake', album: 'Bryter Layter', track_number: 7,
     created_time_utc: `2026-01-0${2 - index}T00:00:00`, file_path: `${index}.mp3`,
     url: `/audio/${index}.mp3`, play_count: 0, bookmarks: {},
   }));
+  if (otherMetadata) Object.assign(items[1], { artist: 'Nina Simone', album: 'Pastel Blues' });
   const writes: { id: string; field: string; value: string }[] = [];
   const plays: string[] = [];
   await page.route('**/api/items', route => route.fulfill({ json: items }));
@@ -74,6 +75,137 @@ test('click and arrows select without playing; double-click and Enter play', asy
   await second.press('Enter');
   await expect(second).toHaveAttribute('aria-current', 'true');
   await expect.poll(() => plays).toEqual([items[0].id, items[1].id]);
+});
+
+test('clicking the selected cell again edits, while double-click still plays', async ({ page }) => {
+  const { plays, items } = await setup(page);
+  const row = page.getByRole('row').filter({ hasText: 'Northern Sky' });
+  const cell = row.locator('[data-column="artist"]');
+  const editor = page.getByRole('textbox', { name: 'Edit artist' });
+  await cell.click();
+  await page.waitForTimeout(600); // Check the delayed rename never fires on the first click.
+  await expect(editor).toHaveCount(0);
+  await cell.click();
+  await expect(editor).toBeFocused();
+  await editor.press('Escape');
+  await cell.dblclick();
+  await expect.poll(() => plays).toEqual([items[0].id]);
+  await page.waitForTimeout(600);
+  await expect(editor).toHaveCount(0);
+  await cell.click();
+  await page.getByRole('searchbox', { name: 'Search library' }).click();
+  await page.waitForTimeout(600);
+  await expect(editor).toHaveCount(0);
+});
+
+test('arrow keys save and move between cells, while text caret movement still works', async ({ page }) => {
+  const { writes, plays, items } = await setup(page);
+  const first = page.locator(`tr[data-item-id="${items[0].id}"]`);
+  const second = page.locator(`tr[data-item-id="${items[1].id}"]`);
+  await first.locator('[data-column="artist"]').click();
+  await first.press('F2');
+  const artist = page.getByRole('textbox', { name: 'Edit artist' });
+  await artist.fill('New artist');
+  await artist.press('ArrowLeft'); // The caret is inside the text, so stay here.
+  await expect(artist).toBeFocused();
+  expect(writes).toHaveLength(0);
+  await artist.press('End');
+  await artist.press('ArrowRight');
+  const album = page.getByRole('textbox', { name: 'Edit album' });
+  await expect(album).toBeFocused();
+  await album.fill('New album');
+  await album.press('ArrowDown');
+  await expect(second.getByRole('textbox', { name: 'Edit album' })).toBeFocused();
+  await album.press('ArrowLeft'); // Whole value is selected on entry.
+  await expect(second.getByRole('textbox', { name: 'Edit artist' })).toBeFocused();
+  await artist.press('ArrowUp');
+  await expect(first.getByRole('textbox', { name: 'Edit artist' })).toBeFocused();
+  await artist.press('Tab');
+  await expect(first.getByRole('textbox', { name: 'Edit album' })).toBeFocused();
+  await album.press('Tab');
+  const name = page.getByRole('textbox', { name: 'Edit name' });
+  await expect(second.getByRole('textbox', { name: 'Edit name' })).toBeFocused();
+  await name.press('Shift+Tab');
+  await expect(first.getByRole('textbox', { name: 'Edit album' })).toBeFocused();
+  await album.press('Escape');
+  expect(writes.map(write => [write.id, write.field, write.value])).toEqual([
+    [items[0].id, 'artist', 'New artist'], [items[0].id, 'album', 'New album'],
+  ]);
+  expect(plays).toEqual([]);
+});
+
+test('failed navigation saves keep the draft and original cell', async ({ page }) => {
+  const { plays } = await setup(page);
+  await page.route('**/ui/update', route => route.fulfill({ status: 500 }));
+  const row = page.getByRole('row').filter({ hasText: 'Northern Sky' });
+  await row.locator('[data-column="artist"]').click();
+  await row.press('F2');
+  const artist = row.getByRole('textbox', { name: 'Edit artist' });
+  await artist.fill('Keep this draft');
+  await artist.press('ArrowDown');
+  await expect(page.getByRole('alert')).toContainText('Could not save');
+  await expect(artist).toHaveValue('Keep this draft');
+  await expect(artist).toBeFocused();
+  expect(plays).toEqual([]);
+});
+
+test('navigation follows the intended song when saving changes the sort order', async ({ page }) => {
+  const { items, writes } = await setup(page);
+  await page.getByRole('button', { name: 'Name', exact: true }).click();
+  const first = page.locator(`tr[data-item-id="${items[0].id}"]`);
+  const second = page.locator(`tr[data-item-id="${items[1].id}"]`);
+  await first.locator('[data-column="name"]').click();
+  await first.press('F2');
+  const name = page.getByRole('textbox', { name: 'Edit name' });
+  await name.fill('Zebra');
+  await name.press('ArrowDown');
+  await expect(second.getByRole('textbox', { name: 'Edit name' })).toBeFocused();
+  await expect(page.locator('tbody tr').first()).toHaveAttribute('data-item-id', items[1].id);
+  expect(writes).toHaveLength(1);
+  await name.press('Shift+Tab'); // Leave the first cell instead of trapping focus.
+  await expect(name).toHaveCount(0);
+  await expect(second.getByRole('button', { name: '♡', exact: true })).toBeFocused();
+});
+
+test('artist and album complete from the full library in cells and Get Info', async ({ page }) => {
+  const { plays } = await setup(page, true);
+  await page.getByRole('searchbox', { name: 'Search library' }).fill('Northern Sky');
+  await expect(page.locator('tbody tr')).toHaveCount(1);
+  const row = page.getByRole('row').filter({ hasText: 'Northern Sky' });
+  await row.locator('[data-column="artist"]').click();
+  await row.press('F2');
+  const artist = page.getByRole('textbox', { name: 'Edit artist' });
+  await artist.pressSequentially('Nina');
+  await expect(artist).toHaveValue('Nina Simone');
+  expect(await artist.evaluate((input: HTMLInputElement) => [input.selectionStart, input.selectionEnd])).toEqual([4, 11]);
+  await artist.press('Backspace');
+  await expect(artist).toHaveValue('Nina');
+  await artist.pressSequentially(' Other');
+  await expect(artist).toHaveValue('Nina Other');
+  await artist.press('Escape');
+  await row.press('ArrowRight');
+  await row.press('F2');
+  const album = page.getByRole('textbox', { name: 'Edit album' });
+  await album.pressSequentially('Past');
+  await expect(album).toHaveValue('Pastel Blues');
+  await album.press('ArrowRight'); // Accept the suffix before moving to another cell.
+  await expect(album).toBeFocused();
+  expect(await album.evaluate((input: HTMLInputElement) => input.selectionStart)).toBe(12);
+  await album.press('Enter');
+  await row.press('Control+i');
+  const dialog = page.getByRole('dialog', { name: 'Song info' });
+  const infoArtist = dialog.getByRole('textbox', { name: 'Artist', exact: true });
+  await infoArtist.fill('');
+  await infoArtist.pressSequentially('Nina');
+  await expect(infoArtist).toHaveValue('Nina Simone');
+  const infoAlbum = dialog.getByRole('textbox', { name: 'Album', exact: true });
+  await infoAlbum.fill('');
+  await infoAlbum.pressSequentially('Past');
+  await expect(infoAlbum).toHaveValue('Pastel Blues');
+  await dialog.getByRole('button', { name: 'Save', exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  await expect(row).toContainText('Nina Simone');
+  expect(plays).toEqual([]);
 });
 
 test('F2 edits the selected field, saves once with Enter and cancels with Escape', async ({ page }) => {
