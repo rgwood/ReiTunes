@@ -16,6 +16,7 @@ use axum_extra::extract::Multipart;
 use axum_macros::debug_handler;
 use clap::{Parser, Subcommand};
 use reitunes_workspace::*;
+use rusqlite::OptionalExtension;
 use serde::{Deserialize, Serialize};
 use vite_rs_axum_0_8::ViteServe;
 
@@ -34,6 +35,7 @@ use crate::storage::S3Storage;
 
 mod llm;
 mod metadata;
+mod import_metadata;
 mod smapi;
 mod sonos;
 mod cloud_queue;
@@ -1132,7 +1134,9 @@ async fn upload_handler(
         // Get name from ID3 title, or fallback to LLM, or filename
         let (name, artist, album, track_number) = if metadata.has_info() {
             (
-                metadata.title.unwrap_or_else(|| filename.clone()),
+                metadata.title
+                    .filter(|title| !title.trim().is_empty())
+                    .unwrap_or_else(|| import_metadata::clean_filename_title(&filename)),
                 metadata.artist,
                 metadata.album,
                 metadata.track_number,
@@ -1143,7 +1147,7 @@ async fn upload_handler(
                 Ok(llm_meta) => (llm_meta.name, llm_meta.artist, llm_meta.album, None),
                 Err(e) => {
                     warn!(error = ?e, "LLM extraction failed, using filename");
-                    (filename.clone(), None, None, None)
+                    (import_metadata::clean_filename_title(&filename), None, None, None)
                 }
             }
         };
@@ -1560,10 +1564,30 @@ async fn add_item_handler(
                 file_path = &request.file_path,
                 "Failed to extract song metadata: {:?}", e
             );
+            // Keep the discovered title if inference is unavailable. A missing or
+            // unreadable cache must not prevent an otherwise valid import.
+            let cached = (|| -> Result<Option<import_metadata::SourceMetadata>> {
+                let conn = DB.get()?;
+                let serialized = conn
+                    .query_row("SELECT Serialized FROM discovery_state WHERE Id=1", [], |row| {
+                        row.get::<_, String>(0)
+                    })
+                    .optional()?;
+                Ok(serialized.and_then(|data| {
+                    import_metadata::cached_source_metadata(
+                        &data, request.source_url.as_deref(), &request.file_path,
+                    )
+                }))
+            })().unwrap_or_else(|error| {
+                warn!(%error, "Could not read cached import metadata");
+                None
+            });
             SongMetadata {
-                name: request.file_path.clone(),
-                artist: None,
-                album: None,
+                name: cached.as_ref()
+                    .map(|metadata| metadata.name.clone())
+                    .unwrap_or_else(|| import_metadata::clean_filename_title(&request.file_path)),
+                artist: cached.as_ref().and_then(|metadata| metadata.artist.clone()),
+                album: cached.as_ref().and_then(|metadata| metadata.album.clone()),
             }
         }
     };

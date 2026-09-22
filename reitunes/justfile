@@ -5,9 +5,9 @@ publish:
     set -euo pipefail
     if [[ ! -f ./prod.env ]]; then echo "ERROR: prod.env not found, refusing to build a secretless binary" >&2; exit 1; fi
     set -a && source ./prod.env && set +a
-    if [[ -z "${S3_ENDPOINT:-}" || -z "${REITUNES_PASSWORD:-}" || -z "${REITUNES_API_KEY:-}" || -z "${OPENAI_API_KEY:-}" ]]; then echo "ERROR: prod.env is missing required values" >&2; exit 1; fi
+    if [[ -z "${S3_ENDPOINT:-}" || -z "${REITUNES_PASSWORD:-}" || -z "${REITUNES_API_KEY:-}" ]]; then echo "ERROR: prod.env is missing required values" >&2; exit 1; fi
     if [[ -z "${OPENROUTER_API_KEY:-}" && -f "${OPENROUTER_API_KEY_FILE:-../openrouterkey.txt}" ]]; then export OPENROUTER_API_KEY="$(cat "${OPENROUTER_API_KEY_FILE:-../openrouterkey.txt}")"; fi
-    if [[ -z "${OPENROUTER_API_KEY:-}" ]]; then echo "ERROR: set OPENROUTER_API_KEY or OPENROUTER_API_KEY_FILE before publishing, so automatic tagging stays enabled" >&2; exit 1; fi
+    if [[ -z "${OPENROUTER_API_KEY:-}" ]]; then echo "ERROR: set OPENROUTER_API_KEY or OPENROUTER_API_KEY_FILE before publishing, so import metadata and automatic tagging stay enabled" >&2; exit 1; fi
     export TAGGING_CODE_REVISION="$(git describe --always --dirty)"
     cargo build -p reitunes --target x86_64-unknown-linux-musl --release
     rsync ../target/x86_64-unknown-linux-musl/release/reitunes spudnik.reillywood.com:bin/

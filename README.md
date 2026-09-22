@@ -29,7 +29,9 @@ Create a Smart Playlist from the sidebar’s playlist menu. To collect every son
 
 Open **Tags** in the sidebar to browse tags, or right-click a song and choose **Edit tags…** to add or remove them. Clicking a tag searches the library; you can also type `tag:house` in search. Manual edits and saved suggestions work without an AI provider. Automatic suggestions require `OPENROUTER_API_KEY` at build time or runtime, and use song metadata rather than listening to the audio.
 
-The production publish command requires the tagging key to avoid silently disabling suggestions. It accepts `OPENROUTER_API_KEY`, a file named by `OPENROUTER_API_KEY_FILE`, or `openrouterkey.txt` in the repository root.
+Import name/artist detection also uses OpenRouter, with `openai/gpt-6-luna`. If metadata detection is unavailable, imports keep the known Discover title or a cleaned filename. The downloader still completes the import.
+
+The production publish command requires the OpenRouter key for import metadata and automatic tag suggestions. It accepts `OPENROUTER_API_KEY`, a file named by `OPENROUTER_API_KEY_FILE`, or `openrouterkey.txt` in the repository root. A direct OpenAI API key is not needed.
 
 ## Architecture
 
