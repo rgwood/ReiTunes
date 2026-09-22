@@ -30,7 +30,7 @@ beforeEach(() => {
     matchMedia: () => media,
   });
   vi.stubGlobal('window', browser);
-  vi.stubGlobal('document', { documentElement: root });
+  vi.stubGlobal('document', { documentElement: root, querySelector: vi.fn(() => null) });
 });
 
 afterEach(() => vi.unstubAllGlobals());

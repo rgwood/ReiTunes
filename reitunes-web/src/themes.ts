@@ -773,9 +773,11 @@ function applyTheme(): void {
   root.dataset.themeMode = resolvedMode;
   root.dataset.themePreference = snapshot.mode;
   root.style.colorScheme = resolvedMode;
-  for (const [token, value] of Object.entries(
-    getPalette(themeId, resolvedMode)
-  )) {
+  const palette = getPalette(themeId, resolvedMode);
+  // Match the browser's title bar to the player bar.
+  const themeColor = document.querySelector<HTMLMetaElement>('meta[name="theme-color"]');
+  if (themeColor) themeColor.content = palette.panel;
+  for (const [token, value] of Object.entries(palette)) {
     root.style.setProperty(
       `--${token.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`)}`,
       value

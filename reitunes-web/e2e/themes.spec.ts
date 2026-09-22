@@ -139,8 +139,10 @@ test('follows the operating system initially and when it changes live', async ({
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'forest-palace');
   await expect(page.locator('html')).toHaveAttribute('data-theme-preference', 'system');
   await expect(page.locator('html')).toHaveAttribute('data-theme-mode', 'dark');
+  await expect(page.locator('meta[name="theme-color"]')).toHaveAttribute('content', '#1c2e26');
   await page.emulateMedia({ colorScheme: 'light' });
   await expect(page.locator('html')).toHaveAttribute('data-theme-mode', 'light');
+  await expect(page.locator('meta[name="theme-color"]')).toHaveAttribute('content', '#f3f3f3');
   await page.emulateMedia({ colorScheme: 'dark' });
   await expect(page.locator('html')).toHaveAttribute('data-theme-mode', 'dark');
   await expect(page.locator('html')).toHaveAttribute('data-theme-preference', 'system');
@@ -151,13 +153,16 @@ test('manual mode wins over the operating system and survives reload', async ({ 
   await chooseTheme(page, 'solarized', 'dark');
   await page.emulateMedia({ colorScheme: 'light' });
   await expect(page.locator('html')).toHaveAttribute('data-theme-mode', 'dark');
+  await expect(page.locator('meta[name="theme-color"]')).toHaveAttribute('content', '#073642');
   await page.reload();
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'solarized');
   await expect(page.locator('html')).toHaveAttribute('data-theme-mode', 'dark');
+  await expect(page.locator('meta[name="theme-color"]')).toHaveAttribute('content', '#073642');
   expect(await page.evaluate(key => JSON.parse(localStorage.getItem(key) || '{}'), STORAGE_KEY)).toEqual({ lightTheme: 'neutral', darkTheme: 'solarized', mode: 'dark' });
   await chooseTheme(page, 'catppuccin', 'light');
   await page.emulateMedia({ colorScheme: 'dark' });
   await expect(page.locator('html')).toHaveAttribute('data-theme-mode', 'light');
+  await expect(page.locator('meta[name="theme-color"]')).toHaveAttribute('content', '#e6e9ef');
   await chooseTheme(page, 'catppuccin', 'system');
   await expect(page.locator('html')).toHaveAttribute('data-theme-mode', 'dark');
 });
