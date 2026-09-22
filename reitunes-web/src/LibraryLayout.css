@@ -79,6 +79,10 @@
 .song-table th, .song-table th:first-child { height: 24px; padding: 1px 9px; border-right: 0; border-bottom: 1px solid var(--line); background: var(--panel); color: var(--muted); font-size: 11px; line-height: 19px; font-weight: 500; }
 .song-table th > button { height: 19px; }
 .song-table td { padding: 3px 9px; border-right: 0; line-height: 20px; }
+.song-table td[data-editing] { position: relative; }
+/* The cell supplies the focus border; the editor keeps the normal text inset. */
+.song-table td .library-cell-editor { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; padding: 0 9px; border: 0; border-radius: 0; outline: none; box-shadow: none; background: transparent; color: inherit; font: inherit; }
+.song-table tbody tr[aria-current='true'] td[data-column='name'] .library-cell-editor { padding-left: 22px; }
 .song-table tbody tr[aria-current='true']:not([aria-selected='true']) { background: var(--surface); }
 .song-table tbody tr[aria-current='true']:nth-child(even):not([aria-selected='true']) { background: var(--alternate); }
 .song-table tbody tr[aria-current='true'] td:first-child { box-shadow: none; }

@@ -693,6 +693,7 @@ export function LibraryTable({ items, searchQuery, playlistId, onSearchChange, r
                         key={cell.id}
                         data-column={field}
                         data-selected-cell={selection?.rowId === row.id && selection.field === field || undefined}
+                        data-editing={isEditing || undefined}
                         className="px-2 py-1 border-b border-solarized-base02 whitespace-nowrap overflow-hidden text-ellipsis max-w-0"
                         onClick={(e) => {
                           // Handle bookmark clicks
@@ -739,7 +740,7 @@ export function LibraryTable({ items, searchQuery, playlistId, onSearchChange, r
                               if (event.key === 'Enter') { event.preventDefault(); void saveCellEdit(); }
                               if (event.key === 'Escape' && !editSaving.current) { event.preventDefault(); closeCellEdit(); }
                             }}
-                            className="w-full bg-solarized-base03 text-solarized-base1 border border-solarized-blue px-1"
+                            className="library-cell-editor"
                             onFocus={event => event.target.select()}
                             autoFocus
                           />
