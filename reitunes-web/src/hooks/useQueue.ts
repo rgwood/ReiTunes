@@ -24,6 +24,8 @@ interface QueueState extends PersistedQueueState {
   playNext: () => LibraryItem | null;
   playPrevious: () => LibraryItem | null;
   clearManualQueue: () => void;
+  takeQueuedItem: (index: number) => LibraryItem | null;
+  chooseContextItem: (id: string) => LibraryItem | null;
   getCurrentItem: () => LibraryItem | null;
   toggleShuffle: () => void;
   cycleRepeatMode: () => void;
@@ -131,6 +133,18 @@ export const useQueueStore = create<QueueState>()(
       },
 
       clearManualQueue: () => set({ manualQueue: [] }),
+      takeQueuedItem: index => {
+        const item = get().manualQueue[index];
+        if (!item) return null;
+        set(state => ({ manualQueue: state.manualQueue.filter((_, i) => i !== index) }));
+        return item;
+      },
+      chooseContextItem: id => {
+        const index = get().contextItems.findIndex(item => item.id === id);
+        if (index < 0) return null;
+        set({ contextIndex: index });
+        return get().contextItems[index];
+      },
 
       getCurrentItem: () => {
         const state = get();

@@ -105,6 +105,7 @@ function formatBookmarks(bookmarks: Record<string, Bookmark>): React.ReactNode {
         key={id}
         className="bookmark-emoji cursor-pointer hover:underline decoration-solarized-blue decoration-2 rounded"
         data-position={bookmark.position}
+        data-bookmark-id={id}
         title={bookmark.label ? `${bookmark.label} · ${timeString}` : timeString}
       >
         {bookmark.emoji || '\u{1F516}'}
@@ -401,9 +402,9 @@ export function LibraryTable({ items, searchQuery, playlistId, onSearchChange, r
     void play(item);
   }, [play, editingCell, table, setContext, selectedPlaylist, sourceName]);
 
-  const handleBookmarkClick = useCallback((item: LibraryItem, position: number, e: React.MouseEvent) => {
+  const handleBookmarkClick = useCallback((item: LibraryItem, position: number, bookmarkId: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    void play(item, position);
+    void play(item, position, 'bookmark', { start: position, end: item.bookmarks[bookmarkId]?.end_position ?? null, bookmarkId });
   }, [play]);
 
   const beginCellEdit = useCallback((item: LibraryItem, field: EditableField) => {
@@ -814,7 +815,7 @@ export function LibraryTable({ items, searchQuery, playlistId, onSearchChange, r
                           const target = e.target as HTMLElement;
                           if (target.classList.contains('bookmark-emoji')) {
                             const position = parseFloat(target.getAttribute('data-position') || '0');
-                            handleBookmarkClick(row.original, position, e);
+                            handleBookmarkClick(row.original, position, target.getAttribute('data-bookmark-id') || '', e);
                           }
                         }}
                       >

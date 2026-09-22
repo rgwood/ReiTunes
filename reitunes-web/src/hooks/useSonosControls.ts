@@ -191,7 +191,7 @@ export function useSonosControls(groupId: string | null) {
   const sendTransport = useCallback(
     async (command: 'play' | 'pause') => {
       const output = usePlaybackTargetStore.getState();
-      if (!groupId || output.isTransportPending || output.isSending || output.isSwitchingOutput) return;
+      if (!groupId || output.isTransportPending || output.isSending || output.isSwitchingOutput) return false;
       setIsTransportPending(true);
       setCommandError(null);
       playbackRevision.current += 1;
@@ -206,20 +206,22 @@ export function useSonosControls(groupId: string | null) {
         readAttempted = true;
         await refreshPlayback();
       } catch (nextError) {
-        if (!isCurrent()) return;
+        if (!isCurrent()) return false;
         if (nextError instanceof SonosRequestError && nextError.status === 409) {
           usePlaybackTargetStore.getState().failSending(nextError.message, true);
         }
         // A lost reply is ambiguous: ask the speaker before showing a failure.
         const observed = readAttempted ? null : await refreshPlayback().catch(() => null);
-        if (!isCurrent()) return;
+        if (!isCurrent()) return false;
         const desiredState = command === 'play' ? 'PLAYBACK_STATE_PLAYING' : 'PLAYBACK_STATE_PAUSED';
         if (observed?.reitunesSessionActive && observed.playbackState === desiredState &&
-          !(nextError instanceof SonosRequestError && nextError.status === 409)) return;
+          !(nextError instanceof SonosRequestError && nextError.status === 409)) return true;
         setCommandError(nextError instanceof Error ? nextError.message : `Could not ${command} Sonos`);
+        return false;
       } finally {
         if (isCurrent()) setIsTransportPending(false);
       }
+      return isCurrent();
     },
     [groupId, refreshPlayback, setIsTransportPending]
   );

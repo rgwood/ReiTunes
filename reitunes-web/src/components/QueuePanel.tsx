@@ -1,285 +1,89 @@
-import { useCallback } from 'react';
-import {
-  DndContext,
-  closestCenter,
-  KeyboardSensor,
-  PointerSensor,
-  useSensor,
-  useSensors,
-  type DragEndEvent,
-} from '@dnd-kit/core';
-import {
-  SortableContext,
-  sortableKeyboardCoordinates,
-  useSortable,
-  verticalListSortingStrategy,
-} from '@dnd-kit/sortable';
+import { useState } from 'react';
+import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
+import { SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { useQueueStore } from '../hooks/useQueue';
 import { usePlayerStore } from '../stores/playerStore';
+import { usePlaybackTargetStore } from '../stores/playbackTargetStore';
+import { usePlayback } from '../hooks/usePlayback';
 import type { LibraryItem } from '../types';
+import './QueuePanel.css';
 
-// Minimal icons
-const DragIcon = (
-  <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
-    <circle cx="9" cy="6" r="2" />
-    <circle cx="15" cy="6" r="2" />
-    <circle cx="9" cy="12" r="2" />
-    <circle cx="15" cy="12" r="2" />
-    <circle cx="9" cy="18" r="2" />
-    <circle cx="15" cy="18" r="2" />
-  </svg>
-);
-
-const CloseIcon = (
-  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-    <line x1="18" y1="6" x2="6" y2="18" />
-    <line x1="6" y1="6" x2="18" y2="18" />
-  </svg>
-);
-
-const PlayIcon = (
-  <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor">
-    <polygon points="5 3 19 12 5 21 5 3" />
-  </svg>
-);
-
-const RepeatIcon = (
-  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-    <path d="M17 2l4 4-4 4" />
-    <path d="M3 11v-1a4 4 0 0 1 4-4h14" />
-    <path d="M7 22l-4-4 4-4" />
-    <path d="M21 13v1a4 4 0 0 1-4 4H3" />
-  </svg>
-);
-
-interface SortableItemProps {
-  item: LibraryItem;
-  index: number;
-  onRemove: () => void;
+function TrackButton({ item, onPlay, disabled }: { item: LibraryItem; onPlay: () => void; disabled: boolean }) {
+  return <button className="queue-track" onClick={onPlay} disabled={disabled} aria-label={`Play ${item.name} now`} title={`Play ${item.name} now`}>
+    <span className="queue-play" aria-hidden="true">▶</span>
+    <span className="queue-track-text"><span>{item.name}</span><small>{item.artist || 'Unknown artist'}</small></span>
+  </button>;
 }
 
-function SortableItem({ item, index, onRemove }: SortableItemProps) {
-  const {
-    attributes,
-    listeners,
-    setNodeRef,
-    transform,
-    transition,
-  } = useSortable({ id: `manual-${index}-${item.id}` });
-
-  const style = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-  };
-
-  return (
-    <div
-      ref={setNodeRef}
-      style={style}
-      className="flex items-center gap-2 px-3 py-1.5 hover:bg-solarized-base02 group"
-    >
-      <div
-        {...attributes}
-        {...listeners}
-        className="cursor-grab text-solarized-base01 hover:text-solarized-base1 opacity-0 group-hover:opacity-100"
-      >
-        {DragIcon}
-      </div>
-      <div className="flex-grow min-w-0">
-        <div className="text-xs text-solarized-base1 truncate">{item.name}</div>
-        {item.artist && (
-          <div className="text-[10px] text-solarized-base0 truncate">{item.artist}</div>
-        )}
-      </div>
-      <button
-        onClick={onRemove}
-        className="text-solarized-base01 hover:text-solarized-red opacity-0 group-hover:opacity-100 transition-opacity"
-        title="Remove"
-      >
-        {CloseIcon}
-      </button>
-    </div>
-  );
-}
-
-interface ContextItemProps {
-  item: LibraryItem;
-}
-
-function ContextItem({ item }: ContextItemProps) {
-  return (
-    <div className="flex items-center gap-2 px-3 py-1.5 opacity-60">
-      <div className="w-3" />
-      <div className="flex-grow min-w-0">
-        <div className="text-xs text-solarized-base0 truncate">{item.name}</div>
-        {item.artist && (
-          <div className="text-[10px] text-solarized-base0 truncate">{item.artist}</div>
-        )}
-      </div>
-    </div>
-  );
+function QueuedTrack({ item, index, onPlay, disabled }: { item: LibraryItem; index: number; onPlay: () => void; disabled: boolean }) {
+  const { attributes, listeners, setNodeRef, transform, transition } = useSortable({ id: `manual-${index}`, disabled });
+  const remove = useQueueStore(state => state.removeFromManualQueue);
+  return <li ref={setNodeRef} style={{ transform: CSS.Transform.toString(transform), transition }} className="queue-row">
+    <button className="queue-drag" {...attributes} {...listeners} aria-label={`Reorder ${item.name}`} disabled={disabled} title="Drag to reorder; Space and arrow keys also work">⠿</button>
+    <TrackButton item={item} onPlay={onPlay} disabled={disabled} />
+    <button className="queue-remove" onClick={() => remove(index)} disabled={disabled} aria-label={`Remove ${item.name} from queue`} title="Remove from queue">×</button>
+  </li>;
 }
 
 export function QueuePanel() {
-  const {
-    manualQueue,
-    contextName,
-    removeFromManualQueue,
-    clearManualQueue,
-    moveManualQueueItem,
-    getUpcomingContext,
-    repeatMode,
-    shuffleEnabled,
-  } = useQueueStore();
+  const queue = useQueueStore();
   const { currentItem } = usePlayerStore();
+  const target = usePlaybackTargetStore();
+  const play = usePlayback();
+  const [pending, setPending] = useState(false);
+  const [showAll, setShowAll] = useState(false);
+  const busy = pending || target.isSending || target.isSwitchingOutput || target.isTransportPending;
+  const upcoming = queue.shuffleEnabled
+    ? queue.contextItems.filter(item => item.id !== currentItem?.id)
+    : queue.getUpcomingContext();
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }));
 
-  const upcomingContext = getUpcomingContext();
-
-  const sensors = useSensors(
-    useSensor(PointerSensor),
-    useSensor(KeyboardSensor, {
-      coordinateGetter: sortableKeyboardCoordinates,
-    })
-  );
-
-  const handleDragEnd = useCallback((event: DragEndEvent) => {
-    const { active, over } = event;
-
-    if (over && active.id !== over.id) {
-      const activeIdParts = String(active.id).split('-');
-      const overIdParts = String(over.id).split('-');
-      const oldIndex = parseInt(activeIdParts[1], 10);
-      const newIndex = parseInt(overIdParts[1], 10);
-      moveManualQueueItem(oldIndex, newIndex);
+  async function playNow(source: 'manual' | 'context', index: number, id: string) {
+    if (busy) return;
+    const before = useQueueStore.getState();
+    const item = source === 'manual' ? before.takeQueuedItem(index) : before.chooseContextItem(id);
+    if (!item) return;
+    const after = useQueueStore.getState();
+    setPending(true);
+    const started = await play(item, 0, 'up-next');
+    if (!started) {
+      const current = useQueueStore.getState();
+      if (source === 'manual' && current.manualQueue === after.manualQueue) useQueueStore.setState({ manualQueue: before.manualQueue });
+      if (source === 'context' && current.contextIndex === after.contextIndex) useQueueStore.setState({ contextIndex: before.contextIndex });
     }
-  }, [moveManualQueueItem]);
+    setPending(false);
+  }
 
-  const hasManualQueue = manualQueue.length > 0;
-  const hasUpcomingContext = upcomingContext.length > 0;
-
-  return (
-    <div className="w-64 flex-shrink-0 bg-solarized-base03 border-l border-solarized-base02 flex flex-col h-full">
-      {/* Header */}
-      <div className="flex items-center justify-between px-3 py-2 border-b border-solarized-base02">
-        <span className="text-[10px] text-solarized-base0 uppercase tracking-wider">Queue</span>
-        {hasManualQueue && (
-          <button
-            onClick={clearManualQueue}
-            className="text-[10px] text-solarized-base01 hover:text-solarized-red uppercase"
-          >
-            Clear
-          </button>
-        )}
-      </div>
-
-      {/* Queue Content */}
-      <div className="flex-grow overflow-y-auto">
-        {/* Now Playing */}
-        {currentItem && (
-          <div className="border-b border-solarized-base02">
-            <div className="px-3 py-1 text-[10px] text-solarized-base0 uppercase tracking-wider">
-              Now Playing
-            </div>
-            <div className="flex items-center gap-2 px-3 py-1.5 bg-solarized-base02">
-              <span className="text-solarized-blue">{PlayIcon}</span>
-              <div className="flex-grow min-w-0">
-                <div className="text-xs text-solarized-blue truncate">{currentItem.name}</div>
-                {currentItem.artist && (
-                  <div className="text-[10px] text-solarized-base0 truncate">{currentItem.artist}</div>
-                )}
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Manual Queue */}
-        {hasManualQueue && (
-          <div className="border-b border-solarized-base02">
-            <div className="px-3 py-1 text-[10px] text-solarized-base0 uppercase tracking-wider">
-              Next Up
-            </div>
-            <DndContext
-              sensors={sensors}
-              collisionDetection={closestCenter}
-              onDragEnd={handleDragEnd}
-            >
-              <SortableContext
-                items={manualQueue.map((item, index) => `manual-${index}-${item.id}`)}
-                strategy={verticalListSortingStrategy}
-              >
-                {manualQueue.map((item, index) => (
-                  <SortableItem
-                    key={`manual-${index}-${item.id}`}
-                    item={item}
-                    index={index}
-                    onRemove={() => removeFromManualQueue(index)}
-                  />
-                ))}
-              </SortableContext>
-            </DndContext>
-          </div>
-        )}
-
-        {/* Context Queue */}
-        {currentItem && (
-          <div>
-            <div className="px-3 py-1 text-[10px] text-solarized-base0 uppercase tracking-wider flex items-center justify-between">
-              <span>
-                {repeatMode === 'one' ? 'Repeating' : shuffleEnabled ? 'Shuffled' : contextName}
-              </span>
-              {repeatMode === 'all' && !shuffleEnabled && (
-                <span className="text-solarized-green">loop</span>
-              )}
-            </div>
-
-            {/* Repeat One */}
-            {repeatMode === 'one' && (
-              <div className="flex items-center gap-2 px-3 py-1.5 opacity-60">
-                <span className="text-solarized-cyan">{RepeatIcon}</span>
-                <div className="flex-grow min-w-0">
-                  <div className="text-xs text-solarized-base0 truncate">{currentItem.name}</div>
-                </div>
-              </div>
-            )}
-
-            {/* Shuffle */}
-            {shuffleEnabled && repeatMode !== 'one' && (
-              <div className="px-3 py-1.5 text-[10px] text-solarized-base0">
-                Random from {upcomingContext.length + 1} tracks
-              </div>
-            )}
-
-            {/* Normal/Repeat All list */}
-            {!shuffleEnabled && repeatMode !== 'one' && hasUpcomingContext && (
-              <>
-                {upcomingContext.slice(0, 15).map((item, index) => (
-                  <ContextItem key={`context-${index}-${item.id}`} item={item} />
-                ))}
-                {upcomingContext.length > 15 && (
-                  <div className="px-3 py-1 text-[10px] text-solarized-base0 text-center">
-                    +{upcomingContext.length - 15} more
-                  </div>
-                )}
-              </>
-            )}
-
-            {/* End of queue */}
-            {!shuffleEnabled && repeatMode === 'off' && !hasUpcomingContext && (
-              <div className="px-3 py-1.5 text-[10px] text-solarized-base0">
-                End of queue
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Empty state */}
-        {!currentItem && !hasManualQueue && (
-          <div className="px-3 py-4 text-xs text-solarized-base0 text-center">
-            Nothing queued
-          </div>
-        )}
-      </div>
+  return <section className="up-next" aria-label="Up Next">
+    <header><h2>Up Next</h2></header>
+    <div className="queue-scroll">
+      {currentItem && <section aria-label="Now playing"><h3>Now playing</h3>
+        <div className="queue-current"><span aria-hidden="true">▶</span><span className="queue-track-text"><span>{currentItem.name}</span><small>{currentItem.artist}</small></span></div>
+      </section>}
+      {queue.repeatMode === 'one' && <p className="queue-note">Repeat one is on. Choose a track below to change songs.</p>}
+      {!!queue.manualQueue.length && <section aria-label="Added to queue">
+        <h3>Added by you <span>{queue.manualQueue.length}</span><button onClick={queue.clearManualQueue} disabled={busy}>Clear</button></h3>
+        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={({ active, over }) => {
+          if (busy || !over || active.id === over.id) return;
+          queue.moveManualQueueItem(Number(String(active.id).split('-')[1]), Number(String(over.id).split('-')[1]));
+        }}>
+          <SortableContext items={queue.manualQueue.map((_, index) => `manual-${index}`)} strategy={verticalListSortingStrategy}>
+            <ol>{queue.manualQueue.map((item, index) => <QueuedTrack key={`${index}-${item.id}`} item={item} index={index} disabled={busy}
+              onPlay={() => void playNow('manual', index, item.id)} />)}</ol>
+          </SortableContext>
+        </DndContext>
+      </section>}
+      {!!upcoming.length && <section aria-label={`From ${queue.contextName}`}>
+        <h3>{queue.shuffleEnabled ? 'Shuffle from' : 'Then from'} {queue.contextName}<span>{upcoming.length}</span></h3>
+        {queue.shuffleEnabled && <p className="queue-note">Next is chosen at random. You can also pick a track.</p>}
+        <ol>{(showAll ? upcoming : upcoming.slice(0, 30)).map((item, index) => <li className="queue-row" key={`${index}-${item.id}`}>
+          <TrackButton item={item} onPlay={() => void playNow('context', index, item.id)} disabled={busy} />
+        </li>)}</ol>
+        {!showAll && upcoming.length > 30 && <button className="queue-show-all" onClick={() => setShowAll(true)}>Show all {upcoming.length} tracks</button>}
+      </section>}
+      {!upcoming.length && !queue.manualQueue.length && <p className="queue-note">{currentItem ? 'Nothing else queued. Add songs with Play Next or Add to Queue.' : 'Nothing queued yet. Play a song to get started.'}</p>}
     </div>
-  );
+  </section>;
 }

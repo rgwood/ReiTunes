@@ -1688,6 +1688,13 @@ struct UpdateBookmarkRequest {
     label: Option<String>,
     emoji: String,
     position: Option<f64>,
+    // Missing keeps the saved end; null explicitly removes it.
+    #[serde(default, deserialize_with = "deserialize_bookmark_end")]
+    end_position: Option<Option<f64>>,
+}
+
+fn deserialize_bookmark_end<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<Option<Option<f64>>, D::Error> {
+    Option::<f64>::deserialize(deserializer).map(Some)
 }
 
 #[instrument(skip(app_state))]
@@ -1700,17 +1707,26 @@ async fn update_bookmark_handler(
         Ok(position) => position,
         Err(_) => return Ok(StatusCode::BAD_REQUEST),
     };
-    let existing_emoji = {
+    let end_position = match request.end_position.map(|end| end.map(Duration::try_from_secs_f64).transpose()).transpose() {
+        Ok(end) => end,
+        Err(_) => return Ok(StatusCode::BAD_REQUEST),
+    };
+    let existing = {
         let library = app_state.library.read().await;
         library
             .items
             .get(&item_id)
             .and_then(|item| item.bookmarks.get(&bookmark_id))
-            .map(|bookmark| bookmark.emoji.clone())
+            .cloned()
     };
-    let Some(existing_emoji) = existing_emoji else {
+    let Some(existing) = existing else {
         return Ok(StatusCode::NOT_FOUND);
     };
+    let start = position.unwrap_or(existing.position);
+    let end = end_position.unwrap_or(existing.end_position);
+    if end.is_some_and(|end| end <= start) {
+        return Ok(StatusCode::BAD_REQUEST);
+    }
 
     let label_event = Event::LibraryItemBookmarkLabelChangedEvent {
         bookmark_id,
@@ -1723,7 +1739,7 @@ async fn update_bookmark_handler(
     .await?;
 
     let emoji = request.emoji.trim();
-    if !emoji.is_empty() && emoji != existing_emoji {
+    if !emoji.is_empty() && emoji != existing.emoji {
         let emoji_event = Event::LibraryItemBookmarkSetEmojiEvent {
             bookmark_id,
             emoji: emoji.to_string(),
@@ -1735,10 +1751,11 @@ async fn update_bookmark_handler(
         .await?;
     }
 
-    if let Some(position) = position {
-        let position_event = Event::LibraryItemBookmarkPositionChangedEvent {
+    if position.is_some() || end_position.is_some() {
+        let position_event = Event::LibraryItemBookmarkRangeChangedEvent {
             bookmark_id,
-            position,
+            position: start,
+            end_position: end,
         };
         save_and_broadcast_event(EventWithMetadata::new(item_id, position_event)?, app_state).await?;
     }
@@ -1987,6 +2004,7 @@ mod tests {
                     label: Some("Unchanged".to_string()),
                     emoji: "🔖".to_string(),
                     position,
+                    end_position: None,
                 }),
             )
             .await
@@ -1998,6 +2016,25 @@ mod tests {
         let legacy_request: UpdateBookmarkRequest =
             serde_json::from_str(r#"{"label":"Intro","emoji":"🔖"}"#).unwrap();
         assert!(legacy_request.position.is_none());
+        assert!(legacy_request.end_position.is_none());
+        let clear: UpdateBookmarkRequest = serde_json::from_str(r#"{"label":"Intro","emoji":"🔖","end_position":null}"#).unwrap();
+        assert_eq!(clear.end_position, Some(None));
+        let with_end: UpdateBookmarkRequest = serde_json::from_str(r#"{"label":"Intro","emoji":"🔖","end_position":80.5}"#).unwrap();
+        assert_eq!(with_end.end_position, Some(Some(80.5)));
+        let item_id = Uuid::new_v4();
+        let bookmark_id = Uuid::new_v4();
+        for event in [
+            Event::LibraryItemCreatedEvent { name: "Mix".into(), artist: None, album: None, track_number: None, file_path: "mix.mp3".into() },
+            Event::LibraryItemBookmarkAddedEvent { bookmark_id, position: Duration::from_secs(60), label: None },
+            Event::LibraryItemBookmarkRangeChangedEvent { bookmark_id, position: Duration::from_secs(60), end_position: Some(Duration::from_secs(100)) },
+        ] { state.library.write().await.apply(&EventWithMetadata::new(item_id, event).unwrap()); }
+        for (position, end_position) in [(None, Some(Some(60.0))), (None, Some(Some(-1.0))), (None, Some(Some(f64::INFINITY))), (Some(100.0), None)] {
+            let response = update_bookmark_handler(State(state.clone()), Path((item_id, bookmark_id)), JsonExtractor(UpdateBookmarkRequest {
+                label: Some("Should not be saved".into()), emoji: "🔖".into(), position, end_position,
+            })).await.unwrap().into_response();
+            assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        }
+        assert_eq!(state.library.read().await.items[&item_id].bookmarks[&bookmark_id].label, None);
     }
 
     #[tokio::test]

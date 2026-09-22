@@ -1,0 +1,26 @@
+.up-next { width: 288px; max-width: 100%; height: 100%; display: flex; flex-direction: column; font: 12px/1.4 system-ui, sans-serif; background: var(--surface); }
+.up-next > header { padding: 7px 32px 7px 10px; border-bottom: 1px solid var(--line); }
+.up-next h2 { margin: 0; font-size: 13px; font-weight: 600; }
+.queue-scroll { overflow: auto; flex: 1; min-height: 0; }
+.up-next h3 { display: flex; align-items: center; gap: 5px; padding: 5px 9px; margin: 0; color: var(--muted); font-size: 11px; font-weight: 500; background: var(--panel); border-bottom: 1px solid var(--line); }
+.up-next h3 > span { font-variant-numeric: tabular-nums; }
+.up-next h3 > button { margin-left: auto; padding: 0 3px; color: var(--text); }
+.up-next ol { padding: 0; margin: 0; list-style: none; }
+.queue-row, .queue-current { display: flex; align-items: center; min-width: 0; border-bottom: 1px solid var(--line); }
+.queue-current { padding: 6px 10px; gap: 7px; color: var(--accent); }
+.queue-row:nth-child(even) { background: var(--alternate); }
+.queue-row:hover, .queue-row:focus-within { background: var(--hover); }
+.queue-track { display: flex; gap: 7px; align-items: center; min-width: 0; flex: 1; padding: 5px 8px; text-align: left; }
+.queue-track-text { display: flex; flex-direction: column; min-width: 0; }
+.queue-track-text > span, .queue-track-text > small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.queue-track-text small { color: var(--muted); font-size: 10px; }
+.queue-play { font-size: 9px; opacity: .45; }
+.queue-track:hover .queue-play { opacity: 1; color: var(--accent); }
+.queue-drag, .queue-remove { padding: 4px; color: var(--muted); }
+.queue-drag { cursor: grab; touch-action: none; }
+.queue-remove { margin-right: 4px; font-size: 17px; }
+.queue-remove:hover { color: var(--error); }
+.up-next button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.up-next button:disabled { opacity: .5; }
+.queue-note { padding: 8px 10px; margin: 0; color: var(--muted); font-size: 11px; }
+.queue-show-all { width: 100%; padding: 7px; color: var(--accent); }

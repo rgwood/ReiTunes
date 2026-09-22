@@ -44,6 +44,7 @@ describe('playback persistence', () => {
       resumePosition: 0,
       volume: 1,
       isMuted: false,
+      playbackRange: null,
     });
     useQueueStore.setState({
       manualQueue: [],
@@ -67,6 +68,7 @@ describe('playback persistence', () => {
       resumePosition: 42,
       volume: 0.4,
       isMuted: true,
+      playbackRange: null,
     });
     expect(saved.state.currentItem).toBeUndefined();
     expect(saved.state.isPlaying).toBeUndefined();
@@ -124,5 +126,28 @@ describe('playback persistence', () => {
     expect(saved.state.manualQueue.map((entry: LibraryItem) => entry.id)).toEqual(['three']);
     expect(saved.state.contextName).toBe('Favourites');
     expect(saved.state.shuffleEnabled).toBe(true);
+  });
+
+  it('playing a queued duplicate consumes only that occurrence and keeps other additions', () => {
+    const one = item('one'), two = item('two');
+    useQueueStore.setState({ manualQueue: [one, two, one], contextItems: [one, two], contextIndex: 0 });
+    expect(useQueueStore.getState().takeQueuedItem(2)).toEqual(one);
+    expect(useQueueStore.getState().manualQueue).toEqual([one, two]);
+    expect(useQueueStore.getState().contextIndex).toBe(0);
+    expect(useQueueStore.getState().chooseContextItem('two')).toEqual(two);
+    expect(useQueueStore.getState().contextIndex).toBe(1);
+    expect(useQueueStore.getState().manualQueue).toEqual([one, two]);
+    expect(useQueueStore.getState().takeQueuedItem(99)).toBeNull();
+  });
+
+  it('refreshes active bookmark limits and clears them for ordinary playback', () => {
+    const mix = { ...item('mix'), bookmarks: { b: { position: 20, end_position: 40, label: 'Intro', emoji: '🎹', created_time_utc: '' } } };
+    usePlayerStore.getState().play(mix, 20, { start: 20, end: 40, bookmarkId: 'b' });
+    const changed = { ...mix, bookmarks: { b: { ...mix.bookmarks.b, end_position: 50 } } };
+    usePlayerStore.getState().refreshCurrentItem(changed);
+    expect(usePlayerStore.getState().playbackRange?.end).toBe(50);
+    expect(JSON.parse(storage.getItem(PLAYER_STORAGE_KEY)!).state.playbackRange.end).toBe(50);
+    usePlayerStore.getState().play(mix);
+    expect(usePlayerStore.getState().playbackRange).toBeNull();
   });
 });

@@ -21,6 +21,7 @@ import { usePlaylists } from './hooks/usePlaylists';
 import { playlistItems } from './utils/playlists';
 import { useLibraryPreferences } from './stores/libraryPreferences';
 import { BookmarkSidebar } from './components/BookmarkSidebar';
+import type { PlaybackRange } from './stores/playerStore';
 import { SonosModal } from './components/SonosModal';
 import { SettingsDialog } from './components/SettingsDialog';
 import { Discover } from './components/Discover';
@@ -103,6 +104,15 @@ function AppContent() {
   const discoveryCount = discovery?.entries.filter(entry => isInboxEntry(entry)
     && entry.sources.some(id => discovery.sources.some(source => source.id === id))).length ?? 0;
   const play = usePlayback();
+  const playBookmark = (item: LibraryItem, position: number, range?: PlaybackRange) => { void play(item, position, 'bookmark', range); };
+  const getBookmarkPlaybackTime = (itemId: string) => {
+    const player = usePlayerStore.getState();
+    if (player.currentItemId !== itemId) return null;
+    const remote = usePlaybackTargetStore.getState().target.kind === 'sonos';
+    const remotePosition = playbackPosition.current?.itemId === itemId ? playbackPosition.current.position : player.resumePosition;
+    const position = player.pendingSeek ?? (remote ? remotePosition : audioRef.current?.currentTime ?? player.resumePosition);
+    return { position, duration: remote ? 0 : audioRef.current?.duration ?? 0 };
+  };
   const {
     currentItem,
     currentItemId,
@@ -203,19 +213,20 @@ function AppContent() {
       'Saved moments',
       true
     );
-    void play(next.item, next.bookmark.position);
+    void play(next.item, next.bookmark.position, 'next-bookmark', { start: next.bookmark.position, end: next.bookmark.end_position ?? null });
   }, [moments, currentItemId, setContext, filteredItems, play, view, items]);
   const randomFavourite = useCallback(() => {
     const targets = items.flatMap((item) => [
       ...Object.values(item.bookmarks).map((bookmark) => ({
         item,
         position: bookmark.position,
+        range: { start: bookmark.position, end: bookmark.end_position ?? null },
       })),
-      ...(item.is_favorite ? [{ item, position: 0 }] : []),
+      ...(item.is_favorite ? [{ item, position: 0, range: undefined }] : []),
     ]);
     if (!targets.length) return;
     const next = targets[Math.floor(Math.random() * targets.length)];
-    void play(next.item, next.position, 'ctrl-e');
+    void play(next.item, next.position, 'ctrl-e', next.range);
     if (!filteredItems.some((item) => item.id === next.item.id)) {
       setLibrarySearch('');
       setCollection('all');
@@ -356,7 +367,7 @@ function AppContent() {
           }} /> : error ? <div className="library-message" role="alert">Couldn’t load the library. <button onClick={() => void queryClient.invalidateQueries({ queryKey: ['library'] })}>Retry</button></div>
             : isLoading ? <div className="library-message" role="status">Loading…</div>
             : view === 'bookmarks' ? <div className="bookmark-main-view">
-              <BookmarkSidebar items={items} onPlay={play} onClearItem={() => setBookmarkItemId(null)}
+              <BookmarkSidebar items={items} onPlay={playBookmark} getPlaybackTime={getBookmarkPlaybackTime} onClearItem={() => setBookmarkItemId(null)}
                 query={deferredSearch} onQueryChange={setBookmarkSearch} hideSearch onNextMoment={nextMoment} />
             </div> : <>
               <div className="song-table">
@@ -380,6 +391,7 @@ function AppContent() {
               : view === 'bookmarks' ? <span>{items.reduce((n, item) => n + Object.keys(item.bookmarks).length, 0)} bookmarks</span>
               : <span>{filteredItems.length.toLocaleString()}{filteredItems.length !== items.length && ` of ${items.length.toLocaleString()}`} {filteredItems.length === 1 ? 'track' : 'tracks'}{selectedPlaylist && ` · ${selectedPlaylist.name}`}</span>}
             {view === 'library' && selectedPlaylist?.smart_rules && <button onClick={() => setPlaylistDraft({ playlist: selectedPlaylist, smart: true })}>Edit rules…</button>}
+            {view === 'bookmarks' && <button onClick={nextMoment} disabled={!moments.length}>Next saved moment</button>}
           </footer>
         </div>
         {panel === 'tags' && <aside className="library-sidepanel tag-sidepanel">
@@ -391,7 +403,7 @@ function AppContent() {
         </aside>}
         {panel === 'bookmarks' && <aside className="library-sidepanel bookmark-sidepanel">
           <button className="panel-close" aria-label="Close bookmarks" onClick={() => setPanel(null)}><MusicIcon name="close" size={14} /></button>
-          <BookmarkSidebar key={bookmarkItemId || 'all'} items={items} onPlay={play}
+          <BookmarkSidebar key={bookmarkItemId || 'all'} items={items} onPlay={playBookmark} getPlaybackTime={getBookmarkPlaybackTime}
             selectedItem={items.find(item => item.id === bookmarkItemId)} onClearItem={() => setBookmarkItemId(null)} onNextMoment={nextMoment} />
         </aside>}
         {panel === 'queue' && <aside className="library-sidepanel queue-sidepanel">

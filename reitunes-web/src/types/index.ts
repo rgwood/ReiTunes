@@ -1,6 +1,7 @@
 // Library item matching the Rust backend structure
 export interface Bookmark {
   position: number; // in seconds
+  end_position?: number | null;
   emoji: string;
   label: string | null;
   created_time_utc: string;

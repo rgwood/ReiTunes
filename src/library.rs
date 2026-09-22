@@ -248,6 +248,7 @@ impl Library {
                         *bookmark_id,
                         Bookmark {
                             position: *position,
+                            end_position: None,
                             emoji: music_emoji[emoji_index].to_string(),
                             label: label.clone(),
                             created_time_utc: event.created_time_utc,
@@ -288,6 +289,15 @@ impl Library {
                     }
                     item.bookmarks
                         .sort_by(|_, v1, _, v2| Ord::cmp(&v1.position, &v2.position));
+                }
+            }
+            Event::LibraryItemBookmarkRangeChangedEvent { bookmark_id, position, end_position } => {
+                if let Some(item) = self.items.get_mut(&event.aggregate_id) {
+                    if let Some(bookmark) = item.bookmarks.get_mut(bookmark_id) {
+                        bookmark.position = *position;
+                        bookmark.end_position = *end_position;
+                    }
+                    item.bookmarks.sort_by(|_, a, _, b| a.position.cmp(&b.position));
                 }
             }
             Event::LibraryItemFavoritedEvent => {
@@ -355,6 +365,13 @@ pub enum Event {
         #[serde(with = "duration_serde_dotnet")]
         position: Duration,
     },
+    LibraryItemBookmarkRangeChangedEvent {
+        bookmark_id: Uuid,
+        #[serde(with = "duration_serde_dotnet")]
+        position: Duration,
+        #[serde(with = "optional_duration_seconds")]
+        end_position: Option<Duration>,
+    },
     LibraryItemFavoritedEvent,
     LibraryItemUnfavoritedEvent,
 }
@@ -380,9 +397,28 @@ pub struct LibraryItem {
 pub struct Bookmark {
     #[serde(with = "duration_serde_seconds")]
     pub position: std::time::Duration,
+    #[serde(with = "optional_duration_seconds", skip_serializing_if = "Option::is_none")]
+    pub end_position: Option<Duration>,
     pub emoji: String,
     pub label: Option<String>,
     pub created_time_utc: DateTime,
+}
+
+mod optional_duration_seconds {
+    use serde::{Deserialize, Deserializer, Serializer};
+    use std::time::Duration;
+
+    pub fn serialize<S: Serializer>(value: &Option<Duration>, serializer: S) -> Result<S::Ok, S::Error> {
+        match value {
+            Some(duration) => serializer.serialize_some(&duration.as_secs_f64()),
+            None => serializer.serialize_none(),
+        }
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Option<Duration>, D::Error> {
+        Option::<f64>::deserialize(deserializer)?
+            .map(Duration::try_from_secs_f64).transpose().map_err(serde::de::Error::custom)
+    }
 }
 
 #[cfg(test)]
@@ -582,6 +618,31 @@ mod tests {
                 vec![other_id, bookmark_id]
             };
             assert_eq!(bookmarks.keys().copied().collect::<Vec<_>>(), expected_order);
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn bookmark_ranges_round_trip_and_can_clear_the_end() -> Result<()> {
+        let conn = Connection::open(":memory:")?;
+        conn.execute_batch(include_str!("../schema.sql"))?;
+        let item_id = Uuid::new_v4();
+        let bookmark_id = Uuid::new_v4();
+        for event in [
+            Event::LibraryItemCreatedEvent { name: "Mix".into(), artist: None, album: None, track_number: None, file_path: "mix.mp3".into() },
+            Event::LibraryItemBookmarkAddedEvent { bookmark_id, position: Duration::from_secs(90), label: None },
+        ] { save_event_to_db(&conn, &EventWithMetadata::new(item_id, event)?)?; }
+        for end in [Some(Duration::from_millis(180_125)), None] {
+            let event = Event::LibraryItemBookmarkRangeChangedEvent { bookmark_id, position: Duration::from_millis(60_500), end_position: end };
+            assert_eq!(serde_json::from_str::<Event>(&serde_json::to_string(&event)?)?, event);
+            save_event_to_db(&conn, &EventWithMetadata::new(item_id, event)?)?;
+            let library = load_library_from_db(&conn)?;
+            let bookmark = &library.items[&item_id].bookmarks[&bookmark_id];
+            assert_eq!(bookmark.position, Duration::from_millis(60_500));
+            assert_eq!(bookmark.end_position, end);
+            let json = serde_json::to_value(bookmark)?;
+            assert_eq!(json["position"], 60.5);
+            assert_eq!(json.get("end_position").and_then(|v| v.as_f64()), end.map(|v| v.as_secs_f64()));
         }
         Ok(())
     }

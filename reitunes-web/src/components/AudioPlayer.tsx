@@ -1,5 +1,5 @@
 import { useEffect, useRef, useCallback, useState, type RefObject } from 'react';
-import { usePlayerStore } from '../stores/playerStore';
+import { usePlayerStore, type PlaybackRange } from '../stores/playerStore';
 import { useQueueStore } from '../hooks/useQueue';
 import { getItemUrl, markPlayed, addBookmark } from '../hooks/useLibrary';
 import { usePlayback } from '../hooks/usePlayback';
@@ -149,6 +149,7 @@ export function AudioPlayer({ audioRef: sharedAudioRef, items, onPlaybackPositio
   const {
     currentItem,
     currentItemId,
+    playbackRange,
     isPlaying,
     pendingSeek,
     volume,
@@ -175,6 +176,39 @@ export function AudioPlayer({ audioRef: sharedAudioRef, items, onPlaybackPositio
   const mediaPosition = target.kind === 'sonos' ? sonos.positionMillis / 1000 : currentTime;
   const refreshSonosPlayback = sonos.refreshPlayback;
   const { playNext, playPrevious, shuffleEnabled, repeatMode, toggleShuffle, cycleRepeatMode } = useQueueStore();
+  const finishingRange = useRef<PlaybackRange | null>(null);
+  const finishRange = useCallback(async (range: PlaybackRange) => {
+    const player = usePlayerStore.getState();
+    if (!player.currentItem || range.end === null || finishingRange.current === range) return;
+    finishingRange.current = range;
+    const output = usePlaybackTargetStore.getState().target;
+    const remote = output.kind === 'sonos';
+    if (remote) { if (!await pauseSonos()) return; }
+    else if (audioRef.current) { audioRef.current.pause(); audioRef.current.currentTime = range.end; }
+    const next = range.afterEnd === 'pause' ? undefined : Object.entries(player.currentItem.bookmarks)
+      .filter(([, bookmark]) => bookmark.position >= range.end! && bookmark.position > range.start)
+      .sort((a, b) => a[1].position - b[1].position)[0];
+    if (usePlayerStore.getState().playbackRange !== range || usePlaybackTargetStore.getState().target !== output) {
+      finishingRange.current = null; return;
+    }
+    if (next) {
+      const [bookmarkId, bookmark] = next;
+      await play(player.currentItem, bookmark.position, 'bookmark-end', { start: bookmark.position, end: bookmark.end_position ?? null, bookmarkId });
+    } else {
+      player.setResumePosition(range.end);
+      player.setIsPlaying(false);
+      // Keep the completed range through a possible native ended event.
+      // An explicit Play resumes the full recording.
+    }
+  }, [pauseSonos, play]);
+
+  useEffect(() => {
+    if (target.kind !== 'sonos' || !sonosIsPlaying || !sonosSessionActive || isSending || isSwitchingOutput || playbackError ||
+      sonos.isTransportPending || sonos.playback?.sourceItemId !== currentItemId ||
+      (sonos.playback?.observedAt ?? 0) < sonosPositionReadyAfterRef.current || !playbackRange || playbackRange.end === null) return;
+    if (sonos.positionMillis / 1000 >= playbackRange.end) void finishRange(playbackRange);
+    else if (finishingRange.current === playbackRange) finishingRange.current = null;
+  }, [target.kind, sonosIsPlaying, sonosSessionActive, isSending, isSwitchingOutput, playbackError, sonos.isTransportPending, sonos.playback, sonos.positionMillis, currentItemId, playbackRange, finishRange]);
 
   useEffect(() => {
     const audio = audioRef.current;
@@ -341,6 +375,10 @@ export function AudioPlayer({ audioRef: sharedAudioRef, items, onPlaybackPositio
     ) return;
 
     const position = audio.currentTime;
+    if (player.playbackRange?.end != null && position < player.playbackRange.end && finishingRange.current === player.playbackRange) finishingRange.current = null;
+    if (player.isPlaying && player.playbackRange?.end != null && position >= player.playbackRange.end) {
+      void finishRange(player.playbackRange); return;
+    }
     setCurrentTimeLocal(position);
     onPlaybackPosition?.(player.currentItemId, position);
 
@@ -350,7 +388,7 @@ export function AudioPlayer({ audioRef: sharedAudioRef, items, onPlaybackPositio
       lastCheckpointRef.current = checkpoint;
       setResumePosition(position);
     }
-  }, [onPlaybackPosition, setResumePosition]);
+  }, [onPlaybackPosition, setResumePosition, finishRange]);
 
   const handleLoadedMetadata = useCallback(() => {
     if (audioRef.current) {
@@ -364,6 +402,8 @@ export function AudioPlayer({ audioRef: sharedAudioRef, items, onPlaybackPositio
   }, []);
 
   const handleEnded = useCallback(() => {
+    const range = usePlayerStore.getState().playbackRange;
+    if (range?.end != null) { void finishRange(range); return; }
     setResumePosition(0);
     if (repeatMode === 'one' && audioRef.current) {
       audioRef.current.currentTime = 0;
@@ -372,7 +412,7 @@ export function AudioPlayer({ audioRef: sharedAudioRef, items, onPlaybackPositio
     }
     const nextItem = playNext();
     if (nextItem) void play(nextItem);
-  }, [playNext, play, repeatMode, setResumePosition]);
+  }, [playNext, play, repeatMode, setResumePosition, finishRange]);
 
   const handlePlayPause = useCallback(() => {
     if (!audioRef.current) return;
@@ -392,6 +432,7 @@ export function AudioPlayer({ audioRef: sharedAudioRef, items, onPlaybackPositio
     const rect = progressRef.current.getBoundingClientRect();
     const percent = (e.clientX - rect.left) / rect.width;
     const position = percent * duration;
+    usePlayerStore.getState().setPlaybackRange(null);
     audioRef.current.currentTime = position;
     setResumePosition(position);
   }, [duration, setResumePosition]);
@@ -476,6 +517,8 @@ export function AudioPlayer({ audioRef: sharedAudioRef, items, onPlaybackPositio
   const handleAudioPlay = useCallback(() => {
     if (!audioRef.current || audioRef.current.paused || usePlaybackTargetStore.getState().target.kind !== 'browser') return;
     isChangingSourceRef.current = false;
+    const player = usePlayerStore.getState();
+    if (player.pendingSeek === null && player.playbackRange?.end != null && audioRef.current.currentTime >= player.playbackRange.end) player.setPlaybackRange(null);
     setIsPlaying(true);
     if (currentItem && currentItem.id !== lastPlayedIdRef.current) {
       lastPlayedIdRef.current = currentItem.id;
@@ -612,7 +655,9 @@ export function AudioPlayer({ audioRef: sharedAudioRef, items, onPlaybackPositio
   }, [duration, handleNext, handlePrevious, mediaSessionActive, pauseSonos, playSonos, seekOnSonos, setResumePosition, sonosPlayback, target]);
 
   const progress = duration > 0 ? (currentTime / duration) * 100 : 0;
-  const bookmarks = currentItem?.bookmarks ? Object.values(currentItem.bookmarks) : [];
+  const bookmarks = currentItem?.bookmarks ? Object.entries(currentItem.bookmarks).map(([id, bookmark]) => ({ ...bookmark, id })) : [];
+  const bookmarkRanges = bookmarks.filter(bookmark => bookmark.end_position != null && duration > 0).map(bookmark =>
+    <span key={bookmark.id} className="timeline-bookmark-range" aria-hidden="true" style={{ left: `${100 * bookmark.position / duration}%`, width: `${100 * (bookmark.end_position! - bookmark.position) / duration}%` }} />);
   const sonosPosition = sonosSessionActive ? sonos.positionMillis / 1000 : 0;
   const displayedSonosPosition = sonosSeekDraft ?? sonosPosition;
   const sonosProgress = duration > 0 ? Math.min(100, (displayedSonosPosition / duration) * 100) : 0;
@@ -697,7 +742,7 @@ export function AudioPlayer({ audioRef: sharedAudioRef, items, onPlaybackPositio
               step="0.1"
               value={Math.min(duration || 1, displayedSonosPosition)}
               disabled={sonosSeekDisabled}
-              onChange={event => setSonosSeekDraft(Number(event.target.value))}
+              onChange={event => { usePlayerStore.getState().setPlaybackRange(null); setSonosSeekDraft(Number(event.target.value)); }}
               onPointerUp={event => void seekSonos(Number(event.currentTarget.value))}
               onPointerCancel={() => setSonosSeekDraft(null)}
               onKeyUp={event => {
@@ -706,17 +751,21 @@ export function AudioPlayer({ audioRef: sharedAudioRef, items, onPlaybackPositio
                 }
               }}
             />
+            {bookmarkRanges}
             {bookmarks.map((bookmark, idx) => {
               const position = duration > 0 ? (bookmark.position / duration) * 100 : 0;
               return (
                 <button
                   type="button"
                   key={idx}
-                  onClick={() => void seekSonos(bookmark.position)}
+                  onClick={() => {
+                    usePlayerStore.getState().setPlaybackRange({ start: bookmark.position, end: bookmark.end_position ?? null, bookmarkId: bookmark.id });
+                    void seekSonos(bookmark.position);
+                  }}
                   disabled={sonosSeekDisabled}
                   className="timeline-bookmark absolute top-1/2 -translate-y-1/2 w-1 h-3 bg-solarized-blue/70 rounded-sm"
                   style={{ left: `${position}%` }}
-                  title={`${bookmark.emoji || '🔖'} ${bookmark.label ? `${bookmark.label} · ` : ''}${formatTime(bookmark.position)}`}
+                  title={`${bookmark.emoji || '🔖'} ${bookmark.label ? `${bookmark.label} · ` : ''}${formatTime(bookmark.position)}${bookmark.end_position == null ? '' : ` – ${formatTime(bookmark.end_position)}`}`}
                 />
               );
             })}
@@ -795,6 +844,7 @@ export function AudioPlayer({ audioRef: sharedAudioRef, items, onPlaybackPositio
             <div className="absolute right-0 top-1/2 translate-x-1/2 -translate-y-1/2 w-2.5 h-2.5 bg-solarized-blue rounded-full" />
           </div>
           {/* Bookmark markers */}
+          {bookmarkRanges}
           {bookmarks.map((bookmark, idx) => {
             const position = duration > 0 ? (bookmark.position / duration) * 100 : 0;
             return (
@@ -803,13 +853,14 @@ export function AudioPlayer({ audioRef: sharedAudioRef, items, onPlaybackPositio
                 onClick={(e) => {
                   e.stopPropagation();
                   if (audioRef.current) {
+                    usePlayerStore.getState().setPlaybackRange({ start: bookmark.position, end: bookmark.end_position ?? null, bookmarkId: bookmark.id });
                     audioRef.current.currentTime = bookmark.position;
                     setResumePosition(bookmark.position);
                   }
                 }}
                 className="timeline-bookmark absolute top-1/2 -translate-y-1/2 w-1 h-3 bg-solarized-cyan/60 hover:bg-solarized-cyan hover:w-2 hover:h-5 transition-all cursor-pointer rounded-sm"
                 style={{ left: `${position}%` }}
-                title={`${bookmark.emoji || '🔖'} ${bookmark.label ? `${bookmark.label} · ` : ''}${formatTime(bookmark.position)}`}
+                title={`${bookmark.emoji || '🔖'} ${bookmark.label ? `${bookmark.label} · ` : ''}${formatTime(bookmark.position)}${bookmark.end_position == null ? '' : ` – ${formatTime(bookmark.end_position)}`}`}
               />
             );
           })}

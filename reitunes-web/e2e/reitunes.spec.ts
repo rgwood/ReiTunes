@@ -85,7 +85,7 @@ test('shows, filters, edits and deletes bookmarks', async ({ page }) => {
   await page.getByRole('textbox', { name: 'Bookmark emoji for Northern Sky' }).fill('🔥');
   await page.getByRole('button', { name: 'Save bookmark', exact: true }).click();
 
-  await expect.poll(() => updateBody).toEqual({ label: 'First chorus', emoji: '🔥' });
+  await expect.poll(() => updateBody).toEqual({ label: 'First chorus', emoji: '🔥', end_position: null });
   await expect(page.getByText('First chorus', { exact: true })).toBeVisible();
 
   page.once('dialog', (dialog) => dialog.accept());
