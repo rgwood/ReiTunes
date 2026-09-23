@@ -25,10 +25,11 @@
 .player-bar .player-bookmark { width: 26px; height: 24px; color: var(--muted); }
 .player-bar button.player-bookmark[data-feedback='success']:not(:disabled) { color: var(--success); }
 .player-bar button.player-bookmark[data-feedback='error']:not(:disabled) { color: var(--error); }
-.player-bar .player-volume { grid-column: 3; grid-row: 2; display: flex; align-items: center; justify-content: flex-end; gap: 1px; justify-self: end; }
+.player-bar .player-volume { grid-column: 3; grid-row: 2; display: flex; align-items: center; gap: 1px; justify-self: stretch; min-width: 0; }
+.player-bar .player-volume .volume-slider { flex: 1; width: 0; min-width: 0; }
 .player-bar .player-volume button { width: 23px; height: 23px; }
 .player-bar .player-volume button[aria-pressed='true'] { color: var(--accent); background: var(--selection); }
-.player-volume > span { width: 22px; text-align: right; font-size: 10px; color: var(--muted); }
+.player-volume > span { flex: 0 0 28px; margin-left: 5px; text-align: center; font-size: 10px; color: var(--muted); font-variant-numeric: tabular-nums; }
 .player-bar .transport-group button:hover:not(:disabled),
 .player-bar .player-bookmark:hover:not(:disabled), .player-bar .player-volume button:hover:not(:disabled), .queue-toggle:hover {
   background: color-mix(in srgb, var(--text) 14%, var(--panel)); border-color: color-mix(in srgb, var(--text) 22%, transparent); color: var(--text);
@@ -130,7 +131,6 @@
 .playlist-dialog footer { gap: 8px; }
 @media (max-width: 1000px) {
   .player-bar { --player-inset: 10px; --player-gap: 10px; --player-tools-width: 220px; }
-  .player-bar .player-volume .volume-slider { width: 88px; }
 }
 @media (max-width: 650px) {
   .music-app { --sidebar-width: 148px; }
@@ -149,7 +149,6 @@
   .player-tools { grid-column: 2; grid-row: 3; }
   .player-tools .library-search { flex: 1; }
   .player-bar .player-volume { grid-column: 2; grid-row: 4; }
-  .player-bar .player-volume .volume-slider { width: 74px; }
   .player-bar .player-volume button { width: 21px; }
   .sonos-status:not(.sr-only) { grid-column: 1 / -1; grid-row: 5; }
   .source-sidebar .source-scroll { padding: 8px 4px; }
@@ -166,6 +165,5 @@
 }
 @media (max-width: 380px) {
   .music-app { --sidebar-width: 128px; }
-  .player-bar .player-volume .volume-slider { width: 52px; }
   .player-bar .player-volume button { width: 19px; }
 }
