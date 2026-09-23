@@ -167,3 +167,7 @@
   .music-app { --sidebar-width: 128px; }
   .player-bar .player-volume button { width: 19px; }
 }
+
+.player-recovery { display: inline-flex; align-items: center; gap: 6px; flex-shrink: 0; white-space: nowrap; color: var(--muted); font-size: 11px; }
+.player-recovery button { color: var(--accent); padding: 0 4px; border-radius: 3px; }
+.player-recovery button:hover { background: var(--hover); }

@@ -109,6 +109,7 @@ test.beforeEach(async ({ page }) => {
       playCalls: 0,
       readyState: 4,
       sourceLoads: 0,
+      reloads: 0,
       pauseCalls: 0,
       deferFirst: false,
       rejectFirst: () => {},
@@ -172,6 +173,17 @@ test.beforeEach(async ({ page }) => {
             });
           }
           return Promise.resolve();
+        },
+      },
+      load: {
+        configurable: true,
+        value() {
+          harness.reloads += 1;
+          harness.readyState = 0;
+          Object.assign(state(this), { time: 0, paused: true });
+          this.dispatchEvent(new Event('emptied'));
+          this.dispatchEvent(new Event('loadstart'));
+          this.dispatchEvent(new Event('pause'));
         },
       },
       pause: {
@@ -327,4 +339,44 @@ test('a bookmark starts at metadata readiness and supersedes an earlier pending 
   // A late readiness notification must not restore the superseded start at zero.
   await page.locator('audio').evaluate(audio => audio.dispatchEvent(new Event('canplay')));
   expect(await page.locator('audio').evaluate(audio => audio.currentTime)).toBe(70);
+});
+
+
+test('stalled audio reloads once, respects newer seeks and pause, then offers manual retry', async ({ page }, testInfo) => {
+  await page.clock.install();
+  await page.getByRole('row').filter({ hasText: 'Bookmarked track' }).dblclick();
+  await page.locator('audio').evaluate(audio => {
+    audio.currentTime = 180;
+    (window as unknown as { playbackHarness: { readyState: number } }).playbackHarness.readyState = 1;
+    audio.dispatchEvent(new Event('waiting'));
+  });
+  await page.clock.runFor(8000);
+  await expect(page.locator('.player-recovery').getByRole('status')).toHaveText('Reconnecting…');
+  const reloads = () => page.evaluate(() => (window as unknown as { playbackHarness: { reloads: number } }).playbackHarness.reloads);
+  expect(await reloads()).toBe(1);
+  // A newer bookmark wins over the position captured by automatic recovery.
+  await page.keyboard.press('Control+e');
+  await page.getByRole('button', { name: 'Pause', exact: true }).click();
+  await page.locator('audio').evaluate(audio => {
+    (window as unknown as { playbackHarness: { readyState: number } }).playbackHarness.readyState = 1;
+    audio.dispatchEvent(new Event('loadedmetadata'));
+  });
+  await expect.poll(() => page.locator('audio').evaluate(audio => audio.currentTime)).toBe(70);
+  expect(await page.locator('audio').evaluate(audio => audio.paused)).toBe(true);
+  await page.getByRole('button', { name: 'Play', exact: true }).click();
+  await page.locator('audio').evaluate(audio => audio.dispatchEvent(new Event('waiting')));
+  await page.clock.runFor(30000);
+  await expect(page.getByRole('button', { name: 'Retry audio', exact: true })).toBeVisible();
+  await page.screenshot({ path: testInfo.outputPath('audio-retry.png') });
+  expect(await reloads()).toBe(1);
+  await page.getByRole('button', { name: 'Retry audio', exact: true }).click();
+  expect(await reloads()).toBe(2);
+  await page.locator('audio').evaluate(audio => {
+    (window as unknown as { playbackHarness: { readyState: number } }).playbackHarness.readyState = 4;
+    audio.dispatchEvent(new Event('loadedmetadata'));
+  });
+  await expect.poll(() => page.locator('audio').evaluate(audio => audio.currentTime)).toBe(70);
+  await page.locator('audio').evaluate(audio => audio.dispatchEvent(new Event('playing')));
+  await expect(page.locator('.player-recovery')).toHaveCount(0);
+  expect(await page.locator('audio').evaluate(audio => audio.paused)).toBe(false);
 });

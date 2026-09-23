@@ -7,6 +7,7 @@ import { useSonosControls } from '../hooks/useSonosControls';
 import { usePlaybackTargetStore } from '../stores/playbackTargetStore';
 import type { LibraryItem } from '../types';
 import { audioDiagnostics, observePlaybackMedia, recordPlaybackEvent } from '../utils/playbackDiagnostics';
+import { createAudioRecovery, type AudioRecoveryStatus } from '../utils/audioRecovery';
 
 // Minimal SVG icons - consistent 16px size, 1.5px stroke
 const Icons = {
@@ -74,8 +75,9 @@ function formatTime(seconds: number): string {
   return `${mins}:${secs.toString().padStart(2, '0')}`;
 }
 
-function PlayerTrack({ item, position, duration, sonos = false, status }: {
+function PlayerTrack({ item, position, duration, sonos = false, status, recovery }: {
   item: LibraryItem | null; position: number; duration: number; sonos?: boolean; status?: string;
+  recovery?: { status: AudioRecoveryStatus; retry: () => void };
 }) {
   return <div className="player-track">
     <div className={`player-title ${sonos ? 'sonos-track-title' : 'player-now-playing'}`}
@@ -84,6 +86,10 @@ function PlayerTrack({ item, position, duration, sonos = false, status }: {
         : item ? <><span>{item.name}</span>{item.artist && <span className="player-artist"> — {item.artist}</span>}</>
         : <span>No song selected</span>}
     </div>
+    {recovery && recovery.status !== 'idle' && <span className="player-recovery">
+      <span role="status">{recovery.status === 'buffering' ? 'Buffering…' : recovery.status === 'retrying' ? 'Reconnecting…' : 'Audio stalled'}</span>
+      {recovery.status === 'failed' && <button type="button" onClick={recovery.retry}>Retry audio</button>}
+    </span>}
     <span className="player-timing">{formatTime(position)} <span aria-hidden="true">/</span> {duration > 0 ? formatTime(duration) : '—:—'}</span>
   </div>;
 }
@@ -140,6 +146,8 @@ export function AudioPlayer({ audioRef: sharedAudioRef, items, onPlaybackPositio
     audioRef.current = audio;
     sharedAudioRef.current = audio;
   }, [sharedAudioRef]);
+  const recoveryRef = useRef<ReturnType<typeof createAudioRecovery> | null>(null);
+  const [recoveryStatus, setRecoveryStatus] = useState<AudioRecoveryStatus>('idle');
   const progressRef = useRef<HTMLDivElement>(null);
   const lastPlayedIdRef = useRef<string | null>(null);
   const lastItemIdRef = useRef<string | null>(null);
@@ -280,6 +288,37 @@ export function AudioPlayer({ audioRef: sharedAudioRef, items, onPlaybackPositio
     onPlaybackPosition?.(currentItem.id, sonos.positionMillis / 1000);
   }, [currentItem, isSending, onPlaybackPosition, playbackError, resumePosition, sonos.playback, sonos.positionMillis, target.kind]);
 
+  useEffect(() => {
+    const audio = audioRef.current;
+    setRecoveryStatus('idle');
+    if (!audio || !currentItemId || target.kind !== 'browser') return;
+    let disposed = false;
+    const canAct = () => !disposed && usePlayerStore.getState().currentItemId === currentItemId &&
+      usePlaybackTargetStore.getState().target.kind === 'browser' &&
+      !usePlaybackTargetStore.getState().isSwitchingOutput;
+    const controller = createAudioRecovery(audio, {
+      canAct,
+      shouldPlay: () => usePlayerStore.getState().isPlaying,
+      position: () => usePlayerStore.getState().pendingSeek ?? audio.currentTime,
+      onStatus: setRecoveryStatus,
+      reload: position => {
+        const player = usePlayerStore.getState();
+        recordPlaybackEvent('command', { origin: 'reload-stalled-audio', itemId: currentItemId, target: 'browser', targetPosition: position, ...audioDiagnostics(audio) });
+        isChangingSourceRef.current = true;
+        // Retain the range and latest seek intent while resetting only the media
+        // connection. loadedmetadata applies the pending position before audio plays.
+        player.seekTo(position);
+        audio.load();
+        if (player.isPlaying) void audio.play().catch(error => {
+          recordPlaybackEvent('play-rejected', { origin: 'reload-stalled-audio', itemId: currentItemId, errorName: error instanceof Error ? error.name : 'UnknownError' });
+          if (canAct() && usePlayerStore.getState().isPlaying && audio.paused) setRecoveryStatus('failed');
+        });
+      },
+    });
+    recoveryRef.current = controller;
+    return () => { disposed = true; controller.dispose(); if (recoveryRef.current === controller) recoveryRef.current = null; };
+  }, [currentItemId, target.kind]);
+
   // Handle song changes
   useEffect(() => {
     const audio = audioRef.current;
@@ -402,7 +441,7 @@ export function AudioPlayer({ audioRef: sharedAudioRef, items, onPlaybackPositio
     // Ignore the old source while a new track/bookmark seek is still pending.
     if (
       !audio || usePlaybackTargetStore.getState().target.kind !== 'browser' ||
-      isChangingSourceRef.current || player.pendingSeek !== null ||
+      isChangingSourceRef.current || audio.seeking || player.pendingSeek !== null ||
       !player.currentItemId || player.currentItemId !== lastItemIdRef.current
     ) return;
 
@@ -430,6 +469,7 @@ export function AudioPlayer({ audioRef: sharedAudioRef, items, onPlaybackPositio
   }, []);
 
   const handleLoadStart = useCallback(() => {
+    if (recoveryRef.current?.isReloading()) return;
     setDurationLocal(0);
   }, []);
 
@@ -450,6 +490,7 @@ export function AudioPlayer({ audioRef: sharedAudioRef, items, onPlaybackPositio
     if (!audioRef.current) return;
     recordPlaybackEvent('command', { origin: isPlaying ? 'button-pause' : 'button-play', ...audioDiagnostics(audioRef.current) });
     if (isPlaying) {
+      setIsPlaying(false);
       audioRef.current.pause();
     } else {
       audioRef.current.play().catch((error) => {
@@ -457,7 +498,7 @@ export function AudioPlayer({ audioRef: sharedAudioRef, items, onPlaybackPositio
         console.error('Failed to resume playback:', error);
       });
     }
-  }, [isPlaying]);
+  }, [isPlaying, setIsPlaying]);
 
   const handleProgressClick = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
     if (!progressRef.current || !audioRef.current || !duration) return;
@@ -465,25 +506,22 @@ export function AudioPlayer({ audioRef: sharedAudioRef, items, onPlaybackPositio
     const percent = (e.clientX - rect.left) / rect.width;
     const position = percent * duration;
     usePlayerStore.getState().setPlaybackRange(null);
-    audioRef.current.currentTime = position;
-    setResumePosition(position);
-  }, [duration, setResumePosition]);
+    usePlayerStore.getState().seekTo(position);
+  }, [duration]);
 
   const seekBack = useCallback(() => {
     if (audioRef.current) {
-      const position = Math.max(0, audioRef.current.currentTime - 30);
-      audioRef.current.currentTime = position;
-      setResumePosition(position);
+      const position = Math.max(0, (usePlayerStore.getState().pendingSeek ?? audioRef.current.currentTime) - 30);
+      usePlayerStore.getState().seekTo(position);
     }
-  }, [setResumePosition]);
+  }, []);
 
   const seekForward = useCallback(() => {
     if (audioRef.current) {
-      const position = Math.min(audioRef.current.duration, audioRef.current.currentTime + 30);
-      audioRef.current.currentTime = position;
-      setResumePosition(position);
+      const position = Math.min(duration || audioRef.current.duration, (usePlayerStore.getState().pendingSeek ?? audioRef.current.currentTime) + 30);
+      usePlayerStore.getState().seekTo(position);
     }
-  }, [setResumePosition]);
+  }, [duration]);
 
   const handleAddBookmark = useCallback(async () => {
     if (!currentItem) {
@@ -624,9 +662,8 @@ export function AudioPlayer({ audioRef: sharedAudioRef, items, onPlaybackPositio
         void seekOnSonos(position * 1000, { relative, maxPositionMillis: limit * 1000 });
       } else if (audioRef.current) {
         const limit = Number.isFinite(audioRef.current.duration) ? audioRef.current.duration : Infinity;
-        const clamped = Math.min(limit, Math.max(0, relative ? audioRef.current.currentTime + position : position));
-        audioRef.current.currentTime = clamped;
-        setResumePosition(clamped);
+        const clamped = Math.min(limit, Math.max(0, relative ? (usePlayerStore.getState().pendingSeek ?? audioRef.current.currentTime) + position : position));
+        usePlayerStore.getState().seekTo(clamped);
       }
     };
     const pause = () => {
@@ -857,7 +894,8 @@ export function AudioPlayer({ audioRef: sharedAudioRef, items, onPlaybackPositio
         onPause={handleAudioPause}
       />
 
-      <PlayerTrack item={currentItem} position={currentTime} duration={duration} />
+      <PlayerTrack item={currentItem} position={pendingSeek ?? currentTime} duration={duration}
+        recovery={{ status: recoveryStatus, retry: () => recoveryRef.current?.retry() }} />
       <div className="player-progress player-timeline">
         <div
           ref={progressRef}
@@ -874,7 +912,7 @@ export function AudioPlayer({ audioRef: sharedAudioRef, items, onPlaybackPositio
           {bookmarkRanges}
           {currentItem?.tracklist?.tracks.filter(track => duration > 0 && track.start > 0 && track.start < duration).map((track, index) => <button type="button" key={`track-${index}`}
             className="timeline-chapter" style={{ left: `${100 * track.start / duration}%` }} title={`${track.title} · ${formatTime(track.start)}`} aria-label={`Jump to ${track.title}`}
-            onClick={event => { event.stopPropagation(); if (audioRef.current) { usePlayerStore.getState().setPlaybackRange(null); audioRef.current.currentTime = track.start; setResumePosition(track.start); } }} />)}
+            onClick={event => { event.stopPropagation(); if (audioRef.current) { usePlayerStore.getState().setPlaybackRange(null); usePlayerStore.getState().seekTo(track.start); } }} />)}
           {bookmarks.map((bookmark, idx) => {
             const position = duration > 0 ? (bookmark.position / duration) * 100 : 0;
             return (
@@ -884,8 +922,7 @@ export function AudioPlayer({ audioRef: sharedAudioRef, items, onPlaybackPositio
                   e.stopPropagation();
                   if (audioRef.current) {
                     usePlayerStore.getState().setPlaybackRange({ start: bookmark.position, end: bookmark.end_position ?? null, bookmarkId: bookmark.id });
-                    audioRef.current.currentTime = bookmark.position;
-                    setResumePosition(bookmark.position);
+                    usePlayerStore.getState().seekTo(bookmark.position);
                   }
                 }}
                 className="timeline-bookmark absolute top-1/2 -translate-y-1/2 w-1 h-3 bg-solarized-cyan/60 hover:bg-solarized-cyan hover:w-2 hover:h-5 transition-all cursor-pointer rounded-sm"
