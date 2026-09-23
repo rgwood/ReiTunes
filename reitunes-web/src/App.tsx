@@ -240,6 +240,11 @@ function AppContent() {
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (document.querySelector('dialog[open], [role="dialog"]')) return;
+      if ((event.ctrlKey || event.metaKey) && event.key === ',' && !event.altKey && !event.shiftKey && !event.isComposing) {
+        event.preventDefault();
+        setIsSettingsOpen(true);
+        return;
+      }
       const editing = (event.target as HTMLElement).closest(
         'input, textarea, select, [contenteditable="true"]'
       );

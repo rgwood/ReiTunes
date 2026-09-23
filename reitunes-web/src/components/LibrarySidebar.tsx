@@ -94,7 +94,7 @@ export function LibrarySidebar({ active, items, playlists, now, discoveryCount, 
       <button onClick={() => onEdit({ smart: false })}><MusicIcon name="plus" size={16} /> New playlist</button>
       <button onClick={() => onEdit({ smart: true })}><MusicIcon name="smart" size={16} /> New Smart Playlist</button>
       <button onClick={onImport}><MusicIcon name="plus" size={13} /> Import music</button>
-      <button aria-label="Settings" onClick={onSettings}><MusicIcon name="settings" size={13} /> Settings</button>
+      <button aria-label="Settings" aria-keyshortcuts="Control+, Meta+," title="Settings (Ctrl+,)" onClick={onSettings}><MusicIcon name="settings" size={13} /> Settings</button>
       <div className="player-output"><button className="output-button" onClick={onOutput} aria-label="Sonos" title="Choose playback output">
         <MusicIcon name="speaker" size={14} /><span>{outputName}</span>
       </button></div>
