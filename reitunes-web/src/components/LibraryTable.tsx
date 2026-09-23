@@ -41,6 +41,7 @@ const COLUMN_DRAG_TYPE = 'application/x-reitunes-column';
 interface LibraryTableProps {
   items: LibraryItem[];
   searchQuery: string;
+  onlyFavouriteTracks?: boolean;
   playlistId?: string | null;
   onSearchChange?: (query: string) => void;
   revealRequest?: { itemId: string } | null;
@@ -138,7 +139,7 @@ function formatCreatedTime(value: string, short = false): string {
   });
 }
 
-export function LibraryTable({ items, searchQuery, playlistId, onSearchChange, revealRequest, onRevealed, onManageBookmarks, onManageTags, onFilterTag, tagItems, selectedTagItemId, contextName: sourceName, allowReordering, onNewPlaylist, viewId = 'all' }: LibraryTableProps) {
+export function LibraryTable({ items, searchQuery, onlyFavouriteTracks = false, playlistId, onSearchChange, revealRequest, onRevealed, onManageBookmarks, onManageTags, onFilterTag, tagItems, selectedTagItemId, contextName: sourceName, allowReordering, onNewPlaylist, viewId = 'all' }: LibraryTableProps) {
   // TanStack Table v8 exposes mutable state through stable methods. Remove this
   // opt-out when useReactTable supports React Compiler memoization.
   'use no memo';
@@ -146,7 +147,7 @@ export function LibraryTable({ items, searchQuery, playlistId, onSearchChange, r
   const { columnOrder, columnVisibility, columnWidths, resizeColumn, moveColumn } = useLibraryPreferences();
   const [choosingColumns, setChoosingColumns] = useState(false);
   const [tracklistItem, setTracklistItem] = useState<LibraryItem | null>(null);
-  const [expandedAlbums, setExpandedAlbums] = useState<Set<string>>(new Set());
+  const [expandedAlbums, setExpandedAlbums] = useState<Map<string, boolean>>(new Map());
   const [columnDrop, setColumnDrop] = useState<{ id: string; after: boolean } | null>(null);
   const draggedColumn = useRef<string | null>(null);
   const columnResize = useRef<{ id: string; x: number; width: number } | null>(null);
@@ -404,8 +405,10 @@ export function LibraryTable({ items, searchQuery, playlistId, onSearchChange, r
     // Set the context to the library or playlist name
     const contextName = sourceName || selectedPlaylist?.name || 'Library';
     setContext(sortedItems, rowIndex, contextName);
-    void play(item);
-  }, [play, editingCell, table, setContext, selectedPlaylist, sourceName]);
+    const favourite = onlyFavouriteTracks && !item.is_favorite ? item.tracklist?.tracks.find(track => track.is_favorite) : undefined;
+    const nextStart = item.tracklist?.tracks.find(track => favourite && track.start > favourite.start)?.start;
+    void play(item, favourite?.start ?? 0, 'selection', favourite ? { start: favourite.start, end: favourite.end ?? nextStart ?? item.tracklist?.duration ?? null, afterEnd: 'pause' } : undefined);
+  }, [play, editingCell, table, setContext, selectedPlaylist, sourceName, onlyFavouriteTracks]);
 
   const handleBookmarkClick = useCallback((item: LibraryItem, position: number, bookmarkId: string, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -582,7 +585,7 @@ export function LibraryTable({ items, searchQuery, playlistId, onSearchChange, r
     <div className="px-5 h-full flex flex-col">
       {choosingColumns && <ColumnsDialog onClose={() => setChoosingColumns(false)} />}
       {tracklistItem && <TracklistDialog key={tracklistItem.id} item={tracklistItem} onClose={() => setTracklistItem(null)}
-        onApplied={() => setExpandedAlbums(old => new Set([...old, tracklistItem.id]))} />}
+        onApplied={() => setExpandedAlbums(old => new Map(old).set(tracklistItem.id, true))} />}
       {editError && <div role="alert" className="library-edit-error">{editError}</div>}
       {playlistError && <div role="alert" className="library-edit-error">{playlistError}</div>}
       {infoItem && <SongInfoDialog key={infoItem.id} item={infoItem} onClose={() => {
@@ -696,6 +699,7 @@ export function LibraryTable({ items, searchQuery, playlistId, onSearchChange, r
           <tbody>
             {rows.map((row, rowIndex) => {
               const isCurrentlyPlaying = currentItem?.id === row.original.id;
+              const expanded = expandedAlbums.get(row.id) ?? (onlyFavouriteTracks && !!row.original.tracklist?.tracks.some(track => track.is_favorite));
               return (
                 <Fragment key={row.id}>
                 <tr
@@ -830,9 +834,9 @@ export function LibraryTable({ items, searchQuery, playlistId, onSearchChange, r
                         }}
                       >
                         {field === 'name' && row.original.tracklist && !isEditing && <button type="button" className="tracklist-disclosure"
-                          aria-label={`Tracklist for ${row.original.name}`} aria-expanded={expandedAlbums.has(row.id)}
-                          onClick={event => { event.stopPropagation(); cancelClickEdit(); setExpandedAlbums(old => { const next = new Set(old); if (next.has(row.id)) next.delete(row.id); else next.add(row.id); return next; }); }}>
-                          {expandedAlbums.has(row.id) ? '▾' : '▸'}</button>}
+                          aria-label={`Tracklist for ${row.original.name}`} aria-expanded={expanded}
+                          onClick={event => { event.stopPropagation(); cancelClickEdit(); setExpandedAlbums(old => new Map(old).set(row.id, !expanded)); }}>
+                          {expanded ? '▾' : '▸'}</button>}
                         {isEditing ? (
                           <MetadataInput
                             ref={editInputRef}
@@ -890,7 +894,7 @@ export function LibraryTable({ items, searchQuery, playlistId, onSearchChange, r
                     );
                   })}
                 </tr>
-                {expandedAlbums.has(row.id) && row.original.tracklist && <AlbumTrackRows item={row.original} columns={row.getVisibleCells().length}
+                {expanded && row.original.tracklist && <AlbumTrackRows item={row.original} columns={row.getVisibleCells().length} onlyFavourites={onlyFavouriteTracks && !row.original.is_favorite}
                   onEdit={() => setTracklistItem(row.original)} onPlayContext={() => setContext(rows.map(r => r.original), rowIndex, sourceName || selectedPlaylist?.name || 'Library')} />}
                 </Fragment>
               );

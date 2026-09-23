@@ -4,12 +4,12 @@ import type { AlbumTrack, LibraryItem, Tracklist } from '../types';
 import { usePlayback } from '../hooks/usePlayback';
 import { usePlayerStore } from '../stores/playerStore';
 import { formatBookmarkPosition as format, parseBookmarkPosition as parse } from '../utils/bookmarks';
-import { parseTracklist, saveTracklist, tracklistError } from '../utils/tracklists';
+import { parseTracklist, preserveTrackFavourites, saveTracklist, tracklistError } from '../utils/tracklists';
 import './Tracklist.css';
 
 interface Candidate { id: string; title: string; detail: string; tracklist: Tracklist }
-interface DraftTrack { title: string; start: string; end: string }
-const draftTracks = (tracks: AlbumTrack[]) => tracks.map(t => ({ title: t.title, start: format(t.start, true), end: t.end === null ? '' : format(t.end, true) }));
+interface DraftTrack { title: string; start: string; end: string; is_favorite?: boolean }
+const draftTracks = (tracks: AlbumTrack[]) => tracks.map(t => ({ title: t.title, start: format(t.start, true), end: t.end === null ? '' : format(t.end, true), is_favorite: t.is_favorite }));
 
 export function TracklistDialog({ item, onClose, onApplied }: { item: LibraryItem; onClose: () => void; onApplied: () => void }) {
   const dialog = useRef<HTMLDialogElement>(null);
@@ -46,13 +46,13 @@ export function TracklistDialog({ item, onClose, onApplied }: { item: LibraryIte
     audio.src = item.url;
     return () => { request.current?.abort(); audio.onloadedmetadata = null; audio.onerror = null; audio.removeAttribute('src'); audio.load(); };
   }, [item.url]);
-  const parsed: AlbumTrack[] = tracks.map(t => ({ title: t.title.trim(), start: parse(t.start) ?? NaN, end: t.end.trim() ? parse(t.end) ?? NaN : null }));
+  const parsed: AlbumTrack[] = tracks.map(t => ({ title: t.title.trim(), start: parse(t.start) ?? NaN, end: t.end.trim() ? parse(t.end) ?? NaN : null, is_favorite: t.is_favorite }));
   const validation = tracklistError(parsed, duration);
   const sourceDuration = list?.tracks.at(-1)?.end;
   const mismatch = duration !== null && sourceDuration != null ? duration - sourceDuration : null;
   function choose(candidate: Candidate) {
     editVersion.current++;
-    setList(candidate.tracklist); setTracks(draftTracks(candidate.tracklist.tracks)); setCandidateId(candidate.id); setSelected(0); setError('');
+    setList(candidate.tracklist); setTracks(draftTracks(preserveTrackFavourites(candidate.tracklist.tracks, parsed))); setCandidateId(candidate.id); setSelected(0); setError('');
   }
   function edited(next: DraftTrack[]) {
     editVersion.current++;
@@ -149,7 +149,7 @@ export function TracklistDialog({ item, onClose, onApplied }: { item: LibraryIte
         {validation && <p className="tracklist-warning" role="status">{validation}</p>}
       </>}
       <details><summary>Paste a timestamped tracklist</summary><textarea aria-label="Timestamped tracklist" rows={4} placeholder={'0:00 First song\n8:30 Second song'} value={paste} onChange={e => setPaste(e.target.value)} disabled={saving} />
-        <button type="button" disabled={!paste.trim() || saving} onClick={() => { try { const parsed = parseTracklist(paste); editVersion.current++; setList({ tracks: parsed, source_url: null, source_label: 'Pasted tracklist', timing: 'edited', duration }); setTracks(draftTracks(parsed)); setCandidateId(''); setSelected(0); setError(''); } catch (e) { setError((e as Error).message); } }}>Preview pasted tracklist</button></details>
+        <button type="button" disabled={!paste.trim() || saving} onClick={() => { try { const pasted = preserveTrackFavourites(parseTracklist(paste), parsed); editVersion.current++; setList({ tracks: pasted, source_url: null, source_label: 'Pasted tracklist', timing: 'edited', duration }); setTracks(draftTracks(pasted)); setCandidateId(''); setSelected(0); setError(''); } catch (e) { setError((e as Error).message); } }}>Preview pasted tracklist</button></details>
       {error && <p className="tracklist-warning" role="alert">{error}</p>}
     </div>
     <footer>{item.tracklist && <button type="button" disabled={saving || finding} onClick={() => void save(true)}>Remove tracklist</button>}

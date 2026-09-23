@@ -774,7 +774,7 @@ export function AudioPlayer({ audioRef: sharedAudioRef, items, onPlaybackPositio
               }}
             />
             {bookmarkRanges}
-            {currentItem?.tracklist?.tracks.filter(track => duration > 0 && track.start < duration).map((track, index) => <button type="button" key={`track-${index}`}
+            {currentItem?.tracklist?.tracks.filter(track => duration > 0 && track.start > 0 && track.start < duration).map((track, index) => <button type="button" key={`track-${index}`}
               className="timeline-chapter" style={{ left: `${100 * track.start / duration}%` }} title={`${track.title} · ${formatTime(track.start)}`} aria-label={`Jump to ${track.title}`}
               disabled={sonosSeekDisabled} onClick={() => { usePlayerStore.getState().setPlaybackRange(null); void seekSonos(track.start); }} />)}
             {bookmarks.map((bookmark, idx) => {
@@ -866,11 +866,11 @@ export function AudioPlayer({ audioRef: sharedAudioRef, items, onPlaybackPositio
             className="playback-fill bg-solarized-blue rounded-full"
             style={{ width: `${progress}%` }}
           >
-            <div className="absolute right-0 top-1/2 translate-x-1/2 -translate-y-1/2 w-2.5 h-2.5 bg-solarized-blue rounded-full" />
+            <div className="playback-head absolute right-0 top-1/2 translate-x-1/2 -translate-y-1/2 w-2.5 h-2.5 bg-solarized-blue rounded-full" />
           </div>
           {/* Bookmark markers */}
           {bookmarkRanges}
-          {currentItem?.tracklist?.tracks.filter(track => duration > 0 && track.start < duration).map((track, index) => <button type="button" key={`track-${index}`}
+          {currentItem?.tracklist?.tracks.filter(track => duration > 0 && track.start > 0 && track.start < duration).map((track, index) => <button type="button" key={`track-${index}`}
             className="timeline-chapter" style={{ left: `${100 * track.start / duration}%` }} title={`${track.title} · ${formatTime(track.start)}`} aria-label={`Jump to ${track.title}`}
             onClick={event => { event.stopPropagation(); if (audioRef.current) { usePlayerStore.getState().setPlaybackRange(null); audioRef.current.currentTime = track.start; setResumePosition(track.start); } }} />)}
           {bookmarks.map((bookmark, idx) => {

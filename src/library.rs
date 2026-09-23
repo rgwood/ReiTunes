@@ -304,6 +304,7 @@ impl Library {
             Event::LibraryItemTracklistChangedEvent { tracklist } => {
                 if let Some(item) = self.items.get_mut(&event.aggregate_id) {
                     item.tracklist = tracklist.clone();
+                    if let Some(list) = &mut item.tracklist { list.clean_numbered_titles(); }
                 }
             }
             Event::LibraryItemFavoritedEvent => {

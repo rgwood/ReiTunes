@@ -1,9 +1,10 @@
 import type { LibraryItem, Playlist, SmartPlaylistRules } from '../types';
+import { hasFavourite } from './tracklists';
 
 export const TRACK_DRAG_TYPE = 'application/x-reitunes-tracks';
 
 export function matchesSmartPlaylist(item: LibraryItem, rules: SmartPlaylistRules, now: number): boolean {
-  if (rules.favourites_only && !item.is_favorite) return false;
+  if (rules.favourites_only && !hasFavourite(item)) return false;
   const hasBookmarks = Object.keys(item.bookmarks).length > 0;
   if (rules.bookmark_state === 'with' && !hasBookmarks) return false;
   if (rules.bookmark_state === 'without' && hasBookmarks) return false;

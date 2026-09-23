@@ -7,7 +7,7 @@ export interface Bookmark {
   created_time_utc: string;
 }
 
-export interface AlbumTrack { title: string; start: number; end: number | null }
+export interface AlbumTrack { title: string; start: number; end: number | null; is_favorite?: boolean }
 export interface Tracklist {
   tracks: AlbumTrack[];
   source_url: string | null;

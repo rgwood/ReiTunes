@@ -43,7 +43,7 @@ async function open(page: Page, sonos = false, existing = false) {
 }
 async function edit(page: Page, existing = false) {
   await page.locator(`tr[data-item-id="${trackId}"]`).click({ button: 'right' });
-  await page.getByRole('button', { name: existing ? 'Edit tracklist…' : 'Find tracklist…', exact: true }).click();
+  await page.locator('.library-context-menu').getByRole('button', { name: existing ? 'Edit tracklist…' : 'Find tracklist…', exact: true }).click();
   await expect(page.getByRole('dialog', { name: existing ? 'Edit tracklist' : 'Find tracklist' })).toBeVisible();
 }
 
@@ -62,7 +62,7 @@ test('research previews before saving; expanded tracks select first, play on dou
   expect(saves).toHaveLength(1);
   expect(saves[0].expected).toBeNull();
   expect((await page.locator(`tr[data-item-id="${trackId}"]`).boundingBox())?.height).toBe(24);
-  const chapter = page.getByRole('option', { name: /Lion/ });
+  const chapter = page.getByRole('grid', { name: 'Tracks within Pink' }).getByRole('row', { name: /Lion/ });
   await chapter.click();
   expect(await page.locator('audio').evaluate(e => (e as HTMLAudioElement).currentTime)).toBe(507);
   await chapter.dblclick();
@@ -92,7 +92,7 @@ test('editing supports offsets, invalid bounds, save failures and reload', async
   await page.keyboard.press('Escape');
   await page.reload();
   await page.getByRole('button', { name: 'Tracklist for Pink' }).click();
-  await expect(page.getByRole('option', { name: /Lion/ })).toContainText('8:30');
+  await expect(page.getByRole('grid', { name: 'Tracks within Pink' }).getByRole('row', { name: /Lion/ })).toContainText('8:30');
 });
 
 test('a late research response preserves a pasted draft', async ({ page }) => {
@@ -132,7 +132,7 @@ test('Sonos chapter rows play from the selected time, and scrubber markers seek'
   const positions: number[] = [];
   await page.route('**/api/sonos/play', async r => { positions.push(r.request().postDataJSON().positionMillis); await r.fulfill({ status: 204 }); });
   await page.getByRole('button', { name: 'Tracklist for Pink' }).click();
-  const chapter = page.getByRole('option', { name: /Lion/ });
+  const chapter = page.getByRole('grid', { name: 'Tracks within Pink' }).getByRole('row', { name: /Lion/ });
   await chapter.click(); expect(positions).toEqual([]);
   await chapter.dblclick(); await expect.poll(() => positions).toEqual([510000]);
   const seeks: number[] = [];
@@ -154,5 +154,58 @@ test('paste fallback works on a narrow screen and rejects negative offsets', asy
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(390);
   await page.screenshot({ path: testInfo.outputPath('tracklist-mobile.png') });
   await page.getByRole('button', { name: 'Apply tracklist' }).click();
-  await expect(page.getByRole('option', { name: /Lion/ })).toBeVisible();
+  await expect(page.getByRole('grid', { name: 'Tracks within Pink' }).getByRole('row', { name: /Lion/ })).toBeVisible();
+});
+
+test('individual favourites persist, survive timing edits and appear in Favourites without favouriting the album', async ({ page }, testInfo) => {
+  const { saves } = await open(page, false, true);
+  await page.getByRole('button', { name: 'Tracklist for Pink' }).click();
+  const heart = page.getByRole('button', { name: 'Favourite Lion', exact: true });
+  await heart.focus(); await page.keyboard.press('Space');
+  await expect(page.getByRole('button', { name: 'Remove Lion from favourites' })).toHaveAttribute('aria-pressed', 'true');
+  expect(saves[0].tracklist?.tracks[1].is_favorite).toBe(true);
+  expect(await page.locator('audio').evaluate(e => (e as HTMLAudioElement).currentTime)).toBe(0);
+  await edit(page, true);
+  await page.getByLabel('Track 2 title', { exact: true }).fill('Lion (album version)');
+  await page.getByRole('button', { name: 'Apply tracklist' }).click();
+  expect(saves.at(-1)?.tracklist?.tracks[1].is_favorite).toBe(true);
+  await page.reload();
+  await page.getByRole('navigation', { name: 'Music library', exact: true }).getByRole('button', { name: 'Favourites', exact: true }).click();
+  const tracks = page.getByRole('grid', { name: 'Tracks within Pink' });
+  await expect(tracks.getByRole('row')).toHaveCount(1);
+  await expect(tracks).toContainText('Lion (album version)');
+  await page.screenshot({ path: testInfo.outputPath('favourite-album-track.png') });
+  await tracks.getByRole('row').dblclick();
+  await expect.poll(() => page.locator('audio').evaluate(e => (e as HTMLAudioElement).currentTime)).toBe(510);
+  expect(await page.evaluate(() => JSON.parse(localStorage.getItem('reitunes-player')!).state.playbackRange)).toMatchObject({ start: 510, end: 1051, afterEnd: 'pause' });
+  await page.getByRole('button', { name: 'Remove Lion (album version) from favourites' }).click();
+  await expect(page.locator(`tr[data-item-id="${trackId}"]`)).toHaveCount(0);
+});
+
+test('a failed favourite save leaves the track unchanged and does not start playback', async ({ page }) => {
+  await open(page, false, true);
+  await page.route('**/api/items/*/tracklist', r => r.fulfill({ status: 500, body: 'Could not save favourite.' }));
+  await page.getByRole('button', { name: 'Tracklist for Pink' }).click();
+  await page.getByRole('button', { name: 'Favourite Lion', exact: true }).click();
+  await expect(page.getByRole('alert')).toHaveText('Could not save favourite.');
+  await expect(page.getByRole('button', { name: 'Favourite Lion', exact: true })).toHaveAttribute('aria-pressed', 'false');
+  expect(await page.locator('audio').evaluate(e => (e as HTMLAudioElement).currentTime)).toBe(0);
+});
+
+for (const sonos of [false, true]) test(`${sonos ? 'Sonos' : 'browser'} chapter ticks sit below the playback head and still seek`, async ({ page }, testInfo) => {
+  await open(page, sonos, true);
+  await page.locator('audio').evaluate(e => { (e as HTMLAudioElement).currentTime = 520; e.dispatchEvent(new Event('timeupdate')); });
+  const scrubber = (await page.locator('.playback-scrubber').boundingBox())!;
+  const marker = page.getByRole('button', { name: 'Jump to Lion', exact: true });
+  const bounds = (await marker.boundingBox())!;
+  expect(bounds.y).toBeGreaterThanOrEqual(scrubber.y + 14);
+  expect(await marker.evaluate(e => getComputedStyle(e).backgroundColor)).toBe('rgba(0, 0, 0, 0)');
+  expect(await marker.evaluate(e => getComputedStyle(e, '::after').width)).toBe('1px');
+  await expect(page.locator('.timeline-bookmark')).toHaveCount(1);
+  await page.screenshot({ path: testInfo.outputPath(`${sonos ? 'sonos' : 'browser'}-chapter-ticks.png`) });
+  const seeks: number[] = [];
+  if (sonos) await page.route('**/api/sonos/groups/group-1/playback/seek', r => { seeks.push(r.request().postDataJSON().positionMillis); return r.fulfill({ status: 204 }); });
+  await marker.click();
+  if (sonos) await expect.poll(() => seeks).toEqual([510000]);
+  else await expect.poll(() => page.locator('audio').evaluate(e => (e as HTMLAudioElement).currentTime)).toBe(510);
 });

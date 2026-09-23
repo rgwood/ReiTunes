@@ -38,7 +38,7 @@ export function LibrarySidebar({ active, items, playlists, now, discoveryCount, 
   const count = (id: string) => id === 'all' ? items.length : id === 'recent'
     ? items.filter(item => Date.parse(/Z|[+-]\d\d:\d\d$/.test(item.created_time_utc) ? item.created_time_utc : item.created_time_utc + 'Z') >= now - 30 * 86400000).length
     : id === 'unplayed' ? items.filter(item => item.play_count === 0).length
-    : id === 'favourites' ? items.filter(item => item.is_favorite).length
+    : id === 'favourites' ? items.reduce((total, item) => total + Number(!!item.is_favorite) + (item.tracklist?.tracks.filter(track => track.is_favorite).length ?? 0), 0)
     : items.reduce((total, item) => total + Object.keys(item.bookmarks).length, 0);
 
   async function drop(event: React.DragEvent, playlist: Playlist) {

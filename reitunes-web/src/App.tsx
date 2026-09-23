@@ -12,6 +12,7 @@ import {
 } from '@tanstack/react-query';
 import { AudioPlayer } from './components/AudioPlayer';
 import { LibraryTable } from './components/LibraryTable';
+import { hasFavourite } from './utils/tracklists';
 import { MusicIcon } from './components/MusicIcon';
 import { ImportMusic } from './components/ImportMusic';
 import { QueuePanel } from './components/QueuePanel';
@@ -166,7 +167,7 @@ function AppContent() {
   const filteredItems = useMemo(() => {
     const candidates = selectedPlaylist ? playlistItems(selectedPlaylist, items, now) : items;
     return candidates.filter((item) => {
-      if (collection === 'favourites' && !item.is_favorite) return false;
+      if (collection === 'favourites' && !hasFavourite(item)) return false;
       if (collection === 'unplayed' && item.play_count !== 0) return false;
       if (
         collection === 'recent' &&
@@ -224,6 +225,8 @@ function AppContent() {
         range: { start: bookmark.position, end: bookmark.end_position ?? null },
       })),
       ...(item.is_favorite ? [{ item, position: 0, range: undefined }] : []),
+      ...(item.tracklist?.tracks.flatMap((track, index) => track.is_favorite ? [{ item, position: track.start,
+        range: { start: track.start, end: track.end ?? item.tracklist?.tracks[index + 1]?.start ?? item.tracklist?.duration ?? null, afterEnd: 'pause' as const } }] : []) ?? []),
     ]);
     if (!targets.length) return;
     const next = targets[Math.floor(Math.random() * targets.length)];
@@ -378,6 +381,7 @@ function AppContent() {
             </div> : <>
               <div className="song-table">
                 <LibraryTable key={selectedPlaylistId || collection} items={filteredItems} searchQuery=""
+                  onlyFavouriteTracks={collection === 'favourites' || selectedPlaylist?.smart_rules?.favourites_only === true}
                   viewId={selectedPlaylistId || collection}
                   playlistId={selectedPlaylist?.smart_rules ? null : selectedPlaylistId}
                   contextName={selectedPlaylist?.name} allowReordering={!librarySearch && !!selectedPlaylist && !selectedPlaylist.smart_rules}

@@ -192,6 +192,7 @@ fn release_candidate(data: &Value) -> Result<Candidate> {
                 / 1000.0;
             let end = start + length;
             tracks.push(AlbumTrack {
+                is_favorite: false,
                 title: text(track, "title").to_owned(),
                 start,
                 end: Some(end),
@@ -236,6 +237,7 @@ fn chapters_candidate(data: &Value, url: &str) -> Result<Candidate> {
         .iter()
         .map(|c| {
             Ok(AlbumTrack {
+                is_favorite: false,
                 title: text(c, "title").into(),
                 start: c["start_time"].as_f64().context("Missing chapter start")?,
                 end: c["end_time"].as_f64(),
@@ -256,6 +258,7 @@ fn chapters_candidate(data: &Value, url: &str) -> Result<Candidate> {
                 }
                 let start = parts.into_iter().fold(0.0, |sum, n| sum * 60.0 + n);
                 tracks.push(AlbumTrack {
+                    is_favorite: false,
                     title: c[2].into(),
                     start,
                     end: None,
@@ -272,13 +275,14 @@ fn chapters_candidate(data: &Value, url: &str) -> Result<Candidate> {
             tracks[i].end = tracks.get(i + 1).map(|t| t.start).or(duration);
         }
     }
-    let list = Tracklist {
+    let mut list = Tracklist {
         tracks,
         source_url: Some(url.into()),
         source_label: "Original upload".into(),
         timing: "chapters".into(),
         duration: None,
     };
+    list.clean_numbered_titles();
     list.validate().map_err(anyhow::Error::msg)?;
     Ok(Candidate {
         id: "source".into(),

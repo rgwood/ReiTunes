@@ -1,6 +1,16 @@
 import type { AlbumTrack, LibraryItem, Tracklist } from '../types';
 import { parseBookmarkPosition } from './bookmarks';
 
+export const favouriteCount = (item: LibraryItem) => Number(!!item.is_favorite) + (item.tracklist?.tracks.filter(track => track.is_favorite).length ?? 0);
+export const hasFavourite = (item: LibraryItem) => favouriteCount(item) > 0;
+
+export function preserveTrackFavourites(tracks: AlbumTrack[], previous: AlbumTrack[]) {
+  return tracks.map(track => {
+    const matches = previous.filter(old => old.title.trim().toLocaleLowerCase() === track.title.trim().toLocaleLowerCase());
+    return matches.length === 1 ? { ...track, is_favorite: matches[0].is_favorite } : track;
+  });
+}
+
 export function tracklistError(tracks: AlbumTrack[], duration: number | null): string | null {
   if (!tracks.length || tracks.length > 300) return 'Use between 1 and 300 tracks.';
   for (let i = 0; i < tracks.length; i++) {

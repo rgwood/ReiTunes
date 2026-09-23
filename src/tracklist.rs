@@ -6,6 +6,8 @@ pub struct AlbumTrack {
     pub title: String,
     pub start: f64,
     pub end: Option<f64>,
+    #[serde(default)]
+    pub is_favorite: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -18,6 +20,39 @@ pub struct Tracklist {
 }
 
 impl Tracklist {
+    /// Only remove a complete sequence of track-number prefixes. A title such
+    /// as "128 Harps" or "2.0" on its own is not evidence of numbering.
+    pub fn clean_numbered_titles(&mut self) {
+        if self.tracks.len() < 2 {
+            return;
+        }
+        let titles: Option<Vec<String>> = self
+            .tracks
+            .iter()
+            .enumerate()
+            .map(|(index, track)| {
+                let title = track.title.trim();
+                let digits = title.chars().take_while(char::is_ascii_digit).count();
+                if title.get(..digits)?.parse::<usize>().ok()? != index + 1 {
+                    return None;
+                }
+                let tail = &title[digits..];
+                let tail = tail
+                    .strip_prefix('.')
+                    .or_else(|| tail.strip_prefix(')'))
+                    .or_else(|| tail.strip_prefix(" -"))?;
+                if !tail.starts_with(char::is_whitespace) || tail.trim().is_empty() {
+                    return None;
+                }
+                Some(tail.trim().to_owned())
+            })
+            .collect();
+        if let Some(titles) = titles {
+            for (track, title) in self.tracks.iter_mut().zip(titles) {
+                track.title = title;
+            }
+        }
+    }
     pub fn validate(&self) -> Result<(), &'static str> {
         if self.tracks.is_empty() || self.tracks.len() > 300 {
             return Err("A tracklist must contain between 1 and 300 tracks.");
@@ -66,6 +101,33 @@ mod tests {
     use super::*;
     use crate::*;
     #[test]
+    fn cleans_only_complete_numbered_sequences_and_loads_legacy_favourites() {
+        let mut list: Tracklist = serde_json::from_value(serde_json::json!({
+            "tracks": [{"title":"1. Locked","start":0,"end":510}, {"title":"2. 128 Harps","start":510,"end":null}],
+            "source_url":null,"source_label":"Upload","timing":"chapters","duration":null
+        })).unwrap();
+        assert!(!list.tracks[0].is_favorite);
+        list.clean_numbered_titles();
+        assert_eq!(list.tracks[0].title, "Locked");
+        assert_eq!(list.tracks[1].title, "128 Harps");
+        for (one, two) in [
+            ("1.0", "2.0"),
+            ("1. Song", "128 Harps"),
+            ("1999", "2. Lion"),
+            ("1. Song", "3. Another song"),
+        ] {
+            list.tracks[0].title = one.into();
+            list.tracks[1].title = two.into();
+            list.clean_numbered_titles();
+            assert_eq!(list.tracks[0].title, one);
+            assert_eq!(list.tracks[1].title, two);
+        }
+        list.tracks[0].title = "01) Locked".into();
+        list.tracks[1].title = "02) Lion".into();
+        list.clean_numbered_titles();
+        assert_eq!(list.tracks[1].title, "Lion");
+    }
+    #[test]
     fn tracklist_events_round_trip_without_touching_bookmarks() {
         let id = uuid::Uuid::new_v4();
         let list = Tracklist {
@@ -74,11 +136,13 @@ mod tests {
                     title: "Intro".into(),
                     start: 0.0,
                     end: Some(10.25),
+                    is_favorite: true,
                 },
                 AlbumTrack {
                     title: "Main".into(),
                     start: 10.25,
                     end: None,
+                    is_favorite: false,
                 },
             ],
             source_url: None,

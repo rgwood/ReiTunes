@@ -1,7 +1,12 @@
 import { describe, it, expect } from 'vitest';
-import { parseTracklist, tracklistError } from './tracklists';
+import { parseTracklist, preserveTrackFavourites, tracklistError } from './tracklists';
 
 describe('tracklist edits', () => {
+  it('keeps favourites when a new source supplies different timings', () => {
+    const before = [{ title: 'Lion', start: 511, end: 1053, is_favorite: true }];
+    expect(preserveTrackFavourites([{ title: 'Lion', start: 510, end: 1051 }], before)[0].is_favorite).toBe(true);
+    expect(preserveTrackFavourites([{ title: 'Other track', start: 510, end: 1051 }], before)[0].is_favorite).toBeUndefined();
+  });
   it('parses pasted timestamps without guessing missing times', () => {
     expect(parseTracklist('0:00 Locked\n8:30.25 — Lion\n1:02:03 Finale')[1]).toEqual({ title: 'Lion', start: 510.25, end: null });
     expect(() => parseTracklist('Locked\nLion')).toThrow();
