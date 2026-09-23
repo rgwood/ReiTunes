@@ -72,3 +72,61 @@ it('flags oscillation once per cooldown and flushes pending evidence on pagehide
   await vi.advanceTimersByTimeAsync(10000);
   expect(fetch).toHaveBeenCalledTimes(1);
 });
+
+function mediaHarness() {
+  const ranges = (values: number[][]): TimeRanges => ({
+    length: values.length, start: i => values[i][0], end: i => values[i][1],
+  });
+  return Object.assign(new EventTarget(), {
+    currentTime: 70, paused: false, ended: false, seeking: true,
+    readyState: 1, networkState: 2, error: null,
+    buffered: ranges([[0, 30], [65, 80]]), seekable: ranges([[0, 300]]),
+  }) as unknown as HTMLMediaElement;
+}
+
+it('reports buffered ranges without media URLs', async () => {
+  const { audioDiagnostics } = await import('./playbackDiagnostics');
+  expect(audioDiagnostics(mediaHarness())).toMatchObject({
+    buffered: [[0, 30], [65, 80]], seekable: [[0, 300]], bufferedAhead: 10,
+  });
+});
+
+it('records slow buffering at 3 and 10 seconds, then measures recovery', async () => {
+  const { observePlaybackMedia, flushPlaybackDiagnostics } = await import('./playbackDiagnostics');
+  const audio = mediaHarness();
+  const dispose = observePlaybackMedia(audio, () => ({ itemId: 'track-id', target: 'browser' }));
+  const entries = () => vi.mocked(fetch).mock.calls.flatMap(([, options]) =>
+    JSON.parse(options!.body as string).args[0].events as Array<Record<string, unknown>>);
+  audio.dispatchEvent(new Event('seeking'));
+  audio.dispatchEvent(new Event('waiting'));
+  // A queued playing event during seeking must not end the measurement.
+  audio.dispatchEvent(new Event('playing'));
+  await vi.advanceTimersByTimeAsync(12000);
+  expect(entries().filter(e => e.event === 'buffering-slow')).toHaveLength(2);
+  Object.assign(audio, { seeking: false, readyState: 4 });
+  audio.dispatchEvent(new Event('playing'));
+  flushPlaybackDiagnostics();
+  expect(entries().find(e => e.event === 'buffering-end')).toMatchObject({
+    itemId: 'track-id', outcome: 'playing', elapsedMs: 12000, bufferedAhead: 10,
+  });
+  await vi.advanceTimersByTimeAsync(30000);
+  expect(entries().filter(e => e.event === 'buffering-slow')).toHaveLength(2);
+  dispose();
+});
+
+it('cancels buffering timers after pause or observer removal', async () => {
+  const { observePlaybackMedia, flushPlaybackDiagnostics } = await import('./playbackDiagnostics');
+  const audio = mediaHarness();
+  const dispose = observePlaybackMedia(audio, () => ({ itemId: 'track-id' }));
+  audio.dispatchEvent(new Event('waiting'));
+  Object.assign(audio, { paused: true });
+  audio.dispatchEvent(new Event('pause'));
+  await vi.advanceTimersByTimeAsync(12000);
+  Object.assign(audio, { paused: false });
+  audio.dispatchEvent(new Event('waiting'));
+  dispose();
+  await vi.advanceTimersByTimeAsync(12000);
+  flushPlaybackDiagnostics();
+  const entries = vi.mocked(fetch).mock.calls.flatMap(([, options]) => JSON.parse(options!.body as string).args[0].events);
+  expect(entries.filter((e: { event: string }) => e.event === 'buffering-slow')).toHaveLength(0);
+});

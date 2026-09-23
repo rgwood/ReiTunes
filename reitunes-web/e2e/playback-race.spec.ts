@@ -107,18 +107,28 @@ test.beforeEach(async ({ page }) => {
     };
     const harness = {
       playCalls: 0,
+      readyState: 4,
+      sourceLoads: 0,
       pauseCalls: 0,
       deferFirst: false,
       rejectFirst: () => {},
     };
     Object.assign(window, { playbackHarness: harness });
+    const getAttribute = Element.prototype.getAttribute;
     Object.defineProperties(HTMLMediaElement.prototype, {
+      getAttribute: {
+        configurable: true,
+        value(name: string) {
+          return name === 'src' ? state(this).src || null : getAttribute.call(this, name);
+        },
+      },
       src: {
         configurable: true,
         get() {
           return state(this).src;
         },
         set(src: string) {
+          harness.sourceLoads += 1;
           Object.assign(state(this), { src, paused: true, time: 0 });
         },
       },
@@ -140,7 +150,7 @@ test.beforeEach(async ({ page }) => {
       readyState: {
         configurable: true,
         get() {
-          return 4;
+          return harness.readyState;
         },
       },
       duration: {
@@ -285,4 +295,36 @@ test('held Ctrl+E does not continually restart the bookmark and logs its origin'
   expect(
     logs.find((log) => log.message === '[Playback]')?.args?.[0].session
   ).toBeTruthy();
+});
+
+
+test('a bookmark replaces a buffering seek immediately without reloading the same song', async ({ page }) => {
+  await page.getByRole('row').filter({ hasText: 'Bookmarked track' }).dblclick();
+  await page.locator('audio').evaluate(audio => {
+    audio.currentTime = 180;
+    (window as unknown as { playbackHarness: { readyState: number } }).playbackHarness.readyState = 1;
+    audio.dispatchEvent(new Event('waiting'));
+  });
+  // No canplay event: buffering at 180 must not delay a request to jump to 70.
+  await page.keyboard.press('Control+e');
+  await expect.poll(() => page.locator('audio').evaluate(audio => audio.currentTime)).toBe(70);
+  expect(await page.evaluate(() => (window as unknown as { playbackHarness: { sourceLoads: number } }).playbackHarness.sourceLoads)).toBe(1);
+  expect(await page.locator('audio').evaluate(audio => audio.paused)).toBe(false);
+});
+
+test('a bookmark starts at metadata readiness and supersedes an earlier pending seek', async ({ page }) => {
+  await page.evaluate(() => {
+    (window as unknown as { playbackHarness: { readyState: number } }).playbackHarness.readyState = 0;
+  });
+  await page.getByRole('row').filter({ hasText: 'Bookmarked track' }).dblclick();
+  await page.keyboard.press('Control+e');
+  expect(await page.locator('audio').evaluate(audio => audio.currentTime)).toBe(0);
+  await page.locator('audio').evaluate(audio => {
+    (window as unknown as { playbackHarness: { readyState: number } }).playbackHarness.readyState = 1;
+    audio.dispatchEvent(new Event('loadedmetadata'));
+  });
+  await expect.poll(() => page.locator('audio').evaluate(audio => audio.currentTime)).toBe(70);
+  // A late readiness notification must not restore the superseded start at zero.
+  await page.locator('audio').evaluate(audio => audio.dispatchEvent(new Event('canplay')));
+  expect(await page.locator('audio').evaluate(audio => audio.currentTime)).toBe(70);
 });

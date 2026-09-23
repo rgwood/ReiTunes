@@ -6,7 +6,7 @@ import { usePlayback } from '../hooks/usePlayback';
 import { useSonosControls } from '../hooks/useSonosControls';
 import { usePlaybackTargetStore } from '../stores/playbackTargetStore';
 import type { LibraryItem } from '../types';
-import { audioDiagnostics, recordPlaybackEvent } from '../utils/playbackDiagnostics';
+import { audioDiagnostics, observePlaybackMedia, recordPlaybackEvent } from '../utils/playbackDiagnostics';
 
 // Minimal SVG icons - consistent 16px size, 1.5px stroke
 const Icons = {
@@ -243,15 +243,10 @@ export function AudioPlayer({ audioRef: sharedAudioRef, items, onPlaybackPositio
   useEffect(() => {
     const audio = audioRef.current;
     if (!audio) return;
-    const eventNames = ['loadstart', 'loadedmetadata', 'canplay', 'play', 'playing', 'pause', 'waiting', 'stalled', 'seeking', 'seeked', 'ended', 'error', 'abort', 'emptied'];
-    const observe = (event: Event) => recordPlaybackEvent('media', {
-      mediaEvent: event.type,
+    return observePlaybackMedia(audio, () => ({
       itemId: usePlayerStore.getState().currentItemId,
       target: usePlaybackTargetStore.getState().target.kind,
-      ...audioDiagnostics(audio),
-    });
-    eventNames.forEach(name => audio.addEventListener(name, observe));
-    return () => eventNames.forEach(name => audio.removeEventListener(name, observe));
+    }));
   }, [target.kind]);
 
   useEffect(() => {
@@ -366,6 +361,10 @@ export function AudioPlayer({ audioRef: sharedAudioRef, items, onPlaybackPositio
     if (!audio || pendingSeek === null || target.kind !== 'browser') return;
 
     const doSeek = () => {
+      recordPlaybackEvent('command', {
+        origin: 'apply-seek', itemId: currentItem?.id, target: 'browser',
+        targetPosition: pendingSeek, ...audioDiagnostics(audio),
+      });
       audio.currentTime = pendingSeek;
       setCurrentTimeLocal(pendingSeek);
       clearPendingSeek();
@@ -375,15 +374,18 @@ export function AudioPlayer({ audioRef: sharedAudioRef, items, onPlaybackPositio
       }
     };
 
-    if (audio.readyState >= 2) {
+    // Seeking only needs metadata. Waiting for canplay here makes a new
+    // bookmark wait for buffering at the position the user is leaving.
+    if (audio.readyState >= HTMLMediaElement.HAVE_METADATA) {
       doSeek();
     } else {
-      const handleCanPlay = () => {
-        doSeek();
-        audio.removeEventListener('canplay', handleCanPlay);
-      };
-      audio.addEventListener('canplay', handleCanPlay);
-      return () => audio.removeEventListener('canplay', handleCanPlay);
+      recordPlaybackEvent('command', {
+        origin: 'seek-awaiting-metadata', itemId: currentItem?.id, target: 'browser',
+        targetPosition: pendingSeek, ...audioDiagnostics(audio),
+      });
+      const handleMetadata = () => doSeek();
+      audio.addEventListener('loadedmetadata', handleMetadata, { once: true });
+      return () => audio.removeEventListener('loadedmetadata', handleMetadata);
     }
   }, [pendingSeek, clearPendingSeek, currentItem?.id, onPlaybackPosition, target.kind]);
 
