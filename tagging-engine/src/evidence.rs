@@ -217,7 +217,8 @@ impl<'a> Cache<'a> {
         let key = match entity_id {
             Some(id) => {
                 source(kind, id)?;
-                format!("entity:{kind}:{id}")
+                // Release track lengths were not included in older cached responses.
+                if kind == "release" { format!("entity:{kind}:tracks-v1:{id}") } else { format!("entity:{kind}:{id}") }
             }
             None => format!("search:{kind}:{}", query.unwrap_or_default()),
         };
@@ -244,7 +245,7 @@ impl<'a> Cache<'a> {
                 match kind {
                     "artist" => "aliases+tags",
                     "recording" => "artist-credits+releases+tags+artist-rels+work-rels",
-                    "release" => "artist-credits+release-groups+labels",
+                    "release" => "artist-credits+release-groups+labels+recordings",
                     _ => bail!("Unsupported MusicBrainz entity type"),
                 },
             ));

@@ -1,4 +1,4 @@
-import { useMemo, useState, useCallback, useEffect, useLayoutEffect, useRef, useId } from 'react';
+import { Fragment, useMemo, useState, useCallback, useEffect, useLayoutEffect, useRef, useId } from 'react';
 import {
   useReactTable,
   getCoreRowModel,
@@ -24,6 +24,8 @@ import { fitColumnWidths, libraryColumns, maxColumnWidth, useLibraryPreferences,
 import { ColumnsDialog } from './ColumnsDialog';
 import type { ItemTags } from '../hooks/useTags';
 import { RowTags } from './RowTags';
+import { TracklistDialog } from './TracklistDialog';
+import { AlbumTrackRows } from './AlbumTrackRows';
 
 const editableFields = ['name', 'artist', 'album'] as const;
 type EditableField = typeof editableFields[number];
@@ -143,6 +145,8 @@ export function LibraryTable({ items, searchQuery, playlistId, onSearchChange, r
   const headerId = useId();
   const { columnOrder, columnVisibility, columnWidths, resizeColumn, moveColumn } = useLibraryPreferences();
   const [choosingColumns, setChoosingColumns] = useState(false);
+  const [tracklistItem, setTracklistItem] = useState<LibraryItem | null>(null);
+  const [expandedAlbums, setExpandedAlbums] = useState<Set<string>>(new Set());
   const [columnDrop, setColumnDrop] = useState<{ id: string; after: boolean } | null>(null);
   const draggedColumn = useRef<string | null>(null);
   const columnResize = useRef<{ id: string; x: number; width: number } | null>(null);
@@ -285,7 +289,8 @@ export function LibraryTable({ items, searchQuery, playlistId, onSearchChange, r
           const query = text.toLowerCase();
           return item.name.toLowerCase().includes(query) ||
                  item.artist.toLowerCase().includes(query) ||
-                 item.album.toLowerCase().includes(query);
+                 item.album.toLowerCase().includes(query) ||
+                 item.tracklist?.tracks.some(track => track.title.toLowerCase().includes(query));
         }
         return true;
       });
@@ -576,6 +581,8 @@ export function LibraryTable({ items, searchQuery, playlistId, onSearchChange, r
   return (
     <div className="px-5 h-full flex flex-col">
       {choosingColumns && <ColumnsDialog onClose={() => setChoosingColumns(false)} />}
+      {tracklistItem && <TracklistDialog key={tracklistItem.id} item={tracklistItem} onClose={() => setTracklistItem(null)}
+        onApplied={() => setExpandedAlbums(old => new Set([...old, tracklistItem.id]))} />}
       {editError && <div role="alert" className="library-edit-error">{editError}</div>}
       {playlistError && <div role="alert" className="library-edit-error">{playlistError}</div>}
       {infoItem && <SongInfoDialog key={infoItem.id} item={infoItem} onClose={() => {
@@ -690,6 +697,7 @@ export function LibraryTable({ items, searchQuery, playlistId, onSearchChange, r
             {rows.map((row, rowIndex) => {
               const isCurrentlyPlaying = currentItem?.id === row.original.id;
               return (
+                <Fragment key={row.id}>
                 <tr
                   key={row.id}
                   data-item-id={row.id}
@@ -753,7 +761,8 @@ export function LibraryTable({ items, searchQuery, playlistId, onSearchChange, r
                         const index = Math.max(0, Math.min(visibleEditableFields.length - 1, visibleEditableFields.indexOf(field) + (event.key === 'ArrowLeft' ? -1 : 1)));
                         setSelection({ rowId: row.id, field: visibleEditableFields[index] });
                       } else {
-                        const next = event.key === 'ArrowUp' ? event.currentTarget.previousElementSibling : event.currentTarget.nextElementSibling;
+                        let next = event.key === 'ArrowUp' ? event.currentTarget.previousElementSibling : event.currentTarget.nextElementSibling;
+                        if (next?.classList.contains('album-tracklist')) next = event.key === 'ArrowUp' ? next.previousElementSibling : next.nextElementSibling;
                         if (next instanceof HTMLTableRowElement) {
                           const nextId = rows[rowIndex + (event.key === 'ArrowUp' ? -1 : 1)]?.id;
                           if (nextId) { setSelection({ rowId: nextId, field }); selectRows(nextId, event.shiftKey, false); }
@@ -807,6 +816,7 @@ export function LibraryTable({ items, searchQuery, playlistId, onSearchChange, r
                       <td
                         key={cell.id}
                         data-column={field}
+                        data-has-tracklist={field === 'name' && !!row.original.tracklist || undefined}
                         data-selected-cell={selection?.rowId === row.id && selection.field === field || undefined}
                         data-editing={isEditing || undefined}
                         className="px-2 py-1 border-b border-solarized-base02 whitespace-nowrap overflow-hidden text-ellipsis max-w-0"
@@ -819,6 +829,10 @@ export function LibraryTable({ items, searchQuery, playlistId, onSearchChange, r
                           }
                         }}
                       >
+                        {field === 'name' && row.original.tracklist && !isEditing && <button type="button" className="tracklist-disclosure"
+                          aria-label={`Tracklist for ${row.original.name}`} aria-expanded={expandedAlbums.has(row.id)}
+                          onClick={event => { event.stopPropagation(); cancelClickEdit(); setExpandedAlbums(old => { const next = new Set(old); if (next.has(row.id)) next.delete(row.id); else next.add(row.id); return next; }); }}>
+                          {expandedAlbums.has(row.id) ? '▾' : '▸'}</button>}
                         {isEditing ? (
                           <MetadataInput
                             ref={editInputRef}
@@ -876,6 +890,9 @@ export function LibraryTable({ items, searchQuery, playlistId, onSearchChange, r
                     );
                   })}
                 </tr>
+                {expandedAlbums.has(row.id) && row.original.tracklist && <AlbumTrackRows item={row.original} columns={row.getVisibleCells().length}
+                  onEdit={() => setTracklistItem(row.original)} onPlayContext={() => setContext(rows.map(r => r.original), rowIndex, sourceName || selectedPlaylist?.name || 'Library')} />}
+                </Fragment>
               );
             })}
           </tbody>
@@ -917,6 +934,8 @@ export function LibraryTable({ items, searchQuery, playlistId, onSearchChange, r
           >
             &#43; Add to Queue
           </div>
+          {contextIds.length === 1 && <button type="button" className="w-full text-left px-3 py-2 text-solarized-base1 hover:bg-solarized-blue"
+            onClick={() => { setTracklistItem(contextMenu.item); setContextMenu(null); }}>{contextMenu.item.tracklist ? 'Edit tracklist…' : 'Find tracklist…'}</button>}
           {onManageBookmarks && Object.keys(contextMenu.item.bookmarks).length > 0 && (
             <button type="button" className="w-full text-left px-3 py-2 text-solarized-base1 hover:bg-solarized-blue"
               onClick={() => {

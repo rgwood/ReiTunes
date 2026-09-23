@@ -7,6 +7,8 @@ pub mod database;
 pub mod library;
 pub mod playlist;
 pub mod utils;
+pub mod tracklist;
+pub use tracklist::*;
 
 // Re-export commonly used types and functions
 pub use database::*;

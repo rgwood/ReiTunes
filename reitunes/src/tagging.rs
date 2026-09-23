@@ -1312,6 +1312,7 @@ mod tests {
                 track_number: None,
                 play_count: 0,
                 bookmarks: Default::default(),
+                tracklist: None,
                 is_favorite: false,
             },
         );

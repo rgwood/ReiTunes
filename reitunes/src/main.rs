@@ -45,6 +45,7 @@ mod systemd;
 mod discovery;
 mod downloads;
 mod tagging;
+mod tracklists;
 
 #[cfg(test)]
 mod sonos_route_tests;
@@ -253,6 +254,8 @@ async fn main() -> Result<()> {
                 .merge(discovery::router(discovery))
                 .merge(tagging::router(tagging))
                 .route("/items", get(items_handler))
+                .route("/items/{id}/tracklist/find", post(tracklists::find))
+                .route("/items/{id}/tracklist", axum::routing::put(tracklists::save))
                 .route("/upload", post(upload_handler))
                 // Allow uploads up to 500MB
                 .layer(DefaultBodyLimit::max(500 * 1024 * 1024))
@@ -424,6 +427,7 @@ struct LibraryItemResponse {
     track_number: Option<u32>,
     play_count: u32,
     bookmarks: indexmap::IndexMap<Uuid, reitunes_workspace::Bookmark>,
+    tracklist: Option<reitunes_workspace::Tracklist>,
     is_favorite: bool,
     url: String,
 }
@@ -440,6 +444,7 @@ impl LibraryItemResponse {
             track_number: item.track_number,
             play_count: item.play_count,
             bookmarks: item.bookmarks.clone(),
+            tracklist: item.tracklist.clone(),
             is_favorite: item.is_favorite,
             url: storage.url(&item.file_path),
         }

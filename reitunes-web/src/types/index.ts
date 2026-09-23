@@ -7,6 +7,15 @@ export interface Bookmark {
   created_time_utc: string;
 }
 
+export interface AlbumTrack { title: string; start: number; end: number | null }
+export interface Tracklist {
+  tracks: AlbumTrack[];
+  source_url: string | null;
+  source_label: string;
+  timing: 'chapters' | 'estimated' | 'edited';
+  duration: number | null;
+}
+
 export interface LibraryItem {
   id: string;
   name: string;
@@ -17,6 +26,7 @@ export interface LibraryItem {
   track_number: number | null;
   play_count: number;
   bookmarks: Record<string, Bookmark>;
+  tracklist?: Tracklist | null;
   is_favorite?: boolean;
   url: string;  // Full URL provided by backend
 }

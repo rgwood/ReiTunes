@@ -392,7 +392,7 @@ fn parse_candidate(value: &Value, provider: &str) -> Option<Entry> {
     })
 }
 
-fn metadata_endpoint() -> Result<String> {
+pub(crate) fn metadata_endpoint() -> Result<String> {
     Ok(option_env!("DISCOVERY_METADATA_URL")
         .map(str::to_owned)
         .or_else(|| std::env::var("DISCOVERY_METADATA_URL").ok())
@@ -404,7 +404,7 @@ fn metadata_endpoint() -> Result<String> {
         })?)
 }
 
-async fn extract(endpoint: &str, url: &str, start: usize, flat: bool) -> Result<Value> {
+pub(crate) async fn extract(endpoint: &str, url: &str, start: usize, flat: bool) -> Result<Value> {
     let _permit = METADATA_REQUESTS.acquire().await.context("Metadata lookups are unavailable.")?;
     let response = reqwest::Client::new()
         .post(endpoint)

@@ -16,7 +16,7 @@ export function createLibrarySearch(query: string, getTags: (item: LibraryItem) 
         return tags.includes(value.trim().replace(/\s+/g, '-'));
       }
       if (field === 'artist' || field === 'album') return item[field].toLowerCase().includes(value);
-      haystack ??= [item.name, item.artist, item.album, ...Object.values(item.bookmarks).map(bookmark => bookmark.label || '')].join(' ').toLowerCase();
+      haystack ??= [item.name, item.artist, item.album, ...Object.values(item.bookmarks).map(bookmark => bookmark.label || ''), ...(item.tracklist?.tracks.map(track => track.title) ?? [])].join(' ').toLowerCase();
       return haystack.includes(value);
     });
   };

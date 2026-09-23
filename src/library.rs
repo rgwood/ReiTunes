@@ -192,6 +192,7 @@ impl Library {
                     track_number: *track_number,
                     play_count: 0,
                     bookmarks: IndexMap::new(),
+                    tracklist: None,
                     is_favorite: false,
                 };
                 self.items.insert(item.id, item);
@@ -300,6 +301,11 @@ impl Library {
                     item.bookmarks.sort_by(|_, a, _, b| a.position.cmp(&b.position));
                 }
             }
+            Event::LibraryItemTracklistChangedEvent { tracklist } => {
+                if let Some(item) = self.items.get_mut(&event.aggregate_id) {
+                    item.tracklist = tracklist.clone();
+                }
+            }
             Event::LibraryItemFavoritedEvent => {
                 if let Some(item) = self.items.get_mut(&event.aggregate_id) {
                     item.is_favorite = true;
@@ -373,6 +379,7 @@ pub enum Event {
         end_position: Option<Duration>,
     },
     LibraryItemFavoritedEvent,
+    LibraryItemTracklistChangedEvent { tracklist: Option<crate::Tracklist> },
     LibraryItemUnfavoritedEvent,
 }
 
@@ -388,6 +395,7 @@ pub struct LibraryItem {
     pub track_number: Option<u32>,
     pub play_count: u32,
     pub bookmarks: IndexMap<Uuid, Bookmark>,
+    pub tracklist: Option<crate::Tracklist>,
     pub is_favorite: bool,
 }
 

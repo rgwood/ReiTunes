@@ -774,6 +774,9 @@ export function AudioPlayer({ audioRef: sharedAudioRef, items, onPlaybackPositio
               }}
             />
             {bookmarkRanges}
+            {currentItem?.tracklist?.tracks.filter(track => duration > 0 && track.start < duration).map((track, index) => <button type="button" key={`track-${index}`}
+              className="timeline-chapter" style={{ left: `${100 * track.start / duration}%` }} title={`${track.title} · ${formatTime(track.start)}`} aria-label={`Jump to ${track.title}`}
+              disabled={sonosSeekDisabled} onClick={() => { usePlayerStore.getState().setPlaybackRange(null); void seekSonos(track.start); }} />)}
             {bookmarks.map((bookmark, idx) => {
               const position = duration > 0 ? (bookmark.position / duration) * 100 : 0;
               return (
@@ -867,6 +870,9 @@ export function AudioPlayer({ audioRef: sharedAudioRef, items, onPlaybackPositio
           </div>
           {/* Bookmark markers */}
           {bookmarkRanges}
+          {currentItem?.tracklist?.tracks.filter(track => duration > 0 && track.start < duration).map((track, index) => <button type="button" key={`track-${index}`}
+            className="timeline-chapter" style={{ left: `${100 * track.start / duration}%` }} title={`${track.title} · ${formatTime(track.start)}`} aria-label={`Jump to ${track.title}`}
+            onClick={event => { event.stopPropagation(); if (audioRef.current) { usePlayerStore.getState().setPlaybackRange(null); audioRef.current.currentTime = track.start; setResumePosition(track.start); } }} />)}
           {bookmarks.map((bookmark, idx) => {
             const position = duration > 0 ? (bookmark.position / duration) * 100 : 0;
             return (
