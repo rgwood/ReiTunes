@@ -6,6 +6,8 @@ import { sonosRequest, SonosRequestError } from '../utils/sonosRequest';
 
 const PLAYBACK_POLL_MILLIS = 30_000;
 const VOLUME_POLL_MILLIS = 60_000;
+const VOLUME_SETTLE_MILLIS = 1_500;
+const VOLUME_RECHECK_MILLIS = 250;
 
 export interface SonosPlaybackStatus {
   playbackState: string;
@@ -45,6 +47,7 @@ export function useSonosControls(groupId: string | null) {
   const [isVolumePending, setIsVolumePending] = useState(false);
   const [requestedVolume, setRequestedVolume] = useState<number | null>(null);
   const volumeWork = useRef<{ value: number; accepting: boolean; promise: Promise<void> | null } | null>(null);
+  const volumeIntent = useRef<{ value: number; expiresAt: number } | null>(null);
 
   const applyPlayback = useCallback((next: SonosPlaybackStatus, requestedGroup: string) => {
     if (activeGroupRef.current !== requestedGroup) return;
@@ -57,10 +60,19 @@ export function useSonosControls(groupId: string | null) {
   }, []);
 
   const applyVolume = useCallback((next: SonosGroupVolume, requestedGroup: string) => {
-    if (activeGroupRef.current !== requestedGroup) return;
+    if (activeGroupRef.current !== requestedGroup) return false;
+    const intent = volumeIntent.current;
+    // Group members settle separately; a command ACK (or even a matching GET)
+    // can be followed by an intermediate event from an earlier adjustment.
+    if (intent && Date.now() < intent.expiresAt && next.volume !== intent.value && !next.fixed) {
+      setVolumeState({ ...next, volume: intent.value });
+      return false;
+    }
+    if (intent && (next.fixed || Date.now() >= intent.expiresAt)) volumeIntent.current = null;
     volumeRevision.current += 1;
     setVolumeState(next);
     setVolumePollError(null);
+    return true;
   }, []);
 
   const refreshPlayback = useCallback(async () => {
@@ -82,18 +94,26 @@ export function useSonosControls(groupId: string | null) {
     if (!groupId) return;
     const requestedGroup = groupId;
     const revision = ++volumeRevision.current;
-    const next = await sonosRequest<SonosGroupVolume>(
-      `/api/sonos/groups/${encodeURIComponent(requestedGroup)}/volume`,
-      {}, 20_000,
-    ).catch(error => {
-      if (revision === volumeRevision.current && activeGroupRef.current === requestedGroup) throw error;
-      return null;
-    });
-    if (next && revision === volumeRevision.current) applyVolume(next, requestedGroup);
+    while (revision === volumeRevision.current && activeGroupRef.current === requestedGroup) {
+      const next = await sonosRequest<SonosGroupVolume>(
+        `/api/sonos/groups/${encodeURIComponent(requestedGroup)}/volume`,
+        {}, 20_000,
+      ).catch(error => {
+        if (revision === volumeRevision.current && activeGroupRef.current === requestedGroup) throw error;
+        return null;
+      });
+      if (!next || revision !== volumeRevision.current || activeGroupRef.current !== requestedGroup) return;
+      if (applyVolume(next, requestedGroup)) return;
+      if (volumeIntent.current?.expiresAt === Infinity) return; // The command will start its own readback.
+      // Retry observations only, never the volume command. Once the grace
+      // period expires, accept reality (including another controller's change).
+      await new Promise(resolve => window.setTimeout(resolve, VOLUME_RECHECK_MILLIS));
+    }
   }, [applyVolume, groupId]);
 
   useEffect(() => {
     if (!groupId) return;
+    let refreshingVolume = false;
     const handleSonosEvent = (event: Event) => {
       const update = (event as CustomEvent<SonosRealtimeUpdate>).detail;
       if (update.targetId !== groupId) return;
@@ -104,7 +124,15 @@ export function useSonosControls(groupId: string | null) {
         update.namespace === 'groupVolume' &&
         update.eventType === 'groupVolume'
       ) {
-        applyVolume(update.payload as SonosGroupVolume, groupId);
+        const accepted = applyVolume(update.payload as SonosGroupVolume, groupId);
+        if (!accepted && !volumeWork.current && !refreshingVolume) {
+          refreshingVolume = true;
+          void refreshVolume().catch(error => {
+            if (activeGroupRef.current === groupId) {
+              setVolumePollError(error instanceof Error ? error.message : 'Could not read Sonos volume');
+            }
+          }).finally(() => { refreshingVolume = false; });
+        }
       } else if (update.eventType.endsWith('Error')) {
         const payload = update.payload as { errorCode?: string; reason?: string };
         setCommandError(
@@ -114,7 +142,7 @@ export function useSonosControls(groupId: string | null) {
     };
     window.addEventListener(SONOS_REALTIME_EVENT, handleSonosEvent);
     return () => window.removeEventListener(SONOS_REALTIME_EVENT, handleSonosEvent);
-  }, [applyPlayback, applyVolume, groupId]);
+  }, [applyPlayback, applyVolume, groupId, refreshVolume]);
 
   useEffect(() => {
     playbackRevision.current += 1;
@@ -127,6 +155,7 @@ export function useSonosControls(groupId: string | null) {
     setVolumePollError(null);
     setCommandError(null);
     volumeWork.current = null;
+    volumeIntent.current = null;
     setRequestedVolume(null);
     setIsVolumePending(false);
     if (!groupId) return;
@@ -235,6 +264,7 @@ export function useSonosControls(groupId: string | null) {
       setRequestedVolume(rounded);
       setCommandError(null);
       volumeRevision.current += 1;
+      volumeIntent.current = { value: rounded, expiresAt: Infinity };
       if (volumeWork.current) {
         volumeWork.current.value = rounded;
         return volumeWork.current.promise;
@@ -257,6 +287,7 @@ export function useSonosControls(groupId: string | null) {
             if (!isCurrent()) return;
             // Keep only the latest requested level, not a queue of individual clicks.
             if (work.value !== sending) continue;
+            volumeIntent.current = { value: sending, expiresAt: Date.now() + VOLUME_SETTLE_MILLIS };
             readAttempted = true;
             await refreshVolume();
             if (work.value === sending) break;
@@ -264,6 +295,7 @@ export function useSonosControls(groupId: string | null) {
         } catch (error) {
           if (!isCurrent()) return;
           work.accepting = false;
+          volumeIntent.current = null;
           setRequestedVolume(null);
           setCommandError(error instanceof Error ? error.message : 'Could not change Sonos volume');
           if (!readAttempted) await refreshVolume().catch(() => undefined);
@@ -319,6 +351,7 @@ export function useSonosControls(groupId: string | null) {
       setIsVolumePending(true);
       setCommandError(null);
       volumeRevision.current += 1;
+      volumeIntent.current = null;
       const target = usePlaybackTargetStore.getState().target;
       const isCurrent = () => usePlaybackTargetStore.getState().target === target;
       let readAttempted = false;
