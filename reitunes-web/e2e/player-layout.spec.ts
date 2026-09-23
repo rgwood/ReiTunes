@@ -74,7 +74,7 @@ async function paint(locator: Locator) {
 }
 
 for (const output of ['browser', 'sonos'] as const) {
-  for (const width of [1440, 1920, 390]) {
+  for (const width of [1440, 1920, 736, 390, 320]) {
     test(`${output} player remains compact and usable in Forest Palace at ${width}`, async ({ page }, testInfo) => {
       await page.setViewportSize({ width, height: 900 });
       const { seeks } = await openPlayer(page, output);
@@ -82,18 +82,17 @@ for (const output of ['browser', 'sonos'] as const) {
       const header = page.locator('.player-bar');
       const title = page.locator('.player-title');
       const scrubber = page.locator('.playback-scrubber');
-      const transport = page.locator('.transport-main');
-      const seekControls = page.locator('.transport-seek');
+      const transport = page.getByRole('group', { name: 'Playback controls', exact: true });
       const bookmark = page.locator('.player-bookmark');
       const play = page.locator('.play-toggle');
       const suffix = output === 'sonos' ? ' on Sonos' : '';
 
-      await expect(transport.getByRole('button')).toHaveCount(3);
+      await expect(transport.getByRole('button')).toHaveCount(5);
       await expect(transport.getByRole('button', { name: 'Previous' + suffix, exact: true })).toBeVisible();
       await expect(transport.getByRole('button', { name: 'Next' + suffix, exact: true })).toBeVisible();
-      await expect(seekControls.getByRole('button')).toHaveCount(2);
+      await expect(transport.locator('.transport-seek')).toHaveCount(2);
       await expect(bookmark).toBeVisible();
-      expect(await bookmark.evaluate(element => element.closest('.transport-main'))).toBeNull();
+      expect(await bookmark.evaluate(element => element.closest('.transport-group'))).toBeNull();
       await expect(page.getByRole('navigation', { name: 'Music library', exact: true })).toBeVisible();
 
       // Bookmark emoji and the favourite control must not silently inflate rows.
@@ -102,6 +101,7 @@ for (const output of ['browser', 'sonos'] as const) {
       const titleBox = await box(title);
       const scrubberBox = await box(scrubber);
       const bookmarkBox = await box(bookmark);
+      expect(headerBox.height).toBeLessThanOrEqual(width > 650 ? 64 : 120);
       if (width >= 1440) {
         expect(headerBox.height).toBeLessThanOrEqual(64);
         expect(Math.abs(titleBox.x - scrubberBox.x)).toBeLessThanOrEqual(1);
@@ -111,7 +111,8 @@ for (const output of ['browser', 'sonos'] as const) {
       expect(bookmarkBox.x - scrubberBox.x - scrubberBox.width).toBeLessThanOrEqual(20);
       expect(Math.abs(bookmarkBox.y + bookmarkBox.height / 2 - scrubberBox.y - scrubberBox.height / 2)).toBeLessThanOrEqual(3);
 
-      const parts = [transport, seekControls, title, scrubber, bookmark, page.locator('.player-tools')];
+      const controls = await transport.getByRole('button').all();
+      const parts = [...controls, title, scrubber, bookmark, page.locator('.player-tools'), page.locator('.player-volume')];
       const bounds = await Promise.all(parts.map(box));
       for (const part of bounds) {
         expect(part.x).toBeGreaterThanOrEqual(0);
@@ -129,7 +130,7 @@ for (const output of ['browser', 'sonos'] as const) {
       await page.mouse.move(width - 1, 899);
       await play.blur();
       const idle = await paint(play);
-      expect(idle.background).toBe('rgba(0, 0, 0, 0)');
+      expect(idle.background).not.toBe('rgba(0, 0, 0, 0)');
       await play.hover();
       await expect.poll(() => paint(play)).not.toEqual(idle);
       await page.mouse.move(width - 1, 899);

@@ -95,22 +95,28 @@ function PlayerTransport({ playing, onPrevious, onNext, onToggle, onBack, onForw
   seekDisabled?: boolean; sonos?: boolean;
 }) {
   const action = playing ? 'Pause' : 'Play';
-  return <div className={`transport-group ${sonos ? 'sonos-transport' : 'player-transport'}`}>
-    <div className="transport-main" role="group" aria-label="Track controls">
-      <button type="button" onClick={onPrevious} disabled={skipDisabled}
+  return <div className={`transport-group ${sonos ? 'sonos-transport' : 'player-transport'}`} role="group" aria-label="Playback controls">
+      <button type="button" className="transport-previous" onClick={onPrevious} disabled={skipDisabled}
         aria-label={sonos ? 'Previous on Sonos' : 'Previous'} title="Previous">{Icons.skipBack}</button>
+      <button type="button" className="transport-seek transport-back" onClick={onBack} disabled={seekDisabled}
+        aria-label={sonos ? 'Back 30s on Sonos' : 'Back 30s'} title="Back 30s"><SeekIcon /></button>
       <button type="button" onClick={onToggle} disabled={playDisabled} className="play-toggle"
         aria-label={sonos ? `${action} Sonos` : action} title={sonos ? `${action} Sonos` : action}>{playing ? Icons.pause : Icons.play}</button>
-      <button type="button" onClick={onNext} disabled={skipDisabled}
+      <button type="button" className="transport-seek transport-forward" onClick={onForward} disabled={seekDisabled}
+        aria-label={sonos ? 'Forward 30s on Sonos' : 'Forward 30s'} title="Forward 30s"><SeekIcon forward /></button>
+      <button type="button" className="transport-next" onClick={onNext} disabled={skipDisabled}
         aria-label={sonos ? 'Next on Sonos' : 'Next'} title="Next">{Icons.skipForward}</button>
-    </div>
-    <div className="transport-seek" role="group" aria-label="Seek by 30 seconds">
-      <button type="button" onClick={onBack} disabled={seekDisabled}
-        aria-label={sonos ? 'Back 30s on Sonos' : 'Back 30s'} title="Back 30s">−30s</button>
-      <button type="button" onClick={onForward} disabled={seekDisabled}
-        aria-label={sonos ? 'Forward 30s on Sonos' : 'Forward 30s'} title="Forward 30s">+30s</button>
-    </div>
   </div>;
+}
+
+function SeekIcon({ forward = false }: { forward?: boolean }) {
+  return <svg width="30" height="30" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+    <g transform={forward ? 'translate(24 0) scale(-1 1)' : undefined}
+      stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8M3 3v5h5" />
+    </g>
+    <text x="12" y="15.2" textAnchor="middle" fill="currentColor" fontSize="8.5" fontFamily="system-ui, sans-serif">30</text>
+  </svg>;
 }
 
 function PlayerBookmark({ onClick, disabled = false, feedback, sonos = false }: {
