@@ -175,13 +175,16 @@ export function AudioPlayer({ audioRef: sharedAudioRef, items, onPlaybackPositio
     usePlaybackTargetStore();
   const sonos = useSonosControls(target.kind === 'sonos' ? target.groupId : null);
   const { play: playSonos, pause: pauseSonos, seek: seekOnSonos, playback: sonosPlayback } = sonos;
+  useEffect(() => {
+    setSonosSeekDraft(null);
+  }, [target, sonosPlayback?.itemId, sonosPlayback?.sourceItemId]);
   const sonosSessionActive = sonosPlayback?.reitunesSessionActive === true;
   const sonosIsPlaying =
     sonosPlayback?.playbackState === 'PLAYBACK_STATE_PLAYING' ||
     sonosPlayback?.playbackState === 'PLAYBACK_STATE_BUFFERING';
   const mediaSessionActive = !!currentItem && (target.kind === 'browser' ||
     (sonosSessionActive && sonosPlayback?.sourceItemId === currentItem.id));
-  const mediaPosition = target.kind === 'sonos' ? sonos.positionMillis / 1000 : currentTime;
+  const mediaPosition = target.kind === 'sonos' ? (sonos.requestedSeekMillis ?? sonos.positionMillis) / 1000 : currentTime;
   const refreshSonosPlayback = sonos.refreshPlayback;
   useEffect(() => {
     if (!previewPauseRef) return;
@@ -605,29 +608,25 @@ export function AudioPlayer({ audioRef: sharedAudioRef, items, onPlaybackPositio
   useEffect(() => {
     if (!('mediaSession' in navigator)) return;
 
-    const canControl = () => {
+    const canControl = (seeking = false) => {
       const output = usePlaybackTargetStore.getState();
       // Keep guarded handlers even without a Sonos session: removing them lets
       // the browser's default media-key behavior start the local audio element.
       return mediaSessionActive && output.target === target && !output.isSending &&
-        !output.isSwitchingOutput && !output.isTransportPending;
+        !output.isSwitchingOutput && (seeking || !output.isTransportPending);
     };
-    const seek = (position: number) => {
-      if (!canControl() || !Number.isFinite(position)) return;
+    const seek = (position: number, relative = false) => {
+      if (!canControl(target.kind === 'sonos') || !Number.isFinite(position)) return;
       if (target.kind === 'sonos') {
         const limit = duration > 0 ? Math.max(0, duration - 0.001) : Infinity;
-        void seekOnSonos(Math.min(limit, Math.max(0, position)) * 1000);
+        void seekOnSonos(position * 1000, { relative, maxPositionMillis: limit * 1000 });
       } else if (audioRef.current) {
         const limit = Number.isFinite(audioRef.current.duration) ? audioRef.current.duration : Infinity;
-        const clamped = Math.min(limit, Math.max(0, position));
+        const clamped = Math.min(limit, Math.max(0, relative ? audioRef.current.currentTime + position : position));
         audioRef.current.currentTime = clamped;
         setResumePosition(clamped);
       }
     };
-    const position = () => target.kind === 'sonos' && sonosPlayback
-      ? (sonosPlayback.positionMillis + (sonosPlayback.playbackState === 'PLAYBACK_STATE_PLAYING'
-        ? Math.max(0, Date.now() - sonosPlayback.observedAt) : 0)) / 1000
-      : audioRef.current?.currentTime ?? 0;
     const pause = () => {
       if (!canControl()) return;
       recordPlaybackEvent('command', { origin: 'media-session-pause', target: target.kind });
@@ -653,8 +652,8 @@ export function AudioPlayer({ audioRef: sharedAudioRef, items, onPlaybackPositio
       }],
       ['pause', pause],
       ['stop', pause],
-      ['seekbackward', (details) => seek(position() - (details.seekOffset ?? 30))],
-      ['seekforward', (details) => seek(position() + (details.seekOffset ?? 30))],
+      ['seekbackward', (details) => seek(-(details.seekOffset ?? 30), true)],
+      ['seekforward', (details) => seek(details.seekOffset ?? 30, true)],
       ['seekto', (details) => {
         if (details.seekTime !== undefined) seek(details.seekTime);
       }],
@@ -686,16 +685,16 @@ export function AudioPlayer({ audioRef: sharedAudioRef, items, onPlaybackPositio
   const bookmarkRanges = bookmarks.filter(bookmark => bookmark.end_position != null && duration > 0).map(bookmark =>
     <span key={bookmark.id} className="timeline-bookmark-range" aria-hidden="true" style={{ left: `${100 * bookmark.position / duration}%`, width: `${100 * (bookmark.end_position! - bookmark.position) / duration}%` }} />);
   const sonosPosition = sonosSessionActive ? sonos.positionMillis / 1000 : 0;
-  const displayedSonosPosition = sonosSeekDraft ?? sonosPosition;
+  const displayedSonosPosition = sonosSeekDraft ?? (sonos.requestedSeekMillis === null ? sonosPosition : sonos.requestedSeekMillis / 1000);
   const sonosProgress = duration > 0 ? Math.min(100, (displayedSonosPosition / duration) * 100) : 0;
-  const sonosSeekDisabled = isSending || isSwitchingOutput || sonos.isTransportPending ||
+  const sonosSeekDisabled = isSending || isSwitchingOutput || (sonos.isTransportPending && sonos.requestedSeekMillis === null) ||
     !sonosSessionActive || !sonos.playback?.itemId || !currentItem || duration <= 0;
-  const seekSonos = async (position: number) => {
+  const seekSonos = (position: number, relative = false) => {
     if (sonosSeekDisabled) return;
-    const clamped = Math.min(Math.max(0, duration - 0.001), Math.max(0, position));
-    setSonosSeekDraft(clamped);
-    await sonos.seek(clamped * 1000);
+    // Drafts are only for dragging; pending commands are owned by the hook so
+    // an older completion cannot clear a newer drag or a different output.
     setSonosSeekDraft(null);
+    return sonos.seek(position * 1000, { relative, maxPositionMillis: Math.max(0, duration - 0.001) * 1000 });
   };
   const displayedSonosVolume = sonosVolumeDraft ?? sonos.requestedVolume ?? sonos.volume?.volume ?? 0;
   const sonosVolumeDisabled = !sonos.volume || sonos.volume.fixed || (sonos.isVolumePending && sonos.requestedVolume === null) || isSending || isSwitchingOutput;
@@ -798,7 +797,7 @@ export function AudioPlayer({ audioRef: sharedAudioRef, items, onPlaybackPositio
         </div>
         <PlayerTransport playing={sonosIsPlaying} sonos onPrevious={handlePrevious} onNext={handleNext}
           onToggle={() => void (sonosIsPlaying ? sonos.pause() : sonos.play())}
-          onBack={() => void seekSonos(sonosPosition - 30)} onForward={() => void seekSonos(sonosPosition + 30)}
+          onBack={() => void seekSonos(-30, true)} onForward={() => void seekSonos(30, true)}
           skipDisabled={isSending || isSwitchingOutput || sonos.isTransportPending || !sonosSessionActive}
           playDisabled={sonosTransportDisabled} seekDisabled={sonosSeekDisabled} />
         <div className="sonos-controls">

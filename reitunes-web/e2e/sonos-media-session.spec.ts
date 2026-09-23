@@ -1,5 +1,5 @@
 import { expect, type Page } from '@playwright/test';
-import { test, SonosSimulator, trackId } from './fixtures/sonos';
+import { test, deferred, SonosSimulator, trackId } from './fixtures/sonos';
 
 type MediaTestWindow = Window & {
   mediaHandlers: Partial<Record<MediaSessionAction, MediaSessionActionHandler | null>>;
@@ -85,6 +85,65 @@ test('Sonos media actions control the speaker and report its confirmed state', a
   await mediaAction(page, 'play');
   expect(await page.evaluate(() => (window as unknown as MediaTestWindow).localPlayCalls)).toBe(1);
   expect(sonos.commands).toEqual(['pause', 'play', 'pause']);
+});
+
+test('Sonos media seek bursts accumulate synchronously and send only the latest queued position', async ({ page }) => {
+  const sonos = new SonosSimulator(page);
+  sonos.paused = true;
+  await sonos.install();
+  const firstSeek = { arrived: deferred(), release: deferred() };
+  const seeks: number[] = [];
+  await page.route('**/api/sonos/groups/group-1/playback/seek', async route => {
+    const request = route.request().postDataJSON();
+    expect(request.itemId).toBe('queue-item-1');
+    seeks.push(request.positionMillis);
+    if (seeks.length === 1) {
+      firstSeek.arrived.resolve();
+      await firstSeek.release.promise;
+    }
+    sonos.speaker.positionMillis = request.positionMillis;
+    await route.fulfill({ status: 204 });
+  });
+  try {
+    await page.goto('/');
+    await expect(page.getByRole('button', { name: 'Play Sonos', exact: true })).toBeEnabled();
+    await page.locator('audio').dispatchEvent('loadedmetadata');
+    const timeline = page.getByRole('slider', { name: 'Sonos playback position' });
+    await expect(timeline).toHaveValue('50');
+
+    await mediaAction(page, 'seekforward');
+    await firstSeek.arrived.promise;
+    await expect(timeline).toHaveValue('80');
+    // No render can occur between these actions: relative seeks must read the
+    // latest intent directly instead of adding to a stale callback's position.
+    await page.evaluate(() => {
+      const handlers = (window as unknown as MediaTestWindow).mediaHandlers;
+      for (const details of [
+        { action: 'seekforward' },
+        { action: 'seekforward' },
+        { action: 'seekbackward', seekOffset: 10 },
+        { action: 'seekforward', seekOffset: 15 },
+      ] satisfies MediaSessionActionDetails[]) {
+        const handler = handlers[details.action];
+        if (!handler) throw new Error(`No media session handler for ${details.action}`);
+        handler(details);
+      }
+    });
+    await expect(timeline).toHaveValue('145');
+    expect(seeks).toEqual([80_000]);
+    expect(sonos.speaker.positionMillis).toBe(50_000);
+
+    firstSeek.release.resolve();
+    await expect.poll(() => seeks).toEqual([80_000, 145_000]);
+    await expect.poll(() => sonos.speaker.positionMillis).toBe(145_000);
+    await expect(page.getByRole('button', { name: 'Play Sonos', exact: true })).toBeEnabled();
+    await expect(timeline).toHaveValue('145');
+    expect(await page.evaluate(() => navigator.mediaSession.playbackState)).toBe('paused');
+    expect(await page.evaluate(() => (window as unknown as MediaTestWindow).localPlayCalls)).toBe(0);
+    expect(sonos.queueRequests).toHaveLength(0);
+  } finally {
+    firstSeek.release.resolve();
+  }
 });
 
 test('Sonos media keys keep playback state on failure and cannot control a lost session', async ({ page }) => {

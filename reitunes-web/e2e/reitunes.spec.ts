@@ -779,7 +779,14 @@ test('Sonos next and previous follow the queue without reverting to stale speake
   await page.evaluate(payload => window.dispatchEvent(new CustomEvent('reitunes:sonos', { detail: {
     type: 'sonos', namespace: 'playback', eventType: 'playbackStatus', targetId: 'group-1', payload,
   } })), status());
-  await expect(page.locator('.sonos-track-title')).toContainText('Pink Moon');
+  // The title shows sending status here; the selected song must still resist
+  // the old speaker event while the queue request is outstanding.
+  await expect(page.locator('.sonos-track-title')).toContainText('Sending to Kitchen + 3');
+  await expect.poll(() => page.evaluate(async () => {
+    const path = '/src/stores/playerStore.ts';
+    const { usePlayerStore } = await import(path);
+    return usePlayerStore.getState().currentItem?.name;
+  })).toBe('Pink Moon');
   release();
   await expect(previous).toBeEnabled();
   await expect(page.locator('.sonos-track-title')).toContainText('Pink Moon');

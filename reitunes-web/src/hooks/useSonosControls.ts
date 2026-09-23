@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { SONOS_REALTIME_EVENT } from './useLibrary';
-import { usePlaybackTargetStore } from '../stores/playbackTargetStore';
+import { usePlaybackTargetStore, type PlaybackTarget } from '../stores/playbackTargetStore';
 import type { SonosRealtimeUpdate } from '../types';
 import { sonosRequest, SonosRequestError } from '../utils/sonosRequest';
 
@@ -8,6 +8,8 @@ const PLAYBACK_POLL_MILLIS = 30_000;
 const VOLUME_POLL_MILLIS = 60_000;
 const VOLUME_SETTLE_MILLIS = 1_500;
 const VOLUME_RECHECK_MILLIS = 250;
+const SEEK_SETTLE_MILLIS = 1_500;
+const SEEK_RECHECK_MILLIS = 250;
 
 export interface SonosPlaybackStatus {
   playbackState: string;
@@ -31,12 +33,21 @@ interface ObservedPlayback extends SonosPlaybackStatus {
   observedAt: number;
 }
 
+interface SeekWork {
+  value: number;
+  itemId: string;
+  sourceItemId?: string;
+  target: PlaybackTarget;
+  accepting: boolean;
+  promise: Promise<void> | null;
+}
+
 export function useSonosControls(groupId: string | null) {
   const activeGroupRef = useRef(groupId);
   activeGroupRef.current = groupId;
   const playbackRevision = useRef(0);
   const volumeRevision = useRef(0);
-  const latestPlayback = useRef<SonosPlaybackStatus | null>(null);
+  const latestPlayback = useRef<ObservedPlayback | null>(null);
   const [playback, setPlayback] = useState<ObservedPlayback | null>(null);
   const [positionMillis, setPositionMillis] = useState(0);
   const [volume, setVolumeState] = useState<SonosGroupVolume | null>(null);
@@ -48,16 +59,25 @@ export function useSonosControls(groupId: string | null) {
   const [requestedVolume, setRequestedVolume] = useState<number | null>(null);
   const volumeWork = useRef<{ value: number; accepting: boolean; promise: Promise<void> | null } | null>(null);
   const volumeIntent = useRef<{ value: number; expiresAt: number } | null>(null);
+  const seekWork = useRef<SeekWork | null>(null);
+  const [requestedSeekMillis, setRequestedSeekMillis] = useState<number | null>(null);
 
   const applyPlayback = useCallback((next: SonosPlaybackStatus, requestedGroup: string) => {
     if (activeGroupRef.current !== requestedGroup) return;
+    const work = seekWork.current;
+    if (work && (!next.reitunesSessionActive || next.itemId !== work.itemId || next.sourceItemId !== work.sourceItemId)) {
+      // A queued jump belongs to one queue item, never the next song/session.
+      seekWork.current = null;
+      setRequestedSeekMillis(null);
+      if (usePlaybackTargetStore.getState().target === work.target) setIsTransportPending(false);
+    }
     playbackRevision.current += 1;
-    latestPlayback.current = next;
     const observed = { ...next, observedAt: Date.now() };
+    latestPlayback.current = observed;
     setPlayback(observed);
     setPositionMillis(next.positionMillis);
     setPlaybackPollError(null);
-  }, []);
+  }, [setIsTransportPending]);
 
   const applyVolume = useCallback((next: SonosGroupVolume, requestedGroup: string) => {
     if (activeGroupRef.current !== requestedGroup) return false;
@@ -154,6 +174,8 @@ export function useSonosControls(groupId: string | null) {
     setPlaybackPollError(null);
     setVolumePollError(null);
     setCommandError(null);
+    seekWork.current = null;
+    setRequestedSeekMillis(null);
     volumeWork.current = null;
     volumeIntent.current = null;
     setRequestedVolume(null);
@@ -312,38 +334,87 @@ export function useSonosControls(groupId: string | null) {
     [groupId, isVolumePending, refreshVolume, volume]
   );
 
-  const seek = useCallback(async (position: number) => {
+  const seek = useCallback(async (position: number, options: { relative?: boolean; maxPositionMillis?: number } = {}) => {
     const output = usePlaybackTargetStore.getState();
-    if (!groupId || !playback?.reitunesSessionActive || !playback.itemId ||
-      output.isTransportPending || output.isSending || output.isSwitchingOutput ||
+    const observed = latestPlayback.current;
+    const pending = seekWork.current;
+    if (!groupId || output.target.kind !== 'sonos' || output.target.groupId !== groupId ||
+      !observed?.reitunesSessionActive || !observed.itemId ||
+      (pending && pending.target !== output.target) ||
+      (output.isTransportPending && (!pending?.accepting || pending.target !== output.target)) ||
+      output.isSending || output.isSwitchingOutput ||
       !Number.isFinite(position)) return;
-    setIsTransportPending(true);
+    const elapsed = observed.playbackState === 'PLAYBACK_STATE_PLAYING' ? Math.max(0, Date.now() - observed.observedAt) : 0;
+    const base = pending?.value ?? observed.positionMillis + elapsed;
+    const limit = Number.isFinite(options.maxPositionMillis)
+      ? Math.min(2_147_483_647, Math.max(0, Math.round(options.maxPositionMillis!))) : 2_147_483_647;
+    const value = Math.min(limit, Math.max(0, Math.round(options.relative ? base + position : position)));
+    setRequestedSeekMillis(value);
     setCommandError(null);
     playbackRevision.current += 1;
-    const isCurrent = () => usePlaybackTargetStore.getState().target === output.target;
-    let readAttempted = false;
-    try {
-      await sonosRequest(
-        `/api/sonos/groups/${encodeURIComponent(groupId)}/playback/seek`,
-        {
-          method: 'POST', credentials: 'include',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ itemId: playback.itemId, positionMillis: Math.min(2_147_483_647, Math.max(0, Math.round(position))) }),
-        }
-      );
-      readAttempted = true;
-      await refreshPlayback();
-    } catch (nextError) {
-      if (!isCurrent()) return;
-      if (nextError instanceof SonosRequestError && nextError.status === 409) {
-        usePlaybackTargetStore.getState().failSending(nextError.message, true);
-      }
-      setCommandError(nextError instanceof Error ? nextError.message : 'Could not seek on Sonos');
-      if (!readAttempted) await refreshPlayback().catch(() => undefined);
-    } finally {
-      if (isCurrent()) setIsTransportPending(false);
+    if (pending) {
+      pending.value = value;
+      return pending.promise;
     }
-  }, [groupId, playback, refreshPlayback, setIsTransportPending]);
+    const work: SeekWork = { value, itemId: observed.itemId, sourceItemId: observed.sourceItemId,
+      target: output.target, accepting: true, promise: null };
+    seekWork.current = work;
+    setIsTransportPending(true);
+    const isCurrent = () => seekWork.current === work && usePlaybackTargetStore.getState().target === work.target;
+    work.promise = (async () => {
+      let readAttempted = false;
+      try {
+        while (isCurrent()) {
+          const sending = work.value;
+          const sentAt = Date.now();
+          readAttempted = false;
+          await sonosRequest(
+            `/api/sonos/groups/${encodeURIComponent(groupId)}/playback/seek`,
+            {
+              method: 'POST', credentials: 'include',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ itemId: work.itemId, positionMillis: sending }),
+            }
+          );
+          if (!isCurrent()) return;
+          // Relative clicks accumulate in work.value, including synchronous
+          // media-key repeats. Only send the latest destination after the ACK.
+          if (work.value !== sending) continue;
+          const settleUntil = Date.now() + SEEK_SETTLE_MILLIS;
+          do {
+            readAttempted = true;
+            const confirmed = await refreshPlayback();
+            if (!isCurrent()) return;
+            if (work.value !== sending) break;
+            const elapsed = confirmed?.playbackState === 'PLAYBACK_STATE_PLAYING' ? Date.now() - sentAt : 0;
+            // ACKs can precede the position update. Give observations a brief
+            // chance to catch up, without resending an uncertain seek command.
+            if (confirmed && confirmed.positionMillis >= sending - 2_000 &&
+              confirmed.positionMillis <= sending + elapsed + 2_000) break;
+            if (Date.now() >= settleUntil) break;
+            await new Promise(resolve => window.setTimeout(resolve, SEEK_RECHECK_MILLIS));
+          } while (isCurrent() && work.value === sending);
+          if (work.value === sending) break;
+        }
+      } catch (nextError) {
+        if (!isCurrent()) return;
+        work.accepting = false;
+        setRequestedSeekMillis(null);
+        if (nextError instanceof SonosRequestError && nextError.status === 409) {
+          usePlaybackTargetStore.getState().failSending(nextError.message, true);
+        }
+        setCommandError(nextError instanceof Error ? nextError.message : 'Could not seek on Sonos');
+        if (!readAttempted) await refreshPlayback().catch(() => undefined);
+      } finally {
+        if (isCurrent()) {
+          seekWork.current = null;
+          setRequestedSeekMillis(null);
+          setIsTransportPending(false);
+        }
+      }
+    })();
+    return work.promise;
+  }, [groupId, refreshPlayback, setIsTransportPending]);
 
   const setMuted = useCallback(
     async (muted: boolean) => {
@@ -389,6 +460,7 @@ export function useSonosControls(groupId: string | null) {
     isTransportPending,
     isVolumePending,
     requestedVolume,
+    requestedSeekMillis,
     play,
     pause,
     seek,
