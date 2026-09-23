@@ -102,6 +102,14 @@ for (const output of ['browser', 'sonos'] as const) {
       const scrubberBox = await box(scrubber);
       const bookmarkBox = await box(bookmark);
       expect(headerBox.height).toBeLessThanOrEqual(width > 650 ? 64 : 120);
+      if (width > 650) {
+        const sidebarBox = await box(page.locator('.source-sidebar'));
+        const sidebarEdge = sidebarBox.x + sidebarBox.width;
+        expect(Math.abs(titleBox.x - sidebarEdge)).toBeLessThanOrEqual(1);
+        expect(Math.abs(scrubberBox.x - sidebarEdge)).toBeLessThanOrEqual(1);
+        const transportBox = await box(transport);
+        expect(transportBox.x + transportBox.width).toBeLessThanOrEqual(sidebarEdge);
+      }
       if (width >= 1440) {
         expect(headerBox.height).toBeLessThanOrEqual(64);
         expect(Math.abs(titleBox.x - scrubberBox.x)).toBeLessThanOrEqual(1);
