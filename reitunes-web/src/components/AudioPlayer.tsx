@@ -7,7 +7,7 @@ import { useSonosControls } from '../hooks/useSonosControls';
 import { usePlaybackTargetStore } from '../stores/playbackTargetStore';
 import type { LibraryItem } from '../types';
 import { audioDiagnostics, observePlaybackMedia, recordPlaybackEvent } from '../utils/playbackDiagnostics';
-import { createAudioRecovery, type AudioRecoveryStatus } from '../utils/audioRecovery';
+import { createAudioRecovery, isRetryableMediaError, type AudioRecoveryStatus } from '../utils/audioRecovery';
 
 // Minimal SVG icons - consistent 16px size, 1.5px stroke
 const Icons = {
@@ -382,7 +382,9 @@ export function AudioPlayer({ audioRef: sharedAudioRef, items, onPlaybackPositio
         const player = usePlayerStore.getState();
         const stale = superseded || !audio.paused || !player.isPlaying || player.currentItemId !== currentItemId || usePlaybackTargetStore.getState().target.kind !== 'browser';
         recordPlaybackEvent('play-rejected', { stale, itemId: currentItemId, errorName: error instanceof Error ? error.name : 'UnknownError', ...audioDiagnostics(audio) });
-        if (!stale) {
+        // The rejected play promise can arrive before the media error event.
+        // Keep play intent so that event can perform its one automatic retry.
+        if (!stale && !isRetryableMediaError(audio.error)) {
           console.error('Failed to start playback:', error);
           setIsPlaying(false);
         }

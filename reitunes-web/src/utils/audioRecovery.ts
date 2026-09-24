@@ -1,5 +1,11 @@
 export type AudioRecoveryStatus = 'idle' | 'buffering' | 'retrying' | 'failed';
 
+export function isRetryableMediaError(error: MediaError | null): boolean {
+  // A failed initial fetch can surface as SRC_NOT_SUPPORTED, even for a file
+  // that plays on retry. Aborts and decoder failures need explicit user action.
+  return error?.code === 2 || error?.code === 4;
+}
+
 interface RecoveryOptions {
   canAct: () => boolean;
   shouldPlay: () => boolean;
@@ -64,7 +70,10 @@ export function createAudioRecovery(audio: HTMLMediaElement, options: RecoveryOp
     // A load() pause is not a user pause. Consult the current app intent.
     if (event.type === 'pause' && !options.shouldPlay()) settle();
     if (event.type === 'ended') settle();
-    if (event.type === 'error') failed();
+    if (event.type === 'error' && audio.error) {
+      if (isRetryableMediaError(audio.error) && options.shouldPlay() && !automaticUsed) retry(false);
+      else failed();
+    }
   };
   const progress = () => {
     if (waiting && !audio.seeking && !audio.paused && audio.readyState >= 3 && audio.currentTime > lastPosition) settle();

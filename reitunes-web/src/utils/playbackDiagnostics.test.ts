@@ -130,3 +130,23 @@ it('cancels buffering timers after pause or observer removal', async () => {
   const entries = vi.mocked(fetch).mock.calls.flatMap(([, options]) => JSON.parse(options!.body as string).args[0].events);
   expect(entries.filter((e: { event: string }) => e.event === 'buffering-slow')).toHaveLength(0);
 });
+
+it('logs bounded browser error detail, redacts URLs, and marks media errors as warnings', async () => {
+  const { audioDiagnostics, recordPlaybackEvent, flushPlaybackDiagnostics } = await import('./playbackDiagnostics');
+  const audio = mediaHarness();
+  const source = 'https://storage.example/private-song.m4a?token=secret';
+  Object.assign(audio, {
+    currentSrc: source, getAttribute: () => source,
+    error: { code: 4, message: `DEMUXER_ERROR_COULD_NOT_OPEN: ${source}\nServer returned 503 from https://other.example/path?key=secret ${'x'.repeat(600)}` },
+  });
+  const details = audioDiagnostics(audio);
+  expect(details.errorMessage).toContain('DEMUXER_ERROR_COULD_NOT_OPEN');
+  expect(details.errorMessage).toContain('Server returned 503');
+  expect(details.errorMessage).not.toMatch(/https|private-song|secret|\n/);
+  expect(details.errorMessage).toHaveLength(512);
+  recordPlaybackEvent('media', { mediaEvent: 'error', ...details });
+  flushPlaybackDiagnostics();
+  const payload = JSON.parse(vi.mocked(fetch).mock.calls[0][1]!.body as string);
+  expect(payload.level).toBe('warn');
+  expect(payload.args[0].events[0].errorMessage).toBe(details.errorMessage);
+});

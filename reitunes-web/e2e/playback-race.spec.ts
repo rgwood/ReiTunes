@@ -110,6 +110,7 @@ test.beforeEach(async ({ page }) => {
       readyState: 4,
       sourceLoads: 0,
       reloads: 0,
+      error: null as MediaError | null,
       pauseCalls: 0,
       deferFirst: false,
       rejectFirst: () => {},
@@ -117,6 +118,7 @@ test.beforeEach(async ({ page }) => {
     Object.assign(window, { playbackHarness: harness });
     const getAttribute = Element.prototype.getAttribute;
     Object.defineProperties(HTMLMediaElement.prototype, {
+      error: { configurable: true, get() { return harness.error; } },
       getAttribute: {
         configurable: true,
         value(name: string) {
@@ -179,6 +181,7 @@ test.beforeEach(async ({ page }) => {
         configurable: true,
         value() {
           harness.reloads += 1;
+          harness.error = null;
           harness.readyState = 0;
           Object.assign(state(this), { time: 0, paused: true });
           this.dispatchEvent(new Event('emptied'));
@@ -379,4 +382,50 @@ test('stalled audio reloads once, respects newer seeks and pause, then offers ma
   await page.locator('audio').evaluate(audio => audio.dispatchEvent(new Event('playing')));
   await expect(page.locator('.player-recovery')).toHaveCount(0);
   expect(await page.locator('audio').evaluate(audio => audio.paused)).toBe(false);
+});
+
+// Reproduce the morning incident: the play promise rejects before the media
+// error event, before metadata or the bookmark position can be applied.
+test('an initial source error retries automatically without losing the bookmark', async ({ page }) => {
+  await page.evaluate(() => {
+    const h = (window as unknown as { playbackHarness: { readyState: number; deferFirst: boolean } }).playbackHarness;
+    h.readyState = 0;
+    h.deferFirst = true;
+  });
+  await page.keyboard.press('Control+e');
+  await expect(page.getByRole('button', { name: 'Pause', exact: true })).toBeVisible();
+  await page.locator('audio').evaluate(async audio => {
+    const h = (window as unknown as { playbackHarness: { error: MediaError | null; rejectFirst: () => void } }).playbackHarness;
+    h.error = { code: 4, message: 'DEMUXER_ERROR_COULD_NOT_OPEN: failed to open source' } as MediaError;
+    Object.defineProperty(audio, 'paused', { configurable: true, value: true });
+    h.rejectFirst();
+    await Promise.resolve();
+  });
+  // Promise rejection must not turn a current play request into a user pause.
+  await expect(page.getByRole('button', { name: 'Pause', exact: true })).toBeVisible();
+  await page.locator('audio').evaluate(audio => {
+    Reflect.deleteProperty(audio, 'paused');
+    audio.dispatchEvent(new Event('error'));
+  });
+  await expect(page.locator('.player-recovery')).toContainText('Reconnecting…');
+  const reloads = () => page.evaluate(() => (window as unknown as { playbackHarness: { reloads: number } }).playbackHarness.reloads);
+  expect(await reloads()).toBe(1);
+  await page.locator('audio').evaluate(audio => {
+    (window as unknown as { playbackHarness: { readyState: number } }).playbackHarness.readyState = 1;
+    audio.dispatchEvent(new Event('loadedmetadata'));
+  });
+  await expect.poll(() => page.locator('audio').evaluate(audio => audio.currentTime)).toBe(70);
+  expect(await page.locator('audio').evaluate(audio => audio.paused)).toBe(false);
+  await page.locator('audio').evaluate(audio => {
+    const h = (window as unknown as { playbackHarness: { readyState: number } }).playbackHarness;
+    h.readyState = 4;
+    audio.dispatchEvent(new Event('playing'));
+  });
+  await expect(page.locator('.player-recovery')).toHaveCount(0);
+  await page.locator('audio').evaluate(audio => {
+    (window as unknown as { playbackHarness: { error: MediaError | null } }).playbackHarness.error = { code: 4, message: 'source failed again' } as MediaError;
+    audio.dispatchEvent(new Event('error'));
+  });
+  await expect(page.getByRole('button', { name: 'Retry audio', exact: true })).toBeVisible();
+  expect(await reloads()).toBe(1);
 });

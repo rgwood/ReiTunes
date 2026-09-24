@@ -1,5 +1,5 @@
 // Production playback traces go to the existing authenticated server log endpoint.
-// Keep IDs and media state, never track URLs, titles, cookies or error messages.
+// Keep IDs and media state; redact URLs from the browser's media error detail.
 interface PlaybackDetails {
   itemId?: string | null;
   target?: 'browser' | 'sonos';
@@ -15,6 +15,7 @@ interface PlaybackDetails {
   networkState?: number;
   errorCode?: number;
   errorName?: string;
+  errorMessage?: string;
   stale?: boolean;
   targetPosition?: number;
   buffered?: number[][];
@@ -83,7 +84,7 @@ export function recordPlaybackEvent(
   event: PlaybackEvent,
   details: PlaybackDetails = {}
 ) {
-  if (event === 'oscillation' || event === 'play-rejected' || event === 'buffering-slow') warning = true;
+  if (event === 'oscillation' || event === 'play-rejected' || event === 'buffering-slow' || details.mediaEvent === 'error') warning = true;
   if (!installed) {
     installed = true;
     window.addEventListener('pagehide', flushPlaybackDiagnostics);
@@ -132,10 +133,23 @@ export function audioDiagnostics(audio: HTMLMediaElement): PlaybackDetails {
     readyState: audio.readyState,
     networkState: audio.networkState,
     errorCode: audio.error?.code,
+    errorMessage: sanitizedMediaError(audio),
     buffered: mediaRanges(buffered),
     seekable: mediaRanges(audio.seekable),
     bufferedAhead,
   };
+}
+
+function sanitizedMediaError(audio: HTMLMediaElement): string | undefined {
+  let message = audio.error?.message;
+  if (!message) return undefined;
+  for (const source of [audio.currentSrc, audio.getAttribute('src')]) {
+    if (source) message = message.replaceAll(source, '[media source]');
+  }
+  return message
+    .replace(/\b(?:https?|blob|data|file):[^\s"'<>]+/gi, '[redacted URL]')
+    .replace(/[\x00-\x1f\x7f]/g, ' ')
+    .trim().slice(0, 512);
 }
 
 function mediaRanges(ranges: TimeRanges): number[][] {

@@ -81,3 +81,32 @@ it('does not replenish automatic retries after briefly reporting playback', () =
   expect(h.onStatus).toHaveBeenLastCalledWith('failed');
   h.controller.dispose();
 });
+
+it.each([2, 4])('retries loading error %i once, sharing the stall retry budget', code => {
+  const h = harness();
+  Object.assign(h.audio, { error: { code }, readyState: 0, paused: true });
+  h.audio.dispatchEvent(new Event('waiting'));
+  vi.advanceTimersByTime(5000);
+  h.intent.position = 102;
+  h.audio.dispatchEvent(new Event('error'));
+  expect(h.reload).toHaveBeenCalledExactlyOnceWith(102);
+  expect(h.onStatus).toHaveBeenLastCalledWith('retrying');
+  h.audio.dispatchEvent(new Event('error'));
+  vi.advanceTimersByTime(30000);
+  expect(h.reload).toHaveBeenCalledTimes(1);
+  expect(h.onStatus).toHaveBeenLastCalledWith('failed');
+  h.controller.dispose();
+});
+
+it('does not retry errors after a pause, target change, abort or decoder failure', () => {
+  for (const condition of ['pause', 'target', 'abort', 'decode', 'cleared']) {
+    const h = harness();
+    Object.assign(h.audio, { error: condition === 'cleared' ? null : { code: condition === 'abort' ? 1 : condition === 'decode' ? 3 : 4 } });
+    if (condition === 'pause') h.intent.playing = false;
+    if (condition === 'target') h.intent.current = false;
+    h.audio.dispatchEvent(new Event('error'));
+    vi.advanceTimersByTime(30000);
+    expect(h.reload).not.toHaveBeenCalled();
+    h.controller.dispose();
+  }
+});
