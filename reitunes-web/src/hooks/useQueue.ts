@@ -16,6 +16,7 @@ interface PersistedQueueState {
 }
 
 interface QueueState extends PersistedQueueState {
+  editVersion: number;
   addToQueue: (item: LibraryItem) => void;
   addNext: (item: LibraryItem) => void;
   removeFromManualQueue: (index: number) => void;
@@ -48,6 +49,7 @@ export const useQueueStore = create<QueueState>()(
   persist<QueueState, [], [], PersistedQueueState>(
     (set, get) => ({
       manualQueue: [],
+      editVersion: 0,
       contextItems: [],
       contextIndex: -1,
       contextName: 'Library',
@@ -55,24 +57,26 @@ export const useQueueStore = create<QueueState>()(
       repeatMode: 'off',
 
       addToQueue: (item) => set((state) => ({
+        editVersion: state.editVersion + 1,
         manualQueue: [...state.manualQueue, item],
       })),
 
       addNext: (item) => set((state) => ({
+        editVersion: state.editVersion + 1,
         manualQueue: [item, ...state.manualQueue],
       })),
 
       removeFromManualQueue: (index) => set((state) => {
         const newQueue = [...state.manualQueue];
         newQueue.splice(index, 1);
-        return { manualQueue: newQueue };
+        return { manualQueue: newQueue, editVersion: state.editVersion + 1 };
       }),
 
       moveManualQueueItem: (fromIndex, toIndex) => set((state) => {
         const newQueue = [...state.manualQueue];
         const [item] = newQueue.splice(fromIndex, 1);
         newQueue.splice(toIndex, 0, item);
-        return { manualQueue: newQueue };
+        return { manualQueue: newQueue, editVersion: state.editVersion + 1 };
       }),
 
       setContext: (items, startIndex, name, preserveManualQueue = false) => set((state) => ({
@@ -132,7 +136,7 @@ export const useQueueStore = create<QueueState>()(
         return null;
       },
 
-      clearManualQueue: () => set({ manualQueue: [] }),
+      clearManualQueue: () => set(state => ({ manualQueue: [], editVersion: state.editVersion + 1 })),
       takeQueuedItem: index => {
         const item = get().manualQueue[index];
         if (!item) return null;

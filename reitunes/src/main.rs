@@ -274,6 +274,7 @@ async fn main() -> Result<()> {
                 .route("/sonos/households", get(sonos_households_handler))
                 .route("/sonos/cloud-queues", post(prepare_cloud_queue_handler))
                 .route("/sonos/play", post(sonos_play_handler))
+                .route("/sonos/groups/{group_id}/queue", post(sonos_queue_handler))
                 .route(
                     "/sonos/groups/{group_id}/playback",
                     get(sonos_group_playback_handler),
@@ -710,6 +711,40 @@ async fn sonos_play_handler(
     .await
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SonosQueueRequest {
+    item_id: String,
+    queue_version: String,
+    item_ids: Vec<Uuid>,
+}
+
+async fn sonos_queue_handler(
+    State(app_state): State<AppState>,
+    Path(group_id): Path<String>,
+    JsonExtractor(request): JsonExtractor<SonosQueueRequest>,
+) -> SonosApiResult<StatusCode> {
+    with_sonos_deadline(Duration::from_secs(45), async {
+        let control = active_sonos_control(&app_state, &group_id)
+            .await.map_err(sonos_playback_failure)?;
+        let playback = control.group_playback(&group_id).await.map_err(sonos_failure)?;
+        // An edit based on an old playhead must not put already played songs back.
+        if playback.item_id.as_deref() != Some(&request.item_id)
+            || playback.queue_version.as_deref() != Some(&request.queue_version)
+        {
+            return Err((StatusCode::CONFLICT, Json(SonosApiError {
+                error: "Sonos advanced while the queue was being edited. Retry the queue update.".into(),
+            })));
+        }
+        let tracks = cloud_queue_tracks(&app_state, &request.item_ids).await?;
+        app_state.cloud_queues.replace_upcoming(
+            &request.queue_version, &request.item_id, tracks,
+        ).map_err(cloud_queue_failure)?;
+        control.refresh_cloud_queue(&group_id).await.map_err(sonos_failure)?;
+        Ok(StatusCode::NO_CONTENT)
+    }).await
+}
+
 async fn with_sonos_deadline<T>(
     budget: Duration,
     operation: impl std::future::Future<Output = SonosApiResult<T>>,
@@ -976,7 +1011,16 @@ async fn prepare_cloud_queue(
     app_state: &AppState,
     request: &PrepareCloudQueueRequest,
 ) -> SonosApiResult<cloud_queue::PreparedQueue> {
-    if request.item_ids.len() > 500 {
+    let tracks = cloud_queue_tracks(app_state, &request.item_ids).await?;
+    app_state.cloud_queues.prepare(tracks, request.start_item_id)
+        .map_err(cloud_queue_failure)
+}
+
+async fn cloud_queue_tracks(
+    app_state: &AppState,
+    item_ids: &[Uuid],
+) -> SonosApiResult<Vec<cloud_queue::QueueTrack>> {
+    if item_ids.len() > 500 {
         return Err(cloud_queue_failure(
             cloud_queue::CloudQueueError::InvalidRequest(
                 "A Sonos queue cannot contain more than 500 tracks".to_string(),
@@ -985,8 +1029,8 @@ async fn prepare_cloud_queue(
     }
 
     let library = app_state.library.read().await;
-    let mut tracks = Vec::with_capacity(request.item_ids.len());
-    for item_id in &request.item_ids {
+    let mut tracks = Vec::with_capacity(item_ids.len());
+    for item_id in item_ids {
         let item = library.items.get(item_id).ok_or_else(|| {
             cloud_queue_failure(cloud_queue::CloudQueueError::InvalidRequest(format!(
                 "Library item {item_id} was not found"
@@ -1008,11 +1052,7 @@ async fn prepare_cloud_queue(
     }
     drop(library);
 
-    let prepared = app_state
-        .cloud_queues
-        .prepare(tracks, request.start_item_id)
-        .map_err(cloud_queue_failure)?;
-    Ok(prepared)
+    Ok(tracks)
 }
 
 async fn cloud_queue_context_handler(

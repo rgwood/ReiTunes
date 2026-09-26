@@ -374,7 +374,7 @@ impl CloudQueueStore {
         Ok(queues
             .values()
             .filter(|queue| !queue_is_expired(queue))
-            .find(|queue| queue.queue_version == queue_version)
+            .find(|queue| queue_version.starts_with(&format!("QV:{}:", queue.id)))
             .and_then(|queue| queue.items.iter().find(|item| item.id == queue_item_id))
             .map(|item| item.source_id))
     }
@@ -389,6 +389,38 @@ impl CloudQueueStore {
             context_version: snapshot.context_version,
             queue_version: snapshot.queue_version,
         })
+    }
+
+    /// Keep the playhead and history stable while replacing the upcoming tracks.
+    pub fn replace_upcoming(
+        &self,
+        queue_version: &str,
+        item_id: &str,
+        tracks: Vec<QueueTrack>,
+    ) -> Result<(), CloudQueueError> {
+        let mut queues = self.queues.write().map_err(|_| {
+            CloudQueueError::Internal(anyhow::anyhow!("Cloud Queue lock was poisoned"))
+        })?;
+        let queue = queues.values_mut().find(|queue| {
+            !queue_is_expired(queue)
+                && queue_version.starts_with(&format!("QV:{}:", queue.id))
+        }).ok_or(CloudQueueError::NotFound)?;
+        let index = queue.items.iter().position(|item| item.id == item_id)
+            .ok_or(CloudQueueError::NotFound)?;
+        let mut updated = queue.clone();
+        let mut previous_upcoming = updated.items.split_off(index + 1);
+        updated.items.truncate(index + 1);
+        for track in tracks {
+            let mut item = QueueItem::from(track);
+            if let Some(index) = previous_upcoming.iter().position(|old| old.source_id == item.source_id) {
+                item.id = previous_upcoming.remove(index).id;
+            }
+            updated.items.push(item);
+        }
+        updated.queue_version = format!("QV:{}:{}", queue.id, Uuid::new_v4());
+        self.persist_snapshot(&updated, &[])?;
+        *queue = updated;
+        Ok(())
     }
 
     pub fn accept_report(
@@ -804,5 +836,39 @@ mod tests {
                 Some(&restored_playback.http_authorization),
             )
             .unwrap();
+    }
+
+    #[test]
+    fn queue_edits_preserve_playhead_and_survive_restart() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db = open_connection_pool(temp_dir.path().join("queue.db").to_str().unwrap()).unwrap();
+        let store = CloudQueueStore::with_base_url_and_db("https://example.com/", db.clone()).unwrap();
+        let prepared = store.prepare(vec![track(1), track(2)], None).unwrap();
+        let playback = store.playback_parameters(prepared.queue_id).unwrap();
+        let mut duplicate = track(3);
+        duplicate.queue_item_id = Uuid::new_v4();
+        store.replace_upcoming(&prepared.queue_version, &playback.item_id,
+            vec![track(3), duplicate, track(2)]).unwrap();
+        let snapshot = store.snapshot(prepared.queue_id).unwrap();
+        assert_eq!(snapshot.start_item_id, playback.item_id);
+        assert_ne!(snapshot.queue_version, prepared.queue_version);
+        assert_eq!(snapshot.items.iter().map(|item| item.source_id).collect::<Vec<_>>(),
+            vec![Uuid::from_u128(1), Uuid::from_u128(3), Uuid::from_u128(3), Uuid::from_u128(2)]);
+        assert_ne!(snapshot.items[1].id, snapshot.items[2].id);
+        assert_eq!(snapshot.items[3].id, Uuid::from_u128(102).to_string());
+        // Status events can still carry the previous version during refresh.
+        assert_eq!(store.source_item_id(Some(&prepared.queue_version), Some(&playback.item_id)).unwrap(),
+            Some(Uuid::from_u128(1)));
+        assert!(store.replace_upcoming(&prepared.queue_version, "missing", vec![]).is_err());
+        drop(store);
+        let restored = CloudQueueStore::with_base_url_and_db("https://example.com/", db).unwrap();
+        let window = restored.item_window(prepared.queue_id, Some(&playback.http_authorization), &ItemWindowQuery {
+            item_id: playback.item_id.clone(), previous_window_size: 0, upcoming_window_size: 10,
+            _reason: "refresh".into(), _queue_version: prepared.queue_version.clone(), _is_explicit: None,
+        }).unwrap();
+        assert_eq!(window.items.len(), 4);
+        assert_eq!(window.window_playhead.item_id, playback.item_id);
+        restored.replace_upcoming(&snapshot.queue_version, &playback.item_id, vec![]).unwrap();
+        assert_eq!(restored.snapshot(prepared.queue_id).unwrap().items.len(), 1);
     }
 }

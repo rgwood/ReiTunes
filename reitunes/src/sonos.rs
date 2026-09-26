@@ -579,6 +579,16 @@ impl SonosControl {
         self.post_command(url).await
     }
 
+    pub async fn refresh_cloud_queue(&self, group_id: &str) -> Result<()> {
+        let session_id = self.playback_sessions.lock()
+            .map_err(|_| anyhow::anyhow!("Sonos session lock was poisoned"))?
+            .get(group_id).cloned().context("Sonos playback session ended")?;
+        let url = self.control_url(&[
+            "playbackSessions", &session_id, "playbackSession", "refreshCloudQueue",
+        ])?;
+        self.post_command(url).await
+    }
+
     pub async fn seek(&self, group_id: &str, item_id: &str, position_millis: i32) -> Result<()> {
         let url = self.control_url(&["groups", group_id, "playback", "seek"])?;
         self.post_empty(
@@ -1765,6 +1775,34 @@ mod tests {
             assert!(control.has_playback_session("group-1").unwrap());
             server.abort();
         }
+    }
+
+    #[tokio::test]
+    async fn refreshing_queue_uses_the_existing_session_without_loading_or_playing() {
+        let refreshes = Arc::new(AtomicUsize::new(0));
+        let router = Router::new().route(
+            "/control/api/v1/playbackSessions/session-1/playbackSession/refreshCloudQueue",
+            axum::routing::post({
+                let refreshes = refreshes.clone();
+                move || {
+                    let refreshes = refreshes.clone();
+                    async move {
+                        refreshes.fetch_add(1, Ordering::SeqCst);
+                        axum::http::StatusCode::NO_CONTENT
+                    }
+                }
+            }),
+        );
+        let (control, _temp_dir, server) = test_control_with_server(router).await;
+        control.save_tokens(&StoredTokenSet {
+            access_token: "access-token".into(), refresh_token: "refresh-token".into(),
+            token_type: "Bearer".into(), scope: None, expires_at_unix: u64::MAX,
+        }).unwrap();
+        assert!(control.refresh_cloud_queue("group-1").await.is_err());
+        control.remember_session("group-1", "session-1").unwrap();
+        control.refresh_cloud_queue("group-1").await.unwrap();
+        assert_eq!(refreshes.load(Ordering::SeqCst), 1);
+        server.abort();
     }
 
     #[tokio::test]

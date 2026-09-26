@@ -4,6 +4,7 @@ import { useQueueStore } from '../hooks/useQueue';
 import { getItemUrl, markPlayed, addBookmark } from '../hooks/useLibrary';
 import { usePlayback } from '../hooks/usePlayback';
 import { useSonosControls } from '../hooks/useSonosControls';
+import { useSonosQueueSync } from '../hooks/useSonosQueueSync';
 import { usePlaybackTargetStore } from '../stores/playbackTargetStore';
 import type { LibraryItem } from '../types';
 import { audioDiagnostics, observePlaybackMedia, recordPlaybackEvent } from '../utils/playbackDiagnostics';
@@ -182,6 +183,8 @@ export function AudioPlayer({ audioRef: sharedAudioRef, items, onPlaybackPositio
   const { target, isSending, isSwitchingOutput, error: playbackError, takeoverRequired } =
     usePlaybackTargetStore();
   const sonos = useSonosControls(target.kind === 'sonos' ? target.groupId : null);
+  const sonosQueue = useSonosQueueSync(sonos.playback, sonos.refreshPlayback);
+  const remotePlayheadRef = useRef<{ groupId: string; itemId?: string } | null>(null);
   const { play: playSonos, pause: pauseSonos, seek: seekOnSonos, playback: sonosPlayback } = sonos;
   useEffect(() => {
     setSonosSeekDraft(null);
@@ -334,20 +337,29 @@ export function AudioPlayer({ audioRef: sharedAudioRef, items, onPlaybackPositio
   }, [currentItem, target.kind]);
 
   useEffect(() => {
+    if (target.kind !== 'sonos' || isSending) {
+      remotePlayheadRef.current = null;
+      return;
+    }
     if (
-      target.kind !== 'sonos' ||
-      isSending || playbackError ||
+      playbackError ||
       !sonos.playback?.reitunesSessionActive ||
       sonos.playback.observedAt < sonosPositionReadyAfterRef.current ||
-      !sonos.playback.sourceItemId ||
-      sonos.playback.sourceItemId === currentItem?.id
+      !sonos.playback.sourceItemId
     ) {
       return;
     }
-    const contextIndex = useQueueStore.getState().contextItems.findIndex(
+    const previous = remotePlayheadRef.current;
+    const advanced = previous?.groupId === target.groupId && previous.itemId !== sonos.playback.itemId;
+    remotePlayheadRef.current = { groupId: target.groupId, itemId: sonos.playback.itemId };
+    const queue = useQueueStore.getState();
+    const fromManualQueue = advanced && queue.manualQueue[0]?.id === sonos.playback.sourceItemId;
+    if (fromManualQueue) queue.takeQueuedItem(0);
+    if (!advanced && sonos.playback.sourceItemId === currentItem?.id) return;
+    const contextIndex = queue.contextItems.findIndex(
       (candidate) => candidate.id === sonos.playback?.sourceItemId
     );
-    if (contextIndex >= 0) useQueueStore.setState({ contextIndex });
+    if (!fromManualQueue && contextIndex >= 0) useQueueStore.setState({ contextIndex });
     const item = items.find((candidate) => candidate.id === sonos.playback?.sourceItemId);
     if (item) selectRemoteItem(item, sonos.positionMillis / 1000);
   }, [
@@ -358,9 +370,10 @@ export function AudioPlayer({ audioRef: sharedAudioRef, items, onPlaybackPositio
     selectRemoteItem,
     sonos.playback?.reitunesSessionActive,
     sonos.playback?.sourceItemId,
+    sonos.playback?.itemId,
     sonos.playback?.observedAt,
     sonos.positionMillis,
-    target.kind,
+    target,
   ]);
 
   // Restored tracks remain paused. Tracks selected by the user set isPlaying
@@ -766,7 +779,7 @@ export function AudioPlayer({ audioRef: sharedAudioRef, items, onPlaybackPositio
           onLoadedMetadata={handleLoadedMetadata}
         />
         <PlayerTrack item={currentItem} position={displayedSonosPosition} duration={duration} status={connectionStatus} sonos />
-        {!connectionStatus && <div role="status" className={`sonos-status ${!playbackError && !sonos.error ? 'sr-only' : ''}`}>
+        {!connectionStatus && <div role="status" className={`sonos-status ${!playbackError && !sonos.error && !sonosQueue.error ? 'sr-only' : ''}`}>
           {playbackError ? (
             <span className="text-solarized-red">
               {playbackError}
@@ -779,6 +792,11 @@ export function AudioPlayer({ audioRef: sharedAudioRef, items, onPlaybackPositio
                   {takeoverRequired ? 'Replace Sonos playback and retry' : 'Retry sending to Sonos'}
                 </button>
               )}
+            </span>
+          ) : sonosQueue.error ? (
+            <span className="text-solarized-red">{sonosQueue.error}
+              <button type="button" className="ml-2 text-solarized-cyan hover:underline"
+                onClick={sonosQueue.retry}>Retry queue update</button>
             </span>
           ) : sonos.error ? (
             <span className="text-solarized-red">{sonos.error}</span>
