@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { matchesSmartPlaylist, moveTracksBefore, playlistItems, ruleExpression } from './playlists';
-import type { LibraryItem, SmartPlaylistRules } from '../types';
+import type { LibraryItem, SmartPlaylistRules, SmartRule } from '../types';
+import type { ItemTags } from '../hooks/useTags';
 
 const now = Date.parse('2026-09-22T12:00:00Z');
 const item: LibraryItem = { id: 'a', name: 'A', artist: 'Artist', album: '', file_path: '', url: '', track_number: null,
@@ -8,6 +9,28 @@ const item: LibraryItem = { id: 'a', name: 'A', artist: 'Artist', album: '', fil
 const rules: SmartPlaylistRules = { added_within_days: 30, play_state: 'unplayed', favourites_only: true };
 
 describe('Smart Playlists', () => {
+  it('matches exact normalized tags, respecting manual overrides and unfinished tagging', () => {
+    const tagItems: Record<string, ItemTags> = { a: { status: 'ready', tags: ['folk', 'indie-rock', 'house', 'ambient'].map(tag => ({ tag, basis: 'database', confidence: .8, evidence: 'MusicBrainz', sourceUrls: [] })),
+      labels: { house: { tag: 'house', verdict: 'rejected', reason: '' }, ambient: { tag: 'ambient', verdict: 'uncertain', reason: '' }, piano: { tag: 'piano', verdict: 'accepted', reason: '' } } } };
+    const match = (expression: SmartRule, data = tagItems) => matchesSmartPlaylist(item, { ...rules, expression }, now, data);
+    expect(match({ type: 'tag', value: ' Indie Rock ', present: true })).toBe(true);
+    expect(match({ type: 'tag', value: 'rock', present: true })).toBe(false);
+    expect(match({ type: 'tag', value: 'house', present: false })).toBe(true);
+    expect(match({ type: 'tag', value: 'ambient', present: true })).toBe(false);
+    expect(match({ type: 'all', rules: [{ type: 'tag', value: 'house', present: false }, { type: 'any', rules: [{ type: 'tag', value: 'jazz', present: true }, { type: 'tag', value: 'piano', present: true }] }] })).toBe(true);
+    for (const status of ['queued', 'running', 'stale', 'failed']) {
+      tagItems.a.status = status;
+      expect(match({ type: 'tag', value: 'folk', present: true })).toBe(false);
+      expect(match({ type: 'tag', value: 'piano', present: true })).toBe(true);
+      expect(match({ type: 'has_tags', value: true })).toBe(true);
+    }
+    expect(match({ type: 'has_tags', value: false }, {})).toBe(true);
+    expect(match({ type: 'tag', value: 'folk', present: false }, {})).toBe(true);
+    expect(match({ type: 'tag', value: ' ', present: false })).toBe(false);
+    // Not fetched yet is different from a fetched snapshot with no tags.
+    expect(matchesSmartPlaylist(item, { ...rules, expression: { type: 'has_tags', value: false } }, now)).toBe(false);
+    expect(matchesSmartPlaylist(item, { ...rules, expression: { type: 'tag', value: 'folk', present: false } }, now)).toBe(false);
+  });
   it('combines duration and nested OR conditions, excluding unknown lengths', () => {
     const nested: SmartPlaylistRules = { ...rules, expression: { type: 'all', rules: [
       { type: 'duration', comparison: 'lt', seconds: 600 },

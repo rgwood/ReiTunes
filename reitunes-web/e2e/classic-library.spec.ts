@@ -1,5 +1,6 @@
 import { expect, test, type Page, type WebSocketRoute } from '@playwright/test';
 import type { LibraryItem, Playlist } from '../src/types';
+import type { ItemTags } from '../src/hooks/useTags';
 
 const sample: LibraryItem = {
   id: '11111111-1111-4111-8111-111111111111', name: 'Apricots', artist: 'Bicep', album: 'Isles',
@@ -232,6 +233,63 @@ for (const width of [1440, 390]) {
     expect(playlists[1].smart_rules?.expression).toEqual({ type: 'all', rules: [] });
   });
 }
+
+test('tag rules combine with duration, persist, and update membership and counts after tag edits', async ({ page }, testInfo) => {
+  const { playlists } = await backend(page);
+  const tagItems: Record<string, ItemTags> = Object.fromEntries(songs.map((song, i) => [song.id, {
+    status: 'ready', tags: (i === 0 ? ['folk'] : ['indie-rock', 'house']).map(tag => ({ tag, basis: 'database', confidence: .8, evidence: 'Artist genres', sourceUrls: [] })),
+    labels: i === 1 ? { house: { tag: 'house', verdict: 'rejected', reason: '' }, 'indie-rock': { tag: 'indie-rock', verdict: 'accepted', reason: '' } } : {},
+  }]));
+  await page.route('**/api/items', route => route.fulfill({ json: songs.map(song => ({ ...song, duration_seconds: 300 })) }));
+  await page.route('**/api/tags', route => route.fulfill({ json: { enabled: true, items: tagItems } }));
+  await page.route('**/api/tags/items/*/labels', async route => {
+    const id = new URL(route.request().url()).pathname.split('/')[4];
+    const label = route.request().postDataJSON();
+    tagItems[id].labels[label.tag] = label;
+    await route.fulfill({ status: 204 });
+  });
+  await page.goto('/');
+  await page.getByRole('button', { name: /New Smart Playlist/ }).click();
+  const dialog = page.getByRole('dialog');
+  await dialog.getByRole('textbox', { name: 'Name', exact: true }).fill('Short folk or indie');
+  await dialog.getByRole('button', { name: 'Add group', exact: true }).click();
+  await dialog.getByRole('combobox', { name: 'Rule field' }).selectOption('tag');
+  await dialog.getByRole('combobox', { name: 'Tag value' }).fill('folk');
+  await expect(dialog.locator('datalist option[value="indie-rock"]')).toHaveCount(1);
+  await dialog.getByRole('button', { name: 'Add rule', exact: true }).first().click();
+  await dialog.getByRole('combobox', { name: 'Rule field' }).last().selectOption('tag');
+  await dialog.getByRole('combobox', { name: 'Tag value' }).last().fill('Indie Rock');
+  await dialog.getByRole('button', { name: 'Add rule', exact: true }).last().click();
+  await dialog.getByRole('spinbutton', { name: 'Duration in minutes' }).fill('10');
+  await dialog.getByRole('button', { name: 'Add rule', exact: true }).last().click();
+  await dialog.getByRole('combobox', { name: 'Rule field' }).last().selectOption('tag');
+  await dialog.getByRole('combobox', { name: 'Tag value' }).last().fill('house');
+  await dialog.getByRole('combobox', { name: 'Tag comparison' }).last().selectOption('false');
+  await expect(dialog.getByText(/2 matching tracks/)).toBeVisible();
+  await page.screenshot({ path: testInfo.outputPath('tag-playlist-rules.png') });
+  await dialog.getByRole('button', { name: 'Create playlist', exact: true }).click();
+  await expect(page.locator('tbody tr')).toHaveCount(2);
+  expect(playlists[1].smart_rules?.expression).toMatchObject({ type: 'all', rules: [{ type: 'any', rules: [{ type: 'tag', value: 'folk', present: true }, { type: 'tag', value: 'Indie Rock', present: true }] }, { type: 'duration' }, { type: 'tag', value: 'house', present: false }] });
+  await page.reload();
+  const source = page.getByRole('button', { name: 'Short folk or indie', exact: true });
+  await source.click();
+  await expect(page.locator('tbody tr')).toHaveCount(2);
+  await expect(source.locator('.source-count')).toHaveText('2');
+  await page.getByRole('button', { name: 'Edit tags for Apricots', exact: true }).click();
+  await page.getByRole('button', { name: 'Remove tag folk', exact: true }).click();
+  await expect(page.locator('tbody tr')).toHaveCount(1);
+  await expect(page.locator('tbody tr')).toContainText('Glue');
+  await expect(source.locator('.source-count')).toHaveText('1');
+  await page.getByRole('button', { name: 'Edit rules…', exact: true }).click();
+  await dialog.getByRole('button', { name: 'Clear rules', exact: true }).click();
+  await dialog.getByRole('button', { name: 'Add rule', exact: true }).click();
+  await dialog.getByRole('combobox', { name: 'Rule field' }).selectOption('has_tags');
+  await dialog.getByRole('combobox', { name: 'Rule value' }).selectOption('false');
+  await expect(dialog.getByText(/1 matching track/)).toBeVisible();
+  await dialog.getByRole('button', { name: 'Save changes', exact: true }).click();
+  await expect(page.locator('tbody tr')).toContainText('Apricots');
+  expect(playlists[1].smart_rules?.expression).toEqual({ type: 'all', rules: [{ type: 'has_tags', value: false }] });
+});
 
 test('playing audio records its measured duration for the correct library file', async ({ page }) => {
   const { mutations } = await backend(page);

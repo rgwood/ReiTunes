@@ -25,7 +25,7 @@ Once upon a time I also had a Blazor client but that's been retired.
 
 ### Smart Playlists and tags
 
-Create a Smart Playlist from the sidebar’s playlist menu. Choose **all (AND)** or **any (OR)** and add rules or nested groups. Rules cover duration, artist, album, title, play count, date added, favourites and bookmarks. For example: duration under 10 minutes AND (artist contains Beck OR artist contains Radiohead). The editor previews the matching tracks and their total duration. Existing playlists keep their original rules when edited.
+Create a Smart Playlist from the sidebar’s playlist menu. Choose **all (AND)** or **any (OR)** and add rules or nested groups. Rules cover tags, duration, artist, album, title, play count, date added, favourites and bookmarks. For example: duration under 10 minutes AND (tag includes folk OR tag includes indie-rock). Tag rules can include or exclude an exact tag, with suggestions from the library; **Has tags: No** finds tracks with no current tags. Matches use the same automatic and manually edited tags shown in the library, and update when tags change. The editor previews the matching tracks and their total duration. Existing playlists keep their original rules when edited.
 
 Duration appears as a sortable library column. Uploads read it from the audio file, downloads can use source metadata, and playback saves the measured length. Duration comparisons exclude unknown lengths; use the **Duration known** rule to find recordings that still need a measurement.
 

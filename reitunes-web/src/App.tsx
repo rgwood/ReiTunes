@@ -165,7 +165,7 @@ function AppContent() {
   const matchesSearch = useMemo(() => createLibrarySearch(deferredLibrarySearch,
     item => effectiveTags(tags.data?.items[item.id])), [deferredLibrarySearch, tags.data]);
   const filteredItems = useMemo(() => {
-    const candidates = selectedPlaylist ? playlistItems(selectedPlaylist, items, now) : items;
+    const candidates = selectedPlaylist ? playlistItems(selectedPlaylist, items, now, tags.data?.items) : items;
     return candidates.filter((item) => {
       if (collection === 'favourites' && !hasFavourite(item)) return false;
       if (collection === 'unplayed' && item.play_count !== 0) return false;
@@ -180,7 +180,7 @@ function AppContent() {
         return false;
       return matchesSearch(item);
     });
-  }, [items, selectedPlaylist, collection, matchesSearch, recentCutoff, now]);
+  }, [items, selectedPlaylist, collection, matchesSearch, recentCutoff, now, tags.data]);
   const moments = useMemo(
     () =>
       (view === 'bookmarks' ? items : filteredItems).flatMap((item) =>
@@ -364,7 +364,7 @@ function AppContent() {
       </header>
 
       <main className={`library-content${panel === 'tags' ? ' with-tags' : ''}`} aria-label={view === 'discover' ? 'Music discovery' : 'Music library'}>
-        <LibrarySidebar active={activeSource} items={items} playlists={playlists} now={now} discoveryCount={discoveryCount}
+        <LibrarySidebar active={activeSource} items={items} playlists={playlists} now={now} tagItems={tags.data?.items} discoveryCount={discoveryCount}
           playlistError={playlistError} onSelect={selectSource} onEdit={setPlaylistDraft}
           tagsOpen={panel === 'tags'} activeTagCount={activeTagCount} failedTagCount={failedTagCount}
           onTags={() => panel === 'tags' && !tagItemId ? setPanel(null) : openTagBrowser()}
@@ -420,7 +420,7 @@ function AppContent() {
           <button className="panel-close" aria-label="Close queue" onClick={() => setPanel(null)}><MusicIcon name="close" size={14} /></button><QueuePanel />
         </aside>}
       </main>
-      {playlistDraft && <PlaylistDialog draft={playlistDraft} items={items} onClose={() => setPlaylistDraft(null)}
+      {playlistDraft && <PlaylistDialog draft={playlistDraft} items={items} tagItems={tags.data?.items} tagError={tags.isError} onClose={() => setPlaylistDraft(null)}
         onSaved={id => { setPlaylistDraft(null); selectSource('playlist:' + id); }} />}
       {isDragging && <div className="global-drop-overlay">Drop audio files to import</div>}
       <ImportMusic

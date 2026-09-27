@@ -67,7 +67,8 @@ export type Comparison = 'lt' | 'lte' | 'eq' | 'gte' | 'gt';
 export type SmartRule =
   | { type: 'all' | 'any'; rules: SmartRule[] }
   | { type: 'duration'; comparison: Comparison; seconds: number }
-  | { type: 'duration_known' | 'favourite' | 'bookmarks'; value: boolean }
+  | { type: 'duration_known' | 'favourite' | 'bookmarks' | 'has_tags'; value: boolean }
+  | { type: 'tag'; value: string; present: boolean }
   | { type: 'play_count'; comparison: Comparison; value: number }
   | { type: 'added_within'; days: number }
   | { type: 'text'; field: 'name' | 'artist' | 'album'; comparison: 'contains' | 'is' | 'is_not' | 'does_not_contain'; value: string };

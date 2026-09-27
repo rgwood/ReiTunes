@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { LibraryItem, Playlist } from '../types';
-import { draggedTrackIds, playlistItems, TRACK_DRAG_TYPE } from '../utils/playlists';
+import { draggedTrackIds, playlistItems, TRACK_DRAG_TYPE, type PlaylistTagItems } from '../utils/playlists';
 import { usePlaylistMutation } from '../hooks/usePlaylists';
 import { MusicIcon } from './MusicIcon';
 import type { PlaylistDraft } from './PlaylistDialog';
@@ -10,8 +10,9 @@ const collections = [
   ['unplayed', 'Unplayed', 'play'], ['favourites', 'Favourites', 'heart'], ['bookmarks', 'Bookmarks', 'bookmark'],
 ] as const;
 
-export function LibrarySidebar({ active, items, playlists, now, discoveryCount, playlistError, onSelect, onEdit, onImport, onSettings, outputName, onOutput, tagsOpen, activeTagCount, failedTagCount, onTags }: {
+export function LibrarySidebar({ active, items, playlists, now, tagItems, discoveryCount, playlistError, onSelect, onEdit, onImport, onSettings, outputName, onOutput, tagsOpen, activeTagCount, failedTagCount, onTags }: {
   active: string; items: LibraryItem[]; playlists: Playlist[]; now: number; discoveryCount: number;
+  tagItems?: PlaylistTagItems;
   playlistError: boolean; onSelect: (id: string) => void; onEdit: (draft: PlaylistDraft) => void;
   onImport: () => void; onSettings: () => void;
   outputName: string; onOutput: () => void;
@@ -68,7 +69,7 @@ export function LibrarySidebar({ active, items, playlists, now, discoveryCount, 
       }}
       onDragLeave={() => setDropTarget(null)} onDrop={event => void drop(event, playlist)}>
       <span className={playlist.smart_rules ? 'source-icon smart-icon' : 'source-icon'}><MusicIcon name={playlist.smart_rules ? 'smart' : 'playlist'} size={16} /></span>
-      <span className="source-name">{playlist.name}</span><span className="source-count" aria-hidden="true">{playlistItems(playlist, items, now).length}</span>
+      <span className="source-name">{playlist.name}</span><span className="source-count" aria-hidden="true">{playlistItems(playlist, items, now, tagItems).length}</span>
     </button>;
   }
 

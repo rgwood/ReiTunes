@@ -74,6 +74,8 @@ pub enum SmartRule {
     Text { field: TextField, comparison: TextComparison, value: String },
     Favourite { value: bool },
     Bookmarks { value: bool },
+    Tag { value: String, present: bool },
+    HasTags { value: bool },
 }
 
 impl SmartRule {
@@ -86,6 +88,8 @@ impl SmartRule {
             Self::Duration { seconds, .. } => seconds.is_finite() && *seconds >= 0.0 && *seconds <= 366.0 * 86400.0,
             Self::AddedWithin { days } => (1..=3650).contains(days),
             Self::Text { value, .. } => !value.trim().is_empty() && value.len() <= 500,
+            Self::Tag { value, .. } => !value.trim().is_empty() && value.chars().count() <= 60
+                && !value.chars().any(char::is_control),
             _ => true,
         }
     }
