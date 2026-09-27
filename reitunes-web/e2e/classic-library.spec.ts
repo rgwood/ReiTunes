@@ -198,6 +198,41 @@ test('nested OR groups combine with duration and save their previewed membership
   await expect(page.locator('tbody tr [data-column=duration_seconds]')).toHaveText('5:00');
 });
 
+for (const width of [1440, 390]) {
+  test(`smart rule groups can be removed and all rules cleared at ${width}`, async ({ page }, testInfo) => {
+    await page.setViewportSize({ width, height: 900 });
+    const { playlists } = await backend(page);
+    await page.goto('/');
+    await page.getByRole('button', { name: /New Smart Playlist/ }).click();
+    const dialog = page.getByRole('dialog');
+    await dialog.getByRole('textbox', { name: 'Name', exact: true }).fill('Group removal');
+    await dialog.getByRole('button', { name: 'Add rule', exact: true }).click();
+    await dialog.getByRole('combobox', { name: 'Rule field' }).selectOption('favourite');
+    await dialog.getByRole('button', { name: 'Add group', exact: true }).click();
+    await dialog.getByRole('textbox', { name: 'Text value' }).fill('Four Tet');
+    await dialog.getByRole('button', { name: 'Add group', exact: true }).first().click();
+    // The removal control belongs to the group heading, even when it has descendants.
+    const group = dialog.locator('.smart-rule-group').nth(1);
+    const remove = group.locator(':scope > legend').getByRole('button', { name: 'Remove group', exact: true });
+    await expect(remove).toBeVisible();
+    await page.screenshot({ path: testInfo.outputPath('remove-smart-group.png') });
+    await remove.click();
+    await expect(dialog.locator('.smart-rule-group')).toHaveCount(1);
+    await expect(dialog.getByText(/2 matching tracks/)).toBeVisible();
+    await dialog.getByRole('button', { name: 'Create playlist', exact: true }).click();
+    expect(playlists[1].smart_rules?.expression).toEqual({ type: 'all', rules: [{ type: 'favourite', value: true }] });
+    await page.reload();
+    await page.getByRole('button', { name: 'Group removal', exact: true }).click();
+    await expect(page.locator('tbody tr')).toHaveCount(2);
+    await page.getByRole('button', { name: 'Edit rules…', exact: true }).click();
+    await dialog.getByRole('button', { name: 'Clear rules', exact: true }).click();
+    await expect(dialog.getByText(/3 matching tracks/)).toBeVisible();
+    await dialog.getByRole('button', { name: 'Save changes', exact: true }).click();
+    await expect(page.locator('tbody tr')).toHaveCount(3);
+    expect(playlists[1].smart_rules?.expression).toEqual({ type: 'all', rules: [] });
+  });
+}
+
 test('playing audio records its measured duration for the correct library file', async ({ page }) => {
   const { mutations } = await backend(page);
   await page.goto('/');

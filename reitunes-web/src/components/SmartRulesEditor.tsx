@@ -18,10 +18,13 @@ export function SmartRulesEditor({ rule, onChange, onRemove, depth = 0 }: {
 }) {
   if (rule.type === 'all' || rule.type === 'any') {
     return <fieldset className="smart-rule-group">
-      <legend>Match <select aria-label="Match rules" value={rule.type}
+      <legend><span className="smart-rule-heading"><span>Match <select aria-label="Match rules" value={rule.type}
         onChange={event => onChange({ ...rule, type: event.target.value as 'all' | 'any' })}>
         <option value="all">all (AND)</option><option value="any">any (OR)</option>
-      </select> of these rules</legend>
+      </select> of these rules</span>
+        {onRemove ? <button type="button" onClick={onRemove}>Remove group</button>
+          : rule.rules.length > 0 && <button type="button" onClick={() => onChange({ type: 'all', rules: [] })}>Clear rules</button>}
+      </span></legend>
       {rule.rules.map((child, index) => <SmartRulesEditor key={index} rule={child} depth={depth + 1}
         onChange={next => onChange({ ...rule, rules: rule.rules.map((existing, i) => i === index ? next : existing) })}
         onRemove={() => onChange({ ...rule, rules: rule.rules.filter((_, i) => i !== index) })} />)}
@@ -29,7 +32,6 @@ export function SmartRulesEditor({ rule, onChange, onRemove, depth = 0 }: {
       <div className="smart-rule-actions">
         <button type="button" disabled={rule.rules.length >= 20} onClick={() => onChange({ ...rule, rules: [...rule.rules, newRule()] })}>Add rule</button>
         {depth < 3 && <button type="button" disabled={rule.rules.length >= 20} onClick={() => onChange({ ...rule, rules: [...rule.rules, { type: rule.type === 'all' ? 'any' : 'all', rules: [newRule('artist')] }] })}>Add group</button>}
-        {onRemove && <button type="button" onClick={onRemove}>Remove group</button>}
       </div>
     </fieldset>;
   }
