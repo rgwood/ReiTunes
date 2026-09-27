@@ -119,7 +119,12 @@
 .bookmark-main-view .bookmark-row:nth-child(even) { background: var(--alternate); }
 .next-bookmark { color: var(--accent); padding: 3px; font-size: 11px; }
 .bookmark-sidepanel { border-right: 0; border-left: 1px solid var(--line); }
-.playlist-dialog { width: 420px; }
+.playlist-dialog { width: 760px; max-width: calc(100vw - 24px); }
+.smart-rule-group { border: 1px solid var(--line); padding: 10px; margin: 8px 0; min-width: 0; }
+.smart-rule-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 9px 0; }
+.smart-rule-row input:not([type='number']) { flex: 1; min-width: 100px; }
+.smart-rule-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.smart-rule-actions button, .smart-rule-row > button { border: 1px solid var(--border-strong); border-radius: 3px; padding: 4px 8px; }
 .playlist-name-field { display: flex; flex-direction: column; gap: 5px; }
 .playlist-name-field input, .playlist-rules input:not([type='checkbox']), .playlist-rules select { background: var(--input); border: 1px solid var(--border-strong); color: var(--text); border-radius: 3px; padding: 5px 7px; min-width: 0; }
 .playlist-rules { border: 1px solid var(--line); padding: 12px; margin-top: 15px; }

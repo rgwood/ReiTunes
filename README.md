@@ -25,7 +25,11 @@ Once upon a time I also had a Blazor client but that's been retired.
 
 ### Smart Playlists and tags
 
-Create a Smart Playlist from the sidebar’s playlist menu. To collect every song with bookmarks, set **Bookmarks** to **Has bookmarks** and leave the other rules at their defaults. The playlist updates when bookmarks are added or removed. You can combine this with favourites, play count and date added, or select **No bookmarks** instead.
+Create a Smart Playlist from the sidebar’s playlist menu. Choose **all (AND)** or **any (OR)** and add rules or nested groups. Rules cover duration, artist, album, title, play count, date added, favourites and bookmarks. For example: duration under 10 minutes AND (artist contains Beck OR artist contains Radiohead). The editor previews the matching tracks and their total duration. Existing playlists keep their original rules when edited.
+
+Duration appears as a sortable library column. Uploads read it from the audio file, downloads can use source metadata, and playback saves the measured length. Duration comparisons exclude unknown lengths; use the **Duration known** rule to find recordings that still need a measurement.
+
+Shuffle uses a saved order without repeating tracks until that order is exhausted. The browser player, Sonos and Up Next use the same order. Changing shuffle on Sonos updates the upcoming queue without restarting the current song.
 
 Open **Tags** in the sidebar to browse tags, or right-click a song and choose **Edit tags…** to add or remove them. Clicking a tag searches the library; you can also type `tag:house` in search. Manual edits and saved suggestions work without an AI provider. Automatic suggestions require `OPENROUTER_API_KEY` at build time or runtime, and use song metadata rather than listening to the audio.
 

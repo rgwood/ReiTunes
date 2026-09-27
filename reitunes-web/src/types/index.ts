@@ -17,6 +17,7 @@ export interface Tracklist {
 }
 
 export interface LibraryItem {
+  duration_seconds?: number | null;
   id: string;
   name: string;
   created_time_utc: string;
@@ -55,11 +56,21 @@ export interface QueueItem {
 }
 
 export interface SmartPlaylistRules {
+  expression?: SmartRule | null;
   added_within_days: number | null;
   play_state: 'any' | 'unplayed' | 'played';
   favourites_only: boolean;
   bookmark_state?: 'any' | 'with' | 'without';
 }
+
+export type Comparison = 'lt' | 'lte' | 'eq' | 'gte' | 'gt';
+export type SmartRule =
+  | { type: 'all' | 'any'; rules: SmartRule[] }
+  | { type: 'duration'; comparison: Comparison; seconds: number }
+  | { type: 'duration_known' | 'favourite' | 'bookmarks'; value: boolean }
+  | { type: 'play_count'; comparison: Comparison; value: number }
+  | { type: 'added_within'; days: number }
+  | { type: 'text'; field: 'name' | 'artist' | 'album'; comparison: 'contains' | 'is' | 'is_not' | 'does_not_contain'; value: string };
 
 export interface Playlist {
   id: string;

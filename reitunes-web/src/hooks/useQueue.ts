@@ -12,7 +12,24 @@ interface PersistedQueueState {
   contextIndex: number;
   contextName: string;
   shuffleEnabled: boolean;
+  shuffledIds: string[];
   repeatMode: RepeatMode;
+}
+
+function shuffled(items: LibraryItem[], currentId?: string): string[] {
+  const ids = items.filter(item => item.id !== currentId).map(item => item.id);
+  for (let i = ids.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [ids[i], ids[j]] = [ids[j], ids[i]];
+  }
+  return currentId ? [currentId, ...ids] : ids;
+}
+
+function orderedContext(state: PersistedQueueState): LibraryItem[] {
+  if (!state.shuffleEnabled) return state.contextItems;
+  const byId = new Map(state.contextItems.map(item => [item.id, item]));
+  const ids = [...new Set([...state.shuffledIds, ...byId.keys()])];
+  return ids.flatMap(id => byId.has(id) ? [byId.get(id)!] : []);
 }
 
 interface QueueState extends PersistedQueueState {
@@ -54,6 +71,7 @@ export const useQueueStore = create<QueueState>()(
       contextIndex: -1,
       contextName: 'Library',
       shuffleEnabled: false,
+      shuffledIds: [],
       repeatMode: 'off',
 
       addToQueue: (item) => set((state) => ({
@@ -83,6 +101,7 @@ export const useQueueStore = create<QueueState>()(
         contextItems: items,
         contextIndex: startIndex,
         contextName: name,
+        shuffledIds: state.shuffleEnabled ? shuffled(items, items[startIndex]?.id) : [],
         manualQueue: preserveManualQueue ? state.manualQueue : [],
       })),
 
@@ -99,39 +118,20 @@ export const useQueueStore = create<QueueState>()(
           return nextItem;
         }
 
-        if (state.shuffleEnabled) {
-          const remainingIndices: number[] = [];
-          for (let i = 0; i < state.contextItems.length; i++) {
-            if (i !== state.contextIndex) remainingIndices.push(i);
-          }
-          if (remainingIndices.length > 0) {
-            const randomIdx = remainingIndices[Math.floor(Math.random() * remainingIndices.length)];
-            set({ contextIndex: randomIdx });
-            return state.contextItems[randomIdx];
-          }
-          return null;
-        }
-
-        if (state.contextIndex < state.contextItems.length - 1) {
-          const nextIndex = state.contextIndex + 1;
-          set({ contextIndex: nextIndex });
-          return state.contextItems[nextIndex];
-        }
-
-        if (state.repeatMode === 'all' && state.contextItems.length > 0) {
-          set({ contextIndex: 0 });
-          return state.contextItems[0];
-        }
-
-        return null;
+        const next = (state.contextIndex < 0 ? orderedContext(state)[0] : state.getUpcomingContext()[0])
+          ?? (state.repeatMode === 'all' ? state.getCurrentItem() : null);
+        if (next) set({ contextIndex: state.contextItems.findIndex(item => item.id === next.id) });
+        return next;
       },
 
       playPrevious: () => {
         const state = get();
-        if (state.contextIndex > 0) {
-          const prevIndex = state.contextIndex - 1;
-          set({ contextIndex: prevIndex });
-          return state.contextItems[prevIndex];
+        const order = orderedContext(state);
+        const index = order.findIndex(item => item.id === state.getCurrentItem()?.id);
+        if (index > 0) {
+          const previous = order[index - 1];
+          set({ contextIndex: state.contextItems.findIndex(item => item.id === previous.id) });
+          return previous;
         }
         return null;
       },
@@ -158,7 +158,11 @@ export const useQueueStore = create<QueueState>()(
         return null;
       },
 
-      toggleShuffle: () => set((state) => ({ shuffleEnabled: !state.shuffleEnabled })),
+      toggleShuffle: () => set((state) => ({
+        shuffleEnabled: !state.shuffleEnabled,
+        shuffledIds: !state.shuffleEnabled ? shuffled(state.contextItems, state.contextItems[state.contextIndex]?.id) : [],
+        editVersion: state.editVersion + 1,
+      })),
 
       cycleRepeatMode: () => set((state) => {
         const modes: RepeatMode[] = ['off', 'all', 'one'];
@@ -172,9 +176,11 @@ export const useQueueStore = create<QueueState>()(
         const state = get();
         if (state.contextIndex < 0 || state.contextItems.length === 0) return [];
 
-        const remaining = state.contextItems.slice(state.contextIndex + 1);
+        const order = orderedContext(state);
+        const index = order.findIndex(item => item.id === state.contextItems[state.contextIndex]?.id);
+        const remaining = order.slice(index + 1);
         if (state.repeatMode === 'all') {
-          return [...remaining, ...state.contextItems.slice(0, state.contextIndex)];
+          return [...remaining, ...order.slice(0, index)];
         }
         return remaining;
       },
@@ -197,12 +203,20 @@ export const useQueueStore = create<QueueState>()(
       name: QUEUE_STORAGE_KEY,
       storage: createJSONStorage(() => localStorage),
       version: 1,
+      merge: (persisted, current) => {
+        const restored = { ...current, ...persisted as Partial<PersistedQueueState> };
+        if (restored.shuffleEnabled && !restored.shuffledIds.length) {
+          restored.shuffledIds = shuffled(restored.contextItems, restored.contextItems[restored.contextIndex]?.id);
+        }
+        return restored;
+      },
       partialize: (state) => ({
         manualQueue: state.manualQueue,
         contextItems: state.contextItems,
         contextIndex: state.contextIndex,
         contextName: state.contextName,
         shuffleEnabled: state.shuffleEnabled,
+        shuffledIds: state.shuffledIds,
         repeatMode: state.repeatMode,
       }),
     }

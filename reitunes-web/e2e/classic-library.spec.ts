@@ -17,6 +17,11 @@ async function backend(page: Page) {
   const playlists: Playlist[] = [{ id: 'p1', name: 'Late nights', items: {} }];
   const mutations: { method: string; path: string; body: Record<string, unknown> }[] = [];
   await page.route('**/api/items', route => route.fulfill({ json: songs }));
+  await page.route('**/api/tags', route => route.fulfill({ json: { enabled: false, items: {} } }));
+  await page.route('**/api/items/*/duration', async route => {
+    mutations.push({ method: route.request().method(), path: new URL(route.request().url()).pathname, body: route.request().postDataJSON() });
+    await route.fulfill({ status: 204 });
+  });
   await page.route(/\/api\/playlists(?:\/|$)/, async route => {
     const request = route.request(), method = request.method(), path = new URL(request.url()).pathname;
     const body = request.postData() ? request.postDataJSON() : {};
@@ -46,6 +51,7 @@ async function backend(page: Page) {
   await page.route('**/audio/*.mp3', route => route.fulfill({ body: '', contentType: 'audio/mpeg' }));
   await page.routeWebSocket('**/updates', () => {});
   await page.addInitScript(() => {
+    Object.defineProperty(HTMLMediaElement.prototype, 'readyState', { configurable: true, get() { return Number.isFinite(this.duration) ? HTMLMediaElement.HAVE_METADATA : HTMLMediaElement.HAVE_NOTHING; } });
     Object.defineProperty(HTMLMediaElement.prototype, 'play', { configurable: true, value() { this.dispatchEvent(new Event('play')); return Promise.resolve(); } });
     Object.defineProperty(HTMLMediaElement.prototype, 'pause', { configurable: true, value() { this.dispatchEvent(new Event('pause')); } });
   });
@@ -105,18 +111,19 @@ test('Smart Playlists save rules, survive reload and can be edited', async ({ pa
   await page.goto('/');
   await page.getByRole('button', { name: /New Smart Playlist/ }).click();
   await page.getByRole('textbox', { name: 'Name', exact: true }).fill('Fresh favourites');
-  await page.getByRole('combobox', { name: 'Date added rule' }).selectOption('recent');
-  await page.getByRole('combobox', { name: 'Play count', exact: true }).selectOption('unplayed');
-  await page.getByRole('checkbox', { name: 'Favourites only' }).check();
+  await page.getByRole('button', { name: 'Add rule', exact: true }).click();
+  await page.getByRole('combobox', { name: 'Rule field' }).selectOption('play_count');
+  await page.getByRole('button', { name: 'Add rule', exact: true }).click();
+  await page.getByRole('combobox', { name: 'Rule field' }).last().selectOption('favourite');
   await page.getByRole('button', { name: 'Create playlist', exact: true }).click();
   await expect(page.locator('tbody tr')).toHaveCount(1);
   await expect(page.locator('tbody tr')).toContainText('Apricots');
-  expect(playlists[1].smart_rules).toEqual({ added_within_days: 30, play_state: 'unplayed', favourites_only: true, bookmark_state: 'any' });
+  expect(playlists[1].smart_rules?.expression).toEqual({ type: 'all', rules: [{ type: 'play_count', comparison: 'eq', value: 0 }, { type: 'favourite', value: true }] });
   await page.reload();
   await page.getByRole('button', { name: 'Fresh favourites', exact: true }).click();
   await expect(page.locator('tbody tr')).toHaveCount(1);
   await page.getByRole('button', { name: 'Edit rules…', exact: true }).click();
-  await page.getByRole('combobox', { name: 'Play count', exact: true }).selectOption('played');
+  await page.getByRole('combobox', { name: 'Number comparison' }).selectOption('gt');
   await page.getByRole('button', { name: 'Save changes', exact: true }).click();
   await expect(page.locator('tbody tr')).toContainText('Glue');
   await page.getByRole('button', { name: 'Fresh favourites', exact: true }).click({ button: 'right' });
@@ -136,14 +143,15 @@ test('a bookmark Smart Playlist includes old played songs and updates live as bo
   await page.getByRole('button', { name: /New Smart Playlist/ }).click();
   const dialog = page.getByRole('dialog', { name: 'New Smart Playlist', exact: true });
   await dialog.getByRole('textbox', { name: 'Name', exact: true }).fill('Bookmarked tracks');
-  await dialog.getByRole('combobox', { name: 'Bookmarks', exact: true }).selectOption('with');
-  await expect(dialog.getByText('1 matching tracks · updates automatically')).toBeVisible();
+  await dialog.getByRole('button', { name: 'Add rule', exact: true }).click();
+  await dialog.getByRole('combobox', { name: 'Rule field' }).selectOption('bookmarks');
+  await expect(dialog.getByText(/1 matching track/)).toBeVisible();
   await page.screenshot({ path: testInfo.outputPath('bookmark-smart-playlist.png') });
   await dialog.getByRole('button', { name: 'Create playlist', exact: true }).click();
   const rows = page.locator('tbody tr');
   await expect(rows).toHaveCount(1);
   await expect(rows).toContainText('Apricots');
-  expect(playlists[1].smart_rules).toEqual({ added_within_days: null, play_state: 'any', favourites_only: false, bookmark_state: 'with' });
+  expect(playlists[1].smart_rules?.expression).toEqual({ type: 'all', rules: [{ type: 'bookmarks', value: true }] });
 
   updates = undefined;
   await page.reload();
@@ -160,12 +168,46 @@ test('a bookmark Smart Playlist includes old played songs and updates live as bo
   await expect(source.locator('.source-count')).toHaveText('1');
 
   await page.getByRole('button', { name: 'Edit rules…', exact: true }).click();
-  const bookmarks = page.getByRole('combobox', { name: 'Bookmarks', exact: true });
-  await expect(bookmarks).toHaveValue('with');
-  await bookmarks.selectOption('without');
+  const bookmarks = page.getByRole('combobox', { name: 'Rule value', exact: true });
+  await expect(bookmarks).toHaveValue('true');
+  await bookmarks.selectOption('false');
   await page.getByRole('button', { name: 'Save changes', exact: true }).click();
   await expect(rows).toHaveCount(2);
   await expect(page.getByRole('row').filter({ hasText: 'Glue' })).toHaveCount(0);
+});
+
+test('nested OR groups combine with duration and save their previewed membership', async ({ page }, testInfo) => {
+  const { playlists } = await backend(page);
+  await page.route('**/api/items', route => route.fulfill({ json: songs.map((song, index) => ({ ...song, duration_seconds: index === 0 ? 300 : index === 1 ? 3600 : null })) }));
+  await page.goto('/');
+  await page.getByRole('button', { name: /New Smart Playlist/ }).click();
+  await page.getByRole('textbox', { name: 'Name', exact: true }).fill('Short Bicep or Four Tet');
+  await page.getByRole('button', { name: 'Add rule', exact: true }).click();
+  await page.getByRole('spinbutton', { name: 'Duration in minutes' }).fill('10');
+  await page.getByRole('button', { name: 'Add group', exact: true }).click();
+  await page.getByRole('textbox', { name: 'Text value' }).fill('Bicep');
+  await page.getByRole('button', { name: 'Add rule', exact: true }).first().click();
+  await page.getByRole('combobox', { name: 'Rule field' }).last().selectOption('artist');
+  await page.getByRole('textbox', { name: 'Text value' }).last().fill('Four Tet');
+  await expect(page.getByText(/1 matching track/)).toBeVisible();
+  await page.screenshot({ path: testInfo.outputPath('nested-smart-rules.png') });
+  await page.getByRole('button', { name: 'Create playlist', exact: true }).click();
+  expect(playlists[1].smart_rules?.expression).toMatchObject({ type: 'all', rules: [{ type: 'duration', seconds: 600 }, { type: 'any', rules: [{ field: 'artist', value: 'Bicep' }, { field: 'artist', value: 'Four Tet' }] }] });
+  await expect(page.locator('tbody tr')).toHaveCount(1);
+  await expect(page.locator('tbody tr')).toContainText('Apricots');
+  await expect(page.locator('tbody tr [data-column=duration_seconds]')).toHaveText('5:00');
+});
+
+test('playing audio records its measured duration for the correct library file', async ({ page }) => {
+  const { mutations } = await backend(page);
+  await page.goto('/');
+  await page.getByRole('row').filter({ hasText: 'Apricots' }).dblclick();
+  await page.locator('audio').evaluate(audio => {
+    Object.defineProperty(audio, 'duration', { configurable: true, value: 301.25 });
+    audio.dispatchEvent(new Event('loadedmetadata'));
+  });
+  await expect.poll(() => mutations.find(request => request.path.endsWith('/duration'))?.body)
+    .toEqual({ duration_seconds: 301.25, file_path: sample.file_path });
 });
 
 for (const width of [1440, 1024, 390]) {

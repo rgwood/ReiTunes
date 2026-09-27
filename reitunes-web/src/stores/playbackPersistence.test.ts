@@ -128,6 +128,27 @@ describe('playback persistence', () => {
     expect(saved.state.shuffleEnabled).toBe(true);
   });
 
+  it('uses one stable shuffle order for preview, next, previous, and reload without repeats', async () => {
+    const tracks = ['a', 'b', 'c', 'd', 'e'].map(id => item(id));
+    const queue = useQueueStore.getState();
+    queue.setContext(tracks, 2, 'Test');
+    queue.toggleShuffle();
+    const version = useQueueStore.getState().editVersion;
+    const upcoming = queue.getUpcomingContext();
+    expect(upcoming).toHaveLength(4);
+    expect(new Set(upcoming.map(item => item.id)).size).toBe(4);
+    expect(upcoming.some(item => item.id === 'c')).toBe(false);
+    await useQueueStore.persist.rehydrate();
+    expect(queue.getUpcomingContext()).toEqual(upcoming);
+    expect(queue.playNext()).toEqual(upcoming[0]);
+    expect(queue.playPrevious()?.id).toBe('c');
+    for (const next of upcoming) expect(queue.playNext()).toEqual(next);
+    expect(queue.playNext()).toBeNull();
+    expect(queue.getUpcomingContext()).toEqual([]);
+    queue.toggleShuffle();
+    expect(useQueueStore.getState().editVersion).toBe(version + 1);
+  });
+
   it('playing a queued duplicate consumes only that occurrence and keeps other additions', () => {
     const one = item('one'), two = item('two');
     useQueueStore.setState({ manualQueue: [one, two, one], contextItems: [one, two], contextIndex: 0 });

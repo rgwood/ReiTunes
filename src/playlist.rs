@@ -51,13 +51,57 @@ pub struct SmartPlaylistRules {
     pub favourites_only: bool,
     #[serde(default)]
     pub bookmark_state: BookmarkState,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub expression: Option<SmartRule>,
 }
 
 impl SmartPlaylistRules {
     pub fn is_valid(&self) -> bool {
         self.added_within_days.is_none_or(|days| (1..=3650).contains(&days))
+            && self.expression.as_ref().is_none_or(|rule| rule.is_valid(0, &mut 0))
     }
 }
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
+pub enum SmartRule {
+    All { rules: Vec<SmartRule> },
+    Any { rules: Vec<SmartRule> },
+    Duration { comparison: Comparison, seconds: f64 },
+    DurationKnown { value: bool },
+    PlayCount { comparison: Comparison, value: u32 },
+    AddedWithin { days: u32 },
+    Text { field: TextField, comparison: TextComparison, value: String },
+    Favourite { value: bool },
+    Bookmarks { value: bool },
+}
+
+impl SmartRule {
+    fn is_valid(&self, depth: usize, count: &mut usize) -> bool {
+        *count += 1;
+        if depth > 4 || *count > 50 { return false; }
+        match self {
+            Self::All { rules } | Self::Any { rules } => rules.len() <= 20
+                && rules.iter().all(|rule| rule.is_valid(depth + 1, count)),
+            Self::Duration { seconds, .. } => seconds.is_finite() && *seconds >= 0.0 && *seconds <= 366.0 * 86400.0,
+            Self::AddedWithin { days } => (1..=3650).contains(days),
+            Self::Text { value, .. } => !value.trim().is_empty() && value.len() <= 500,
+            _ => true,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Comparison { Lt, Lte, Eq, Gte, Gt }
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TextField { Name, Artist, Album }
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TextComparison { Contains, Is, IsNot, DoesNotContain }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -261,7 +305,7 @@ mod tests {
         let id = Uuid::new_v4();
         let initial: SmartPlaylistRules = serde_json::from_str(r#"{"added_within_days":30,"play_state":"unplayed","favourites_only":false}"#)?;
         assert_eq!(initial.bookmark_state, BookmarkState::Any);
-        let updated = SmartPlaylistRules { added_within_days: None, play_state: PlayState::Played, favourites_only: true, bookmark_state: BookmarkState::With };
+        let updated = SmartPlaylistRules { added_within_days: None, play_state: PlayState::Played, favourites_only: true, bookmark_state: BookmarkState::With, expression: None };
         for event in [
             PlaylistEvent::PlaylistCreatedEvent { name: "Fresh music".into(), smart_rules: Some(initial.clone()) },
             PlaylistEvent::SmartPlaylistRulesChangedEvent { rules: updated.clone() },

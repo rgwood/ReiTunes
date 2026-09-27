@@ -35,6 +35,7 @@ use crate::storage::S3Storage;
 
 mod llm;
 mod metadata;
+mod durations;
 mod import_metadata;
 mod smapi;
 mod sonos;
@@ -254,6 +255,7 @@ async fn main() -> Result<()> {
                 .merge(discovery::router(discovery))
                 .merge(tagging::router(tagging))
                 .route("/items", get(items_handler))
+                .route("/items/{id}/duration", axum::routing::put(durations::save))
                 .route("/items/{id}/tracklist/find", post(tracklists::find))
                 .route("/items/{id}/tracklist", axum::routing::put(tracklists::save))
                 .route("/upload", post(upload_handler))
@@ -419,6 +421,7 @@ async fn frontend_log_handler(
 /// Library item response with computed URL
 #[derive(Debug, Clone, Serialize)]
 struct LibraryItemResponse {
+    duration_seconds: Option<f64>,
     id: Uuid,
     name: String,
     created_time_utc: jiff::civil::DateTime,
@@ -436,6 +439,7 @@ struct LibraryItemResponse {
 impl LibraryItemResponse {
     fn from_item(item: &LibraryItem, storage: &S3Storage) -> Self {
         Self {
+            duration_seconds: item.duration_seconds,
             id: item.id,
             name: item.name.clone(),
             created_time_utc: item.created_time_utc,
@@ -1176,6 +1180,7 @@ async fn upload_handler(
             }
         };
 
+        let duration_seconds = metadata.duration.map(|duration| duration.as_secs_f64());
         // Get name from ID3 title, or fallback to LLM, or filename
         let (name, artist, album, track_number) = if metadata.has_info() {
             (
@@ -1217,6 +1222,12 @@ async fn upload_handler(
         save_event_to_db(&conn, &event_with_metadata)?;
 
         library.apply(&event_with_metadata);
+
+        if let Some(seconds) = duration_seconds.filter(|seconds| durations::valid(*seconds)) {
+            let duration_event = EventWithMetadata::new(item_id, Event::LibraryItemDurationChangedEvent { seconds })?;
+            save_event_to_db(&conn, &duration_event)?;
+            library.apply(&duration_event);
+        }
 
         if let Some(updated_item) = library.items.get(&item_id) {
             let response = LibraryItemResponse::from_item(updated_item, &app_state.storage);
@@ -1592,6 +1603,8 @@ struct AddItemRequest {
     file_path: String,
     #[serde(default)]
     source_url: Option<String>,
+    #[serde(default)]
+    duration_seconds: Option<f64>,
 }
 
 #[debug_handler]
@@ -1637,6 +1650,7 @@ async fn add_item_handler(
         }
     };
 
+    let duration_path = request.file_path.clone();
     let event = Event::LibraryItemCreatedEvent {
         name: metadata.name,
         artist: metadata.artist,
@@ -1674,6 +1688,7 @@ async fn add_item_handler(
 
     drop(library);
     queue_tag_suggestions(&app_state, item_id).await;
+    durations::import(app_state.clone(), item_id, duration_path, request.source_url, request.duration_seconds);
     Ok(StatusCode::CREATED)
 }
 
@@ -2012,7 +2027,7 @@ mod tests {
         };
         let id = Uuid::new_v4();
         let item_id = Uuid::new_v4();
-        let rules = SmartPlaylistRules { added_within_days: Some(0), play_state: PlayState::Any, favourites_only: false, bookmark_state: BookmarkState::Any };
+        let rules = SmartPlaylistRules { added_within_days: Some(0), play_state: PlayState::Any, favourites_only: false, bookmark_state: BookmarkState::Any, expression: None };
         let response = create_playlist_handler(State(state.clone()), JsonExtractor(CreatePlaylistRequest {
             name: "Invalid".into(), smart_rules: Some(rules),
         })).await.unwrap();
@@ -2033,7 +2048,7 @@ mod tests {
             let response = reorder_playlist_handler(State(state.clone()), Path(id), JsonExtractor(PlaylistOrderRequest { library_item_ids: ids })).await.unwrap();
             assert_eq!(response, StatusCode::BAD_REQUEST);
         }
-        let valid_rules = SmartPlaylistRules { added_within_days: None, play_state: PlayState::Any, favourites_only: false, bookmark_state: BookmarkState::Any };
+        let valid_rules = SmartPlaylistRules { added_within_days: None, play_state: PlayState::Any, favourites_only: false, bookmark_state: BookmarkState::Any, expression: None };
         let response = update_playlist_rules_handler(State(state.clone()), Path(id), JsonExtractor(valid_rules.clone())).await.unwrap();
         assert_eq!(response, StatusCode::BAD_REQUEST);
         state.playlists.write().await.playlists.get_mut(&id).unwrap().smart_rules = Some(valid_rules);

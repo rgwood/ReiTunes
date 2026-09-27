@@ -9,7 +9,7 @@ import { sonosRequest, SonosRequestError } from '../utils/sonosRequest';
 
 function sonosQueueFor(item: LibraryItem): LibraryItem[] {
   const queue = useQueueStore.getState();
-  const upcomingContext = queue.contextIndex >= 0 ? queue.contextItems.slice(queue.contextIndex + 1) : [];
+  const upcomingContext = queue.getUpcomingContext();
   return [item, ...queue.manualQueue, ...upcomingContext].slice(0, 500);
 }
 

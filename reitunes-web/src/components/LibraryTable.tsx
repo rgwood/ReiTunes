@@ -34,6 +34,7 @@ function editableField(target: HTMLElement): EditableField {
   return editableFields.find(value => value === field) ?? 'name';
 }
 
+import { durationLabel, trackDuration } from '../utils/duration';
 const columnHelper = createColumnHelper<LibraryItem>();
 const savedViews = new Map<string, { sorting: SortingState; scrollTop: number }>();
 const COLUMN_DRAG_TYPE = 'application/x-reitunes-column';
@@ -334,6 +335,10 @@ export function LibraryTable({ items, searchQuery, onlyFavouriteTracks = false, 
       header: '#',
       cell: (info) => info.getValue() ?? '',
       size: 40,
+    }),
+    columnHelper.accessor(item => trackDuration(item) ?? undefined, {
+      id: 'duration_seconds', header: 'Duration', cell: info => durationLabel(info.getValue()),
+      sortUndefined: 'last', size: 65,
     }),
     columnHelper.accessor('play_count', {
       header: 'Plays',

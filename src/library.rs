@@ -194,6 +194,7 @@ impl Library {
                     bookmarks: IndexMap::new(),
                     tracklist: None,
                     is_favorite: false,
+                    duration_seconds: None,
                 };
                 self.items.insert(item.id, item);
             }
@@ -214,6 +215,7 @@ impl Library {
             Event::LibraryItemFilePathChangedEvent { new_file_path } => {
                 if let Some(item) = self.items.get_mut(&event.aggregate_id) {
                     item.file_path = new_file_path.clone();
+                    item.duration_seconds = None;
                 }
             }
             Event::LibraryItemArtistChangedEvent { new_artist } => {
@@ -301,6 +303,13 @@ impl Library {
                     item.bookmarks.sort_by(|_, a, _, b| a.position.cmp(&b.position));
                 }
             }
+            Event::LibraryItemDurationChangedEvent { seconds } => {
+                if seconds.is_finite() && *seconds > 0.0 {
+                    if let Some(item) = self.items.get_mut(&event.aggregate_id) {
+                        item.duration_seconds = Some(*seconds);
+                    }
+                }
+            }
             Event::LibraryItemTracklistChangedEvent { tracklist } => {
                 if let Some(item) = self.items.get_mut(&event.aggregate_id) {
                     item.tracklist = tracklist.clone();
@@ -325,6 +334,7 @@ impl Library {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "$type", rename_all_fields = "PascalCase")]
 pub enum Event {
+    LibraryItemDurationChangedEvent { seconds: f64 },
     LibraryItemPlayedEvent,
     LibraryItemCreatedEvent {
         name: String,
@@ -387,6 +397,7 @@ pub enum Event {
 /// Library item representation
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct LibraryItem {
+    pub duration_seconds: Option<f64>,
     pub id: Uuid,
     pub name: String,
     pub created_time_utc: DateTime,

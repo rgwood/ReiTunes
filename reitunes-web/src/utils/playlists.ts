@@ -1,9 +1,61 @@
-import type { LibraryItem, Playlist, SmartPlaylistRules } from '../types';
+import type { Comparison, LibraryItem, Playlist, SmartPlaylistRules, SmartRule } from '../types';
 import { hasFavourite } from './tracklists';
+import { trackDuration } from './duration';
 
 export const TRACK_DRAG_TYPE = 'application/x-reitunes-tracks';
 
+const compare = (value: number, operator: Comparison, expected: number) => {
+  switch (operator) {
+    case 'lt': return value < expected;
+    case 'lte': return value <= expected;
+    case 'eq': return value === expected;
+    case 'gte': return value >= expected;
+    case 'gt': return value > expected;
+  }
+};
+
+export function matchesRule(item: LibraryItem, rule: SmartRule, now: number): boolean {
+  switch (rule.type) {
+    case 'all': return rule.rules.every(child => matchesRule(item, child, now));
+    case 'any': return rule.rules.some(child => matchesRule(item, child, now));
+    case 'duration': {
+      const duration = trackDuration(item);
+      return duration !== null && compare(duration, rule.comparison, rule.seconds);
+    }
+    case 'duration_known': return (trackDuration(item) !== null) === rule.value;
+    case 'play_count': return compare(item.play_count, rule.comparison, rule.value);
+    case 'favourite': return hasFavourite(item) === rule.value;
+    case 'bookmarks': return (Object.keys(item.bookmarks).length > 0) === rule.value;
+    case 'added_within': {
+      const date = item.created_time_utc;
+      const added = Date.parse(/Z|[+-]\d\d:\d\d$/.test(date) ? date : date + 'Z');
+      return Number.isFinite(added) && added >= now - rule.days * 86400000;
+    }
+    case 'text': {
+      const value = item[rule.field].toLocaleLowerCase(), expected = rule.value.trim().toLocaleLowerCase();
+      if (!expected) return false;
+      switch (rule.comparison) {
+        case 'is': return value === expected;
+        case 'is_not': return value !== expected;
+        case 'contains': return value.includes(expected);
+        case 'does_not_contain': return !value.includes(expected);
+      }
+    }
+  }
+}
+
+export function ruleExpression(rules?: SmartPlaylistRules | null): SmartRule {
+  if (rules?.expression) return rules.expression;
+  const children: SmartRule[] = [];
+  if (rules?.added_within_days != null) children.push({ type: 'added_within', days: rules.added_within_days });
+  if (rules?.favourites_only) children.push({ type: 'favourite', value: true });
+  if (rules?.play_state && rules.play_state !== 'any') children.push({ type: 'play_count', comparison: rules.play_state === 'played' ? 'gt' : 'eq', value: 0 });
+  if (rules?.bookmark_state && rules.bookmark_state !== 'any') children.push({ type: 'bookmarks', value: rules.bookmark_state === 'with' });
+  return { type: 'all', rules: children };
+}
+
 export function matchesSmartPlaylist(item: LibraryItem, rules: SmartPlaylistRules, now: number): boolean {
+  if (rules.expression) return matchesRule(item, rules.expression, now);
   if (rules.favourites_only && !hasFavourite(item)) return false;
   const hasBookmarks = Object.keys(item.bookmarks).length > 0;
   if (rules.bookmark_state === 'with' && !hasBookmarks) return false;

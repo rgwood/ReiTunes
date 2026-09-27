@@ -9,6 +9,7 @@ import { usePlaybackTargetStore } from '../stores/playbackTargetStore';
 import type { LibraryItem } from '../types';
 import { audioDiagnostics, observePlaybackMedia, recordPlaybackEvent } from '../utils/playbackDiagnostics';
 import { createAudioRecovery, isRetryableMediaError, type AudioRecoveryStatus } from '../utils/audioRecovery';
+import { saveDuration, trackDuration } from '../utils/duration';
 
 // Minimal SVG icons - consistent 16px size, 1.5px stroke
 const Icons = {
@@ -158,7 +159,7 @@ export function AudioPlayer({ audioRef: sharedAudioRef, items, onPlaybackPositio
   const sonosPositionReadyAfterRef = useRef(0);
 
   const [currentTime, setCurrentTimeLocal] = useState(0);
-  const [duration, setDurationLocal] = useState(0);
+  const [loadedDuration, setDurationLocal] = useState(0);
   const [sonosVolumeDraft, setSonosVolumeDraft] = useState<number | null>(null);
   const [sonosSeekDraft, setSonosSeekDraft] = useState<number | null>(null);
   const [bookmarkFeedback, setBookmarkFeedback] = useState<'idle' | 'success' | 'error'>('idle');
@@ -193,6 +194,7 @@ export function AudioPlayer({ audioRef: sharedAudioRef, items, onPlaybackPositio
   const sonosIsPlaying =
     sonosPlayback?.playbackState === 'PLAYBACK_STATE_PLAYING' ||
     sonosPlayback?.playbackState === 'PLAYBACK_STATE_BUFFERING';
+  const duration = loadedDuration || (currentItem ? trackDuration(currentItem) ?? 0 : 0);
   const mediaSessionActive = !!currentItem && (target.kind === 'browser' ||
     (sonosSessionActive && sonosPlayback?.sourceItemId === currentItem.id));
   const mediaPosition = target.kind === 'sonos' ? (sonos.requestedSeekMillis ?? sonos.positionMillis) / 1000 : currentTime;
@@ -480,6 +482,10 @@ export function AudioPlayer({ audioRef: sharedAudioRef, items, onPlaybackPositio
     if (audioRef.current) {
       isChangingSourceRef.current = false;
       setDurationLocal(audioRef.current.duration);
+      const item = usePlayerStore.getState().currentItem;
+      if (item && lastItemIdRef.current === item.id) {
+        void saveDuration(item, audioRef.current.duration).catch(console.warn);
+      }
     }
   }, []);
 
@@ -863,6 +869,12 @@ export function AudioPlayer({ audioRef: sharedAudioRef, items, onPlaybackPositio
           skipDisabled={isSending || isSwitchingOutput || sonos.isTransportPending || !sonosSessionActive}
           playDisabled={sonosTransportDisabled} seekDisabled={sonosSeekDisabled} />
         <div className="sonos-controls">
+          <button type="button" onClick={toggleShuffle} aria-label={shuffleEnabled ? 'Shuffle on' : 'Shuffle off'}
+            title={shuffleEnabled ? 'Shuffle on' : 'Shuffle off'} aria-pressed={shuffleEnabled}
+            disabled={isSending || isSwitchingOutput || sonos.isTransportPending}
+            className={`p-1.5 rounded ${shuffleEnabled ? 'text-solarized-green bg-solarized-base02' : 'text-solarized-base0'}`}>
+            {Icons.shuffle}
+          </button>
           <div className="sonos-volume player-volume">
             <button
               type="button"

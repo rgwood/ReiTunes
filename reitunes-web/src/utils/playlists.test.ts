@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { matchesSmartPlaylist, moveTracksBefore, playlistItems } from './playlists';
+import { matchesSmartPlaylist, moveTracksBefore, playlistItems, ruleExpression } from './playlists';
 import type { LibraryItem, SmartPlaylistRules } from '../types';
 
 const now = Date.parse('2026-09-22T12:00:00Z');
@@ -8,6 +8,24 @@ const item: LibraryItem = { id: 'a', name: 'A', artist: 'Artist', album: '', fil
 const rules: SmartPlaylistRules = { added_within_days: 30, play_state: 'unplayed', favourites_only: true };
 
 describe('Smart Playlists', () => {
+  it('combines duration and nested OR conditions, excluding unknown lengths', () => {
+    const nested: SmartPlaylistRules = { ...rules, expression: { type: 'all', rules: [
+      { type: 'duration', comparison: 'lt', seconds: 600 },
+      { type: 'any', rules: [{ type: 'text', field: 'artist', comparison: 'contains', value: 'beck' }, { type: 'favourite', value: true }] },
+    ] } };
+    expect(matchesSmartPlaylist({ ...item, duration_seconds: 300 }, nested, now)).toBe(true);
+    expect(matchesSmartPlaylist({ ...item, duration_seconds: 600 }, nested, now)).toBe(false);
+    expect(matchesSmartPlaylist(item, nested, now)).toBe(false);
+    expect(matchesSmartPlaylist({ ...item, duration_seconds: 300, is_favorite: false, artist: 'Beck' }, nested, now)).toBe(true);
+    expect(matchesSmartPlaylist({ ...item, duration_seconds: 300, is_favorite: false }, nested, now)).toBe(false);
+  });
+  it('converts existing smart rules without changing their membership', () => {
+    for (const old of [rules, { ...rules, bookmark_state: 'without' as const }, { ...rules, play_state: 'played' as const }]) {
+      for (const track of [item, { ...item, play_count: 2 }, { ...item, is_favorite: false }]) {
+        expect(matchesSmartPlaylist(track, { ...old, expression: ruleExpression(old) }, now)).toBe(matchesSmartPlaylist(track, old, now));
+      }
+    }
+  });
   it('combines rules and updates membership as metadata and time change', () => {
     expect(matchesSmartPlaylist(item, rules, now)).toBe(true);
     expect(matchesSmartPlaylist({ ...item, play_count: 1 }, rules, now)).toBe(false);

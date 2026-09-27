@@ -38,6 +38,18 @@ async function edit(page: Page, action: 'addNext' | 'addToQueue' | 'clearManualQ
   }, { action, index });
 }
 
+test('shuffle changes the upcoming Sonos queue in place and restores ordinary order', async ({ page }) => {
+  const { requests, sonos } = await setup(page);
+  await page.evaluate(() => { Math.random = () => 0; });
+  await page.getByRole('button', { name: 'Shuffle off', exact: true }).click();
+  await expect.poll(() => requests.at(-1)?.itemIds).toEqual(['track-2', 'track-1']);
+  await expect(page.getByRole('button', { name: 'Shuffle on', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  await page.getByRole('button', { name: 'Shuffle on', exact: true }).click();
+  await expect.poll(() => requests.at(-1)?.itemIds).toEqual(['track-1', 'track-2']);
+  expect(sonos.queueRequests).toHaveLength(0);
+  expect(sonos.commands).toEqual([]);
+});
+
 test('Play Next reaches Sonos during playback and is consumed before the library resumes', async ({ page }) => {
   const { sonos, items, requests } = await setup(page);
   await page.getByText('Queued song', { exact: true }).click({ button: 'right' });

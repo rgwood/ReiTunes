@@ -1350,6 +1350,7 @@ mod tests {
         library.items.insert(
             id,
             LibraryItem {
+                duration_seconds: None,
                 id,
                 name: "Death Song".into(),
                 artist: "Robbie Basho".into(),

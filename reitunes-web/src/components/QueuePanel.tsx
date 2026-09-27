@@ -34,9 +34,7 @@ export function QueuePanel() {
   const [pending, setPending] = useState(false);
   const [showAll, setShowAll] = useState(false);
   const busy = pending || target.isSending || target.isSwitchingOutput || target.isTransportPending;
-  const upcoming = queue.shuffleEnabled
-    ? queue.contextItems.filter(item => item.id !== currentItem?.id)
-    : queue.getUpcomingContext();
+  const upcoming = queue.getUpcomingContext();
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }));
 
@@ -77,7 +75,7 @@ export function QueuePanel() {
       </section>}
       {!!upcoming.length && <section aria-label={`From ${queue.contextName}`}>
         <h3>{queue.shuffleEnabled ? 'Shuffle from' : 'Then from'} {queue.contextName}<span>{upcoming.length}</span></h3>
-        {queue.shuffleEnabled && <p className="queue-note">Next is chosen at random. You can also pick a track.</p>}
+        {queue.shuffleEnabled && <p className="queue-note">Tracks play in this shuffled order.</p>}
         <ol>{(showAll ? upcoming : upcoming.slice(0, 30)).map((item, index) => <li className="queue-row" key={`${index}-${item.id}`}>
           <TrackButton item={item} onPlay={() => void playNow('context', index, item.id)} disabled={busy} />
         </li>)}</ol>

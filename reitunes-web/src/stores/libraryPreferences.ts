@@ -11,6 +11,7 @@ export const libraryColumns = [
   { id: 'album', label: 'Album', width: 140, min: 70 },
   { id: 'bookmarks', label: 'Bookmarks', width: 100, min: 70 },
   { id: 'play_count', label: 'Plays', width: 50, min: 45 },
+  { id: 'duration_seconds', label: 'Duration', width: 65, min: 60 },
   { id: 'tags', label: 'Tags', width: 160, min: 100 },
   { id: 'track_number', label: 'Track number', width: 40, min: 40 },
   { id: 'created_time_utc', label: 'Date added', width: 130, min: 100 },

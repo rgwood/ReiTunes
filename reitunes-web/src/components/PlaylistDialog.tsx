@@ -2,7 +2,9 @@ import { useEffect, useId, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import type { LibraryItem, Playlist, SmartPlaylistRules } from '../types';
 import { playlistRequest } from '../hooks/usePlaylists';
-import { matchesSmartPlaylist } from '../utils/playlists';
+import { matchesSmartPlaylist, ruleExpression } from '../utils/playlists';
+import { SmartRulesEditor } from './SmartRulesEditor';
+import { durationLabel, trackDuration } from '../utils/duration';
 
 export interface PlaylistDraft {
   playlist?: Playlist;
@@ -24,11 +26,13 @@ export function PlaylistDialog({ draft, items, onClose, onSaved }: {
   const [name, setName] = useState(draft.playlist?.name ?? '');
   const [rules, setRules] = useState<SmartPlaylistRules>(() => ({
     added_within_days: null, play_state: 'any', favourites_only: false, bookmark_state: 'any',
-    ...draft.playlist?.smart_rules,
+    expression: ruleExpression(draft.playlist?.smart_rules),
   }));
   const [pending, setPending] = useState(false);
   const [error, setError] = useState('');
   const [now] = useState(Date.now);
+  const matching = items.filter(item => matchesSmartPlaylist(item, rules, now));
+  const knownDurations = matching.map(trackDuration).filter((seconds): seconds is number => seconds !== null);
   useEffect(() => { dialog.current?.showModal(); nameInput.current?.focus(); }, []);
 
   async function save(event: React.FormEvent) {
@@ -62,23 +66,11 @@ export function PlaylistDialog({ draft, items, onClose, onSaved }: {
       <label className="playlist-name-field">Name<input ref={nameInput} required maxLength={120} value={name}
         onChange={event => setName(event.target.value)} disabled={pending} /></label>
       {draft.smart && <fieldset disabled={pending} className="playlist-rules">
-        <legend>Match all of these rules</legend>
-        <label>Date added<select aria-label="Date added rule" value={rules.added_within_days === null ? 'any' : 'recent'}
-          onChange={event => setRules({ ...rules, added_within_days: event.target.value === 'any' ? null : 30 })}>
-          <option value="any">Any time</option><option value="recent">In the last</option>
-        </select></label>
-        {rules.added_within_days !== null && <label>Days<input aria-label="Days since added" type="number" min={1} max={3650} required
-          value={rules.added_within_days || ''} onChange={event => setRules({ ...rules, added_within_days: Number(event.target.value) })} /></label>}
-        <label>Play count<select value={rules.play_state} onChange={event => setRules({ ...rules, play_state: event.target.value as SmartPlaylistRules['play_state'] })}>
-          <option value="any">Any</option><option value="unplayed">Is 0</option><option value="played">Is greater than 0</option>
-        </select></label>
-        <label>Bookmarks<select value={rules.bookmark_state ?? 'any'}
-          onChange={event => setRules({ ...rules, bookmark_state: event.target.value as SmartPlaylistRules['bookmark_state'] })}>
-          <option value="any">Any</option><option value="with">Has bookmarks</option><option value="without">No bookmarks</option>
-        </select></label>
-        <label className="playlist-favourites"><input type="checkbox" checked={rules.favourites_only}
-          onChange={event => setRules({ ...rules, favourites_only: event.target.checked })} /> Favourites only</label>
-        <p>{items.filter(item => matchesSmartPlaylist(item, rules, now)).length} matching tracks · updates automatically</p>
+        <legend>Rules</legend>
+        <SmartRulesEditor rule={rules.expression!} onChange={expression => setRules({ ...rules, expression })} />
+        <p>{matching.length} matching {matching.length === 1 ? 'track' : 'tracks'} · {durationLabel(knownDurations.reduce((sum, seconds) => sum + seconds, 0))} total
+          {knownDurations.length < matching.length && ` · ${matching.length - knownDurations.length} with unknown duration`}</p>
+        <p className="tracklist-help">Updates automatically. Duration comparisons exclude tracks whose duration is unknown.</p>
       </fieldset>}
       {!draft.smart && !!draft.itemIds?.length && <p>{draft.itemIds.length} selected tracks will be included.</p>}
       {error && <p role="alert" className="library-edit-error">{error}</p>}
