@@ -36,6 +36,7 @@ use crate::storage::S3Storage;
 mod llm;
 mod metadata;
 mod durations;
+mod file_info;
 mod import_metadata;
 mod smapi;
 mod sonos;
@@ -256,6 +257,7 @@ async fn main() -> Result<()> {
                 .merge(tagging::router(tagging))
                 .route("/items", get(items_handler))
                 .route("/items/{id}/duration", axum::routing::put(durations::save))
+                .route("/items/{id}/file-info", get(file_info::get))
                 .route("/items/{id}/tracklist/find", post(tracklists::find))
                 .route("/items/{id}/tracklist", axum::routing::put(tracklists::save))
                 .route("/upload", post(upload_handler))

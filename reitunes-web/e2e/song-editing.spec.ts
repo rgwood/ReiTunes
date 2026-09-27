@@ -12,6 +12,13 @@ async function setup(page: Page, otherMetadata = false) {
   const writes: { id: string; field: string; value: string }[] = [];
   const plays: string[] = [];
   await page.route('**/api/items', route => route.fulfill({ json: items }));
+  await page.route('**/api/items/*/file-info', route => {
+    const item = items.find(item => route.request().url().includes(item.id))!;
+    return route.fulfill({ json: {
+      file_path: item.file_path, size_bytes: 8_388_608, format: 'MPEG audio', codec: 'MP3 (MPEG Layer III)',
+      bitrate_kbps: 256, duration_seconds: 223.75, sample_rate_hz: 44100, channels: 2, bit_depth: null, error: null,
+    } });
+  });
   await page.route('**/api/playlists', route => route.fulfill({ json: [] }));
   await page.route('**/api/tags', route => route.fulfill({ json: { enabled: false, items: {} } }));
   await page.route('**/api/log', route => route.fulfill({ status: 200 }));
@@ -44,6 +51,92 @@ async function setup(page: Page, otherMetadata = false) {
   await expect(page.locator('tbody tr')).toHaveCount(2);
   return { items, writes, plays };
 }
+
+for (const width of [1440, 390]) {
+  test(`Song info shows measured file details and long filenames at ${width}px`, async ({ page }, testInfo) => {
+    await page.setViewportSize({ width, height: 844 });
+    const { items, writes, plays } = await setup(page);
+    items[0].file_path = 'imports/Nick Drake — Northern Sky (2020 Remaster) [long-original-filename].mp3';
+    await page.reload();
+    const row = page.locator('tbody tr').first();
+    await row.click();
+    await row.press('Control+i');
+    const dialog = page.getByRole('dialog', { name: 'Song info' });
+    const detail = (name: string) => dialog.locator('dt').filter({ hasText: new RegExp(`^${name}$`) }).locator('+ dd');
+    await expect(detail('File size')).toHaveText('8 MiB (8,388,608 bytes)');
+    await expect(detail('Filename')).toHaveText(items[0].file_path.split('/').pop()!);
+    await expect(detail('Storage path')).toHaveText(items[0].file_path);
+    await expect(detail('Duration')).toHaveText('3:44');
+    await expect(detail('Codec')).toHaveText('MP3 (MPEG Layer III)');
+    await expect(detail('Audio bitrate')).toHaveText('256 kbps (average)');
+    await expect(detail('Sample rate')).toHaveText('44.1 kHz');
+    await expect(detail('Channels')).toHaveText('Stereo (2)');
+    await expect(detail('Bit depth')).toHaveCount(0);
+    await expect(detail('Date added')).not.toHaveText('Unknown');
+    await expect(detail('Play count')).toHaveText('0');
+    await expect(dialog.getByRole('link', { name: 'Open original file' })).toHaveAttribute('href', items[0].url);
+    const bounds = (await dialog.boundingBox())!;
+    expect(bounds.x).toBeGreaterThanOrEqual(0);
+    expect(bounds.x + bounds.width).toBeLessThanOrEqual(width);
+    expect(await dialog.evaluate(el => el.scrollWidth <= el.clientWidth)).toBe(true);
+    await expect(dialog.getByRole('button', { name: 'Save', exact: true })).toBeInViewport();
+    await page.screenshot({ path: testInfo.outputPath(`song-file-info-${width}.png`) });
+    expect(writes).toEqual([]);
+    expect(plays).toEqual([]);
+  });
+}
+
+test('file info loads separately from editing, retries errors, and displays lossless properties', async ({ page }) => {
+  const { items, writes } = await setup(page);
+  items[0].duration_seconds = 224;
+  let attempts = 0;
+  let available = false;
+  await page.route('**/api/items/*/file-info', async route => {
+    attempts++;
+    if (!available) return route.fulfill({ status: 503 });
+    return route.fulfill({ json: {
+      file_path: items[0].file_path, size_bytes: 34_000_000, format: 'FLAC', codec: 'FLAC', bitrate_kbps: 1200,
+      duration_seconds: 224, sample_rate_hz: 96000, channels: 1, bit_depth: 24, error: null,
+    } });
+  });
+  await page.reload();
+  await page.locator('tbody tr').first().click();
+  await page.keyboard.press('Control+i');
+  const dialog = page.getByRole('dialog', { name: 'Song info' });
+  await expect(dialog.getByRole('status')).toContainText('Could not load file details');
+  await expect(dialog.locator('dt').filter({ hasText: /^Duration$/ }).locator('+ dd')).toHaveText('3:44');
+  await dialog.getByRole('textbox', { name: 'Artist', exact: true }).fill('Edited while details failed');
+  available = true;
+  await dialog.getByRole('button', { name: 'Retry', exact: true }).click();
+  await expect(dialog.getByText('24-bit', { exact: true })).toBeVisible();
+  await expect(dialog.getByText('96 kHz', { exact: true })).toBeVisible();
+  await expect(dialog.getByText('Mono (1)', { exact: true })).toBeVisible();
+  await expect(dialog.getByRole('status')).toHaveCount(0);
+  await expect(dialog.getByRole('textbox', { name: 'Artist', exact: true })).toHaveValue('Edited while details failed');
+  const attemptsAfterRetry = attempts;
+  await dialog.getByRole('button', { name: 'Save', exact: true }).click();
+  expect(writes).toEqual([{ id: items[0].id, field: 'artist', value: 'Edited while details failed' }]);
+  await expect(dialog).toHaveCount(0);
+  await page.locator('tbody tr').first().focus();
+  await page.locator('tbody tr').first().press('Control+i');
+  await expect(dialog.getByText('24-bit', { exact: true })).toBeVisible();
+  expect(attempts).toBe(attemptsAfterRetry);
+});
+
+test('unsupported audio retains file size and does not guess codec from its extension', async ({ page }) => {
+  const { items } = await setup(page);
+  await page.route('**/api/items/*/file-info', route => route.fulfill({ json: {
+    file_path: items[0].file_path, size_bytes: 12345, format: null, codec: null, bitrate_kbps: null,
+    duration_seconds: null, sample_rate_hz: null, channels: null, bit_depth: null,
+    error: 'Could not read the audio properties.',
+  } }));
+  await page.locator('tbody tr').first().click();
+  await page.keyboard.press('Control+i');
+  const dialog = page.getByRole('dialog', { name: 'Song info' });
+  await expect(dialog.getByRole('status')).toContainText('Could not read the audio properties');
+  await expect(dialog.locator('dt').filter({ hasText: /^Codec$/ }).locator('+ dd')).toHaveText('Unknown');
+  await expect(dialog.locator('dt').filter({ hasText: /^File size$/ }).locator('+ dd')).toContainText('12,345 bytes');
+});
 
 test('click and arrows select without playing; double-click and Enter play', async ({ page }) => {
   const { items, plays } = await setup(page);

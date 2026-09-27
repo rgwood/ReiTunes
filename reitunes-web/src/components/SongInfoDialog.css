@@ -1,4 +1,4 @@
-.song-info-dialog { width: min(400px, calc(100vw - 24px)); max-height: calc(100dvh - 24px); overflow: auto; margin: auto; padding: 14px; border: 1px solid var(--border-strong); border-radius: 4px; background: var(--surface); color: var(--text); font: 12px/1.4 Arial, sans-serif; box-shadow: 0 6px 24px #0003; }
+.song-info-dialog { width: min(520px, calc(100vw - 24px)); max-height: calc(100dvh - 24px); overflow: auto; margin: auto; padding: 14px; border: 1px solid var(--border-strong); border-radius: 4px; background: var(--surface); color: var(--text); font: 12px/1.4 Arial, sans-serif; box-shadow: 0 6px 24px #0003; }
 .song-info-dialog::backdrop { background: color-mix(in srgb, var(--surface) 65%, transparent); }
 .song-info-dialog h2 { margin: 0 0 12px; font-size: 14px; font-weight: 600; }
 .song-info-dialog fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
@@ -9,3 +9,11 @@
 .song-info-dialog button { padding: 4px 12px; border: 1px solid var(--border-strong); background: var(--panel); border-radius: 2px; }
 .song-info-dialog button:hover { background: var(--hover); }
 .song-info-dialog [role='alert'] { color: var(--error); }
+.song-file-info { margin-top: 14px; border-top: 1px solid var(--line); padding-top: 10px; }
+.song-file-info h3 { margin: 0 0 8px; font-size: 12px; font-weight: 600; }
+.song-file-info dl { display: grid; grid-template-columns: 90px minmax(0, 1fr); gap: 5px 10px; margin: 0; }
+.song-file-info dt { color: var(--muted); }
+.song-file-info dd { margin: 0; overflow-wrap: anywhere; user-select: text; font-variant-numeric: tabular-nums; }
+.song-file-info a { color: var(--accent); text-decoration: underline; }
+.file-info-error { margin-bottom: 0; color: var(--muted); }
+.song-info-dialog .file-info-error button { padding: 2px 7px; }

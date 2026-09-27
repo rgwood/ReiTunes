@@ -593,7 +593,7 @@ export function LibraryTable({ items, searchQuery, onlyFavouriteTracks = false, 
         onApplied={() => setExpandedAlbums(old => new Map(old).set(tracklistItem.id, true))} />}
       {editError && <div role="alert" className="library-edit-error">{editError}</div>}
       {playlistError && <div role="alert" className="library-edit-error">{playlistError}</div>}
-      {infoItem && <SongInfoDialog key={infoItem.id} item={infoItem} onClose={() => {
+      {infoItem && <SongInfoDialog key={infoItem.id} item={items.find(item => item.id === infoItem.id) ?? infoItem} onClose={() => {
         setInfoItem(null);
         queueMicrotask(() => returnFocusRef.current?.focus());
       }} />}

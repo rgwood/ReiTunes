@@ -11,7 +11,7 @@ pub struct DurationRequest {
 }
 
 // File identity prevents a delayed metadata read from updating a replaced file.
-async fn persist(state: &AppState, id: Uuid, path: &str, seconds: f64, only_missing: bool) -> Result<bool> {
+pub(crate) async fn persist(state: &AppState, id: Uuid, path: &str, seconds: f64, only_missing: bool) -> Result<bool> {
     let mut library = state.library.write().await;
     let Some(item) = library.items.get(&id).filter(|item| item.file_path == path) else { return Ok(false); };
     if item.duration_seconds.is_some_and(|old| only_missing || (old - seconds).abs() < 0.1) { return Ok(true); }
