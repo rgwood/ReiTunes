@@ -166,6 +166,39 @@ async fn production_engine_replays_tool_search_lookup_sharing_and_handle_resolut
 }
 
 #[tokio::test]
+async fn oversized_agent_history_compacts_collected_evidence_before_the_next_call() {
+    let inputs = vec![input("t01", "Black Is Back in Style", "Moonface")];
+    let research = Research::new(&inputs).unwrap();
+    let mut first_request = research.initial_request().unwrap();
+    first_request.as_object_mut().unwrap().remove("response_format");
+    first_request["tools"] = research.tools();
+    first_request["tool_choice"] = json!("auto");
+    let limit = serde_json::to_vec(&first_request).unwrap().len() + 100;
+    let mut model = Replay {
+        answers: VecDeque::from([
+            json!({"choices":[{"finish_reason":"tool_calls","message":{"role":"assistant","content":"x".repeat(10_000),"tool_calls":[call("search_artists",json!({"item_ids":["t01"],"name":"Moonface"}))]}}],"usage":{"cost":0.001}}),
+            final_answer(json!([{"id":"t01","tags":[],"uncertainty":"Recording unverified","research":{"artist":"s1","recording":null}}])),
+        ]),
+        requests: vec![],
+    };
+    let mut mb = Mb { calls: 0, answers: VecDeque::from([json!({"artists":[artist()]})]) };
+    let mut trace = vec![];
+    let report = run(&inputs, Config { max_request_bytes: limit, ..Default::default() }, &mut model, &mut mb, |event| {
+        trace.push(event);
+        Ok(())
+    }).await.unwrap();
+    assert!(report.error.is_none(), "{:?}", report.error);
+    assert_eq!(report.model_calls, 2);
+    assert_eq!(report.predictions.unwrap()[0].research["artist_mbid"], ARTIST);
+    assert_eq!(mb.calls, 1);
+    assert!(model.requests.iter().all(|request| serde_json::to_vec(request).unwrap().len() <= limit));
+    assert!(model.requests[1].get("tools").is_none());
+    assert!(model.requests[1]["messages"][1]["content"].as_str().unwrap().contains("s1"));
+    assert!(!model.requests[1].to_string().contains(&"x".repeat(10_000)));
+    assert!(trace.iter().any(|event| event["event"] == "compaction"));
+}
+
+#[tokio::test]
 async fn optional_arguments_work_but_search_assumption_cannot_confirm_itself() {
     let inputs = vec![input("t01", "Barbarian", "")];
     let mut research = Research::new(&inputs).unwrap();

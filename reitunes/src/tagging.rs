@@ -378,12 +378,19 @@ impl Tagging {
     }
 
     async fn classify_prepared(&self, prepared: Vec<PreparedItem>) -> Result<()> {
-        // Split on the evaluated request byte budget, never silently truncate evidence.
+        // Keep agent conversations small enough for several research turns. A
+        // single bad final answer also affects fewer tracks this way. Fixed mode
+        // retains the evaluated 20-item batching behavior.
+        let max_batch_items = if self.0.engine_mode == tagging_engine::Mode::Agent {
+            5
+        } else {
+            MAX_BATCH_ITEMS
+        };
         let mut batches: Vec<Vec<PreparedItem>> = Vec::new();
         let mut batch = Vec::new();
         for item in prepared {
             batch.push(item);
-            if build_request(&batch).is_err() {
+            if batch.len() > max_batch_items || build_request(&batch).is_err() {
                 let item = batch.pop().unwrap();
                 if !batch.is_empty() {
                     batches.push(std::mem::take(&mut batch));
@@ -974,6 +981,46 @@ mod tests {
                 .count(),
             1
         );
+    }
+
+    #[tokio::test]
+    async fn agent_batches_at_most_five_tracks() {
+        let (_directory, mut tagging, id) = fixture();
+        let template = tagging.0.library.read().await.items[&id].clone();
+        for index in 1..6 {
+            let mut item = template.clone();
+            item.id = Uuid::new_v4();
+            item.name = format!("Agent song {index}");
+            tagging.0.library.write().await.items.insert(item.id, item);
+        }
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        Arc::get_mut(&mut tagging.0).unwrap().endpoint =
+            format!("http://{}", listener.local_addr().unwrap());
+        Arc::get_mut(&mut tagging.0).unwrap().key = Some("local-test-key".into());
+        assert_eq!(tagging.0.engine_mode, tagging_engine::Mode::Agent);
+        let sizes = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let captured = sizes.clone();
+        let server = tokio::spawn(async move {
+            axum::serve(listener, Router::new().route("/", post(move |Json(request): Json<Value>| {
+                let content: Value = serde_json::from_str(request["messages"][1]["content"].as_str().unwrap()).unwrap();
+                let count = content["items"].as_array().unwrap().len();
+                captured.lock().unwrap().push(count);
+                async move {
+                    let items: Vec<Value> = (1..=count).map(|index| json!({"id":format!("t{index:02}"),"tags":[],"uncertainty":"Unknown","research":{"artist":null,"recording":null}})).collect();
+                    Json(json!({"choices":[{"finish_reason":"stop","message":{"content":json!({"items":items}).to_string()}}],"usage":{"cost":0.001}}))
+                }
+            }))).await.unwrap();
+        });
+        let ids: Vec<_> = tagging.0.library.read().await.items.keys().copied().collect();
+        for id in ids {
+            tagging.enqueue(id, false).await.unwrap();
+        }
+        let jobs = prepared_jobs(&tagging).await;
+        assert_eq!(jobs.len(), 6);
+        tagging.classify_prepared(jobs).await.unwrap();
+        server.abort();
+        assert_eq!(*sizes.lock().unwrap(), vec![5, 1]);
+        assert_eq!(tagging.snapshot().await.unwrap().items.values().filter(|item| item.status == "ready").count(), 6);
     }
 
     #[tokio::test]

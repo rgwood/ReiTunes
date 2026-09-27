@@ -231,7 +231,29 @@ pub async fn run<M: Model, B: MusicBrainz>(
                 request["response_format"] = json!({"type":"json_object"});
             }
             request["messages"] = json!(messages);
-            if serde_json::to_vec(&request)?.len() > config.max_request_bytes { bail!("Agent request budget exceeded"); }
+            if serde_json::to_vec(&request)?.len() > config.max_request_bytes {
+                if config.mode != Mode::Agent {
+                    bail!("Tagging request budget exceeded");
+                }
+                // Tool replies and the model's intermediate messages can repeat a
+                // lot of evidence. Rebuild from the researcher's registered sources
+                // instead of dropping evidence or failing the entire batch.
+                messages = research.initial_request()?["messages"]
+                    .as_array()
+                    .context("Missing compacted messages")?
+                    .clone();
+                messages.push(json!({"role":"user","content":"The earlier research conversation was compacted. All collected candidates are in cached_evidence above. Return the final JSON object for every item using those handles; abstain where evidence is insufficient. Do not call tools."}));
+                force_final = true;
+                request.as_object_mut().unwrap().remove("tools");
+                request.as_object_mut().unwrap().remove("tool_choice");
+                request["response_format"] = json!({"type":"json_object"});
+                request["messages"] = json!(messages);
+                let compacted_bytes = serde_json::to_vec(&request)?.len();
+                if compacted_bytes > config.max_request_bytes {
+                    bail!("Agent evidence exceeds request budget even after compaction");
+                }
+                record(json!({"event":"compaction","round":round,"request_bytes":compacted_bytes}))?;
+            }
             record(json!({"event":"request","round":round,"request":request}))?;
             report.model_calls += 1;
             let began = Instant::now();
