@@ -107,6 +107,90 @@ test('multi-selection, context menus and drag-and-drop update playlists without 
   await expect(rows).toHaveCount(3);
 });
 
+test('playlist drop feedback stays visible over its label and clears on cancellation', async ({ page }, testInfo) => {
+  const { mutations } = await backend(page);
+  await page.goto('/');
+  const source = page.locator('tbody tr').first();
+  const target = page.getByRole('button', { name: 'Late nights', exact: true });
+  const before = await target.evaluate(el => getComputedStyle(el).backgroundColor);
+  const row = (await source.boundingBox())!;
+  const label = (await target.locator('.source-name').boundingBox())!;
+  await page.mouse.move(row.x + 80, row.y + row.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(row.x + 65, row.y + row.height / 2, { steps: 5 });
+  await page.mouse.move(label.x + 10, label.y + label.height / 2, { steps: 10 });
+  await expect(target).toHaveClass(/drop-target/);
+  await expect(target.locator('.source-count')).toHaveText('+ Add');
+  expect(await target.evaluate(el => getComputedStyle(el).backgroundColor)).not.toBe(before);
+  // Moving between nested elements must not clear the parent highlight.
+  const icon = (await target.locator('.source-icon').boundingBox())!;
+  await page.mouse.move(icon.x + icon.width / 2, icon.y + icon.height / 2, { steps: 5 });
+  await expect(target).toHaveClass(/drop-target/);
+  await page.screenshot({ path: testInfo.outputPath('playlist-drop-feedback.png') });
+  await page.keyboard.press('Escape');
+  await page.mouse.up();
+  await expect(target).not.toHaveClass(/drop-target/);
+  await expect(target.locator('.source-count')).toHaveText('0');
+  expect(mutations).toHaveLength(0);
+});
+
+test('grid tracks drop onto the queue button and open panel in selection order without playing', async ({ page }, testInfo) => {
+  await backend(page);
+  await page.goto('/');
+  const rows = page.locator('tbody tr');
+  const queueButton = page.getByRole('button', { name: 'Queue', exact: true });
+  const barHeight = (await page.locator('.player-bar').boundingBox())!.height;
+  await rows.nth(2).dragTo(queueButton);
+  const panel = page.getByRole('region', { name: 'Up Next', exact: true });
+  const added = panel.getByRole('region', { name: 'Added to queue' });
+  await expect(added.locator('li')).toHaveCount(1);
+  await expect(added.locator('li')).toContainText('Lush');
+  await rows.first().click();
+  await rows.nth(1).click({ modifiers: ['Control'] });
+  await rows.first().dragTo(panel.locator('h2'));
+  await expect(added.locator('li')).toHaveCount(3);
+  await expect(added.locator('.queue-track-text > span')).toHaveText(['Lush', 'Apricots', 'Glue']);
+  expect((await page.locator('.player-bar').boundingBox())!.height).toBe(barHeight);
+  expect(await page.evaluate(() => JSON.parse(localStorage.getItem('reitunes-player') || '{"state":{}}').state.currentItemId ?? null)).toBeNull();
+  await expect(panel).not.toHaveClass(/drop-target/);
+  await page.screenshot({ path: testInfo.outputPath('queue-dropped-tracks.png') });
+  await page.reload();
+  await queueButton.click();
+  await expect(added.locator('.queue-track-text > span')).toHaveText(['Lush', 'Apricots', 'Glue']);
+});
+
+test('queue drop feedback handles nested elements, invalid payloads and stale track IDs', async ({ page }, testInfo) => {
+  const { playlists, mutations } = await backend(page);
+  playlists.push({ id: 'smart', name: 'Automatic', items: {}, smart_rules: { expression: { type: 'all', rules: [] } } });
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Queue', exact: true }).click();
+  const panel = page.getByRole('region', { name: 'Up Next', exact: true });
+  const transfer = await page.evaluateHandle(() => {
+    const data = new DataTransfer();
+    data.setData('application/x-reitunes-tracks', 'not json');
+    return data;
+  });
+  await panel.dispatchEvent('dragenter', { dataTransfer: transfer });
+  await expect(panel).toHaveClass(/drop-target/);
+  await expect(panel.locator('h2')).toHaveText('Drop to add to queue');
+  await panel.evaluate((el) => el.dispatchEvent(new DragEvent('dragleave', { bubbles: true, relatedTarget: el.querySelector('h2') })));
+  await expect(panel).toHaveClass(/drop-target/);
+  await page.screenshot({ path: testInfo.outputPath('queue-drop-feedback.png') });
+  await panel.dispatchEvent('drop', { dataTransfer: transfer });
+  await expect(panel).not.toHaveClass(/drop-target/);
+  await expect(panel.getByRole('region', { name: 'Added to queue' })).toHaveCount(0);
+  await transfer.evaluate((data, id) => data.setData('application/x-reitunes-tracks', JSON.stringify(['deleted-track', id, id])), songs[0].id);
+  const smart = page.getByRole('button', { name: 'Automatic', exact: true });
+  await smart.dispatchEvent('dragenter', { dataTransfer: transfer });
+  await expect(smart).not.toHaveClass(/drop-target/);
+  await smart.dispatchEvent('drop', { dataTransfer: transfer });
+  expect(mutations).toHaveLength(0);
+  await panel.dispatchEvent('drop', { dataTransfer: transfer });
+  await expect(panel.getByRole('region', { name: 'Added to queue' }).locator('li')).toHaveCount(1);
+  await expect(panel.getByRole('region', { name: 'Added to queue' })).toContainText('Apricots');
+  await transfer.dispose();
+});
+
 test('Smart Playlists save rules, survive reload and can be edited', async ({ page }) => {
   const { playlists } = await backend(page);
   await page.goto('/');

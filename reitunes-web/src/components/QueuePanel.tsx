@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, type HTMLAttributes } from 'react';
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
 import { SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
@@ -26,7 +26,10 @@ function QueuedTrack({ item, index, onPlay, disabled }: { item: LibraryItem; ind
   </li>;
 }
 
-export function QueuePanel() {
+export function QueuePanel({ dropActive, dropProps }: {
+  dropActive: boolean;
+  dropProps: Pick<HTMLAttributes<HTMLElement>, 'onDragEnter' | 'onDragOver' | 'onDragLeave' | 'onDrop'>;
+}) {
   const queue = useQueueStore();
   const { currentItem } = usePlayerStore();
   const target = usePlaybackTargetStore();
@@ -54,8 +57,8 @@ export function QueuePanel() {
     setPending(false);
   }
 
-  return <section className="up-next" aria-label="Up Next">
-    <header><h2>Up Next</h2></header>
+  return <section className={`up-next${dropActive ? ' drop-target' : ''}`} aria-label="Up Next" {...dropProps}>
+    <header><h2>{dropActive ? 'Drop to add to queue' : 'Up Next'}</h2></header>
     <div className="queue-scroll">
       {currentItem && <section aria-label="Now playing"><h3>Now playing</h3>
         <div className="queue-current"><span aria-hidden="true">▶</span><span className="queue-track-text"><span>{currentItem.name}</span><small>{currentItem.artist}</small></span></div>
@@ -81,7 +84,7 @@ export function QueuePanel() {
         </li>)}</ol>
         {!showAll && upcoming.length > 30 && <button className="queue-show-all" onClick={() => setShowAll(true)}>Show all {upcoming.length} tracks</button>}
       </section>}
-      {!upcoming.length && !queue.manualQueue.length && <p className="queue-note">{currentItem ? 'Nothing else queued. Add songs with Play Next or Add to Queue.' : 'Nothing queued yet. Play a song to get started.'}</p>}
+      {!upcoming.length && !queue.manualQueue.length && <p className="queue-note">{currentItem ? 'Nothing else queued.' : 'Nothing queued yet.'} Drag songs here, or use Play Next or Add to Queue.</p>}
     </div>
   </section>;
 }

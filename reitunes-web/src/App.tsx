@@ -32,6 +32,7 @@ import { effectiveTags, useTags } from './hooks/useTags';
 import { isInboxEntry, useDiscovery } from './hooks/useDiscovery';
 import { useLibrary } from './hooks/useLibrary';
 import { useQueueStore } from './hooks/useQueue';
+import { useTrackDrop } from './hooks/useTrackDrop';
 import { usePlayback } from './hooks/usePlayback';
 import { usePlayerStore } from './stores/playerStore';
 import { usePlaybackTargetStore } from './stores/playbackTargetStore';
@@ -99,6 +100,13 @@ function AppContent() {
       new URLSearchParams(window.location.search).get('sonos') === 'connected'
   );
   const { items, isLoading, error } = useLibrary();
+  const queueDrop = useTrackDrop((ids) => {
+    const byId = new Map(items.map(item => [item.id, item]));
+    const tracks = ids.flatMap(id => byId.has(id) ? [byId.get(id)!] : []);
+    if (!tracks.length) return;
+    tracks.forEach(useQueueStore.getState().addToQueue);
+    setPanel('queue');
+  });
   const tags = useTags();
   const activeTagCount = Object.values(tags.data?.items || {}).filter(item => ['queued', 'running'].includes(item.status)).length;
   const failedTagCount = Object.values(tags.data?.items || {}).filter(item => item.status === 'failed').length;
@@ -356,9 +364,11 @@ function AppContent() {
               onKeyDown={event => { if (event.key === 'Escape') { setSearchQuery(''); searchRef.current?.blur(); } }} />
             {searchQuery ? <button aria-label="Clear search" onClick={() => { setSearchQuery(''); searchRef.current?.focus(); }}><MusicIcon name="close" size={13} /></button> : <kbd>/</kbd>}
           </div>
-          <button className="queue-toggle" aria-label="Queue" title={panel === 'queue' ? 'Hide Up next' : 'Show Up next'} aria-pressed={panel === 'queue'} onClick={toggleQueue}>
+          <button className={`queue-toggle${queueDrop.dropTarget === 'button' ? ' drop-target' : ''}`} aria-label="Queue"
+            title="Show or hide Up Next • Drop songs here to add to queue" aria-pressed={panel === 'queue'} onClick={toggleQueue}
+            {...queueDrop.dropProps('button')}>
             <MusicIcon name="queue" size={18} />
-            {manualQueue.length > 0 && <span className="queue-count" aria-hidden="true">{manualQueue.length}</span>}
+            {(queueDrop.dropTarget === 'button' || manualQueue.length > 0) && <span className="queue-count" aria-hidden="true">{queueDrop.dropTarget === 'button' ? '+' : manualQueue.length}</span>}
           </button>
         </div>
       </header>
@@ -417,7 +427,8 @@ function AppContent() {
             selectedItem={items.find(item => item.id === bookmarkItemId)} onClearItem={() => setBookmarkItemId(null)} onNextMoment={nextMoment} />
         </aside>}
         {panel === 'queue' && <aside className="library-sidepanel queue-sidepanel">
-          <button className="panel-close" aria-label="Close queue" onClick={() => setPanel(null)}><MusicIcon name="close" size={14} /></button><QueuePanel />
+          <button className="panel-close" aria-label="Close queue" onClick={() => setPanel(null)}><MusicIcon name="close" size={14} /></button>
+          <QueuePanel dropActive={queueDrop.dropTarget === 'panel'} dropProps={queueDrop.dropProps('panel')} />
         </aside>}
       </main>
       {playlistDraft && <PlaylistDialog draft={playlistDraft} items={items} tagItems={tags.data?.items} tagError={tags.isError} onClose={() => setPlaylistDraft(null)}

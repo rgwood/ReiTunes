@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { LibraryItem, Playlist } from '../types';
-import { draggedTrackIds, playlistItems, TRACK_DRAG_TYPE, type PlaylistTagItems } from '../utils/playlists';
+import { playlistItems, type PlaylistTagItems } from '../utils/playlists';
+import { useTrackDrop } from '../hooks/useTrackDrop';
 import { usePlaylistMutation } from '../hooks/usePlaylists';
 import { MusicIcon } from './MusicIcon';
 import type { PlaylistDraft } from './PlaylistDialog';
@@ -20,7 +21,6 @@ export function LibrarySidebar({ active, items, playlists, now, tagItems, discov
 }) {
   const mutation = usePlaylistMutation();
   const [error, setError] = useState('');
-  const [dropTarget, setDropTarget] = useState<string | null>(null);
   const [menu, setMenu] = useState<{ playlist: Playlist; x: number; y: number } | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => {
@@ -42,13 +42,17 @@ export function LibrarySidebar({ active, items, playlists, now, tagItems, discov
     : id === 'favourites' ? items.reduce((total, item) => total + Number(!!item.is_favorite) + (item.tracklist?.tracks.filter(track => track.is_favorite).length ?? 0), 0)
     : items.reduce((total, item) => total + Object.keys(item.bookmarks).length, 0);
 
-  async function drop(event: React.DragEvent, playlist: Playlist) {
-    event.preventDefault(); setDropTarget(null); setError('');
-    const ids = draggedTrackIds(event.dataTransfer).filter(id => items.some(item => item.id === id));
+  async function drop(draggedIds: string[], playlist: Playlist) {
+    setError('');
+    const ids = draggedIds.filter(id => items.some(item => item.id === id));
     if (!ids.length || playlist.smart_rules || mutation.isPending) return;
     try { await mutation.mutateAsync({ path: '/' + playlist.id + '/items', method: 'POST', body: { library_item_ids: ids } }); }
     catch { setError('Could not add tracks to the playlist. Please try again.'); }
   }
+  const { dropTarget, dropProps } = useTrackDrop((ids, id) => {
+    const playlist = playlists.find(playlist => playlist.id === id);
+    if (playlist) void drop(ids, playlist);
+  });
 
   function playlistButton(playlist: Playlist) {
     return <button key={playlist.id} className={dropTarget === playlist.id ? 'source-item drop-target' : 'source-item'}
@@ -62,14 +66,9 @@ export function LibrarySidebar({ active, items, playlists, now, tagItems, discov
           setMenu({ playlist, x: box.left, y: box.bottom });
         }
       }}
-      onDragOver={event => {
-        if (!playlist.smart_rules && event.dataTransfer.types.includes(TRACK_DRAG_TYPE)) {
-          event.preventDefault(); event.dataTransfer.dropEffect = 'copy'; setDropTarget(playlist.id);
-        }
-      }}
-      onDragLeave={() => setDropTarget(null)} onDrop={event => void drop(event, playlist)}>
+      {...dropProps(playlist.id, !playlist.smart_rules && !mutation.isPending)}>
       <span className={playlist.smart_rules ? 'source-icon smart-icon' : 'source-icon'}><MusicIcon name={playlist.smart_rules ? 'smart' : 'playlist'} size={16} /></span>
-      <span className="source-name">{playlist.name}</span><span className="source-count" aria-hidden="true">{playlistItems(playlist, items, now, tagItems).length}</span>
+      <span className="source-name">{playlist.name}</span><span className="source-count" aria-hidden="true">{dropTarget === playlist.id ? '+ Add' : playlistItems(playlist, items, now, tagItems).length}</span>
     </button>;
   }
 

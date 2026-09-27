@@ -1,5 +1,7 @@
 .up-next { width: 288px; max-width: 100%; height: 100%; display: flex; flex-direction: column; font: 12px/1.4 system-ui, sans-serif; background: var(--surface); }
 .up-next > header { padding: 7px 32px 7px 10px; border-bottom: 1px solid var(--line); }
+.up-next.drop-target { outline: 2px solid var(--accent); outline-offset: -2px; background: color-mix(in srgb, var(--accent) 12%, var(--surface)); }
+.up-next.drop-target > header { background: color-mix(in srgb, var(--accent) 25%, var(--surface)); color: var(--text); }
 .up-next h2 { margin: 0; font-size: 13px; font-weight: 600; }
 .queue-scroll { overflow: auto; flex: 1; min-height: 0; }
 .up-next h3 { display: flex; align-items: center; gap: 5px; padding: 5px 9px; margin: 0; color: var(--muted); font-size: 11px; font-weight: 500; background: var(--panel); border-bottom: 1px solid var(--line); }
