@@ -26,6 +26,7 @@ async function openPlayer(page: Page, output: 'browser' | 'sonos') {
     simulator.paused = true;
     simulator.speaker.positionMillis = 1_370_000;
     await simulator.install();
+    await page.route('**/api/sonos/groups/group-1/queue', route => route.fulfill({ status: 204 }));
     await page.route('**/api/sonos/groups/group-1/playback/seek', async route => {
       const { positionMillis } = route.request().postDataJSON();
       seeks.push(positionMillis / 1000);
@@ -41,6 +42,8 @@ async function openPlayer(page: Page, output: 'browser' | 'sonos') {
     await page.routeWebSocket('**/updates', () => {});
   }
   await page.route('**/api/items', route => route.fulfill({ json: items }));
+  await page.route('**/api/items/*/duration', route => route.fulfill({ status: 204 }));
+  await page.route('**/api/tags', route => route.fulfill({ json: { enabled: false, items: {} } }));
   await page.route('**/api/sonos/status', route => route.fulfill({ json: { configured: true, connected: true } }));
   await page.addInitScript(({ id, duration }) => {
     localStorage.setItem('reitunes-theme', JSON.stringify({ lightTheme: 'neutral', darkTheme: 'forest-palace', mode: 'dark' }));
@@ -48,6 +51,7 @@ async function openPlayer(page: Page, output: 'browser' | 'sonos') {
       currentItemId: id, resumePosition: 1_370, volume: 0.5, isMuted: false,
     } }));
     Object.defineProperty(HTMLMediaElement.prototype, 'duration', { configurable: true, get: () => duration });
+    Object.defineProperty(HTMLMediaElement.prototype, 'readyState', { configurable: true, get: () => HTMLMediaElement.HAVE_METADATA });
     Object.defineProperty(HTMLMediaElement.prototype, 'play', { configurable: true, value() { this.dispatchEvent(new Event('play')); return Promise.resolve(); } });
     Object.defineProperty(HTMLMediaElement.prototype, 'pause', { configurable: true, value() { this.dispatchEvent(new Event('pause')); } });
   }, { id: trackId, duration });
@@ -84,6 +88,7 @@ for (const output of ['browser', 'sonos'] as const) {
       const scrubber = page.locator('.playback-scrubber');
       const transport = page.getByRole('group', { name: 'Playback controls', exact: true });
       const bookmark = page.locator('.player-bookmark');
+      const shuffle = page.locator('.player-shuffle');
       const play = page.locator('.play-toggle');
       const suffix = output === 'sonos' ? ' on Sonos' : '';
 
@@ -101,6 +106,11 @@ for (const output of ['browser', 'sonos'] as const) {
       const titleBox = await box(title);
       const scrubberBox = await box(scrubber);
       const bookmarkBox = await box(bookmark);
+      const shuffleBox = await box(shuffle);
+      expect(shuffleBox.x).toBeGreaterThanOrEqual(bookmarkBox.x + bookmarkBox.width);
+      expect(shuffleBox.x - bookmarkBox.x - bookmarkBox.width).toBeLessThanOrEqual(8);
+      expect(shuffleBox.y).toBe(bookmarkBox.y);
+      expect(shuffleBox.height).toBe(bookmarkBox.height);
       expect(headerBox.height).toBeLessThanOrEqual(width > 650 ? 64 : 120);
       if (width > 650) {
         const sidebarBox = await box(page.locator('.source-sidebar'));
@@ -120,7 +130,7 @@ for (const output of ['browser', 'sonos'] as const) {
       expect(Math.abs(bookmarkBox.y + bookmarkBox.height / 2 - scrubberBox.y - scrubberBox.height / 2)).toBeLessThanOrEqual(3);
 
       const controls = await transport.getByRole('button').all();
-      const parts = [...controls, title, scrubber, bookmark, page.locator('.player-tools'), page.locator('.player-volume')];
+      const parts = [...controls, title, scrubber, bookmark, shuffle, page.locator('.player-tools'), page.locator('.player-volume')];
       const bounds = await Promise.all(parts.map(box));
       for (const part of bounds) {
         expect(part.x).toBeGreaterThanOrEqual(0);
@@ -134,6 +144,21 @@ for (const output of ['browser', 'sonos'] as const) {
         expect(overlapWidth > 1 && overlapHeight > 1, `Header parts ${a} and ${b} overlap`).toBe(false);
       }
       expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(width);
+
+      const shuffleOff = await paint(shuffle);
+      await expect(shuffle).toHaveAttribute('aria-pressed', 'false');
+      await shuffle.click();
+      await page.mouse.move(width - 1, 899);
+      await expect(shuffle).toHaveAttribute('aria-pressed', 'true');
+      await expect(shuffle).toHaveAttribute('aria-label', 'Shuffle on');
+      await expect.poll(async () => (await paint(shuffle)).background).not.toBe(shuffleOff.background);
+      await expect.poll(async () => (await paint(shuffle)).color).not.toBe(shuffleOff.color);
+      expect((await paint(shuffle)).shadow).not.toBe('none');
+      expect((await box(header)).height).toBe(headerBox.height);
+      await page.screenshot({ path: testInfo.outputPath(`${output}-shuffle-on-${width}.png`), animations: 'disabled' });
+      await shuffle.click();
+      await expect(shuffle).toHaveAttribute('aria-pressed', 'false');
+      expect((await box(header)).height).toBe(headerBox.height);
 
       await page.mouse.move(width - 1, 899);
       await play.blur();

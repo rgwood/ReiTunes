@@ -135,6 +135,14 @@ function PlayerBookmark({ onClick, disabled = false, feedback, sonos = false }: 
     onClick={onClick} disabled={disabled} aria-label={label} title={label}>{Icons.bookmark}</button>;
 }
 
+function PlayerShuffle({ enabled, onClick, disabled = false }: {
+  enabled: boolean; onClick: () => void; disabled?: boolean;
+}) {
+  const label = enabled ? 'Shuffle on' : 'Shuffle off';
+  return <button type="button" className="player-shuffle" onClick={onClick} disabled={disabled}
+    aria-label={label} title={label} aria-pressed={enabled}>{Icons.shuffle}</button>;
+}
+
 interface AudioPlayerProps {
   audioRef: RefObject<HTMLAudioElement | null>;
   items: LibraryItem[];
@@ -862,6 +870,8 @@ export function AudioPlayer({ audioRef: sharedAudioRef, items, onPlaybackPositio
           </div>
           <PlayerBookmark onClick={() => void handleAddSonosBookmark()}
             disabled={!sonosSessionActive || !currentItem || isSwitchingOutput} feedback={bookmarkFeedback} sonos />
+          <PlayerShuffle enabled={shuffleEnabled} onClick={toggleShuffle}
+            disabled={isSending || isSwitchingOutput || sonos.isTransportPending} />
         </div>
         <PlayerTransport playing={sonosIsPlaying} sonos onPrevious={handlePrevious} onNext={handleNext}
           onToggle={() => void (sonosIsPlaying ? sonos.pause() : sonos.play())}
@@ -869,12 +879,6 @@ export function AudioPlayer({ audioRef: sharedAudioRef, items, onPlaybackPositio
           skipDisabled={isSending || isSwitchingOutput || sonos.isTransportPending || !sonosSessionActive}
           playDisabled={sonosTransportDisabled} seekDisabled={sonosSeekDisabled} />
         <div className="sonos-controls">
-          <button type="button" onClick={toggleShuffle} aria-label={shuffleEnabled ? 'Shuffle on' : 'Shuffle off'}
-            title={shuffleEnabled ? 'Shuffle on' : 'Shuffle off'} aria-pressed={shuffleEnabled}
-            disabled={isSending || isSwitchingOutput || sonos.isTransportPending}
-            className={`p-1.5 rounded ${shuffleEnabled ? 'text-solarized-green bg-solarized-base02' : 'text-solarized-base0'}`}>
-            {Icons.shuffle}
-          </button>
           <div className="sonos-volume player-volume">
             <button
               type="button"
@@ -965,22 +969,13 @@ export function AudioPlayer({ audioRef: sharedAudioRef, items, onPlaybackPositio
           })}
         </div>
         <PlayerBookmark onClick={handleAddBookmark} disabled={!currentItem} feedback={bookmarkFeedback} />
+        <PlayerShuffle enabled={shuffleEnabled} onClick={toggleShuffle} />
       </div>
       <PlayerTransport playing={isPlaying} onPrevious={handlePrevious} onNext={handleNext}
         onToggle={handlePlayPause} onBack={seekBack} onForward={seekForward}
         playDisabled={!currentItem} seekDisabled={!currentItem} />
       <div className="player-controls">
         <div className="player-options player-volume">
-          <button
-            onClick={toggleShuffle}
-            className={`p-1.5 rounded transition-colors ${
-              shuffleEnabled ? 'text-solarized-green bg-solarized-base02' : 'text-solarized-base0 hover:text-solarized-base1 hover:bg-solarized-base02'
-            }`}
-            title={shuffleEnabled ? 'Shuffle on' : 'Shuffle off'}
-            aria-pressed={shuffleEnabled}
-          >
-            {Icons.shuffle}
-          </button>
           <button
             onClick={cycleRepeatMode}
             className={`p-1.5 rounded transition-colors relative ${
