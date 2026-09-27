@@ -355,6 +355,66 @@ async fn transport_failure_is_not_retried_and_has_unknown_cost() {
 }
 
 #[tokio::test]
+async fn ambiguous_recording_reserves_corrections_and_does_not_fail_other_tracks() {
+    let mut cosmia = input("t01", "Cosmia", "Joanna Newsom");
+    cosmia.musicbrainz = json!({"artist":{"mbid":ARTIST,"name":"Joanna Newsom","community_tags":["folk"]}});
+    let mut cut_copy = input("t02", "Out There on the Ice", "Cut Copy");
+    cut_copy.musicbrainz = json!({"artist":{"mbid":"cccccccc-cccc-cccc-cccc-cccccccccccc","name":"Cut Copy","community_tags":["folk"]}});
+    let inputs = vec![cosmia, cut_copy];
+    let good = prediction("t01", json!("s1"), Value::Null, json!(["s1"]));
+    let bad = prediction("t02", json!("s2"), json!("s3"), json!(["s2"]));
+    let corrected = prediction("t02", json!("s2"), Value::Null, json!(["s2"]));
+    let recordings = json!({"recordings":[
+        {"id":"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa","title":"Out There on the Ice","artist-credit":[{"artist":{"id":"cccccccc-cccc-cccc-cccc-cccccccccccc","name":"Cut Copy"}}]},
+        {"id":"bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb","title":"Out There on the Ice","artist-credit":[{"artist":{"id":"cccccccc-cccc-cccc-cccc-cccccccccccc","name":"Cut Copy"}}]}
+    ]});
+    for recovers in [true, false] {
+        let mut answers = VecDeque::new();
+        for album in ["In Ghost Colours", "In Ghost Colors", ""] {
+            answers.push_back(json!({"choices":[{"finish_reason":"tool_calls","message":{"tool_calls":[call("search_recordings",json!({"item_ids":["t02"],"title":"Out There on the Ice","album":album}))]}}],"usage":{"cost":0.001}}));
+        }
+        answers.push_back(final_answer(json!([bad, good])));
+        answers.push_back(final_answer(json!([if recovers { &corrected } else { &bad }, good])));
+        // A malformed last correction must not discard already validated peers.
+        let mut malformed = final_answer(json!([]));
+        malformed["choices"][0]["message"]["content"] = json!("broken JSON");
+        answers.push_back(malformed);
+        let mut model = Replay { answers, requests: vec![] };
+        let mut mb = Mb { calls: 0, answers: VecDeque::from([recordings.clone(), recordings.clone(), recordings.clone()]) };
+        let report = run(&inputs, Config::default(), &mut model, &mut mb, |_| Ok(())).await.unwrap();
+        assert!(report.error.is_none(), "{:?}", report.error);
+        assert_eq!(report.model_calls, if recovers { 5 } else { 6 });
+        assert_eq!(report.recoveries, if recovers { 1 } else { 2 });
+        assert_eq!(mb.calls, 3);
+        assert!(model.requests[..3].iter().all(|request| request.get("tools").is_some()));
+        assert!(model.requests[3..].iter().all(|request| request.get("tools").is_none()));
+        let predictions = report.predictions.unwrap();
+        assert_eq!(predictions[0].id, "t01");
+        assert_eq!(predictions[0].tags[0].tag, "folk");
+        assert_eq!(predictions.len(), if recovers { 2 } else { 1 });
+        if recovers {
+            assert!(report.item_errors.is_empty());
+            assert!(predictions[1].research["recording_mbid"].is_null());
+        } else {
+            assert_eq!(report.item_errors.len(), 1);
+            assert!(report.item_errors["t02"].contains("unambiguous original-metadata anchor"));
+        }
+    }
+}
+
+#[test]
+fn partial_validation_still_rejects_invalid_batch_identity_and_json() {
+    let research = Research::new(&[input("t01", "Cosmia", "Joanna Newsom")]).unwrap();
+    for ids in [vec![], vec!["t99"], vec!["t01", "t01"]] {
+        let items: Vec<_> = ids.into_iter().map(|id| json!({"id":id,"tags":[],"uncertainty":"Unknown","research":{"artist":null,"recording":null}})).collect();
+        assert!(research.parse_items(&final_answer(json!(items))).is_err());
+    }
+    let mut invalid = final_answer(json!([]));
+    invalid["choices"][0]["message"]["content"] = json!("broken JSON");
+    assert!(research.parse_items(&invalid).is_err());
+}
+
+#[tokio::test]
 async fn original_title_disambiguates_names_but_a_search_query_does_not() {
     let mut item = input("t01", "Black Is Back in Style", "Moonfaec");
     item.album = "Julia With Blue Jeans On".into();

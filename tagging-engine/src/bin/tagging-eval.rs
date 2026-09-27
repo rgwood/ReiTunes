@@ -208,7 +208,7 @@ fn score(cases: &[Value], inputs: &[Input], report: &Report) -> Value {
     let mut negative_abstentions = 0;
     let mut citations = 0;
     let mut invalid_citations = 0;
-    for (index, (case, input)) in cases.iter().zip(inputs).enumerate() {
+    for (case, input) in cases.iter().zip(inputs) {
         let expected = case["expected_artist"].as_str();
         if let Some(expected) = expected {
             if report.research.as_array().unwrap().iter().any(|s| {
@@ -218,7 +218,7 @@ fn score(cases: &[Value], inputs: &[Input], report: &Report) -> Value {
                 retrieved += 1;
             }
         }
-        let Some(prediction) = report.predictions.as_ref().and_then(|p| p.get(index)) else {
+        let Some(prediction) = report.predictions.as_ref().and_then(|p| p.iter().find(|p| p.id == input.id)) else {
             continue;
         };
         // Fixed mode has no identity-output field. Its selected artist candidate is
@@ -269,7 +269,7 @@ fn score(cases: &[Value], inputs: &[Input], report: &Report) -> Value {
             }
         }
     }
-    json!({"accepted":report.predictions.is_some(),"model_profile":report.config.model_profile,"expected_artists":cases.iter().filter(|c|c["expected_artist"].is_string()).count(),"retrieved_expected_artists":retrieved,
+    json!({"accepted":report.predictions.is_some() && report.item_errors.is_empty(),"item_errors":report.item_errors,"model_profile":report.config.model_profile,"expected_artists":cases.iter().filter(|c|c["expected_artist"].is_string()).count(),"retrieved_expected_artists":retrieved,
         "correct_final_artist_candidates":if report.config.mode==Mode::Agent {json!(identities)} else {Value::Null},
         "unsupported_final_artist_claims":unsupported,"recording_claims_on_version_or_identity_traps":traps,
         "items_with_rubric_useful_tags":useful,"negative_full_abstentions":negative_abstentions,
@@ -367,6 +367,7 @@ async fn main() -> Result<()> {
             if serde_json::to_value(&replay.predictions)?
                 != serde_json::to_value(&previous.predictions)?
                 || replay.error != previous.error
+                || replay.item_errors != previous.item_errors
                 || !model.pairs.is_empty()
                 || !mb.calls.is_empty()
             {
@@ -564,6 +565,7 @@ mod tests {
             config: Config::default(),
             predictions: None,
             error: Some("Original run was interrupted".into()),
+            item_errors: Default::default(),
             model_calls: 3,
             tool_calls: 0,
             recoveries: 2,

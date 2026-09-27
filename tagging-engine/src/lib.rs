@@ -167,6 +167,8 @@ pub struct Report {
     pub config: Config,
     pub predictions: Option<Vec<Prediction>>,
     pub error: Option<String>,
+    #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    pub item_errors: std::collections::BTreeMap<String, String>,
     pub model_calls: usize,
     pub tool_calls: usize,
     pub recoveries: usize,
@@ -191,6 +193,7 @@ pub async fn run<M: Model, B: MusicBrainz>(
         config: config.clone(),
         predictions: None,
         error: None,
+        item_errors: Default::default(),
         model_calls: 0,
         tool_calls: 0,
         recoveries: 0,
@@ -218,10 +221,14 @@ pub async fn run<M: Model, B: MusicBrainz>(
         if let Some(profile) = config.model_profile { profile.apply(&mut initial); }
         let mut messages = initial["messages"].as_array().context("Missing messages")?.clone();
         let mut force_final = false;
+        let mut last_partial = None;
         let mut tool_results = std::collections::HashMap::<String,Value>::new();
         for round in 0..config.max_model_calls {
             let mut request = initial.clone();
-            let allow_tools = config.mode == Mode::Agent && !force_final && round + 1 < config.max_model_calls && report.tool_calls < config.max_tool_calls;
+            // Reserve a final answer and the configured correction attempts.
+            // Otherwise research can consume all calls before validation runs.
+            let final_round = config.max_model_calls.saturating_sub(config.max_recoveries).max(1);
+            let allow_tools = config.mode == Mode::Agent && !force_final && round + 1 < final_round && report.tool_calls < config.max_tool_calls;
             if allow_tools {
                 request["tools"] = research.tools();
                 request["tool_choice"] = json!("auto");
@@ -309,19 +316,30 @@ pub async fn run<M: Model, B: MusicBrainz>(
                 continue;
             }
             let parsed = match config.mode {
-                Mode::Fixed => baseline::parse_predictions(&raw, items),
-                Mode::Agent => research.parse(&raw),
+                Mode::Fixed => baseline::parse_predictions(&raw, items).map(|predictions| research::ValidatedBatch { predictions, errors: Default::default() }),
+                Mode::Agent => research.parse_items(&raw),
             };
             match parsed {
-                Ok(predictions) => return Ok(predictions),
-                Err(error) => {
+                Ok(batch) if batch.errors.is_empty() => return Ok(batch.predictions),
+                result => {
+                    let (error, partial) = match result {
+                        Ok(batch) => (batch.errors.iter().map(|(id, error)| format!("{id}: {error}")).collect::<Vec<_>>().join("; "), Some(batch)),
+                        Err(error) => (error.to_string(), None),
+                    };
+                    if partial.is_some() { last_partial = partial; }
                     record(json!({"event":"validation_error","round":round,"error":error.to_string()}))?;
-                    if report.recoveries >= config.max_recoveries || round + 1 == config.max_model_calls { return Err(error); }
+                    if report.recoveries >= config.max_recoveries || round + 1 == config.max_model_calls {
+                        if let Some(batch) = last_partial.take() {
+                            report.item_errors = batch.errors;
+                            return Ok(batch.predictions);
+                        }
+                        bail!("{error}");
+                    }
                     report.recoveries += 1;
                     force_final = true;
                     // Send the exact rejected answer and specific validation feedback.
                     messages.push(json!({"role":"assistant","content":message["content"]}));
-                    messages.push(json!({"role":"user","content":format!("Invalid output: {error}. Return one JSON object for ALL supplied items and nothing else. Use the schema exactly, no extra fields. Use only allowed evidence handles. Remove unsupported identities/citations and abstain where necessary. No tools remain.")}));
+                    messages.push(json!({"role":"user","content":format!("Invalid output: {error}. Return one JSON object for ALL supplied items and nothing else. Use the schema exactly, no extra fields. Preserve valid items. Remove unsupported identities/citations; an ambiguous recording can be null while supported artist tags remain. No tools remain. Current source eligibility (a source must be both attached and eligible): {}", research.audit())}));
                 }
             }
         }

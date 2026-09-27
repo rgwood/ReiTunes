@@ -13,6 +13,10 @@ pub struct Research {
     items: Vec<Input>,
     sources: Vec<Source>,
 }
+pub struct ValidatedBatch {
+    pub predictions: Vec<Prediction>,
+    pub errors: BTreeMap<String, String>,
+}
 
 fn string<'a>(value: &'a Value, key: &str) -> &'a str {
     value[key].as_str().unwrap_or_default()
@@ -452,6 +456,13 @@ impl Research {
         Ok(source)
     }
     pub fn parse(&self, raw: &Value) -> Result<Vec<Prediction>> {
+        let batch = self.parse_items(raw)?;
+        if let Some(error) = batch.errors.values().next() { bail!("{error}"); }
+        Ok(batch.predictions)
+    }
+    // Validate the envelope as a batch, but keep independent item outcomes.
+    // A bad citation must never invalidate another track's supported tags.
+    pub fn parse_items(&self, raw: &Value) -> Result<ValidatedBatch> {
         #[derive(Deserialize)]
         #[serde(deny_unknown_fields)]
         struct Batch {
@@ -510,7 +521,12 @@ impl Research {
         if by_id.len() != self.items.len() {
             bail!("Missing or invented item IDs");
         }
-        self.items.iter().map(|input| {
+        if self.items.iter().any(|input| !by_id.contains_key(&input.id)) {
+            bail!("Missing or invented item IDs");
+        }
+        let mut result = ValidatedBatch { predictions: Vec::new(), errors: BTreeMap::new() };
+        for input in &self.items {
+          let prediction: Result<Prediction> = (|| {
             let item = by_id.remove(&input.id).context("Missing or invented item ID")?;
             let mut research = json!({"status":"metadata-candidates-only","artist_mbid":null,"recording_mbid":null});
             for (kind,handle) in [("artist",item.research.artist),("recording",item.research.recording)] {
@@ -542,6 +558,12 @@ impl Research {
                 tags.push(Tag { tag:tag.tag,basis:tag.basis,confidence:tag.confidence,evidence:tag.evidence,source_urls:urls });
             }
             baseline::validate_prediction(Prediction {id:item.id,tags,uncertainty:item.uncertainty,research},&json!({"sources":sources}))
-        }).collect()
+          })();
+          match prediction {
+              Ok(prediction) => result.predictions.push(prediction),
+              Err(error) => { result.errors.insert(input.id.clone(), error.to_string()); }
+          }
+        }
+        Ok(result)
     }
 }

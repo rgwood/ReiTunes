@@ -1,112 +1,258 @@
 [
   {
     "id": "t01",
-    "name": "Black Is Back in Style",
-    "artist": "Moonfaec",
-    "album": "Julia With Blue Jeans On",
+    "name": "Cosmia",
+    "artist": "Joanna Newsom",
+    "album": "Ys",
     "musicbrainz": {
-      "artist_status": "ambiguous-or-unknown",
+      "artist": {
+        "aliases": [],
+        "community_tags": [
+          "folk",
+          "chamber folk",
+          "contemporary folk",
+          "singer-songwriter",
+          "freak folk",
+          "singer/songwriter",
+          "free folk",
+          "indie folk"
+        ],
+        "disambiguation": "",
+        "mbid": "cb69e1f1-bc76-4df5-93c9-cf97dd8a3b5c",
+        "name": "Joanna Newsom",
+        "source_url": "https://musicbrainz.org/artist/cb69e1f1-bc76-4df5-93c9-cf97dd8a3b5c",
+        "type": "Person"
+      },
+      "artist_status": "name-matched-candidate",
       "errors": [],
       "identity_caveat": "Metadata matches are candidates, not fingerprint-verified local recordings. Do not infer the local recording's live/remix/version status from a candidate alone. Artist tags describe the artist, not necessarily this track. Missing vocal credits do not establish instrumental status.",
-      "recording_status": "unresolved",
+      "recording": {
+        "artist_credits": [
+          "Joanna Newsom"
+        ],
+        "community_tags": [
+          "folk",
+          "acoustic rock",
+          "avant-garde",
+          "classical",
+          "folk rock",
+          "freak folk",
+          "indie",
+          "indie folk"
+        ],
+        "disambiguation": "",
+        "first_release_date": "2006-10",
+        "length_ms": 437160,
+        "mbid": "edeb5a5d-56b6-4920-8bcc-5b97ad401f2e",
+        "relationships": [
+          {
+            "attributes": [],
+            "name": "Jim O’Rourke",
+            "type": "mix"
+          },
+          {
+            "attributes": [],
+            "name": "Joanna Newsom",
+            "type": "producer"
+          },
+          {
+            "attributes": [],
+            "name": "Van Dyke Parks",
+            "type": "producer"
+          }
+        ],
+        "source_url": "https://musicbrainz.org/recording/edeb5a5d-56b6-4920-8bcc-5b97ad401f2e",
+        "title": "Cosmia"
+      },
+      "recording_status": "exact-metadata-candidate",
+      "release_status": "multiple-editions-unresolved",
       "research_reasons": [
-        "unknown-recording",
         "vocal-status-unconfirmed"
       ],
       "source": "MusicBrainz",
-      "sources": [],
+      "sources": [
+        "https://musicbrainz.org/recording/edeb5a5d-56b6-4920-8bcc-5b97ad401f2e",
+        "https://musicbrainz.org/artist/cb69e1f1-bc76-4df5-93c9-cf97dd8a3b5c"
+      ],
       "statistics": {
-        "cache_hits": 2,
-        "network_requests": 0,
+        "cache_hits": 0,
+        "network_requests": 3,
         "paid_search_requests": 0
       }
     }
   },
   {
     "id": "t02",
-    "name": "Two Thousand and Seventeen [Official Audio].mp3",
-    "artist": "Four Tet - Topic",
-    "album": "New Energy",
+    "name": "Out There on the Ice",
+    "artist": "Cut Copy",
+    "album": "In Ghost Colours",
     "musicbrainz": {
-      "artist_status": "ambiguous-or-unknown",
+      "artist": {
+        "aliases": [
+          "Cut/Copy"
+        ],
+        "community_tags": [
+          "electropop",
+          "synth-pop",
+          "indietronica"
+        ],
+        "disambiguation": "",
+        "mbid": "caaba574-dfbc-4681-8e56-19b5150897d2",
+        "name": "Cut Copy",
+        "source_url": "https://musicbrainz.org/artist/caaba574-dfbc-4681-8e56-19b5150897d2",
+        "type": "Group"
+      },
+      "artist_status": "name-matched-candidate",
       "errors": [],
       "identity_caveat": "Metadata matches are candidates, not fingerprint-verified local recordings. Do not infer the local recording's live/remix/version status from a candidate alone. Artist tags describe the artist, not necessarily this track. Missing vocal credits do not establish instrumental status.",
       "recording_status": "unresolved",
       "research_reasons": [
-        "unknown-recording",
+        "ambiguous-recording",
         "vocal-status-unconfirmed"
       ],
       "source": "MusicBrainz",
-      "sources": [],
+      "sources": [
+        "https://musicbrainz.org/artist/caaba574-dfbc-4681-8e56-19b5150897d2"
+      ],
       "statistics": {
-        "cache_hits": 2,
-        "network_requests": 0,
+        "cache_hits": 0,
+        "network_requests": 3,
         "paid_search_requests": 0
       }
     }
   },
   {
     "id": "t03",
-    "name": "Robbie Basho — Blue Crystal Fire",
-    "artist": "",
-    "album": "Visions of the Country",
+    "name": "Lady Liberty",
+    "artist": "Okkervil River",
+    "album": "Don't Fall in Love With Everyone You See",
     "musicbrainz": {
+      "artist": {
+        "aliases": [
+          "Okervil River"
+        ],
+        "community_tags": [
+          "indie rock",
+          "folk rock",
+          "rock and indie"
+        ],
+        "disambiguation": "",
+        "mbid": "9fa07bb4-8312-4cd7-a19a-4fdbc5797148",
+        "name": "Okkervil River",
+        "source_url": "https://musicbrainz.org/artist/9fa07bb4-8312-4cd7-a19a-4fdbc5797148",
+        "type": "Group"
+      },
+      "artist_status": "name-matched-candidate",
       "errors": [],
       "identity_caveat": "Metadata matches are candidates, not fingerprint-verified local recordings. Do not infer the local recording's live/remix/version status from a candidate alone. Artist tags describe the artist, not necessarily this track. Missing vocal credits do not establish instrumental status.",
       "recording_status": "unresolved",
       "research_reasons": [
-        "insufficient-metadata",
+        "ambiguous-recording",
         "vocal-status-unconfirmed"
       ],
       "source": "MusicBrainz",
-      "sources": [],
+      "sources": [
+        "https://musicbrainz.org/artist/9fa07bb4-8312-4cd7-a19a-4fdbc5797148"
+      ],
       "statistics": {
         "cache_hits": 0,
-        "network_requests": 0,
+        "network_requests": 3,
         "paid_search_requests": 0
       }
     }
   },
   {
     "id": "t04",
-    "name": "Barbarian",
-    "artist": "",
-    "album": "",
+    "name": "A Roller Skating Jam Named Saturdays",
+    "artist": "De La Soul",
+    "album": "1991 Beat Emotion Library",
     "musicbrainz": {
+      "artist": {
+        "aliases": [
+          "De La Sou",
+          "Dela Soul",
+          "Delasoul",
+          "デ・ラ・ソウル"
+        ],
+        "community_tags": [
+          "hip hop",
+          "jazz rap",
+          "conscious hip hop",
+          "east coast hip hop",
+          "boom bap",
+          "golden age hip hop",
+          "alternative hip hop",
+          "pop rap"
+        ],
+        "disambiguation": "",
+        "mbid": "a8ebde98-7e91-46c7-992c-90039ba42017",
+        "name": "De La Soul",
+        "source_url": "https://musicbrainz.org/artist/a8ebde98-7e91-46c7-992c-90039ba42017",
+        "type": "Group"
+      },
+      "artist_status": "name-matched-candidate",
       "errors": [],
       "identity_caveat": "Metadata matches are candidates, not fingerprint-verified local recordings. Do not infer the local recording's live/remix/version status from a candidate alone. Artist tags describe the artist, not necessarily this track. Missing vocal credits do not establish instrumental status.",
       "recording_status": "unresolved",
       "research_reasons": [
-        "insufficient-metadata",
+        "ambiguous-recording",
         "vocal-status-unconfirmed"
       ],
       "source": "MusicBrainz",
-      "sources": [],
+      "sources": [
+        "https://musicbrainz.org/artist/a8ebde98-7e91-46c7-992c-90039ba42017"
+      ],
       "statistics": {
         "cache_hits": 0,
-        "network_requests": 0,
+        "network_requests": 3,
         "paid_search_requests": 0
       }
     }
   },
   {
     "id": "t05",
-    "name": "Zqxv Nebula Teapot 7319",
-    "artist": "",
-    "album": "",
+    "name": "Hastings Sunrise",
+    "artist": "Apollo Ghosts",
+    "album": "Hastings Sunrise",
     "musicbrainz": {
+      "artist": {
+        "aliases": [],
+        "community_tags": [],
+        "disambiguation": "",
+        "mbid": "36abeb30-85c1-4db6-8ba6-cd0e6829ef31",
+        "name": "Apollo Ghosts",
+        "source_url": "https://musicbrainz.org/artist/36abeb30-85c1-4db6-8ba6-cd0e6829ef31",
+        "type": "Group"
+      },
+      "artist_status": "name-matched-candidate",
       "errors": [],
       "identity_caveat": "Metadata matches are candidates, not fingerprint-verified local recordings. Do not infer the local recording's live/remix/version status from a candidate alone. Artist tags describe the artist, not necessarily this track. Missing vocal credits do not establish instrumental status.",
-      "recording_status": "unresolved",
+      "recording": {
+        "artist_credits": [
+          "Apollo Ghosts"
+        ],
+        "community_tags": [],
+        "disambiguation": "",
+        "first_release_date": "2009-05-28",
+        "length_ms": 83653,
+        "mbid": "132b0910-c16d-413e-80a3-5b1889d9074f",
+        "relationships": [],
+        "source_url": "https://musicbrainz.org/recording/132b0910-c16d-413e-80a3-5b1889d9074f",
+        "title": "Hastings Sunrise"
+      },
+      "recording_status": "exact-metadata-candidate",
+      "release_status": "multiple-editions-unresolved",
       "research_reasons": [
-        "insufficient-metadata",
         "vocal-status-unconfirmed"
       ],
       "source": "MusicBrainz",
-      "sources": [],
+      "sources": [
+        "https://musicbrainz.org/recording/132b0910-c16d-413e-80a3-5b1889d9074f",
+        "https://musicbrainz.org/artist/36abeb30-85c1-4db6-8ba6-cd0e6829ef31"
+      ],
       "statistics": {
         "cache_hits": 0,
-        "network_requests": 0,
+        "network_requests": 3,
         "paid_search_requests": 0
       }
     }

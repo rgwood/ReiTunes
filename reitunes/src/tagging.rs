@@ -507,7 +507,18 @@ impl Tagging {
         let predictions = report
             .predictions
             .context("Agent returned no predictions")?;
-        for (item, prediction) in items.iter().zip(predictions) {
+        let mut predictions: std::collections::BTreeMap<_, _> = predictions.into_iter().map(|prediction| (prediction.id.clone(), prediction)).collect();
+        for (index, item) in items.iter().enumerate() {
+            let request_id = format!("t{:02}", index + 1);
+            if let Some(error) = report.item_errors.get(&request_id) {
+                self.fail(item.id, &item.hash, error)?;
+                self.0.pool.get()?.execute(
+                    "UPDATE tagging_run_items SET Status='failed',Error=?3 WHERE RunId=?1 AND ItemId=?2",
+                    params![run, item.id.to_string(), error],
+                )?;
+                continue;
+            }
+            let prediction = predictions.remove(&request_id).context("Agent returned no result for an item")?;
             let item_tags = ItemTags {
                 status: "ready".into(),
                 tags: prediction.tags,
@@ -1021,6 +1032,47 @@ mod tests {
         server.abort();
         assert_eq!(*sizes.lock().unwrap(), vec![5, 1]);
         assert_eq!(tagging.snapshot().await.unwrap().items.values().filter(|item| item.status == "ready").count(), 6);
+    }
+
+    #[tokio::test]
+    async fn invalid_agent_item_does_not_discard_valid_batch_peers() {
+        let (_directory, mut tagging, id) = fixture();
+        let template = tagging.0.library.read().await.items[&id].clone();
+        for index in 1..3 {
+            let mut item = template.clone();
+            item.id = Uuid::new_v4();
+            item.name = format!("Peer {index}");
+            tagging.0.library.write().await.items.insert(item.id, item);
+        }
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        Arc::get_mut(&mut tagging.0).unwrap().endpoint = format!("http://{}", listener.local_addr().unwrap());
+        Arc::get_mut(&mut tagging.0).unwrap().key = Some("local-test-key".into());
+        let server = tokio::spawn(async move {
+            axum::serve(listener, Router::new().route("/", post(move |Json(request): Json<Value>| async move {
+                let content: Value = serde_json::from_str(request["messages"][1]["content"].as_str().unwrap()).unwrap();
+                let items: Vec<_> = content["items"].as_array().unwrap().iter().rev().map(|item| {
+                    json!({"id":item["id"],"tags":[],"uncertainty":item["name"],
+                        "research":{"artist":if item["id"] == "t01" { json!("s999") } else { Value::Null },"recording":null}})
+                }).collect();
+                Json(json!({"choices":[{"finish_reason":"stop","message":{"content":json!({"items":items}).to_string()}}],"usage":{"cost":0.001}}))
+            }))).await.unwrap();
+        });
+        let ids: Vec<_> = tagging.0.library.read().await.items.keys().copied().collect();
+        for id in ids { tagging.enqueue(id, false).await.unwrap(); }
+        let jobs = prepared_jobs(&tagging).await;
+        let expected: Vec<_> = jobs.iter().map(|job| (job.id, job.metadata.name.clone())).collect();
+        tagging.classify_prepared(jobs).await.unwrap();
+        server.abort();
+        let snapshot = tagging.snapshot().await.unwrap();
+        for (index, (id, name)) in expected.iter().enumerate() {
+            let tags = &snapshot.items[&id.to_string()];
+            assert_eq!(tags.status, if index == 0 { "failed" } else { "ready" });
+            if index > 0 { assert_eq!(tags.uncertainty.as_deref(), Some(name.as_str())); }
+        }
+        let conn = tagging.0.pool.get().unwrap();
+        let failed: usize = conn.query_row("SELECT COUNT(*) FROM tagging_run_items WHERE Status='failed'", [], |r| r.get(0)).unwrap();
+        let ready: usize = conn.query_row("SELECT COUNT(*) FROM tagging_run_items WHERE Status='ready'", [], |r| r.get(0)).unwrap();
+        assert_eq!((failed, ready), (1, 2));
     }
 
     #[tokio::test]
