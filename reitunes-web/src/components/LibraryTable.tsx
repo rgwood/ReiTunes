@@ -55,6 +55,7 @@ interface LibraryTableProps {
   contextName?: string;
   allowReordering?: boolean;
   onNewPlaylist?: (itemIds: string[]) => void;
+  onSelectionCountChange?: (count: number) => void;
   viewId?: string;
 }
 
@@ -140,7 +141,7 @@ function formatCreatedTime(value: string, short = false): string {
   });
 }
 
-export function LibraryTable({ items, searchQuery, onlyFavouriteTracks = false, playlistId, onSearchChange, revealRequest, onRevealed, onManageBookmarks, onManageTags, onFilterTag, tagItems, selectedTagItemId, contextName: sourceName, allowReordering, onNewPlaylist, viewId = 'all' }: LibraryTableProps) {
+export function LibraryTable({ items, searchQuery, onlyFavouriteTracks = false, playlistId, onSearchChange, revealRequest, onRevealed, onManageBookmarks, onManageTags, onFilterTag, tagItems, selectedTagItemId, contextName: sourceName, allowReordering, onNewPlaylist, onSelectionCountChange, viewId = 'all' }: LibraryTableProps) {
   // TanStack Table v8 exposes mutable state through stable methods. Remove this
   // opt-out when useReactTable supports React Compiler memoization.
   'use no memo';
@@ -200,6 +201,7 @@ export function LibraryTable({ items, searchQuery, onlyFavouriteTracks = false, 
   const [selection, setSelection] = useState<{ rowId: string; field: EditableField } | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const anchor = useRef<string | null>(null);
+  const dragPreviewRef = useRef<HTMLDivElement>(null);
   const [playlistError, setPlaylistError] = useState('');
   const [dropRow, setDropRow] = useState<{ id: string; after: boolean } | null>(null);
   const [editingCell, setEditingCell] = useState<{ rowId: string; field: EditableField } | null>(null);
@@ -571,14 +573,18 @@ export function LibraryTable({ items, searchQuery, onlyFavouriteTracks = false, 
   }, []);
 
   const rows = table.getRowModel().rows;
-  const contextItems = contextMenu ? rows.filter(row => selectedIds.has(row.id)).map(row => row.original) : [];
+  const selectedRows = rows.filter(row => selectedIds.has(row.id));
+  const selectedCount = selectedRows.length;
+  useEffect(() => { onSelectionCountChange?.(selectedCount); }, [selectedCount, onSelectionCountChange]);
+  const contextItems = contextMenu ? selectedRows.map(row => row.original) : [];
   const contextIds = contextItems.length ? contextItems.map(item => item.id) : contextMenu ? [contextMenu.item.id] : [];
   const manualPlaylists = playlists.filter(playlist => !playlist.smart_rules);
   function selectRows(id: string, extend: boolean, toggle: boolean) {
     if (extend && anchor.current && rows.some(row => row.id === anchor.current)) {
       const first = rows.findIndex(row => row.id === anchor.current);
       const last = rows.findIndex(row => row.id === id);
-      setSelectedIds(new Set(rows.slice(Math.min(first, last), Math.max(first, last) + 1).map(row => row.id)));
+      const range = rows.slice(Math.min(first, last), Math.max(first, last) + 1).map(row => row.id);
+      setSelectedIds(previous => new Set(toggle ? [...previous, ...range] : range));
     } else if (toggle) {
       setSelectedIds(previous => { const next = new Set(previous); if (next.has(id)) next.delete(id); else next.add(id); return next; });
       anchor.current = id;
@@ -588,6 +594,7 @@ export function LibraryTable({ items, searchQuery, onlyFavouriteTracks = false, 
 
   return (
     <div className="px-5 h-full flex flex-col">
+      <div ref={dragPreviewRef} className="library-drag-preview" aria-hidden="true" />
       {choosingColumns && <ColumnsDialog onClose={() => setChoosingColumns(false)} />}
       {tracklistItem && <TracklistDialog key={tracklistItem.id} item={tracklistItem} onClose={() => setTracklistItem(null)}
         onApplied={() => setExpandedAlbums(old => new Map(old).set(tracklistItem.id, true))} />}
@@ -601,7 +608,7 @@ export function LibraryTable({ items, searchQuery, onlyFavouriteTracks = false, 
         const saved = savedViews.get(viewId);
         if (saved) saved.scrollTop = event.currentTarget.scrollTop;
       }}>
-        <table style={{ width: Object.values(columnSizing).reduce((sum, width) => sum + width, 0) }} aria-label="Tracks" aria-description="Right-click a column header to choose columns. Drag headers to reorder or their edges to resize. Click to select; Ctrl-click, Shift-click or Ctrl+A to select several. Click a selected text cell again or press F2 to edit. Double-click or Enter to play. Ctrl+I opens song info." className={`border-collapse table-fixed ${resizingColumn ? 'select-none' : ''}`}>
+        <table style={{ width: Object.values(columnSizing).reduce((sum, width) => sum + width, 0) }} aria-label="Tracks" aria-description="Right-click a column header to choose columns. Drag headers to reorder or their edges to resize. Click to select; Ctrl-click or Command-click toggles tracks, Shift-click selects a range, and Ctrl+A or Command+A selects all visible tracks. Drag any selected row to a playlist or the queue to add the selection in its displayed order. Click a selected text cell again or press F2 to edit. Double-click or Enter to play. Ctrl+I opens song info." className={`border-collapse table-fixed ${resizingColumn ? 'select-none' : ''}`}>
           <colgroup>
             {table.getVisibleLeafColumns().map(column => (
               <col key={column.id} style={{
@@ -719,10 +726,37 @@ export function LibraryTable({ items, searchQuery, onlyFavouriteTracks = false, 
                   onDragStart={event => {
                     cancelClickEdit();
                     if (editingCell) { event.preventDefault(); return; }
-                    const ids = selectedIds.has(row.id) ? rows.filter(row => selectedIds.has(row.id)).map(row => row.id) : [row.id];
+                    const draggedRows = selectedIds.has(row.id) ? selectedRows : [row];
+                    const ids = draggedRows.map(row => row.id);
+                    if (!selectedIds.has(row.id)) anchor.current = row.id;
                     setSelectedIds(new Set(ids));
                     event.dataTransfer.setData(TRACK_DRAG_TYPE, JSON.stringify(ids));
                     event.dataTransfer.effectAllowed = 'copyMove';
+                    const preview = dragPreviewRef.current;
+                    if (preview) {
+                      const count = document.createElement('strong');
+                      count.className = 'library-drag-count';
+                      count.textContent = `${ids.length} ${ids.length === 1 ? 'track' : 'tracks'}`;
+                      const cards = draggedRows.slice(0, 3).map((row, index) => {
+                        const card = document.createElement('div');
+                        card.className = 'library-drag-track';
+                        card.style.marginLeft = `${index * 4}px`;
+                        const name = document.createElement('span');
+                        name.textContent = row.original.name;
+                        const artist = document.createElement('small');
+                        artist.textContent = row.original.artist || 'Unknown artist';
+                        card.append(name, artist);
+                        return card;
+                      });
+                      preview.replaceChildren(count, ...cards);
+                      if (ids.length > cards.length) {
+                        const more = document.createElement('span');
+                        more.className = 'library-drag-more';
+                        more.textContent = `+${ids.length - cards.length} more`;
+                        preview.append(more);
+                      }
+                      event.dataTransfer.setDragImage(preview, 16, 14);
+                    }
                   }}
                   onDragOver={event => {
                     if (allowReordering && sorting.length === 0 && event.dataTransfer.types.includes(TRACK_DRAG_TYPE)) {
@@ -814,7 +848,10 @@ export function LibraryTable({ items, searchQuery, onlyFavouriteTracks = false, 
                       }, 500);
                     }
                   }}
-                  onDoubleClick={event => { cancelClickEdit(); handleRowPlay(row.original, rowIndex, event); }}
+                  onDoubleClick={event => {
+                    cancelClickEdit();
+                    if (!event.ctrlKey && !event.metaKey && !event.shiftKey) handleRowPlay(row.original, rowIndex, event);
+                  }}
                   onContextMenu={(e) => handleContextMenu(e, row.original)}
                 >
                   {row.getVisibleCells().map((cell) => {

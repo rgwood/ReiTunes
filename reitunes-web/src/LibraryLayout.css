@@ -81,6 +81,16 @@
 .playlist-submenu { margin-left: 10px; border-left: 1px solid var(--border-strong); }
 .context-selection-count { color: var(--muted); padding: 4px 12px; font-size: 11px; }
 .song-table tbody tr { cursor: default; }
+.song-table tbody { -webkit-user-select: none; user-select: none; }
+.song-table tbody input { -webkit-user-select: text; user-select: text; }
+.library-selection-count { color: var(--text); font-weight: 600; white-space: nowrap; }
+.library-drag-preview { position: fixed; left: -10000px; top: 0; width: 280px; padding: 0 12px 12px 0; pointer-events: none; color: var(--text); font: 13px/18px system-ui, sans-serif; }
+.library-drag-count { display: inline-block; margin-bottom: 4px; padding: 3px 9px; border-radius: 4px; background: var(--accent); color: var(--accent-text); }
+.library-drag-track { margin-top: 3px; padding: 5px 9px; border: 1px solid var(--accent); border-radius: 4px; background: var(--panel); box-shadow: 2px 3px 4px #0003; }
+.library-drag-track span, .library-drag-track small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.library-drag-track span { font-weight: 600; }
+.library-drag-track small { color: var(--muted); font-size: 11px; }
+.library-drag-more { display: inline-block; margin: 4px 0 0 8px; padding: 2px 8px; border-radius: 4px; background: var(--panel); }
 .song-table table { font: 12px/20px system-ui, sans-serif; }
 .song-table th, .song-table th:first-child { height: 24px; padding: 1px 9px; border-right: 0; border-bottom: 1px solid var(--line); background: var(--panel); color: var(--muted); font-size: 11px; line-height: 19px; font-weight: 500; }
 .song-table th > button { height: 19px; }

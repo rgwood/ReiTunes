@@ -71,6 +71,7 @@ function AppContent() {
   const [selectedCollection, setCollection] = useState<Collection>('all');
   const collection = isMobile && mobileRoute.playlistId ? 'all' : selectedCollection;
   const [revealRequest, setRevealRequest] = useState<{ itemId: string } | null>(null);
+  const [selectedTrackCount, setSelectedTrackCount] = useState(0);
   const finishReveal = useCallback(() => setRevealRequest(null), []);
   const [recentCutoff, setRecentCutoff] = useState(
     () => Date.now() - 30 * 24 * 60 * 60 * 1000
@@ -478,6 +479,7 @@ function AppContent() {
                   playlistId={selectedPlaylist?.smart_rules ? null : selectedPlaylistId}
                   contextName={selectedPlaylist?.name} allowReordering={!librarySearch && !!selectedPlaylist && !selectedPlaylist.smart_rules}
                   onNewPlaylist={itemIds => setPlaylistDraft({ smart: false, itemIds })}
+                  onSelectionCountChange={setSelectedTrackCount}
                   onSearchChange={setLibrarySearch} revealRequest={revealRequest} onRevealed={finishReveal}
                   onManageTags={manageTags} onFilterTag={browseTag} tagItems={tags.data?.items}
                   selectedTagItemId={panel === 'tags' ? tagItemId : null}
@@ -491,7 +493,8 @@ function AppContent() {
           <footer className="library-status" role="status">
             {view === 'discover' ? <span>{discoveryCount} sets in inbox · {discovery?.sources.length ?? 0} sources</span>
               : view === 'bookmarks' ? <span>{items.reduce((n, item) => n + Object.keys(item.bookmarks).length, 0)} bookmarks</span>
-              : <span>{filteredItems.length.toLocaleString()}{filteredItems.length !== items.length && ` of ${items.length.toLocaleString()}`} {filteredItems.length === 1 ? 'track' : 'tracks'}{selectedPlaylist && ` · ${selectedPlaylist.name}`}</span>}
+              : <span>{filteredItems.length.toLocaleString()}{filteredItems.length !== items.length && ` of ${items.length.toLocaleString()}`} {filteredItems.length === 1 ? 'track' : 'tracks'}{selectedPlaylist && ` · ${selectedPlaylist.name}`}
+                {selectedTrackCount > 0 && <span className="library-selection-count" title="Drag the selected tracks to a playlist or the queue"> · {selectedTrackCount.toLocaleString()} selected</span>}</span>}
             {view === 'library' && selectedPlaylist?.smart_rules && <button onClick={() => setPlaylistDraft({ playlist: selectedPlaylist, smart: true })}>Edit rules…</button>}
             {view === 'bookmarks' && <button onClick={nextMoment} disabled={!moments.length}>Next saved moment</button>}
           </footer>
