@@ -53,6 +53,7 @@ describe('playback persistence', () => {
       contextIndex: -1,
       contextName: 'Library',
       shuffleEnabled: false,
+      shuffledIds: [],
       repeatMode: 'off',
     });
     storage.clear();
@@ -127,6 +128,24 @@ describe('playback persistence', () => {
     expect(saved.state.manualQueue.map((entry: LibraryItem) => entry.id)).toEqual(['three']);
     expect(saved.state.contextName).toBe('Favourites');
     expect(saved.state.shuffleEnabled).toBe(true);
+  });
+
+  it('removes deleted songs from the shuffle order without reshuffling surviving songs', () => {
+    const tracks = ['current', 'deleted', 'next', 'last'].map(id => item(id));
+    useQueueStore.setState({ contextItems: tracks, contextIndex: 0, shuffleEnabled: true,
+      shuffledIds: ['current', 'last', 'deleted', 'next'] });
+    useQueueStore.getState().reconcileWithLibrary(tracks.filter(track => track.id !== 'deleted'));
+    expect(useQueueStore.getState().shuffledIds).toEqual(['current', 'last', 'next']);
+    expect(useQueueStore.getState().getUpcomingContext().map(track => track.id)).toEqual(['last', 'next']);
+    useQueueStore.getState().reconcileWithLibrary([]);
+    expect(useQueueStore.getState().shuffledIds).toEqual([]);
+  });
+
+  it('repairs an old saved shuffle order on reload', async () => {
+    useQueueStore.setState({ contextItems: [item('one'), item('two')], contextIndex: 0,
+      shuffleEnabled: true, shuffledIds: ['one', 'deleted', 'two', 'two'] });
+    await useQueueStore.persist.rehydrate();
+    expect(useQueueStore.getState().shuffledIds).toEqual(['one', 'two']);
   });
 
   it('uses one stable shuffle order for preview, next, previous, and reload without repeats', async () => {

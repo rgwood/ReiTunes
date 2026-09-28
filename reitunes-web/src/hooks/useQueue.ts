@@ -30,8 +30,15 @@ function canSelectTrack() {
   return canEditSharedSession() && !output.isSending && !output.isSwitchingOutput && !output.isTransportPending;
 }
 
+// Library deletion and session hydration can remove context tracks. Preserve
+// the surviving shuffle order so every subsequent shared-session save is valid.
+export function reconcileShuffleOrder(ids: string[], items: LibraryItem[]): string[] {
+  const available = new Set(items.map(item => item.id));
+  return [...new Set(ids)].filter(id => available.has(id));
+}
+
 function shuffled(items: LibraryItem[], currentId?: string): string[] {
-  const ids = items.filter(item => item.id !== currentId).map(item => item.id);
+  const ids = [...new Set(items.filter(item => item.id !== currentId).map(item => item.id))];
   for (let i = ids.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
     [ids[i], ids[j]] = [ids[j], ids[i]];
@@ -228,6 +235,7 @@ export const useQueueStore = create<QueueState>()(
           manualQueueIds: queueOccurrenceIds(state).filter((_, index) => items.some(item => item.id === state.manualQueue[index].id)),
           contextItems,
           contextIndex,
+          shuffledIds: reconcileShuffleOrder(state.shuffledIds, contextItems),
         };
       }),
     }),
@@ -238,6 +246,7 @@ export const useQueueStore = create<QueueState>()(
       merge: (persisted, current) => {
         const restored = { ...current, ...persisted as Partial<PersistedQueueState> };
         restored.manualQueueIds = queueOccurrenceIds(restored);
+        restored.shuffledIds = reconcileShuffleOrder(restored.shuffledIds, restored.contextItems);
         if (restored.shuffleEnabled && !restored.shuffledIds.length) {
           restored.shuffledIds = shuffled(restored.contextItems, restored.contextItems[restored.contextIndex]?.id);
         }

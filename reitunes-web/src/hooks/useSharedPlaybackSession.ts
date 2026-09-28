@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import type { LibraryItem } from '../types';
-import { useQueueStore, queueOccurrenceIds } from './useQueue';
+import { useQueueStore, queueOccurrenceIds, reconcileShuffleOrder } from './useQueue';
+import { recordPlaybackEvent } from '../utils/playbackDiagnostics';
 import { usePlayerStore } from '../stores/playerStore';
 import { usePlaybackTargetStore } from '../stores/playbackTargetStore';
 import { getPlaybackClientId, ownsBrowserPlayback, useSharedSessionStore,
@@ -113,7 +114,7 @@ export function applySharedPlaybackSnapshot(snapshot: SharedPlaybackSnapshot) {
       manualQueueIds: entries.map(entry => entry.id), contextItems,
       contextIndex: currentContextId ? contextItems.findIndex(item => item.id === currentContextId) : -1,
       contextName: queue.contextName, shuffleEnabled: queue.shuffleEnabled,
-      shuffledIds: queue.shuffledIds, repeatMode: queue.repeatMode });
+      shuffledIds: reconcileShuffleOrder(queue.shuffledIds, contextItems), repeatMode: queue.repeatMode });
     const output = usePlaybackTargetStore.getState();
     if (!same(output.target, state.target)) {
       usePlaybackTargetStore.setState({ target: state.target, takeoverRequired: false,
@@ -180,12 +181,14 @@ export async function flushSharedSession(): Promise<boolean> {
   dirty = false;
   playbackChanged = false;
   const requestGeneration = generation;
+  let httpStatus: number | undefined;
   writing = (async () => {
     try {
       const response = await fetch('/api/playback-session', {
         method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ operationId, expectedRevision, state: next }), signal: AbortSignal.timeout(20_000),
       });
+      httpStatus = response.status;
       if (requestGeneration !== generation) return false;
       if (response.status === 409) {
         const canonical = await response.json() as SharedPlaybackSnapshot;
@@ -195,7 +198,15 @@ export async function flushSharedSession(): Promise<boolean> {
         setError('Playback changed on another screen. Your last change was not applied; the current session is shown. Please try again.');
         return false;
       }
-      if (!response.ok) throw new Error('Could not save the shared playback session.');
+      if (!response.ok) {
+        // Only read the API's JSON error field, never a proxy's HTML error page.
+        const body = await response.json().catch(() => null);
+        const detail = typeof body?.error === 'string' ? body.error
+          .replace(/\b(?:https?|blob|data|file):[^\s"'<>]+/gi, '[redacted URL]')
+          // eslint-disable-next-line no-control-regex
+          .replace(/[\x00-\x1f\x7f]/g, ' ').trim().slice(0, 300) : '';
+        throw new Error(`Could not save the shared playback session (HTTP ${response.status})${detail ? `: ${detail}` : '.'}`);
+      }
       const result = await response.json() as SharedPlaybackSnapshot;
       if (result.revision < accepted.revision) return false;
       accepted = result;
@@ -211,6 +222,16 @@ export async function flushSharedSession(): Promise<boolean> {
       return true;
     } catch (error) {
       if (requestGeneration !== generation) return false;
+      const contextIds = new Set(next.queue.contextItemIds);
+      recordPlaybackEvent('session-save-failed', {
+        operationId, expectedRevision, httpStatus, target: next.target.kind,
+        errorName: error instanceof Error ? error.name : 'Error',
+        errorMessage: error instanceof Error ? error.message : 'Could not save playback.',
+        contextCount: next.queue.contextItemIds.length, manualQueueCount: next.queue.manualQueue.length,
+        shuffleEnabled: next.queue.shuffleEnabled, shuffledCount: next.queue.shuffledIds.length,
+        staleShuffleCount: next.queue.shuffledIds.filter(id => !contextIds.has(id)).length,
+        duplicateShuffleCount: next.queue.shuffledIds.length - new Set(next.queue.shuffledIds).size,
+      });
       // A reply can be lost after the write committed. Read back rather than
       // blindly replaying a whole old queue or assigning ownership twice.
       let canContinueOwnedAudio = ownsBrowserPlayback(usePlaybackTargetStore.getState().target);

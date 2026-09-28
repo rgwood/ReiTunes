@@ -1,4 +1,4 @@
-import { test, expect, type Page } from './fixtures/test';
+import { test, expect, type Page, type WebSocketRoute } from './fixtures/test';
 import type { SharedPlaybackState } from '../src/stores/sharedSessionStore';
 
 const firstId = '11111111-1111-4111-8111-111111111111';
@@ -19,7 +19,7 @@ function state(): SharedPlaybackState {
   };
 }
 
-async function install(page: Page) {
+async function install(page: Page, onSocket: (socket: WebSocketRoute) => void = () => {}) {
   const requests: Array<{ path: string; body?: unknown }> = [];
   let paused = false;
   let volume = 35;
@@ -30,7 +30,7 @@ async function install(page: Page) {
   await page.route('**/api/log', route => route.fulfill({ status: 200 }));
   await page.route('**/ui/play', route => route.fulfill({ status: 200 }));
   await page.route('**/audio/*.mp3', route => route.fulfill({ contentType: 'audio/mpeg', body: '' }));
-  await page.routeWebSocket('**/updates', () => {});
+  await page.routeWebSocket('**/updates', onSocket);
   await page.route('**/api/sonos/**', route => {
     const request = route.request();
     const path = new URL(request.url()).pathname;
@@ -57,6 +57,104 @@ async function queueState(page: Page) {
     const { useQueueStore } = await import(path);
     const state = useQueueStore.getState();
     return { ids: state.manualQueueIds, songs: state.manualQueue.map((item: { id: string }) => item.id), context: state.contextName };
+  });
+}
+
+test('a live library deletion removes the song from the shared shuffle order', async ({ page, sharedSession }) => {
+  const saved = state();
+  saved.queue.shuffleEnabled = true;
+  saved.queue.shuffledIds = [firstId, secondId];
+  sharedSession.snapshot = { revision: 7, state: saved };
+  let socket: WebSocketRoute | undefined;
+  await install(page, connected => { socket = connected; });
+  await page.goto('/');
+  await expect(page.getByRole('button', { name: 'Pause Sonos', exact: true })).toBeEnabled();
+  await expect.poll(() => Boolean(socket)).toBe(true);
+  socket!.send(JSON.stringify({ type: 'delete', id: secondId }));
+  await expect.poll(() => sharedSession.snapshot.revision).toBe(8);
+  expect((sharedSession.snapshot.state as SharedPlaybackState).queue).toMatchObject({
+    contextItemIds: [firstId], contextIndex: 0, shuffledIds: [firstId], manualQueue: [],
+  });
+  await expect(page.getByRole('alert')).toHaveCount(0);
+});
+
+test('a session containing a deleted shuffled song can be edited after hydration', async ({ page, sharedSession }) => {
+  const saved = state();
+  const deletedId = '33333333-3333-4333-8333-333333333333';
+  saved.queue.contextItemIds = [firstId, deletedId, secondId];
+  saved.queue.shuffleEnabled = true;
+  saved.queue.shuffledIds = [firstId, deletedId, secondId];
+  sharedSession.snapshot = { revision: 7, state: saved };
+  await install(page);
+  await page.route('**/api/playback-session', route => {
+    if (route.request().method() === 'POST') {
+      const queue = route.request().postDataJSON().state.queue;
+      if (queue.shuffledIds.some((id: string) => !queue.contextItemIds.includes(id))) {
+        return route.fulfill({ status: 400, json: { error: 'Shuffle order must contain distinct songs from the context' } });
+      }
+    }
+    return route.fallback();
+  });
+  await page.goto('/');
+  await expect(page.getByRole('button', { name: 'Pause Sonos', exact: true })).toBeEnabled();
+  await page.evaluate(async () => {
+    const path = '/src/hooks/useQueue.ts';
+    const { useQueueStore } = await import(path);
+    useQueueStore.getState().removeFromManualQueue(0);
+  });
+  await expect.poll(() => sharedSession.snapshot.revision).toBeGreaterThan(7);
+  const updated = sharedSession.snapshot.state as SharedPlaybackState;
+  expect(updated.queue.contextItemIds).toEqual([firstId, secondId]);
+  expect(updated.queue.shuffledIds).toEqual([firstId, secondId]);
+  expect(updated.queue.manualQueue).toEqual([{ id: 'copy-b', itemId: secondId }]);
+  await expect(page.getByRole('alert')).toHaveCount(0);
+});
+
+for (const jsonError of [true, false]) {
+  test(`failed session saves report HTTP status and ${jsonError ? 'server detail' : 'omit proxy HTML'}, then Retry recovers`, async ({ page, sharedSession }) => {
+    sharedSession.snapshot = { revision: 7, state: state() };
+    await install(page);
+    const logs: Array<{ level: string; args: Array<{ events: Array<Record<string, unknown>> }> }> = [];
+    await page.route('**/api/log', route => {
+      logs.push(route.request().postDataJSON());
+      return route.fulfill({ status: 200 });
+    });
+    await page.goto('/');
+    await expect(page.getByRole('button', { name: 'Pause Sonos', exact: true })).toBeEnabled();
+    let failedOperation: { operationId: string; expectedRevision: number } | undefined;
+    await page.route('**/api/playback-session', route => {
+      if (route.request().method() !== 'POST') return route.fallback();
+      failedOperation = route.request().postDataJSON();
+      return route.fulfill(jsonError
+        ? { status: 400, json: { error: 'Shuffle order must contain distinct songs from the context' } }
+        : { status: 503, contentType: 'text/html', body: '<h1>Private proxy detail</h1>' });
+    });
+    await page.evaluate(async () => {
+      const queuePath = '/src/hooks/useQueue.ts';
+      const sessionPath = '/src/hooks/useSharedPlaybackSession.ts';
+      const { useQueueStore } = await import(queuePath);
+      const { flushSharedSession } = await import(sessionPath);
+      useQueueStore.getState().toggleShuffle();
+      await flushSharedSession();
+    });
+    const alert = page.getByRole('alert').filter({ hasText: 'Could not save' });
+    await expect(alert).toContainText(`HTTP ${jsonError ? 400 : 503}`);
+    if (jsonError) await expect(alert).toContainText('Shuffle order must contain distinct songs from the context');
+    await expect(alert).not.toContainText('Private proxy detail');
+    const failures = () => logs.flatMap(log => log.args?.flatMap(batch => batch.events ?? []) ?? [])
+      .filter(event => event.event === 'session-save-failed');
+    await expect.poll(() => failures().length).toBe(1);
+    expect(failures()[0]).toMatchObject({
+      operationId: failedOperation!.operationId, expectedRevision: failedOperation!.expectedRevision,
+      httpStatus: jsonError ? 400 : 503, target: 'sonos',
+      contextCount: 2, manualQueueCount: 2, shuffleEnabled: true, shuffledCount: 2,
+      staleShuffleCount: 0, duplicateShuffleCount: 0,
+    });
+    expect(JSON.stringify(logs)).not.toContain('Private proxy detail');
+    expect(logs.find(log => log.args?.some(batch => batch.events?.some(event => event.event === 'session-save-failed')))?.level).toBe('warn');
+    await alert.getByRole('button', { name: 'Retry' }).click();
+    await expect(alert).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Pause Sonos', exact: true })).toBeEnabled();
   });
 }
 
