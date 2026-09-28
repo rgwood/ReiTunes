@@ -309,6 +309,8 @@ for (const theme of themeIds) for (const mode of ['light', 'dark'] as const) {
     samples.push(await readable(row.getByRole('button', { name: '♥', exact: true }), 'favourite icon', 3));
     await row.dblclick();
     await expect(row).toHaveAttribute('aria-current', 'true');
+    await page.locator('tbody tr').nth(1).click();
+    samples.push(await readable(row.getByRole('img', { name: 'Playing', exact: true }), 'playing indicator', 3));
     samples.push(await readable(nameCell, 'playing track text'));
     samples.push(await readable(row.locator('td').nth(2), 'playing artist text'));
     samples.push(await readable(row.locator('[data-column="album"]'), 'playing album text'));
@@ -376,6 +378,8 @@ test('captures theme comparisons with the same explicit review library', async (
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto('/');
   await expect(page.locator('tbody tr')).toHaveCount(120);
+  await page.locator('tbody tr').first().dblclick();
+  await page.locator('tbody tr').nth(1).click();
   await writeFile(testInfo.outputPath('theme-library.json'), JSON.stringify(fixtureItems));
   for (const [theme, mode] of [['solarized', 'dark'], ['catppuccin', 'dark'], ['catppuccin', 'light'], ['guava', 'dark'], ['papaya', 'dark'], ['blueberry', 'dark'], ['dragonfruit', 'dark'], ['forest-palace', 'dark']] as const) {
     await chooseTheme(page, theme, mode);

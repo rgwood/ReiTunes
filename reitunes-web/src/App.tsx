@@ -72,6 +72,7 @@ function AppContent() {
   const collection = isMobile && mobileRoute.playlistId ? 'all' : selectedCollection;
   const [revealRequest, setRevealRequest] = useState<{ itemId: string } | null>(null);
   const [selectedTrackCount, setSelectedTrackCount] = useState(0);
+  const [playbackState, setPlaybackState] = useState<'playing' | 'paused'>();
   const finishReveal = useCallback(() => setRevealRequest(null), []);
   const [recentCutoff, setRecentCutoff] = useState(
     () => Date.now() - 30 * 24 * 60 * 60 * 1000
@@ -375,7 +376,7 @@ function AppContent() {
     >
       <header className="player-bar">
         <div className="player-audio">
-          <AudioPlayer audioRef={audioRef} previewPauseRef={previewPauseRef} onPlaybackPosition={reportPlaybackPosition} items={items}
+          <AudioPlayer audioRef={audioRef} previewPauseRef={previewPauseRef} onPlaybackPosition={reportPlaybackPosition} onPlaybackState={setPlaybackState} items={items}
             mobile={isMobile} expanded={mobileRoute.tab === 'playing'}
             onExpand={() => { setPanel(null); navigateMobile({ ...mobileRoute, tab: 'playing' }); }}
             onQueue={() => { setPanel(null); navigateMobile({ ...mobileRoute, tab: 'queue' }); }}
@@ -473,7 +474,7 @@ function AppContent() {
                 query={deferredSearch} onQueryChange={setBookmarkSearch} hideSearch onNextMoment={nextMoment} />
             </div> : <>
               <div className="song-table">
-                <LibraryTable key={selectedPlaylistId || collection} items={filteredItems} searchQuery=""
+                <LibraryTable key={selectedPlaylistId || collection} items={filteredItems} searchQuery="" playbackState={playbackState}
                   onlyFavouriteTracks={collection === 'favourites' || selectedPlaylist?.smart_rules?.favourites_only === true}
                   viewId={selectedPlaylistId || collection}
                   playlistId={selectedPlaylist?.smart_rules ? null : selectedPlaylistId}

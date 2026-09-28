@@ -43,7 +43,7 @@
 .tracklist-disclosure { width: 18px; height: 22px; margin-right: 3px; color: var(--muted); border-radius: 3px; vertical-align: top; }
 .song-table td[data-has-tracklist] > .truncate { display: inline-block; vertical-align: top; max-width: calc(100% - 21px); }
 .song-table td[data-has-tracklist] .library-cell-editor { padding-left: 30px; }
-.song-table tbody tr[aria-current='true'] td[data-has-tracklist] .library-cell-editor { padding-left: 43px; }
+.song-table tbody tr[aria-current='true'] td[data-has-tracklist] .library-cell-editor { padding-left: 52px; }
 .tracklist-disclosure:hover { background: var(--hover); color: var(--text); }
 .song-table .album-tracklist td { padding: 0 !important; height: auto !important; white-space: normal; }
 .album-tracklist > td > div { border-bottom: 1px solid var(--line); padding: 5px 10px 7px 36px; background: var(--surface); }

@@ -60,6 +60,19 @@ async function queueState(page: Page) {
   });
 }
 
+test('the desktop playing-row indicator follows Sonos pause and resume', async ({ page, sharedSession }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  sharedSession.snapshot = { revision: 7, state: state() };
+  await install(page);
+  await page.goto('/');
+  const currentRow = page.locator(`tr[data-item-id="${firstId}"]`);
+  await expect(currentRow.getByRole('img', { name: 'Playing', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Pause Sonos', exact: true }).click();
+  await expect(currentRow.getByRole('img', { name: 'Paused', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Play Sonos', exact: true }).click();
+  await expect(currentRow.getByRole('img', { name: 'Playing', exact: true })).toBeVisible();
+});
+
 test('a live library deletion removes the song from the shared shuffle order', async ({ page, sharedSession }) => {
   const saved = state();
   saved.queue.shuffleEnabled = true;

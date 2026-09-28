@@ -98,13 +98,12 @@
 .song-table td[data-editing] { position: relative; }
 /* The cell supplies the focus border; the editor keeps the normal text inset. */
 .song-table td .library-cell-editor { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; padding: 0 9px; border: 0; border-radius: 0; outline: none; box-shadow: none; background: transparent; color: inherit; font: inherit; }
-.song-table tbody tr[aria-current='true'] td[data-column='name'] .library-cell-editor { padding-left: 22px; }
-.song-table tbody tr[aria-current='true']:not([aria-selected='true']) { background: var(--surface); }
-.song-table tbody tr[aria-current='true']:nth-child(even):not([aria-selected='true']) { background: var(--alternate); }
-.song-table tbody tr[aria-current='true'] td:first-child { box-shadow: none; }
+.song-table tbody tr[aria-current='true'] td[data-column='name'] .library-cell-editor { padding-left: 31px; }
+.song-table tbody tr[aria-current='true']:not([aria-selected='true']) { background: color-mix(in srgb, var(--cyan) 16%, var(--surface)); }
+.song-table tbody tr[aria-current='true'] td:first-child { box-shadow: inset 3px 0 var(--cyan); }
 .song-table td[data-column='name'] { position: relative; }
-.song-table tbody tr[aria-current='true'] td[data-column='name'] { padding-left: 22px; }
-.song-table tbody tr[aria-current='true'] td[data-column='name']::before { content: '▶'; position: absolute; left: 9px; top: 50%; transform: translateY(-50%); color: var(--accent); font-size: 9px; }
+.song-table tbody tr[aria-current='true'] td[data-column='name'] { padding-left: 31px; font-weight: 600; }
+.library-playback-indicator { position: absolute; left: 9px; top: 50%; transform: translateY(-50%); color: var(--cyan); display: flex; pointer-events: none; }
 .song-table td[data-column='bookmarks'] { text-align: left; }
 .song-table td[data-column='play_count'], .song-table td[data-column='track_number'] { text-align: right; font-variant-numeric: tabular-nums; }
 .song-table .bookmark-emoji { font-size: 14px; padding: 0 3px; }

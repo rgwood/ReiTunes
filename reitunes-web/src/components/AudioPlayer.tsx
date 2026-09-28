@@ -150,6 +150,7 @@ interface AudioPlayerProps {
   audioRef: RefObject<HTMLAudioElement | null>;
   items: LibraryItem[];
   onPlaybackPosition?: (itemId: string, position: number) => void;
+  onPlaybackState?: (state: 'playing' | 'paused' | undefined) => void;
   previewPauseRef?: RefObject<(() => Promise<boolean>) | null>;
   mobile?: boolean;
   expanded?: boolean;
@@ -158,7 +159,7 @@ interface AudioPlayerProps {
   onOutput?: () => void;
 }
 
-export function AudioPlayer({ audioRef: sharedAudioRef, items, onPlaybackPosition, previewPauseRef,
+export function AudioPlayer({ audioRef: sharedAudioRef, items, onPlaybackPosition, onPlaybackState, previewPauseRef,
   mobile = false, expanded = true, onExpand, onQueue, onOutput }: AudioPlayerProps) {
   const audioRef = useRef<HTMLAudioElement>(null);
   const attachAudio = useCallback((audio: HTMLAudioElement | null) => {
@@ -222,6 +223,10 @@ export function AudioPlayer({ audioRef: sharedAudioRef, items, onPlaybackPositio
   const duration = loadedDuration || (currentItem ? trackDuration(currentItem) ?? 0 : 0);
   const mediaSessionActive = sharedReady && !!currentItem && (canPlayLocally ||
     (sonosSessionActive && sonosPlayback?.sourceItemId === currentItem.id));
+  const observedPlaying = target.kind === 'sonos' ? sonosIsPlaying : isPlaying;
+  useEffect(() => {
+    onPlaybackState?.(mediaSessionActive ? (observedPlaying ? 'playing' : 'paused') : undefined);
+  }, [onPlaybackState, mediaSessionActive, observedPlaying]);
   const mediaPosition = target.kind === 'sonos' ? (sonos.requestedSeekMillis ?? sonos.positionMillis) / 1000 : currentTime;
   const refreshSonosPlayback = sonos.refreshPlayback;
   useEffect(() => {

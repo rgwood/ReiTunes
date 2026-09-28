@@ -26,6 +26,7 @@ import type { ItemTags } from '../hooks/useTags';
 import { RowTags } from './RowTags';
 import { TracklistDialog } from './TracklistDialog';
 import { AlbumTrackRows } from './AlbumTrackRows';
+import { MusicIcon } from './MusicIcon';
 
 const editableFields = ['name', 'artist', 'album'] as const;
 type EditableField = typeof editableFields[number];
@@ -56,6 +57,7 @@ interface LibraryTableProps {
   allowReordering?: boolean;
   onNewPlaylist?: (itemIds: string[]) => void;
   onSelectionCountChange?: (count: number) => void;
+  playbackState?: 'playing' | 'paused';
   viewId?: string;
 }
 
@@ -141,7 +143,7 @@ function formatCreatedTime(value: string, short = false): string {
   });
 }
 
-export function LibraryTable({ items, searchQuery, onlyFavouriteTracks = false, playlistId, onSearchChange, revealRequest, onRevealed, onManageBookmarks, onManageTags, onFilterTag, tagItems, selectedTagItemId, contextName: sourceName, allowReordering, onNewPlaylist, onSelectionCountChange, viewId = 'all' }: LibraryTableProps) {
+export function LibraryTable({ items, searchQuery, onlyFavouriteTracks = false, playlistId, onSearchChange, revealRequest, onRevealed, onManageBookmarks, onManageTags, onFilterTag, tagItems, selectedTagItemId, contextName: sourceName, allowReordering, onNewPlaylist, onSelectionCountChange, playbackState, viewId = 'all' }: LibraryTableProps) {
   // TanStack Table v8 exposes mutable state through stable methods. Remove this
   // opt-out when useReactTable supports React Compiler memoization.
   'use no memo';
@@ -875,6 +877,10 @@ export function LibraryTable({ items, searchQuery, onlyFavouriteTracks = false, 
                           }
                         }}
                       >
+                        {field === 'name' && isCurrentlyPlaying && <span className="library-playback-indicator" role="img"
+                          aria-label={playbackState === 'playing' ? 'Playing' : playbackState === 'paused' ? 'Paused' : 'Current track'}>
+                          <MusicIcon name={playbackState === 'paused' ? 'pause' : 'volume'} size={16} />
+                        </span>}
                         {field === 'name' && row.original.tracklist && !isEditing && <button type="button" className="tracklist-disclosure"
                           aria-label={`Tracklist for ${row.original.name}`} aria-expanded={expanded}
                           onClick={event => { event.stopPropagation(); cancelClickEdit(); setExpandedAlbums(old => new Map(old).set(row.id, !expanded)); }}>
