@@ -1,4 +1,4 @@
-import { expect, type Page } from '@playwright/test';
+import { expect, type Page } from './fixtures/test';
 import { test, deferred, SonosSimulator } from './fixtures/sonos';
 
 async function openPaused(page: Page) {

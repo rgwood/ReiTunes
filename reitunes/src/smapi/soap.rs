@@ -735,6 +735,7 @@ mod tests {
             cloud_queues: Arc::new(crate::cloud_queue::CloudQueueStore::with_base_url(
                 "https://reitunes.example.com/",
             )),
+            playback_session: Arc::new(crate::playback_session::PlaybackSessionStore::in_memory()),
             tagging: None,
         };
 

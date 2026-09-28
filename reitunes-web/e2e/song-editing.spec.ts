@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Page } from './fixtures/test';
 import type { LibraryItem } from '../src/types';
 
 async function setup(page: Page, otherMetadata = false) {
@@ -47,8 +47,9 @@ async function setup(page: Page, otherMetadata = false) {
       value() { Object.defineProperty(this, 'paused', { configurable: true, value: true }); this.dispatchEvent(new Event('pause')); },
     });
   });
-  await page.goto('/');
-  await expect(page.locator('tbody tr')).toHaveCount(2);
+  const mobile = (page.viewportSize()?.width ?? 1440) <= 700;
+  await page.goto(mobile ? '/#browse/library' : '/');
+  await expect(page.locator(mobile ? '.mobile-song-list > li' : 'tbody tr')).toHaveCount(2);
   return { items, writes, plays };
 }
 
@@ -58,9 +59,14 @@ for (const width of [1440, 390]) {
     const { items, writes, plays } = await setup(page);
     items[0].file_path = 'imports/Nick Drake — Northern Sky (2020 Remaster) [long-original-filename].mp3';
     await page.reload();
-    const row = page.locator('tbody tr').first();
-    await row.click();
-    await row.press('Control+i');
+    if (width <= 700) {
+      await page.getByRole('button', { name: 'Actions for Northern Sky', exact: true }).click();
+      await page.getByRole('button', { name: 'Song info', exact: true }).click();
+    } else {
+      const row = page.locator('tbody tr').first();
+      await row.click();
+      await row.press('Control+i');
+    }
     const dialog = page.getByRole('dialog', { name: 'Song info' });
     const detail = (name: string) => dialog.locator('dt').filter({ hasText: new RegExp(`^${name}$`) }).locator('+ dd');
     await expect(detail('File size')).toHaveText('8 MiB (8,388,608 bytes)');
@@ -79,6 +85,7 @@ for (const width of [1440, 390]) {
     expect(bounds.x).toBeGreaterThanOrEqual(0);
     expect(bounds.x + bounds.width).toBeLessThanOrEqual(width);
     expect(await dialog.evaluate(el => el.scrollWidth <= el.clientWidth)).toBe(true);
+    await dialog.getByRole('button', { name: 'Save', exact: true }).scrollIntoViewIfNeeded();
     await expect(dialog.getByRole('button', { name: 'Save', exact: true })).toBeInViewport();
     await page.screenshot({ path: testInfo.outputPath(`song-file-info-${width}.png`) });
     expect(writes).toEqual([]);
@@ -405,8 +412,8 @@ test('Get Info and Ctrl+I edit multiple fields with cancellation and partial-sav
 test('song info fits a phone and rejects invalid fields without touching playback', async ({ page }, testInfo) => {
   await page.setViewportSize({ width: 390, height: 844 });
   const { writes, plays } = await setup(page);
-  await page.getByRole('row').filter({ hasText: 'Northern Sky' }).click({ button: 'right' });
-  await page.getByRole('button', { name: /Get Info/ }).click();
+  await page.getByRole('button', { name: 'Actions for Northern Sky', exact: true }).click();
+  await page.getByRole('button', { name: 'Song info', exact: true }).click();
   const dialog = page.getByRole('dialog', { name: 'Song info' });
   await dialog.getByRole('textbox', { name: 'Name', exact: true }).fill('   ');
   await dialog.getByRole('button', { name: 'Save', exact: true }).click();

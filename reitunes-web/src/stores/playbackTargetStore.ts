@@ -1,10 +1,12 @@
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
+import { getPlaybackClientId } from './sharedSessionStore';
 
 export const PLAYBACK_TARGET_STORAGE_KEY = 'reitunes-playback-target';
 
 export interface BrowserPlaybackTarget {
   kind: 'browser';
+  ownerId?: string | null;
 }
 
 export interface SonosPlaybackTarget {
@@ -51,7 +53,7 @@ export const usePlaybackTargetStore = create<PlaybackTargetState>()(
 
       setBrowserTarget: () =>
         set({
-          target: { kind: 'browser' },
+          target: { kind: 'browser', ownerId: getPlaybackClientId() },
           takeoverRequired: false,
           isSending: false,
           isTransportPending: false,

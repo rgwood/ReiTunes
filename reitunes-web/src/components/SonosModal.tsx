@@ -6,6 +6,8 @@ import type { SonosPlaybackStatus } from '../hooks/useSonosControls';
 import { sendSonosQueue } from '../hooks/usePlayback';
 import { recordPlaybackEvent } from '../utils/playbackDiagnostics';
 import { sonosRequest, SonosRequestError } from '../utils/sonosRequest';
+import { canEditSharedSession, ownsBrowserPlayback, useSharedSessionStore } from '../stores/sharedSessionStore';
+import { flushSharedSession, refreshSharedSession, stageSharedPlayback } from '../hooks/useSharedPlaybackSession';
 import './SonosModal.css';
 
 interface SonosStatus {
@@ -66,6 +68,7 @@ async function pauseSonosForHandoff(groupId: string) {
 }
 
 export function SonosModal({ audioRef, isOpen, onClose, items }: SonosModalProps) {
+  const session = useSharedSessionStore();
   const dialogRef = useRef<HTMLDialogElement>(null);
   const [status, setStatus] = useState<SonosStatus | null>(null);
   const [households, setHouseholds] = useState<DiscoveredHousehold[]>([]);
@@ -135,6 +138,8 @@ export function SonosModal({ audioRef, isOpen, onClose, items }: SonosModalProps
       setStatus({ configured: true, connected: false });
       setHouseholds([]);
       setBrowserTarget();
+      stageSharedPlayback();
+      await flushSharedSession();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not disconnect Sonos');
     } finally {
@@ -144,28 +149,34 @@ export function SonosModal({ audioRef, isOpen, onClose, items }: SonosModalProps
 
   const chooseBrowser = useCallback(async () => {
     const output = usePlaybackTargetStore.getState();
-    if (output.target.kind !== 'sonos' || output.isSending || output.isSwitchingOutput || output.isTransportPending) return;
+    if (!canEditSharedSession() || ownsBrowserPlayback(output.target) || output.isSending || output.isSwitchingOutput || output.isTransportPending) return;
     output.setSwitchingOutput(true);
     setError(null);
     recordPlaybackEvent('command', { origin: 'handoff-to-browser', target: 'sonos' });
     try {
-      const { playback, wasPlaying } = await pauseSonosForHandoff(output.target.groupId);
       const player = usePlayerStore.getState();
-      const item = playback.reitunesSessionActive
-        ? items.find(candidate => candidate.id === playback.sourceItemId)
-        : undefined;
+      const snapshot = output.target.kind === 'sonos' ? await pauseSonosForHandoff(output.target.groupId) : null;
+      const item = snapshot ? snapshot.playback.reitunesSessionActive
+        ? items.find(candidate => candidate.id === snapshot.playback.sourceItemId) : undefined : player.currentItem;
+      const position = snapshot ? snapshot.playback.positionMillis / 1000 : player.resumePosition;
+      const wasPlaying = snapshot?.wasPlaying ?? false;
       // Commit the output only after pause succeeds, so a failed request cannot
       // leave both outputs playing. A paused Sonos session stays paused locally.
       if (item) {
-        player.play(item, playback.positionMillis / 1000);
-        player.setIsPlaying(wasPlaying);
+        player.selectRemoteItem(item, position);
       } else {
         player.setIsPlaying(false);
       }
       setBrowserTarget();
+      stageSharedPlayback();
+      if (!await flushSharedSession()) throw new Error('The shared session changed. Please try again.');
+      if (item) {
+        player.play(item, position);
+        player.setIsPlaying(wasPlaying);
+      }
       recordPlaybackEvent('command', {
         origin: 'handoff-complete', target: 'browser', itemId: item?.id,
-        position: item ? playback.positionMillis / 1000 : undefined,
+        position: item ? position : undefined,
         isPlaying: !!item && wasPlaying,
       });
     } catch (err) {
@@ -186,7 +197,7 @@ export function SonosModal({ audioRef, isOpen, onClose, items }: SonosModalProps
       players: Map<string, SonosPlayer>
     ) => {
       const output = usePlaybackTargetStore.getState();
-      if (output.isSending || output.isSwitchingOutput || output.isTransportPending) return;
+      if (!canEditSharedSession() || output.isSending || output.isSwitchingOutput || output.isTransportPending) return;
       const playerNames = group.playerIds.map(
         (playerId) => players.get(playerId)?.name || playerId
       );
@@ -208,7 +219,8 @@ export function SonosModal({ audioRef, isOpen, onClose, items }: SonosModalProps
       try {
         const player = usePlayerStore.getState();
         let item = player.currentItem;
-        let position = player.pendingSeek ?? audioRef.current?.currentTime ?? player.resumePosition;
+        let position = player.pendingSeek ?? (ownsBrowserPlayback(output.target)
+          ? audioRef.current?.currentTime ?? player.resumePosition : player.resumePosition);
         let wasPlaying = player.isPlaying;
         if (output.target.kind === 'sonos') {
           const snapshot = await pauseSonosForHandoff(output.target.groupId);
@@ -225,8 +237,10 @@ export function SonosModal({ audioRef, isOpen, onClose, items }: SonosModalProps
         setSonosTarget({
           householdId: household.id, groupId: group.id, groupName: group.name, playerNames,
         });
+        if (item) player.selectRemoteItem(item, position);
+        stageSharedPlayback();
+        if (!await flushSharedSession()) throw new Error('The shared session changed. Please try again.');
         if (item) {
-          player.selectRemoteItem(item, position);
           const next = usePlaybackTargetStore.getState();
           if (next.target.kind !== 'sonos') return;
           next.beginSending();
@@ -238,8 +252,10 @@ export function SonosModal({ audioRef, isOpen, onClose, items }: SonosModalProps
             if (usePlaybackTargetStore.getState().target !== next.target) return;
             next.failSending(
               err instanceof Error ? err.message : 'Could not transfer playback to Sonos',
-              err instanceof SonosRequestError && err.status === 409,
+              err instanceof SonosRequestError && err.status === 409 &&
+                (err.code === undefined || err.code === 'takeover_required'),
             );
+            if (err instanceof SonosRequestError && err.code === 'shared_session_conflict') await refreshSharedSession();
             throw err;
           }
         }
@@ -289,7 +305,7 @@ export function SonosModal({ audioRef, isOpen, onClose, items }: SonosModalProps
         <div className="overflow-y-auto">
           <div
             className={`border rounded p-3 mb-4 flex items-center justify-between gap-4 ${
-              target.kind === 'browser'
+              ownsBrowserPlayback(target)
                 ? 'border-solarized-cyan bg-solarized-base03'
                 : 'border-solarized-base01'
             }`}
@@ -303,10 +319,10 @@ export function SonosModal({ audioRef, isOpen, onClose, items }: SonosModalProps
             <button
               type="button"
               onClick={() => void chooseBrowser()}
-              disabled={target.kind === 'browser' || isSending || isSwitchingOutput || isTransportPending}
+              disabled={(session.enabled && (!session.ready || !session.connected || session.refreshing)) || ownsBrowserPlayback(target) || isSending || isSwitchingOutput || isTransportPending}
               className="shrink-0 px-3 py-1.5 text-xs bg-solarized-base01 text-solarized-base2 rounded hover:bg-solarized-base00 disabled:text-solarized-cyan disabled:bg-solarized-base02 transition-colors"
             >
-              {isSwitchingOutput ? 'Switching…' : target.kind === 'browser' ? 'Selected' : 'Use browser'}
+              {isSwitchingOutput ? 'Switching…' : ownsBrowserPlayback(target) ? 'Selected' : 'Listen on this device'}
             </button>
           </div>
 
@@ -385,7 +401,7 @@ export function SonosModal({ audioRef, isOpen, onClose, items }: SonosModalProps
                             <button
                               type="button"
                               onClick={() => void chooseGroup(household, group, players)}
-                              disabled={isSending || isSwitchingOutput || isTransportPending || (isSelected && !needsConfirmation)}
+                              disabled={(session.enabled && (!session.ready || !session.connected || session.refreshing)) || isSending || isSwitchingOutput || isTransportPending || (isSelected && !needsConfirmation)}
                               className="shrink-0 px-3 py-1.5 text-xs bg-solarized-base01 text-solarized-base2 rounded hover:bg-solarized-base00 disabled:text-solarized-cyan disabled:bg-solarized-base02 transition-colors"
                             >
                               {isSelected

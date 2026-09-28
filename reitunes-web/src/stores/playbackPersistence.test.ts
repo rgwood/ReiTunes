@@ -17,6 +17,7 @@ Object.defineProperty(globalThis, 'localStorage', { value: storage });
 
 const { PLAYER_STORAGE_KEY, usePlayerStore } = await import('./playerStore');
 const { QUEUE_STORAGE_KEY, reconcileLibraryItems, useQueueStore } = await import('../hooks/useQueue');
+const { usePlaybackTargetStore } = await import('./playbackTargetStore');
 
 function item(id: string, name = id): LibraryItem {
   return {
@@ -159,6 +160,22 @@ describe('playback persistence', () => {
     expect(useQueueStore.getState().contextIndex).toBe(1);
     expect(useQueueStore.getState().manualQueue).toEqual([one, two]);
     expect(useQueueStore.getState().takeQueuedItem(99)).toBeNull();
+  });
+
+  it('does not replace the queue context when a second song is selected during a pending output command', () => {
+    const queue = useQueueStore.getState();
+    queue.setContext([item('one'), item('two')], 0, 'Original');
+    queue.addToQueue(item('queued'));
+    const before = useQueueStore.getState();
+    usePlaybackTargetStore.getState().beginSending();
+    try {
+      queue.setContext([item('other')], 0, 'New selection');
+      expect(queue.takeQueuedItem(0)).toBeNull();
+      expect(queue.playNext()).toBeNull();
+      expect(useQueueStore.getState().contextItems).toBe(before.contextItems);
+      expect(useQueueStore.getState().manualQueueIds).toEqual(before.manualQueueIds);
+      expect(useQueueStore.getState().manualQueue).toEqual([item('queued')]);
+    } finally { usePlaybackTargetStore.getState().finishSending(); }
   });
 
   it('refreshes active bookmark limits and clears them for ordinary playback', () => {

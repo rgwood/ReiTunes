@@ -1,7 +1,21 @@
-import { expect, type Page } from '@playwright/test';
+import { expect, type Page, type SharedSessionSimulator } from './fixtures/test';
 import { test, SonosSimulator, trackId, deferred } from './fixtures/sonos';
+import type { SharedPlaybackState, SharedPlaybackSnapshot } from '../src/stores/sharedSessionStore';
 
-async function setup(page: Page) {
+function queue(session: SharedSessionSimulator) { return (session.snapshot.state as SharedPlaybackState).queue; }
+function upcoming(session: SharedSessionSimulator) {
+  const saved = queue(session);
+  const order = saved.shuffleEnabled ? saved.shuffledIds : saved.contextItemIds;
+  const index = order.indexOf(saved.contextItemIds[saved.contextIndex]);
+  return [...saved.manualQueue.map(entry => entry.itemId), ...order.slice(index + 1)];
+}
+
+async function emitSnapshot(page: Page, session: SharedSessionSimulator, snapshot: SharedPlaybackSnapshot) {
+  session.snapshot = snapshot;
+  await page.evaluate(snapshot => window.dispatchEvent(new CustomEvent('reitunes:playback-session', { detail: snapshot })), snapshot);
+}
+
+async function setup(page: Page, session: SharedSessionSimulator) {
   const sonos = new SonosSimulator(page);
   await sonos.install();
   const items = ['Current song', 'Library next', 'Queued song'].map((name, index) => ({
@@ -11,22 +25,23 @@ async function setup(page: Page) {
   }));
   await page.route('**/api/items', route => route.fulfill({ json: items }));
   await page.route('**/api/tags', route => route.fulfill({ json: { enabled: false, items: {} } }));
-  const requests: Array<{ itemId: string; itemIds: string[] }> = [];
-  let gate: ReturnType<typeof deferred> | null = null;
-  let fails = false;
-  await page.route('**/api/sonos/groups/group-1/queue', async route => {
-    requests.push(route.request().postDataJSON());
-    if (gate) await gate.promise;
-    await route.fulfill(fails ? { status: 502, json: { error: 'Refresh failed' } } : { status: 204 });
+  const directQueueRequests: unknown[] = [];
+  await page.route('**/api/sonos/groups/group-1/queue', route => {
+    directQueueRequests.push(route.request().postDataJSON());
+    return route.fulfill({ status: 204 });
   });
   await page.goto('/');
   await expect(page.getByRole('button', { name: 'Pause Sonos', exact: true })).toBeEnabled();
   await page.evaluate(async items => {
-    const path = '/src/hooks/useQueue.ts';
-    const { useQueueStore } = await import(path);
+    const queuePath = '/src/hooks/useQueue.ts';
+    const sessionPath = '/src/hooks/useSharedPlaybackSession.ts';
+    const { useQueueStore } = await import(queuePath);
+    const { flushSharedSession } = await import(sessionPath);
     useQueueStore.getState().setContext(items, 0, 'Library');
+    await flushSharedSession();
   }, items);
-  return { sonos, items, requests, hold: () => { gate = deferred(); return gate; }, fail: (value: boolean) => { fails = value; } };
+  await expect.poll(() => queue(session).contextItemIds.length).toBe(3);
+  return { sonos, items, directQueueRequests };
 }
 
 async function edit(page: Page, action: 'addNext' | 'addToQueue' | 'clearManualQueue', index = 2) {
@@ -38,117 +53,134 @@ async function edit(page: Page, action: 'addNext' | 'addToQueue' | 'clearManualQ
   }, { action, index });
 }
 
-test('shuffle changes the upcoming Sonos queue in place and restores ordinary order', async ({ page }) => {
-  const { requests, sonos } = await setup(page);
+test('shuffle saves the upcoming shared order without restarting Sonos and restores ordinary order', async ({ page, sharedSession }) => {
+  const { directQueueRequests, sonos } = await setup(page, sharedSession);
   await page.evaluate(() => { Math.random = () => 0; });
   await page.getByRole('button', { name: 'Shuffle off', exact: true }).click();
-  await expect.poll(() => requests.at(-1)?.itemIds).toEqual(['track-2', 'track-1']);
+  await expect.poll(() => upcoming(sharedSession)).toEqual(['track-2', 'track-1']);
   await expect(page.getByRole('button', { name: 'Shuffle on', exact: true })).toHaveAttribute('aria-pressed', 'true');
   await page.getByRole('button', { name: 'Shuffle on', exact: true }).click();
-  await expect.poll(() => requests.at(-1)?.itemIds).toEqual(['track-1', 'track-2']);
+  await expect.poll(() => upcoming(sharedSession)).toEqual(['track-1', 'track-2']);
+  expect(directQueueRequests).toEqual([]);
   expect(sonos.queueRequests).toHaveLength(0);
   expect(sonos.commands).toEqual([]);
 });
 
-test('Play Next reaches Sonos during playback and is consumed before the library resumes', async ({ page }) => {
-  const { sonos, items, requests } = await setup(page);
+test('Play Next saves ahead of the library and the server consumes its occurrence', async ({ page, sharedSession }) => {
+  const { sonos, items, directQueueRequests } = await setup(page, sharedSession);
   await page.getByText('Queued song', { exact: true }).click({ button: 'right' });
   await page.getByText('▶ Play Next', { exact: true }).click();
-  await expect.poll(() => requests.length).toBe(1);
-  expect(requests[0].itemIds).toEqual(['track-2', 'track-1', 'track-2']);
-  expect(sonos.queueRequests).toHaveLength(0);
-  expect(sonos.commands).toEqual([]);
-
-  await page.evaluate(payload => window.dispatchEvent(new CustomEvent('reitunes:sonos', { detail: {
-    type: 'sonos', namespace: 'playback', eventType: 'playbackStatus', targetId: 'group-1', payload,
-  } })), { ...sonos.status(), sourceItemId: items[2].id, itemId: 'manual-occurrence' });
+  await expect.poll(() => upcoming(sharedSession)).toEqual(['track-2', 'track-1', 'track-2']);
+  const next = structuredClone(sharedSession.snapshot.state as SharedPlaybackState);
+  next.currentItemId = items[2].id;
+  next.queue.manualQueue.shift();
+  await emitSnapshot(page, sharedSession, { revision: sharedSession.snapshot.revision + 1, state: next });
   await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem('reitunes-queue')!).state.manualQueue.length)).toBe(0);
   expect(await page.evaluate(() => JSON.parse(localStorage.getItem('reitunes-queue')!).state.contextIndex)).toBe(0);
   await edit(page, 'addToQueue', 0);
-  await expect.poll(() => requests.length).toBe(2);
-  expect(requests[1]).toMatchObject({ itemId: 'manual-occurrence', itemIds: [trackId, 'track-1', 'track-2'] });
+  await expect.poll(() => upcoming(sharedSession)).toEqual([trackId, 'track-1', 'track-2']);
+  expect(directQueueRequests).toEqual([]);
+  expect(sonos.queueRequests).toHaveLength(0);
+  expect(sonos.commands).toEqual([]);
 });
 
-test('edits made during a queue update are sent in order, including clearing the queue', async ({ page }) => {
-  const { requests, hold, sonos } = await setup(page);
-  const gate = hold();
+test('edits made during a session save are serialized, including clearing the queue', async ({ page, sharedSession }) => {
+  const { directQueueRequests, sonos } = await setup(page, sharedSession);
+  const arrived = deferred();
+  const release = deferred();
+  let held = false;
+  await page.route('**/api/playback-session', async route => {
+    if (route.request().method() === 'POST' && !held) { held = true; arrived.resolve(); await release.promise; }
+    await route.fallback();
+  });
   try {
     await edit(page, 'addNext');
-    await expect.poll(() => requests.length).toBe(1);
+    await arrived.promise;
     await edit(page, 'addToQueue', 0);
-    gate.resolve();
-    await expect.poll(() => requests.length).toBe(2);
-    expect(requests[1].itemIds).toEqual(['track-2', trackId, 'track-1', 'track-2']);
+    release.resolve();
+    await expect.poll(() => upcoming(sharedSession)).toEqual(['track-2', trackId, 'track-1', 'track-2']);
     await edit(page, 'clearManualQueue');
-    await expect.poll(() => requests.length).toBe(3);
-    expect(requests[2].itemIds).toEqual(['track-1', 'track-2']);
+    await expect.poll(() => upcoming(sharedSession)).toEqual(['track-1', 'track-2']);
+    expect(directQueueRequests).toEqual([]);
     expect(sonos.queueRequests).toHaveLength(0);
-  } finally { gate.resolve(); }
+  } finally { release.resolve(); }
 });
 
-test('a failed queue update is visible and can be retried without restarting playback', async ({ page }) => {
-  const { requests, fail, sonos } = await setup(page);
-  fail(true);
+test('a server queue projection failure is visible and retry only wakes its worker', async ({ page, sharedSession }) => {
+  const { directQueueRequests, sonos } = await setup(page, sharedSession);
   await edit(page, 'addNext');
-  await expect(page.getByText(/Could not update the Sonos queue/)).toBeVisible();
-  fail(false);
+  await expect.poll(() => queue(sharedSession).manualQueue.length).toBe(1);
+  await emitSnapshot(page, sharedSession, { ...sharedSession.snapshot as SharedPlaybackSnapshot,
+    queueSyncPending: true, queueSyncError: 'Could not update the Sonos queue. Refresh failed.' });
+  await expect(page.getByText(/Could not update the Sonos queue/).first()).toBeVisible();
+  let retries = 0;
+  await page.route('**/api/playback-session/queue-sync', async route => {
+    retries += 1;
+    sharedSession.snapshot = { revision: sharedSession.snapshot.revision, state: sharedSession.snapshot.state };
+    await route.fulfill({ status: 202 });
+  });
   await page.getByRole('button', { name: 'Retry queue update' }).click();
-  await expect.poll(() => requests.length).toBe(2);
+  await expect.poll(() => retries).toBe(1);
   await expect(page.getByRole('button', { name: 'Retry queue update' })).toHaveCount(0);
+  expect(directQueueRequests).toEqual([]);
   expect(sonos.queueRequests).toHaveLength(0);
+  expect(sonos.commands).toEqual([]);
 });
 
-test('queueing the current song twice consumes each occurrence exactly once', async ({ page }) => {
-  const { sonos, requests } = await setup(page);
+test('repeated speaker events never double-consume shared queue occurrences', async ({ page, sharedSession }) => {
+  const { sonos, directQueueRequests } = await setup(page, sharedSession);
   await edit(page, 'addToQueue', 0);
   await edit(page, 'addToQueue', 0);
-  await expect.poll(() => requests.length).toBeGreaterThan(0);
+  await expect.poll(() => queue(sharedSession).manualQueue.length).toBe(2);
+  expect(new Set(queue(sharedSession).manualQueue.map(entry => entry.id)).size).toBe(2);
   for (let index = 1; index <= 2; index++) {
-    const payload = { ...sonos.status(), itemId: `repeated-${index}` };
+    const next = structuredClone(sharedSession.snapshot.state as SharedPlaybackState);
+    next.queue.manualQueue.shift();
+    const snapshot = { revision: sharedSession.snapshot.revision + 1, state: next };
+    await emitSnapshot(page, sharedSession, snapshot);
     for (let repeat = 0; repeat < 2; repeat++) {
-      await page.evaluate(payload => window.dispatchEvent(new CustomEvent('reitunes:sonos', { detail: {
-        type: 'sonos', namespace: 'playback', eventType: 'playbackStatus', targetId: 'group-1', payload,
-      } })), payload);
+      await sonos.emitPlayback();
+      await emitSnapshot(page, sharedSession, snapshot);
     }
     await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem('reitunes-queue')!).state.manualQueue.length)).toBe(2 - index);
   }
+  expect(directQueueRequests).toEqual([]);
 });
 
-test('reordering and removing queued tracks updates a paused Sonos without resuming it', async ({ page }) => {
-  const { sonos, requests } = await setup(page);
+test('reordering and removing queued tracks saves without resuming a paused Sonos', async ({ page, sharedSession }) => {
+  const { sonos, directQueueRequests } = await setup(page, sharedSession);
   sonos.paused = true;
   await sonos.emitPlayback();
   await edit(page, 'addToQueue', 2);
   await edit(page, 'addToQueue', 0);
-  await expect.poll(() => requests.at(-1)?.itemIds).toEqual(['track-2', trackId, 'track-1', 'track-2']);
+  await expect.poll(() => upcoming(sharedSession)).toEqual(['track-2', trackId, 'track-1', 'track-2']);
   await page.evaluate(async () => {
     const path = '/src/hooks/useQueue.ts';
     const { useQueueStore } = await import(path);
     useQueueStore.getState().moveManualQueueItem(1, 0);
     useQueueStore.getState().removeFromManualQueue(1);
   });
-  await expect.poll(() => requests.at(-1)?.itemIds).toEqual([trackId, 'track-1', 'track-2']);
+  await expect.poll(() => upcoming(sharedSession)).toEqual([trackId, 'track-1', 'track-2']);
   await expect(page.getByRole('button', { name: 'Play Sonos', exact: true })).toBeEnabled();
+  expect(directQueueRequests).toEqual([]);
   expect(sonos.commands).toEqual([]);
   expect(sonos.queueRequests).toHaveLength(0);
 });
 
-test('an old queue failure does not follow the user to browser playback', async ({ page }) => {
-  const { hold, fail } = await setup(page);
-  const gate = hold();
-  fail(true);
-  const received = page.waitForRequest('**/api/sonos/groups/group-1/queue');
-  await edit(page, 'addNext');
-  await received;
-  try {
-    await page.evaluate(async () => {
-      const path = '/src/stores/playbackTargetStore.ts';
-      const { usePlaybackTargetStore } = await import(path);
-      usePlaybackTargetStore.getState().setBrowserTarget();
-    });
-    const response = page.waitForResponse('**/api/sonos/groups/group-1/queue');
-    gate.resolve();
-    await response;
-    await expect(page.getByText(/Could not update the Sonos queue/)).toHaveCount(0);
-  } finally { gate.resolve(); }
+test('an old queue error cannot follow a newer browser output selection', async ({ page, sharedSession }) => {
+  await setup(page, sharedSession);
+  const old = structuredClone(sharedSession.snapshot as SharedPlaybackSnapshot);
+  await page.evaluate(async () => {
+    const targetPath = '/src/stores/playbackTargetStore.ts';
+    const sessionPath = '/src/hooks/useSharedPlaybackSession.ts';
+    const { usePlaybackTargetStore } = await import(targetPath);
+    const { stageSharedPlayback, flushSharedSession } = await import(sessionPath);
+    usePlaybackTargetStore.getState().setBrowserTarget();
+    stageSharedPlayback();
+    await flushSharedSession();
+  });
+  await page.evaluate(snapshot => window.dispatchEvent(new CustomEvent('reitunes:playback-session', { detail: snapshot })), {
+    ...old, queueSyncPending: true, queueSyncError: 'Could not update the Sonos queue. Old failure.',
+  });
+  await expect(page.getByText(/Could not update the Sonos queue/)).toHaveCount(0);
 });

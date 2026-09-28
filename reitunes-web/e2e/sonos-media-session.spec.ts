@@ -1,4 +1,4 @@
-import { expect, type Page } from '@playwright/test';
+import { expect, type Page } from './fixtures/test';
 import { test, deferred, SonosSimulator, trackId } from './fixtures/sonos';
 
 type MediaTestWindow = Window & {

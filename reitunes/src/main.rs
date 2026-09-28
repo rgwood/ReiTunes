@@ -41,6 +41,7 @@ mod import_metadata;
 mod smapi;
 mod sonos;
 mod cloud_queue;
+mod playback_session;
 mod storage;
 mod storage_cleanup;
 mod systemd;
@@ -114,6 +115,8 @@ enum Commands {
 #[derive(Debug, Clone, Serialize)]
 #[serde(tag = "type", rename_all_fields = "camelCase")]
 enum FrontendUpdate {
+    #[serde(rename = "playbackSession")]
+    PlaybackSession { snapshot: playback_session::PlaybackSessionSnapshot },
     #[serde(rename = "update")]
     Update { item: Box<LibraryItemResponse> },
     #[serde(rename = "delete")]
@@ -136,6 +139,7 @@ struct AppState {
     storage: Arc<S3Storage>,
     sonos: Option<Arc<sonos::SonosControl>>,
     cloud_queues: Arc<cloud_queue::CloudQueueStore>,
+    playback_session: Arc<playback_session::PlaybackSessionStore>,
     tagging: Option<tagging::Tagging>,
 }
 
@@ -218,10 +222,12 @@ async fn main() -> Result<()> {
                 storage: Arc::new(storage),
                 sonos: sonos::SonosControl::from_env(DB.clone())?,
                 cloud_queues: Arc::new(cloud_queue::CloudQueueStore::from_env(DB.clone())?),
+                playback_session: Arc::new(playback_session::PlaybackSessionStore::new(DB.clone())?),
                 tagging: Some(tagging.clone()),
             };
 
             let discovery = discovery::Discovery::new(DB.clone(), app_state.library.clone())?;
+            playback_session::start_queue_sync(app_state.clone());
             discovery.start_refresh_loop();
             storage_cleanup::start(DB.clone(), app_state.library.clone(), app_state.storage.clone());
 
@@ -256,6 +262,8 @@ async fn main() -> Result<()> {
                 .merge(discovery::router(discovery))
                 .merge(tagging::router(tagging))
                 .route("/items", get(items_handler))
+                .route("/playback-session", get(playback_session::get).post(playback_session::update))
+                .route("/playback-session/queue-sync", post(playback_session::retry_queue_sync))
                 .route("/items/{id}/duration", axum::routing::put(durations::save))
                 .route("/items/{id}/file-info", get(file_info::get))
                 .route("/items/{id}/tracklist/find", post(tracklists::find))
@@ -477,6 +485,8 @@ async fn items_handler(State(app_state): State<AppState>) -> Result<impl IntoRes
 #[derive(Debug, Serialize)]
 struct SonosApiError {
     error: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    code: Option<&'static str>,
 }
 
 type SonosApiResult<T> = Result<T, (StatusCode, Json<SonosApiError>)>;
@@ -486,6 +496,7 @@ fn sonos_unavailable() -> (StatusCode, Json<SonosApiError>) {
         StatusCode::SERVICE_UNAVAILABLE,
         Json(SonosApiError {
             error: "Sonos Direct Control is not configured".to_string(),
+            code: None,
         }),
     )
 }
@@ -496,6 +507,7 @@ fn sonos_failure(error: anyhow::Error) -> (StatusCode, Json<SonosApiError>) {
         StatusCode::BAD_GATEWAY,
         Json(SonosApiError {
             error: sonos::user_error_message(&error),
+            code: None,
         }),
     )
 }
@@ -513,7 +525,7 @@ fn sonos_playback_failure(
         sonos::SonosPlaybackError::Control(error) => sonos::user_error_message(error),
         _ => error.to_string(),
     };
-    (status, Json(SonosApiError { error: message }))
+    (status, Json(SonosApiError { error: message, code: (status == StatusCode::CONFLICT).then_some("takeover_required") }))
 }
 
 fn cloud_queue_failure(
@@ -524,12 +536,19 @@ fn cloud_queue_failure(
         cloud_queue::CloudQueueError::NotFound => StatusCode::NOT_FOUND,
         cloud_queue::CloudQueueError::Unauthorized => StatusCode::UNAUTHORIZED,
         cloud_queue::CloudQueueError::InvalidRequest(_) => StatusCode::BAD_REQUEST,
+        cloud_queue::CloudQueueError::Conflict(_) => StatusCode::CONFLICT,
+        cloud_queue::CloudQueueError::SharedSessionConflict(_) => StatusCode::CONFLICT,
         cloud_queue::CloudQueueError::Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,
     };
     if status.is_server_error() {
         warn!(error = %error, "Sonos Cloud Queue request failed");
     }
-    (status, Json(SonosApiError { error: error.to_string() }))
+    let code = match &error {
+        cloud_queue::CloudQueueError::SharedSessionConflict(_) => Some("shared_session_conflict"),
+        cloud_queue::CloudQueueError::Conflict(_) => Some("queue_conflict"),
+        _ => None,
+    };
+    (status, Json(SonosApiError { error: error.to_string(), code }))
 }
 
 async fn sonos_status_handler(
@@ -593,6 +612,7 @@ fn sonos_event_rejection(reason: &str) -> (StatusCode, Json<SonosApiError>) {
         StatusCode::UNAUTHORIZED,
         Json(SonosApiError {
             error: "Sonos event authentication failed".to_string(),
+            code: None,
         }),
     )
 }
@@ -640,6 +660,7 @@ async fn sonos_event_handler(
             .map_err(|error| sonos_event_rejection(&error.to_string()))?;
         let response =
             sonos_group_playback_response(&app_state, &control, target_id, playback)?;
+        reconcile_sonos_session(&app_state, target_id, &response)?;
         serde_json::to_value(response).map_err(|error| sonos_failure(error.into()))?
     } else if namespace == "groupVolume" && event_type == "groupVolume" {
         let volume: sonos::SonosGroupVolume = serde_json::from_value(payload)
@@ -693,6 +714,7 @@ struct PrepareCloudQueueRequest {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct SonosPlayRequest {
+    expected_session_revision: Option<u64>,
     group_id: String,
     item_ids: Vec<Uuid>,
     start_item_id: Uuid,
@@ -720,6 +742,7 @@ async fn sonos_play_handler(
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct SonosQueueRequest {
+    expected_session_revision: Option<u64>,
     item_id: String,
     queue_version: String,
     item_ids: Vec<Uuid>,
@@ -731,6 +754,7 @@ async fn sonos_queue_handler(
     JsonExtractor(request): JsonExtractor<SonosQueueRequest>,
 ) -> SonosApiResult<StatusCode> {
     with_sonos_deadline(Duration::from_secs(45), async {
+        let _command = app_state.playback_session.sonos_commands.lock().await;
         let control = active_sonos_control(&app_state, &group_id)
             .await.map_err(sonos_playback_failure)?;
         let playback = control.group_playback(&group_id).await.map_err(sonos_failure)?;
@@ -740,12 +764,13 @@ async fn sonos_queue_handler(
         {
             return Err((StatusCode::CONFLICT, Json(SonosApiError {
                 error: "Sonos advanced while the queue was being edited. Retry the queue update.".into(),
+                code: Some("queue_conflict"),
             })));
         }
         let tracks = cloud_queue_tracks(&app_state, &request.item_ids).await?;
-        app_state.cloud_queues.replace_upcoming(
-            &request.queue_version, &request.item_id, tracks,
-        ).map_err(cloud_queue_failure)?;
+        app_state.playback_session.with_revision(request.expected_session_revision, || {
+            app_state.cloud_queues.replace_upcoming(&request.queue_version, &request.item_id, tracks)
+        }).map_err(cloud_queue_failure)?;
         control.refresh_cloud_queue(&group_id).await.map_err(sonos_failure)?;
         Ok(StatusCode::NO_CONTENT)
     }).await
@@ -765,6 +790,9 @@ async fn send_sonos_queue(
     app_state: AppState,
     request: SonosPlayRequest,
 ) -> SonosApiResult<Json<sonos::SonosPlaybackStatus>> {
+    let _command = app_state.playback_session.sonos_commands.lock().await;
+    app_state.playback_session.with_revision(request.expected_session_revision, || Ok(()))
+        .map_err(cloud_queue_failure)?;
     if request.group_id.trim().is_empty() {
         return Err(cloud_queue_failure(
             cloud_queue::CloudQueueError::InvalidRequest(
@@ -801,6 +829,8 @@ async fn send_sonos_queue(
         .cloud_queues
         .playback_parameters(prepared.queue_id)
         .map_err(cloud_queue_failure)?;
+    app_state.playback_session.with_revision(request.expected_session_revision, || Ok(()))
+        .map_err(cloud_queue_failure)?;
     let status = control
         .play_cloud_queue(
             &request.group_id,
@@ -812,6 +842,10 @@ async fn send_sonos_queue(
         )
         .await
         .map_err(sonos_playback_failure)?;
+    app_state.playback_session.confirm_sonos_load(
+        &request.group_id, request.expected_session_revision, request.start_item_id,
+        &playback.item_id,
+    ).map_err(sonos_failure)?;
     Ok(Json(status))
 }
 
@@ -834,6 +868,7 @@ async fn sonos_group_playback_handler(
         .await
         .map_err(sonos_failure)?;
     let response = sonos_group_playback_response(&app_state, &control, &group_id, playback)?;
+    reconcile_sonos_session(&app_state, &group_id, &response)?;
     if response.reitunes_session_active {
         if let Err(error) = control.ensure_event_subscriptions(&group_id).await {
             warn!(error = %error, group_id, "Could not renew Sonos event subscriptions");
@@ -864,6 +899,24 @@ fn sonos_group_playback_response(
         source_item_id,
         reitunes_session_active,
     })
+}
+
+fn reconcile_sonos_session(
+    app_state: &AppState,
+    group_id: &str,
+    response: &SonosGroupPlaybackResponse,
+) -> SonosApiResult<()> {
+    if response.reitunes_session_active {
+        let history = app_state.cloud_queues.history_through(
+            response.playback.queue_version.as_deref(), response.playback.item_id.as_deref(),
+        ).map_err(cloud_queue_failure)?;
+        if let Some(snapshot) = app_state.playback_session.observe_sonos(
+            group_id, response.playback.position_millis as f64 / 1000.0, &history,
+        ).map_err(sonos_failure)? {
+            let _ = app_state.update_tx.send(FrontendUpdate::PlaybackSession { snapshot });
+        }
+    }
+    Ok(())
 }
 
 async fn active_sonos_control(
@@ -937,6 +990,7 @@ async fn sonos_group_seek_handler(
             StatusCode::BAD_REQUEST,
             Json(SonosApiError {
                 error: "A non-negative position and queue item ID are required".to_string(),
+                code: None,
             }),
         ));
     }
@@ -2025,6 +2079,7 @@ mod tests {
             storage: Arc::new(S3Storage::new("https://storage.example.test", "test", None, "test", "test").await.unwrap()),
             sonos: None,
             cloud_queues: Arc::new(cloud_queue::CloudQueueStore::with_base_url("http://localhost")),
+            playback_session: Arc::new(playback_session::PlaybackSessionStore::in_memory()),
             tagging: None,
         };
         let id = Uuid::new_v4();
@@ -2072,6 +2127,7 @@ mod tests {
             ),
             sonos: None,
             cloud_queues: Arc::new(cloud_queue::CloudQueueStore::with_base_url("http://localhost")),
+            playback_session: Arc::new(playback_session::PlaybackSessionStore::in_memory()),
             tagging: None,
         };
         for (position, expected_status) in [

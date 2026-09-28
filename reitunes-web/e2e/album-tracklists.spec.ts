@@ -1,4 +1,4 @@
-import { expect, type Page } from '@playwright/test';
+import { expect, type Page } from './fixtures/test';
 import { deferred, SonosSimulator, test, trackId } from './fixtures/sonos';
 import type { LibraryItem, Tracklist } from '../src/types';
 
@@ -35,13 +35,21 @@ async function open(page: Page, sonos = false, existing = false) {
     const NativeAudio = window.Audio;
     window.Audio = function() { const audio = new NativeAudio(); setTimeout(() => audio.dispatchEvent(new Event('loadedmetadata')), 10); return audio; } as typeof Audio;
   }, trackId);
-  await page.goto('/');
-  await expect(page.locator(`tr[data-item-id="${trackId}"]`)).toBeVisible();
+  const mobile = (page.viewportSize()?.width ?? 1440) <= 700;
+  await page.goto(mobile ? '/#browse/library' : '/');
+  await expect(mobile ? page.getByRole('button', { name: 'Play Pink', exact: true }) : page.locator(`tr[data-item-id="${trackId}"]`)).toBeVisible();
   await page.locator('audio').dispatchEvent('loadedmetadata');
   await page.locator('audio').dispatchEvent('canplay');
   return { saves };
 }
 async function edit(page: Page, existing = false) {
+  if ((page.viewportSize()?.width ?? 1440) <= 700) {
+    await page.getByRole('button', { name: 'Actions for Pink', exact: true }).click();
+    await page.getByRole('button', { name: existing ? 'Tracklist' : 'Find tracklist…', exact: true }).click();
+    if (existing) await page.getByRole('button', { name: 'Edit tracklist…', exact: true }).click();
+    await expect(page.getByRole('dialog', { name: existing ? 'Edit tracklist' : 'Find tracklist' })).toBeVisible();
+    return;
+  }
   await page.locator(`tr[data-item-id="${trackId}"]`).click({ button: 'right' });
   await page.locator('.library-context-menu').getByRole('button', { name: existing ? 'Edit tracklist…' : 'Find tracklist…', exact: true }).click();
   await expect(page.getByRole('dialog', { name: existing ? 'Edit tracklist' : 'Find tracklist' })).toBeVisible();
@@ -154,7 +162,9 @@ test('paste fallback works on a narrow screen and rejects negative offsets', asy
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(390);
   await page.screenshot({ path: testInfo.outputPath('tracklist-mobile.png') });
   await page.getByRole('button', { name: 'Apply tracklist' }).click();
-  await expect(page.getByRole('grid', { name: 'Tracks within Pink' }).getByRole('row', { name: /Lion/ })).toBeVisible();
+  await page.getByRole('button', { name: 'Actions for Pink', exact: true }).click();
+  await page.getByRole('button', { name: 'Tracklist', exact: true }).click();
+  await expect(page.getByRole('dialog', { name: 'Tracks within Pink' }).getByRole('button', { name: /Lion/ })).toBeVisible();
 });
 
 test('individual favourites persist, survive timing edits and appear in Favourites without favouriting the album', async ({ page }, testInfo) => {

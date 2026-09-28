@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Page } from './fixtures/test';
 import type { DownloadJob } from '../src/hooks/useDownloads';
 
 const initial: DownloadJob = { id: 1, url: 'https://soundcloud.com/dj/long-set', dl_type: 'Audio', stage: 'queued', download_percent: null, error: null };

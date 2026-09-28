@@ -168,6 +168,10 @@ pub enum CloudQueueError {
     Unauthorized,
     #[error("{0}")]
     InvalidRequest(String),
+    #[error("{0}")]
+    Conflict(String),
+    #[error("{0}")]
+    SharedSessionConflict(String),
     #[error(transparent)]
     Internal(#[from] anyhow::Error),
 }
@@ -391,6 +395,25 @@ impl CloudQueueStore {
         })
     }
 
+    pub fn history_through(
+        &self,
+        queue_version: Option<&str>,
+        item_id: Option<&str>,
+    ) -> Result<Vec<(String, Uuid)>, CloudQueueError> {
+        let (Some(version), Some(item_id)) = (queue_version, item_id) else { return Ok(vec![]); };
+        let queues = self.queues.read().map_err(|_| anyhow::anyhow!("Cloud Queue lock was poisoned"))?;
+        let Some(queue) = queues.values().find(|queue| !queue_is_expired(queue) && version.starts_with(&format!("QV:{}:", queue.id))) else { return Ok(vec![]); };
+        let Some(index) = queue.items.iter().position(|item| item.id == item_id) else { return Ok(vec![]); };
+        Ok(queue.items[..=index].iter().map(|item| (item.id.clone(), item.source_id)).collect())
+    }
+
+    pub fn upcoming_matches(&self, version: &str, item_id: &str, source_ids: &[Uuid]) -> Result<bool, CloudQueueError> {
+        let queues = self.queues.read().map_err(|_| anyhow::anyhow!("Cloud Queue lock was poisoned"))?;
+        let Some(queue) = queues.values().find(|queue| !queue_is_expired(queue) && version.starts_with(&format!("QV:{}:", queue.id))) else { return Ok(false); };
+        let Some(index) = queue.items.iter().position(|item| item.id == item_id) else { return Ok(false); };
+        Ok(queue.items[index + 1..].iter().map(|item| item.source_id).eq(source_ids.iter().copied()))
+    }
+
     /// Keep the playhead and history stable while replacing the upcoming tracks.
     pub fn replace_upcoming(
         &self,
@@ -405,6 +428,12 @@ impl CloudQueueStore {
             !queue_is_expired(queue)
                 && queue_version.starts_with(&format!("QV:{}:", queue.id))
         }).ok_or(CloudQueueError::NotFound)?;
+        // The speaker may still report an older version while it refreshes.
+        // Checking its observation alone lets two controllers overwrite each
+        // other. Compare the actual stored version inside this write lock.
+        if queue.queue_version != queue_version {
+            return Err(CloudQueueError::Conflict("The Sonos queue changed in another controller. Refresh before editing.".into()));
+        }
         let index = queue.items.iter().position(|item| item.id == item_id)
             .ok_or(CloudQueueError::NotFound)?;
         let mut updated = queue.clone();
@@ -855,6 +884,8 @@ mod tests {
         assert_eq!(snapshot.items.iter().map(|item| item.source_id).collect::<Vec<_>>(),
             vec![Uuid::from_u128(1), Uuid::from_u128(3), Uuid::from_u128(3), Uuid::from_u128(2)]);
         assert_ne!(snapshot.items[1].id, snapshot.items[2].id);
+        assert!(matches!(store.replace_upcoming(&prepared.queue_version, &playback.item_id, vec![track(4)]), Err(CloudQueueError::Conflict(_))));
+        assert_eq!(store.snapshot(prepared.queue_id).unwrap().queue_version, snapshot.queue_version);
         assert_eq!(snapshot.items[3].id, Uuid::from_u128(102).to_string());
         // Status events can still carry the previous version during refresh.
         assert_eq!(store.source_item_id(Some(&prepared.queue_version), Some(&playback.item_id)).unwrap(),

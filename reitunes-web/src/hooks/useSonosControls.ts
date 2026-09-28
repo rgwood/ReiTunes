@@ -258,7 +258,8 @@ export function useSonosControls(groupId: string | null) {
         await refreshPlayback();
       } catch (nextError) {
         if (!isCurrent()) return false;
-        if (nextError instanceof SonosRequestError && nextError.status === 409) {
+        if (nextError instanceof SonosRequestError && nextError.status === 409 &&
+          (nextError.code === undefined || nextError.code === 'takeover_required')) {
           usePlaybackTargetStore.getState().failSending(nextError.message, true);
         }
         // A lost reply is ambiguous: ask the speaker before showing a failure.
@@ -400,7 +401,8 @@ export function useSonosControls(groupId: string | null) {
         if (!isCurrent()) return;
         work.accepting = false;
         setRequestedSeekMillis(null);
-        if (nextError instanceof SonosRequestError && nextError.status === 409) {
+        if (nextError instanceof SonosRequestError && nextError.status === 409 &&
+          (nextError.code === undefined || nextError.code === 'takeover_required')) {
           usePlaybackTargetStore.getState().failSending(nextError.message, true);
         }
         setCommandError(nextError instanceof Error ? nextError.message : 'Could not seek on Sonos');

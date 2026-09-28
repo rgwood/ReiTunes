@@ -16,19 +16,26 @@ function TrackButton({ item, onPlay, disabled }: { item: LibraryItem; onPlay: ()
   </button>;
 }
 
-function QueuedTrack({ item, index, onPlay, disabled }: { item: LibraryItem; index: number; onPlay: () => void; disabled: boolean }) {
-  const { attributes, listeners, setNodeRef, transform, transition } = useSortable({ id: `manual-${index}`, disabled });
+function QueuedTrack({ item, entryId, index, onPlay, disabled, mobile, count }: { item: LibraryItem; entryId: string; index: number; onPlay: () => void; disabled: boolean; mobile: boolean; count: number }) {
+  const { attributes, listeners, setNodeRef, transform, transition } = useSortable({ id: entryId, disabled });
   const remove = useQueueStore(state => state.removeFromManualQueue);
+  const move = useQueueStore(state => state.moveManualQueueItem);
   return <li ref={setNodeRef} style={{ transform: CSS.Transform.toString(transform), transition }} className="queue-row">
-    <button className="queue-drag" {...attributes} {...listeners} aria-label={`Reorder ${item.name}`} disabled={disabled} title="Drag to reorder; Space and arrow keys also work">⠿</button>
+    {!mobile && <button className="queue-drag" {...attributes} {...listeners} aria-label={`Reorder ${item.name}`} disabled={disabled} title="Drag to reorder; Space and arrow keys also work">⠿</button>}
     <TrackButton item={item} onPlay={onPlay} disabled={disabled} />
+    {mobile && <div className="queue-touch-reorder">
+      <button onClick={() => move(index, index - 1)} disabled={disabled || index === 0} aria-label={`Move ${item.name} up`}>↑</button>
+      <button onClick={() => move(index, index + 1)} disabled={disabled || index === count - 1} aria-label={`Move ${item.name} down`}>↓</button>
+    </div>}
     <button className="queue-remove" onClick={() => remove(index)} disabled={disabled} aria-label={`Remove ${item.name} from queue`} title="Remove from queue">×</button>
   </li>;
 }
 
-export function QueuePanel({ dropActive, dropProps }: {
+export function QueuePanel({ dropActive, dropProps, mobile = false, disabled = false }: {
   dropActive: boolean;
   dropProps: Pick<HTMLAttributes<HTMLElement>, 'onDragEnter' | 'onDragOver' | 'onDragLeave' | 'onDrop'>;
+  mobile?: boolean;
+  disabled?: boolean;
 }) {
   const queue = useQueueStore();
   const { currentItem } = usePlayerStore();
@@ -36,8 +43,9 @@ export function QueuePanel({ dropActive, dropProps }: {
   const play = usePlayback();
   const [pending, setPending] = useState(false);
   const [showAll, setShowAll] = useState(false);
-  const busy = pending || target.isSending || target.isSwitchingOutput || target.isTransportPending;
+  const busy = disabled || pending || target.isSending || target.isSwitchingOutput || target.isTransportPending;
   const upcoming = queue.getUpcomingContext();
+  const manualIds = queue.manualQueue.map((_, index) => queue.manualQueueIds[index] ?? `manual-${index}`);
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }));
 
@@ -51,13 +59,16 @@ export function QueuePanel({ dropActive, dropProps }: {
     const started = await play(item, 0, 'up-next');
     if (!started) {
       const current = useQueueStore.getState();
-      if (source === 'manual' && current.manualQueue === after.manualQueue) useQueueStore.setState({ manualQueue: before.manualQueue });
+      if (source === 'manual' && current.manualQueueIds.length === after.manualQueueIds.length &&
+        current.manualQueueIds.every((id, index) => id === after.manualQueueIds[index])) {
+        useQueueStore.setState({ manualQueue: before.manualQueue, manualQueueIds: before.manualQueueIds });
+      }
       if (source === 'context' && current.contextIndex === after.contextIndex) useQueueStore.setState({ contextIndex: before.contextIndex });
     }
     setPending(false);
   }
 
-  return <section className={`up-next${dropActive ? ' drop-target' : ''}`} aria-label="Up Next" {...dropProps}>
+  return <section className={`up-next${dropActive ? ' drop-target' : ''}${mobile ? ' mobile-queue' : ''}`} aria-label="Up Next" {...dropProps}>
     <header><h2>{dropActive ? 'Drop to add to queue' : 'Up Next'}</h2></header>
     <div className="queue-scroll">
       {currentItem && <section aria-label="Now playing"><h3>Now playing</h3>
@@ -68,10 +79,12 @@ export function QueuePanel({ dropActive, dropProps }: {
         <h3>Added by you <span>{queue.manualQueue.length}</span><button onClick={queue.clearManualQueue} disabled={busy}>Clear</button></h3>
         <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={({ active, over }) => {
           if (busy || !over || active.id === over.id) return;
-          queue.moveManualQueueItem(Number(String(active.id).split('-')[1]), Number(String(over.id).split('-')[1]));
+          const from = manualIds.indexOf(String(active.id));
+          const to = manualIds.indexOf(String(over.id));
+          if (from >= 0 && to >= 0) queue.moveManualQueueItem(from, to);
         }}>
-          <SortableContext items={queue.manualQueue.map((_, index) => `manual-${index}`)} strategy={verticalListSortingStrategy}>
-            <ol>{queue.manualQueue.map((item, index) => <QueuedTrack key={`${index}-${item.id}`} item={item} index={index} disabled={busy}
+          <SortableContext items={manualIds} strategy={verticalListSortingStrategy}>
+            <ol>{queue.manualQueue.map((item, index) => <QueuedTrack key={manualIds[index]} entryId={manualIds[index]} item={item} index={index} disabled={busy} mobile={mobile} count={queue.manualQueue.length}
               onPlay={() => void playNow('manual', index, item.id)} />)}</ol>
           </SortableContext>
         </DndContext>
@@ -84,7 +97,7 @@ export function QueuePanel({ dropActive, dropProps }: {
         </li>)}</ol>
         {!showAll && upcoming.length > 30 && <button className="queue-show-all" onClick={() => setShowAll(true)}>Show all {upcoming.length} tracks</button>}
       </section>}
-      {!upcoming.length && !queue.manualQueue.length && <p className="queue-note">{currentItem ? 'Nothing else queued.' : 'Nothing queued yet.'} Drag songs here, or use Play Next or Add to Queue.</p>}
+      {!upcoming.length && !queue.manualQueue.length && <p className="queue-note">{currentItem ? 'Nothing else queued.' : 'Nothing queued yet.'} {mobile ? 'Open Browse and use a song’s ••• menu to add it.' : 'Drag songs here, or use Play Next or Add to Queue.'}</p>}
     </div>
   </section>;
 }

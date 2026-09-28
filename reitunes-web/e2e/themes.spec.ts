@@ -1,5 +1,5 @@
 import { writeFile } from 'node:fs/promises';
-import { expect, test, type Locator, type Page } from '@playwright/test';
+import { expect, test, type Locator, type Page } from './fixtures/test';
 import type { LibraryItem } from '../src/types';
 
 const STORAGE_KEY = 'reitunes-theme';
@@ -359,7 +359,7 @@ for (const theme of themeIds) for (const mode of ['light', 'dark'] as const) {
 
 test('keeps settings inside a phone viewport', async ({ page }, testInfo) => {
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.goto('/');
+  await page.goto('/#browse/library');
   const settings = await openSettings(page);
   await settings.getByRole('combobox', { name: 'Dark theme', exact: true }).selectOption('solarized');
   await settings.getByRole('combobox', { name: 'Mode', exact: true }).selectOption('dark');

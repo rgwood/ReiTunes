@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Page } from './fixtures/test';
 import type { LibraryItem } from '../src/types';
 import type { TagSnapshot, TagLabel } from '../src/hooks/useTags';
 
@@ -38,6 +38,13 @@ async function backend(page: Page, enabled = true) {
     return route.fulfill({ status: 204 });
   });
   return { data, writes };
+}
+
+async function openSongTags(page: Page, name: string) {
+  if ((page.viewportSize()?.width ?? 1440) <= 700) {
+    await page.getByRole('button', { name: `Actions for ${name}`, exact: true }).click();
+    await page.getByRole('dialog').getByRole('button', { name: 'Tags', exact: true }).click();
+  } else await page.getByRole('button', { name: `Edit tags for ${name}`, exact: true }).click();
 }
 
 test('automatic tags are searchable without review and removals with reasons survive reload and regeneration', async ({ page }) => {
@@ -82,8 +89,8 @@ for (const width of [1200, 390]) {
     const evidence = "Filename contains 'Joanna Newsom – Live at Bottletree (Full Audio)'.";
     data.items[tracks[0].id].tags = [{ tag, confidence: .7, basis: 'inference', evidence, sourceUrls: [] }];
     data.items[tracks[0].id].labels[tag] = { tag, verdict: 'rejected', reason: 'just the artist name' };
-    await page.goto('/');
-    await page.getByRole('button', { name: 'Edit tags for Evening set', exact: true }).click();
+    await page.goto(width <= 700 ? '/#browse/library' : '/');
+    await openSongTags(page, 'Evening set');
     const decision = page.getByRole('article', { name: `Tag ${tag}`, exact: true });
     const ai = decision.locator('.tag-ai-explanation');
     const feedback = decision.locator('.tag-feedback');
@@ -107,7 +114,7 @@ for (const width of [1200, 390]) {
     await feedback.getByRole('button', { name: 'Save feedback' }).click();
     await expect(decision.getByRole('status')).toHaveText('Feedback saved.');
     await page.reload();
-    await page.getByRole('button', { name: 'Edit tags for Evening set', exact: true }).click();
+    await openSongTags(page, 'Evening set');
     await expect(feedback.getByLabel(`Your feedback on ${tag}`)).toHaveValue('This repeats the artist name; it is not a useful music tag.');
     await decision.getByRole('button', { name: `Restore tag ${tag}` }).click();
     await expect(decision.getByRole('status')).toHaveText('Tag restored.');
@@ -163,11 +170,34 @@ test('manual tags work without an API key and paid work needs an explicit action
 });
 
 for (const width of [1200, 968, 640, 390]) {
-  test(`tag editor stays separate from the grid at ${width}px and follows row selection`, async ({ page }, testInfo) => {
+  test(`tag editor stays separate from browsing at ${width}px and follows song selection`, async ({ page }, testInfo) => {
     await page.setViewportSize({ width, height: 800 });
     await page.addInitScript(() => localStorage.setItem('reitunes-theme', JSON.stringify({ lightTheme: 'neutral', darkTheme: 'forest-palace', mode: 'dark' })));
     const { writes } = await backend(page);
-    await page.goto('/');
+    await page.goto(width <= 700 ? '/#browse/library' : '/');
+    if (width <= 700) {
+      await openSongTags(page, 'Evening set');
+      await expect(page.getByRole('heading', { name: 'Evening set', exact: true })).toBeVisible();
+      await expect(page.getByRole('article', { name: 'Tag house', exact: true })).toBeVisible();
+      await expect(page.getByLabel('Track to tag')).toHaveCount(0);
+      const panel = page.locator('.tag-sidepanel');
+      const box = (await panel.boundingBox())!;
+      expect(box.x).toBeGreaterThanOrEqual(0);
+      expect(box.x + box.width).toBeLessThanOrEqual(width);
+      expect(box.height).toBeGreaterThan(150);
+      expect(box.y + box.height).toBeLessThanOrEqual(800);
+      await page.screenshot({ path: testInfo.outputPath(`tags-mobile-${width}.png`), fullPage: true });
+      await page.getByRole('button', { name: 'Close tags' }).click();
+      await expect(page.getByRole('button', { name: 'Actions for Evening set', exact: true })).toBeFocused();
+      await openSongTags(page, 'Morning piano');
+      await expect(page.getByRole('heading', { name: 'Morning piano', exact: true })).toBeVisible();
+      await expect(page.getByRole('article', { name: 'Tag piano', exact: true })).toBeVisible();
+      expect(writes).toEqual([]);
+      await page.getByRole('button', { name: 'Close tags' }).click();
+      await expect(page.getByRole('region', { name: 'Library tags' })).toHaveCount(0);
+      await expect(page.getByRole('button', { name: 'Actions for Morning piano', exact: true })).toBeFocused();
+      return;
+    }
     const first = page.getByRole('button', { name: 'Edit tags for Evening set', exact: true });
     await expect(first).toBeVisible();
     await first.click();
@@ -331,8 +361,9 @@ test('tag corrections are reachable from the track context menu without changing
   await expect(row).toBeFocused();
   await page.getByRole('button', { name: 'New Smart Playlist', exact: true }).click();
   await page.getByRole('textbox', { name: 'Name', exact: true }).fill('Songs with bookmarks');
-  await page.getByRole('combobox', { name: 'Bookmarks', exact: true }).selectOption('with');
-  await expect(page.getByRole('dialog')).toContainText('1 matching tracks');
+  await page.getByRole('button', { name: 'Add rule', exact: true }).click();
+  await page.getByRole('combobox', { name: 'Rule field', exact: true }).selectOption('bookmarks');
+  await expect(page.getByRole('dialog')).toContainText('1 matching track');
   await page.screenshot({ path: testInfo.outputPath('bookmark-smart-playlist-forest-palace.png'), fullPage: true, animations: 'disabled' });
 });
 

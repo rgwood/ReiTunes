@@ -18,7 +18,7 @@ import { ImportMusic } from './components/ImportMusic';
 import { QueuePanel } from './components/QueuePanel';
 import { LibrarySidebar } from './components/LibrarySidebar';
 import { PlaylistDialog, type PlaylistDraft } from './components/PlaylistDialog';
-import { usePlaylists } from './hooks/usePlaylists';
+import { usePlaylists, usePlaylistMutation } from './hooks/usePlaylists';
 import { playlistItems } from './utils/playlists';
 import { useLibraryPreferences } from './stores/libraryPreferences';
 import { BookmarkSidebar } from './components/BookmarkSidebar';
@@ -28,6 +28,9 @@ import { SettingsDialog } from './components/SettingsDialog';
 import { Discover } from './components/Discover';
 import { TagPanel } from './components/TagPanel';
 import { TagBrowser } from './components/TagBrowser';
+import { MobileLibrary } from './components/MobileLibrary';
+import { useMobileNavigation, type MobileBrowse } from './hooks/useMobileNavigation';
+import { useSharedPlaybackSession } from './hooks/useSharedPlaybackSession';
 import { effectiveTags, useTags } from './hooks/useTags';
 import { isInboxEntry, useDiscovery } from './hooks/useDiscovery';
 import { useLibrary } from './hooks/useLibrary';
@@ -36,17 +39,21 @@ import { useTrackDrop } from './hooks/useTrackDrop';
 import { usePlayback } from './hooks/usePlayback';
 import { usePlayerStore } from './stores/playerStore';
 import { usePlaybackTargetStore } from './stores/playbackTargetStore';
+import { ownsBrowserPlayback } from './stores/sharedSessionStore';
 import type { LibraryItem } from './types';
 import { createLibrarySearch, tagSearch } from './utils/libraryBrowser';
 import './App.css';
 import './LibraryLayout.css';
 import './components/Tags.css';
+import './components/MobileShell.css';
 
 const queryClient = new QueryClient();
 type Collection = 'all' | 'favourites' | 'recent' | 'unplayed';
 
 function AppContent() {
-  const [view, setView] = useState<'library' | 'discover' | 'bookmarks'>('library');
+  const { isMobile, route: mobileRoute, navigate: navigateMobile } = useMobileNavigation();
+  const [desktopView, setView] = useState<'library' | 'discover' | 'bookmarks'>('library');
+  const view = isMobile ? mobileRoute.browse === 'discover' || mobileRoute.browse === 'bookmarks' ? mobileRoute.browse : 'library' : desktopView;
   const [librarySearch, setLibrarySearch] = useState('');
   const [discoverySearch, setDiscoverySearch] = useState('');
   const [bookmarkSearch, setBookmarkSearch] = useState('');
@@ -61,7 +68,8 @@ function AppContent() {
   const setSearchQuery = view === 'discover' ? setDiscoverySearch : view === 'bookmarks' ? setBookmarkSearch : setLibrarySearch;
   const deferredSearch = useDeferredValue(searchQuery);
   const deferredLibrarySearch = useDeferredValue(librarySearch);
-  const [collection, setCollection] = useState<Collection>('all');
+  const [selectedCollection, setCollection] = useState<Collection>('all');
+  const collection = isMobile && mobileRoute.playlistId ? 'all' : selectedCollection;
   const [revealRequest, setRevealRequest] = useState<{ itemId: string } | null>(null);
   const finishReveal = useCallback(() => setRevealRequest(null), []);
   const [recentCutoff, setRecentCutoff] = useState(
@@ -91,15 +99,18 @@ function AppContent() {
     },
     []
   );
-  const [selectedPlaylistId, setSelectedPlaylistId] = useState<string | null>(
+  const [desktopPlaylistId, setSelectedPlaylistId] = useState<string | null>(
     null
   );
+  const selectedPlaylistId = isMobile ? mobileRoute.playlistId ?? null : desktopPlaylistId;
   const [isSonosOpen, setIsSonosOpen] = useState(
     () =>
       window.location.hash === '#sonos=connected' ||
       new URLSearchParams(window.location.search).get('sonos') === 'connected'
   );
   const { items, isLoading, error } = useLibrary();
+  const sharedSession = useSharedPlaybackSession(items, isLoading || Boolean(error));
+  const sessionBusy = !sharedSession.ready || !sharedSession.connected || sharedSession.refreshing;
   const queueDrop = useTrackDrop((ids) => {
     const byId = new Map(items.map(item => [item.id, item]));
     const tracks = ids.flatMap(id => byId.has(id) ? [byId.get(id)!] : []);
@@ -133,9 +144,11 @@ function AppContent() {
   const playbackTarget = usePlaybackTargetStore((state) => state.target);
   const { reconcileWithLibrary, setContext, manualQueue } = useQueueStore();
   const { data: playlists = [], isError: playlistError } = usePlaylists();
+  const playlistMutation = usePlaylistMutation();
+  const [playlistActionError, setPlaylistActionError] = useState('');
 
   useEffect(() => {
-    if (isLoading || error) return;
+    if (isLoading || error || !sharedSession.ready) return;
     reconcileWithLibrary(items);
     if (!currentItemId) return;
     const libraryItem = items.find((item) => item.id === currentItemId);
@@ -152,6 +165,7 @@ function AppContent() {
     reconcileWithLibrary,
     refreshCurrentItem,
     restoreCurrentItem,
+    sharedSession.ready,
   ]);
 
   useEffect(() => {
@@ -297,16 +311,23 @@ function AppContent() {
       setSelectedPlaylistId(source.slice(9)); setCollection('all'); setView('library');
     } else chooseCollection(source as Collection);
   };
+  const browseMobile = (browse: MobileBrowse, playlistId?: string) => {
+    setPanel(null);
+    setPlaylistActionError('');
+    navigateMobile({ tab: 'browse', browse, playlistId });
+  };
   const toggleQueue = () => setPanel(panel === 'queue' ? null : 'queue');
   const browseTag = useCallback((tag: string) => {
     setView('library'); setCollection('all'); setSelectedPlaylistId(null);
     setLibrarySearch(tagSearch(tag)); setPanel(null);
-  }, []);
+    if (isMobile) navigateMobile({ tab: 'browse', browse: 'library' });
+  }, [isMobile, navigateMobile]);
   const manageTags = useCallback((item: LibraryItem) => {
-    tagReturnFocus.current = document.activeElement instanceof HTMLElement && document.activeElement.matches('.row-tag-edit')
-      ? document.activeElement : document.querySelector<HTMLElement>(`tr[data-item-id="${CSS.escape(item.id)}"]`);
+    tagReturnFocus.current = isMobile ? document.querySelector<HTMLElement>(`li[data-item-id="${CSS.escape(item.id)}"] .mobile-song-more`)
+      : document.activeElement instanceof HTMLElement && document.activeElement.matches('.row-tag-edit')
+        ? document.activeElement : document.querySelector<HTMLElement>(`tr[data-item-id="${CSS.escape(item.id)}"]`);
     setTagItemId(item.id); setPanel('tags');
-  }, []);
+  }, [isMobile]);
   const openTagBrowser = () => {
     if (panel !== 'tags') tagReturnFocus.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     setTagItemId(null); setTagWorkOpen(false); setPanel('tags');
@@ -323,8 +344,9 @@ function AppContent() {
 
   return (
     <div
-      className="music-app"
+      className={`music-app${isMobile ? ' mobile-app' : ''}`}
       data-density={density}
+      data-mobile-tab={isMobile ? mobileRoute.tab : undefined}
       onDragEnter={(event) => {
         if (isImportOpen || !event.dataTransfer.types.includes('Files')) return;
         event.preventDefault();
@@ -352,7 +374,11 @@ function AppContent() {
     >
       <header className="player-bar">
         <div className="player-audio">
-          <AudioPlayer audioRef={audioRef} previewPauseRef={previewPauseRef} onPlaybackPosition={reportPlaybackPosition} items={items} />
+          <AudioPlayer audioRef={audioRef} previewPauseRef={previewPauseRef} onPlaybackPosition={reportPlaybackPosition} items={items}
+            mobile={isMobile} expanded={mobileRoute.tab === 'playing'}
+            onExpand={() => { setPanel(null); navigateMobile({ ...mobileRoute, tab: 'playing' }); }}
+            onQueue={() => { setPanel(null); navigateMobile({ ...mobileRoute, tab: 'queue' }); }}
+            onOutput={() => setIsSonosOpen(true)} />
         </div>
         <div className="player-tools">
           <div className="library-search">
@@ -372,19 +398,75 @@ function AppContent() {
           </button>
         </div>
       </header>
+      {(sessionBusy || sharedSession.error) && <div className="session-banner" role={sharedSession.error ? 'alert' : 'status'}>
+        <span>{sharedSession.error || (sharedSession.ready ? 'Reconnecting to playback…' : 'Connecting to playback…')}</span>
+        {sharedSession.error && <button onClick={() => void sharedSession.refresh()}>Retry</button>}
+      </div>}
 
-      <main className={`library-content${panel === 'tags' ? ' with-tags' : ''}`} aria-label={view === 'discover' ? 'Music discovery' : 'Music library'}>
+      <main className={isMobile ? 'mobile-content' : `library-content${panel === 'tags' ? ' with-tags' : ''}`} aria-label={isMobile ? mobileRoute.tab === 'queue' ? 'Playback queue' : mobileRoute.tab === 'playing' ? 'Now playing' : 'Browse music' : view === 'discover' ? 'Music discovery' : 'Music library'}>
+        {isMobile ? <>
+          {mobileRoute.tab === 'queue' && <QueuePanel mobile disabled={sessionBusy} dropActive={false} dropProps={{}} />}
+          {mobileRoute.tab === 'browse' && <div className="mobile-browse">
+            <header className="mobile-browse-header"><h1>Browse</h1><div>
+              <button aria-label="Import music" onClick={() => setIsImportOpen(true)}><MusicIcon name="plus" size={22} /></button>
+              <button aria-label="Settings" onClick={() => setIsSettingsOpen(true)}><MusicIcon name="settings" size={22} /></button>
+            </div></header>
+            <nav className="mobile-browse-tabs" aria-label="Browse collections">
+              {(['library', 'playlists', 'discover', 'bookmarks'] as const).map(browse => <button key={browse}
+                aria-current={mobileRoute.browse === browse ? 'page' : undefined} onClick={() => browseMobile(browse)}>
+                {browse[0].toUpperCase() + browse.slice(1)}</button>)}
+            </nav>
+            {mobileRoute.browse !== 'playlists' || mobileRoute.playlistId ? <div className="mobile-search">
+              <MusicIcon name="search" /><input type="search" aria-label={view === 'discover' ? 'Search discovery' : view === 'bookmarks' ? 'Filter bookmarks' : 'Search library'}
+                placeholder={view === 'discover' ? 'Search sets and sources' : view === 'bookmarks' ? 'Find a bookmark' : 'Songs, artists, albums, tags'}
+                value={searchQuery} onChange={event => setSearchQuery(event.target.value)} />
+              {searchQuery && <button aria-label="Clear search" onClick={() => setSearchQuery('')}><MusicIcon name="close" /></button>}
+            </div> : null}
+            {mobileRoute.browse === 'playlists' && !mobileRoute.playlistId ? <div className="mobile-playlists">
+              <button className="mobile-new-playlist" onClick={() => setPlaylistDraft({ smart: false })}><MusicIcon name="plus" />New playlist</button>
+              <button className="mobile-new-playlist" onClick={() => setPlaylistDraft({ smart: true })}><MusicIcon name="smart" />New Smart Playlist</button>
+              {playlistError && <p role="alert">Could not load playlists. <button onClick={() => void queryClient.invalidateQueries({ queryKey: ['playlists'] })}>Retry</button></p>}
+              {playlists.map(playlist => <button className="mobile-playlist-row" key={playlist.id} onClick={() => browseMobile('playlists', playlist.id)}>
+                <MusicIcon name={playlist.smart_rules ? 'smart' : 'playlist'} size={24} /><span>{playlist.name}<small>{playlistItems(playlist, items, now, tags.data?.items).length} songs{playlist.smart_rules ? ' · Smart playlist' : ''}</small></span><span aria-hidden="true">›</span>
+              </button>)}
+              {!playlistError && !playlists.length && <p>No playlists yet. Create one to collect your songs.</p>}
+            </div> : mobileRoute.browse === 'discover' ? <Discover searchQuery={deferredSearch} pauseForPreview={() => previewPauseRef.current?.() ?? Promise.resolve(false)} onOpenLibrary={() => {
+              chooseCollection('all'); setLibrarySearch(''); browseMobile('library');
+            }} /> : error ? <div className="library-message" role="alert">Couldn’t load the library. <button onClick={() => void queryClient.invalidateQueries({ queryKey: ['library'] })}>Retry</button></div>
+              : isLoading ? <p className="mobile-loading" role="status">Loading music…</p>
+              : mobileRoute.browse === 'bookmarks' ? <BookmarkSidebar items={items} onPlay={playBookmark} getPlaybackTime={getBookmarkPlaybackTime}
+                query={deferredSearch} onQueryChange={setBookmarkSearch} hideSearch onNextMoment={nextMoment} onClearItem={() => setBookmarkItemId(null)} />
+              : <>
+                {selectedPlaylist ? <div className="mobile-collection-heading"><button onClick={() => browseMobile('playlists')}>‹ Playlists</button><h2>{selectedPlaylist.name}</h2>
+                  <button onClick={() => setPlaylistDraft({ playlist: selectedPlaylist, smart: !!selectedPlaylist.smart_rules })}>Edit{selectedPlaylist.smart_rules ? ' rules' : ''}</button>
+                  <button className="mobile-delete-playlist" disabled={playlistMutation.isPending} onClick={async () => {
+                    if (!window.confirm(`Delete playlist "${selectedPlaylist.name}"? The tracks stay in your library.`)) return;
+                    try {
+                      await playlistMutation.mutateAsync({ path: `/${selectedPlaylist.id}`, method: 'DELETE' });
+                      setSelectedPlaylistId(null); browseMobile('playlists');
+                    } catch { setPlaylistActionError('Could not delete the playlist. Please try again.'); }
+                  }}>Delete playlist</button>
+                  {playlistActionError && <p role="alert">{playlistActionError}</p>}</div>
+                  : <div className="mobile-library-filter"><label>Show<select aria-label="Library collection" value={collection} onChange={event => chooseCollection(event.target.value as Collection)}>
+                    <option value="all">All songs</option><option value="favourites">Favourites</option><option value="recent">Recently added</option><option value="unplayed">Unplayed</option></select></label><span>{filteredItems.length.toLocaleString()} songs</span></div>}
+                <MobileLibrary key={`${selectedPlaylistId || collection}:${librarySearch}`} items={filteredItems} playlists={playlists} disabled={sessionBusy}
+                  contextName={selectedPlaylist?.name ?? 'Library'} onTags={manageTags} onBookmarks={item => { setBookmarkItemId(item.id); setPanel('bookmarks'); }}
+                  onNewPlaylist={itemIds => setPlaylistDraft({ smart: false, itemIds })} />
+                {!filteredItems.length && <p className="mobile-empty">{items.length ? 'No matching songs.' : 'Your library is empty.'}</p>}
+              </>}
+          </div>}
+        </> : <>
         <LibrarySidebar active={activeSource} items={items} playlists={playlists} now={now} tagItems={tags.data?.items} discoveryCount={discoveryCount}
           playlistError={playlistError} onSelect={selectSource} onEdit={setPlaylistDraft}
           tagsOpen={panel === 'tags'} activeTagCount={activeTagCount} failedTagCount={failedTagCount}
           onTags={() => panel === 'tags' && !tagItemId ? setPanel(null) : openTagBrowser()}
-          outputName={playbackTarget.kind === 'sonos' ? playbackTarget.groupName : 'This browser'} onOutput={() => setIsSonosOpen(true)}
+          outputName={playbackTarget.kind === 'sonos' ? playbackTarget.groupName : ownsBrowserPlayback(playbackTarget) ? 'This browser' : currentItem ? 'Another browser' : 'Choose output'} onOutput={() => setIsSonosOpen(true)}
           onImport={() => setIsImportOpen(true)} onSettings={() => setIsSettingsOpen(true)} />
         <div className="library-results" aria-busy={(view !== 'discover' && isLoading) || searchQuery !== deferredSearch}>
           {view === 'discover' ? <Discover searchQuery={deferredSearch} pauseForPreview={() => previewPauseRef.current?.() ?? Promise.resolve(false)} onOpenLibrary={id => {
             chooseCollection('all'); setLibrarySearch(''); setRevealRequest({ itemId: id });
           }} /> : error ? <div className="library-message" role="alert">Couldn’t load the library. <button onClick={() => void queryClient.invalidateQueries({ queryKey: ['library'] })}>Retry</button></div>
-            : isLoading ? <div className="library-message" role="status">Loading…</div>
+            : isLoading || !sharedSession.ready ? <div className="library-message" role="status">Loading…</div>
             : view === 'bookmarks' ? <div className="bookmark-main-view">
               <BookmarkSidebar items={items} onPlay={playBookmark} getPlaybackTime={getBookmarkPlaybackTime} onClearItem={() => setBookmarkItemId(null)}
                 query={deferredSearch} onQueryChange={setBookmarkSearch} hideSearch onNextMoment={nextMoment} />
@@ -414,6 +496,7 @@ function AppContent() {
             {view === 'bookmarks' && <button onClick={nextMoment} disabled={!moments.length}>Next saved moment</button>}
           </footer>
         </div>
+        </>}
         {panel === 'tags' && <aside className="library-sidepanel tag-sidepanel">
           <button className="panel-close" aria-label="Close tags" onClick={closeTags}><MusicIcon name="close" size={14} /></button>
           {tagItemId ? <TagPanel key={tagItemId} item={items.find(item => item.id === tagItemId)} snapshot={tags.data}
@@ -426,13 +509,20 @@ function AppContent() {
           <BookmarkSidebar key={bookmarkItemId || 'all'} items={items} onPlay={playBookmark} getPlaybackTime={getBookmarkPlaybackTime}
             selectedItem={items.find(item => item.id === bookmarkItemId)} onClearItem={() => setBookmarkItemId(null)} onNextMoment={nextMoment} />
         </aside>}
-        {panel === 'queue' && <aside className="library-sidepanel queue-sidepanel">
+        {!isMobile && panel === 'queue' && <aside className="library-sidepanel queue-sidepanel">
           <button className="panel-close" aria-label="Close queue" onClick={() => setPanel(null)}><MusicIcon name="close" size={14} /></button>
           <QueuePanel dropActive={queueDrop.dropTarget === 'panel'} dropProps={queueDrop.dropProps('panel')} />
         </aside>}
       </main>
+      {isMobile && <nav className="mobile-bottom-nav" aria-label="Main navigation">
+        {(['playing', 'queue', 'browse'] as const).map(tab => <button key={tab} aria-current={mobileRoute.tab === tab ? 'page' : undefined}
+          onClick={() => { setPanel(null); navigateMobile({ ...mobileRoute, tab }); }}>
+          <MusicIcon name={tab === 'playing' ? 'play' : tab === 'queue' ? 'queue' : 'music'} size={23} />
+          <span>{tab[0].toUpperCase() + tab.slice(1)}</span>
+        </button>)}
+      </nav>}
       {playlistDraft && <PlaylistDialog draft={playlistDraft} items={items} tagItems={tags.data?.items} tagError={tags.isError} onClose={() => setPlaylistDraft(null)}
-        onSaved={id => { setPlaylistDraft(null); selectSource('playlist:' + id); }} />}
+        onSaved={id => { setPlaylistDraft(null); selectSource('playlist:' + id); if (isMobile) browseMobile('playlists', id); }} />}
       {isDragging && <div className="global-drop-overlay">Drop audio files to import</div>}
       <ImportMusic
         isOpen={isImportOpen}
@@ -443,6 +533,7 @@ function AppContent() {
           setIsImportOpen(false);
           chooseCollection('recent');
           setLibrarySearch('');
+          if (isMobile) browseMobile('library');
         }}
       />
       <SonosModal audioRef={audioRef} items={items} isOpen={isSonosOpen} onClose={() => setIsSonosOpen(false)} />
@@ -452,7 +543,7 @@ function AppContent() {
         outputName={
           playbackTarget.kind === 'sonos'
             ? playbackTarget.groupName
-            : 'This browser'
+            : ownsBrowserPlayback(playbackTarget) ? isMobile ? 'This device' : 'This browser' : currentItem ? 'Another browser' : 'Choose output'
         }
         onChooseOutput={() => {
           setIsSettingsOpen(false);

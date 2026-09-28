@@ -1,4 +1,5 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Page } from './fixtures/test';
+import type { SharedPlaybackState } from '../src/stores/sharedSessionStore';
 
 const TRACK_ID = '11111111-1111-4111-8111-111111111111';
 const BOOKMARK_ID = '22222222-2222-4222-8222-222222222222';
@@ -161,20 +162,29 @@ test('only Edit opens bookmark editing, with keyboard access, cancellation and f
 });
 
 for (const viewport of [{ name: 'desktop', width: 1440, height: 900 }, { name: 'mobile', width: 390, height: 844 }]) {
-  test(`compact bookmark management opens for the right-clicked song on ${viewport.name}`, async ({ page }, testInfo) => {
+  test(`bookmark management opens for the selected song on ${viewport.name}`, async ({ page }, testInfo) => {
     await page.setViewportSize(viewport);
     await mockBackend(page);
     const secondTrack = { ...libraryItems[0], id: '44444444-4444-4444-8444-444444444444', name: 'Pink Moon',
       bookmarks: { [BOOKMARK_ID]: { ...libraryItems[0].bookmarks[BOOKMARK_ID], label: 'Quiet ending' } } };
     const emptyTrack = { ...libraryItems[0], id: '55555555-5555-4555-8555-555555555555', name: 'No moments', bookmarks: {} };
     await page.route('**/api/items', route => route.fulfill({ json: [...libraryItems, secondTrack, emptyTrack] }));
-    await page.goto('/');
+    await page.goto(viewport.name === 'mobile' ? '/#browse/library' : '/');
     const sidebar = page.getByRole('region', { name: 'Bookmark management' });
-    await page.getByRole('row').filter({ hasText: 'No moments' }).click({ button: 'right' });
-    await expect(page.getByRole('button', { name: 'Manage bookmarks' })).toHaveCount(0);
-    await page.keyboard.press('Escape');
-    await page.getByRole('row').filter({ hasText: 'Northern Sky' }).click({ button: 'right' });
-    await page.getByRole('button', { name: 'Manage bookmarks' }).click();
+    if (viewport.name === 'mobile') {
+      await page.getByRole('button', { name: 'Actions for No moments', exact: true }).click();
+      await page.getByRole('button', { name: 'Bookmarks', exact: true }).last().click();
+      await expect(sidebar.locator('.bookmark-row')).toHaveCount(0);
+      await page.getByRole('button', { name: 'Close bookmarks' }).click();
+      await page.getByRole('button', { name: 'Actions for Northern Sky', exact: true }).click();
+      await page.getByRole('dialog').getByRole('button', { name: 'Bookmarks', exact: true }).click();
+    } else {
+      await page.getByRole('row').filter({ hasText: 'No moments' }).click({ button: 'right' });
+      await expect(page.getByRole('button', { name: 'Manage bookmarks' })).toHaveCount(0);
+      await page.keyboard.press('Escape');
+      await page.getByRole('row').filter({ hasText: 'Northern Sky' }).click({ button: 'right' });
+      await page.getByRole('button', { name: 'Manage bookmarks' }).click();
+    }
     await expect(sidebar).toBeVisible();
     await expect(sidebar.locator('.bookmark-row')).toHaveCount(2);
     await expect(sidebar.getByText('Quiet ending', { exact: true })).toHaveCount(0);
@@ -182,14 +192,19 @@ for (const viewport of [{ name: 'desktop', width: 1440, height: 900 }, { name: '
     await sidebar.getByRole('button', { name: 'All bookmarks' }).click();
     await expect(sidebar.locator('.bookmark-row')).toHaveCount(3);
     const bounds = await sidebar.locator('.bookmark-row').first().boundingBox();
-    expect(bounds!.height).toBeLessThanOrEqual(48);
+    expect(bounds!.height).toBeLessThanOrEqual(viewport.name === 'mobile' ? 100 : 48);
     await page.screenshot({ path: testInfo.outputPath(`bookmarks-${viewport.name}.png`) });
     await sidebar.getByRole('button', { name: 'Edit Guitar entrance bookmark for Northern Sky' }).click();
     await expect(sidebar.getByRole('textbox', { name: 'Bookmark time for Northern Sky' })).toHaveValue('1:10');
     await sidebar.getByRole('button', { name: 'Cancel editing bookmark' }).click();
     await page.getByRole('button', { name: 'Close bookmarks' }).click();
-    await page.getByRole('row').filter({ hasText: 'Pink Moon' }).click({ button: 'right' });
-    await page.getByRole('button', { name: 'Manage bookmarks' }).click();
+    if (viewport.name === 'mobile') {
+      await page.getByRole('button', { name: 'Actions for Pink Moon', exact: true }).click();
+      await page.getByRole('dialog').getByRole('button', { name: 'Bookmarks', exact: true }).click();
+    } else {
+      await page.getByRole('row').filter({ hasText: 'Pink Moon' }).click({ button: 'right' });
+      await page.getByRole('button', { name: 'Manage bookmarks' }).click();
+    }
     await expect(sidebar.locator('.bookmark-row')).toHaveCount(1);
     await expect(sidebar.getByText('Quiet ending', { exact: true })).toBeVisible();
     await sidebar.getByText('Quiet ending', { exact: true }).click();
@@ -476,6 +491,7 @@ test('switches between Sonos and browser playback without playing twice', async 
   await trackRow.dblclick();
   await expect.poll(() => sonosPlayRequests.length).toBe(1);
   expect(sonosPlayRequests[0]).toEqual({
+    expectedSessionRevision: expect.any(Number),
     groupId: 'group-1',
     itemIds: [TRACK_ID],
     startItemId: TRACK_ID,
@@ -570,16 +586,19 @@ test('switches between Sonos and browser playback without playing twice', async 
   expect(sonosPlayRequests[2].allowTakeover).toBe(true);
   await expect(page.getByText('Sonos · Downstairs · Playing')).toBeVisible();
 
-  for (const width of [1440, 2560, 390]) {
+  for (const width of [1440, 2560, 736]) {
     await page.setViewportSize({ width, height: 900 });
     const dimensions = await page.evaluate(() => {
       const rect = (selector: string) => document.querySelector(selector)!.getBoundingClientRect();
       const transport = rect('.sonos-transport');
       const title = rect('.sonos-track-title');
       const progress = rect('.sonos-progress');
+      const volume = rect('.sonos-volume');
+      const slider = rect('.sonos-volume input');
       return {
         height: rect('.player-bar').height,
-        volumeWidth: rect('.sonos-volume input').width,
+        volumeWidth: slider.width,
+        volumeContained: slider.left >= volume.left && slider.right <= volume.right,
         titleAfterTransport: title.left >= transport.right,
         titleBeforeSearch: title.right <= rect('.player-tools').left,
         progressBelowTitle: progress.top >= title.bottom,
@@ -588,7 +607,10 @@ test('switches between Sonos and browser playback without playing twice', async 
       };
     });
     expect(dimensions.height).toBeLessThanOrEqual(width > 650 ? 64 : 120);
-    expect(dimensions.volumeWidth).toBe(width > 650 ? 110 : 74);
+    // The shared desktop shell lets this slider fill its tools column.
+    // The dedicated player-layout suite checks the exact surrounding geometry.
+    expect(dimensions.volumeWidth).toBeGreaterThanOrEqual(100);
+    expect(dimensions.volumeContained).toBe(true);
     if (width > 650) {
       expect(dimensions.titleAfterTransport).toBe(true);
       expect(dimensions.titleBeforeSearch).toBe(true);
@@ -604,7 +626,7 @@ test('switches between Sonos and browser playback without playing twice', async 
   // A failed pause must not start the browser or claim that output switched.
   rejectPause = true;
   await page.getByRole('button', { name: 'Sonos', exact: true }).click();
-  await dialog.getByRole('button', { name: 'Use browser' }).click();
+  await dialog.getByRole('button', { name: 'Listen on this device' }).click();
   await expect(dialog.getByRole('alert')).toContainText('Speaker unavailable');
   expect(sonosPlaybackState).toBe('PLAYBACK_STATE_PLAYING');
   expect(await page.evaluate(() => JSON.parse(localStorage.getItem('reitunes-playback-target')!).state.target.kind)).toBe('sonos');
@@ -613,13 +635,13 @@ test('switches between Sonos and browser playback without playing twice', async 
   // Hold the acknowledgement to verify ordering and block duplicate handoffs.
   let releasePause!: () => void;
   pauseGate = new Promise<void>(resolve => { releasePause = resolve; });
-  await dialog.getByRole('button', { name: 'Use browser' }).click();
+  await dialog.getByRole('button', { name: 'Listen on this device' }).click();
   await expect(dialog.getByRole('button', { name: 'Switching…' })).toBeDisabled();
   await expect.poll(() => transportRequests).toEqual(['pause', 'play', 'pause', 'pause']);
   expect(await page.evaluate(() => (window as typeof window & { __playCalls: number }).__playCalls)).toBe(0);
   releasePause();
   pauseGate = null;
-  await expect(dialog.getByRole('button', { name: 'Use browser' })).toHaveCount(0);
+  await expect(dialog.getByRole('button', { name: 'Listen on this device' })).toHaveCount(0);
   await dialog.getByRole('button', { name: 'Close', exact: true }).click();
   await expect
     .poll(() =>
@@ -627,7 +649,12 @@ test('switches between Sonos and browser playback without playing twice', async 
     )
     .toBeGreaterThan(0);
   expect(sonosPlaybackState).toBe('PLAYBACK_STATE_PAUSED');
-  await page.locator('audio').evaluate(audio => audio.dispatchEvent(new Event('canplay')));
+  // The mocked empty audio response never emits metadata. Reproduce the real
+  // event order so the pending handoff seek can run before buffering completes.
+  await page.locator('audio').evaluate(audio => {
+    audio.dispatchEvent(new Event('loadedmetadata'));
+    audio.dispatchEvent(new Event('canplay'));
+  });
   await expect.poll(() => page.locator('audio').evaluate(audio => audio.currentTime)).toBe(42);
   await expect(page.getByRole('button', { name: 'Pause', exact: true })).toBeVisible();
   await page.evaluate(() => window.dispatchEvent(new CustomEvent('reitunes:sonos', {
@@ -641,8 +668,8 @@ test('switches between Sonos and browser playback without playing twice', async 
   const playCalls = await page.evaluate(() => (window as typeof window & { __playCalls: number }).__playCalls);
   await page.getByRole('button', { name: 'Sonos', exact: true }).click();
   await dialog.getByRole('button', { name: 'Use this group' }).click();
-  await dialog.getByRole('button', { name: 'Use browser' }).click();
-  await expect(dialog.getByRole('button', { name: 'Use browser' })).toHaveCount(0);
+  await dialog.getByRole('button', { name: 'Listen on this device' }).click();
+  await expect(dialog.getByRole('button', { name: 'Listen on this device' })).toHaveCount(0);
   await dialog.getByRole('button', { name: 'Close', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Play', exact: true })).toBeVisible();
   expect(await page.evaluate(() => (window as typeof window & { __playCalls: number }).__playCalls)).toBe(playCalls);
@@ -699,9 +726,9 @@ test('Sonos status messages keep controls aligned and timeouts offer a normal re
   expect(await controls()).toEqual(initial);
   await page.screenshot({ path: testInfo.outputPath('sonos-timeout.png') });
   await page.setViewportSize({ width: 390, height: 844 });
-  const mobile = await controls();
-  expect(mobile.progress).toBeGreaterThan(mobile.title);
-  expect(mobile.volume).toBeGreaterThan(mobile.transport);
+  await expect(page.locator('.mobile-player.expanded')).toBeVisible();
+  await expect(page.getByRole('slider', { name: 'Sonos playback position', exact: true })).toBeVisible();
+  await expect(page.getByRole('slider', { name: 'Sonos group volume', exact: true })).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   await page.screenshot({ path: testInfo.outputPath('sonos-timeout-mobile.png') });
   await page.getByRole('button', { name: 'Retry sending to Sonos', exact: true }).click();
@@ -714,7 +741,7 @@ test('player keeps its transport buttons and a contained current-track display',
   await mockBackend(page);
   await page.goto('/');
   await page.getByRole('row').filter({ hasText: 'Northern Sky' }).dblclick();
-  for (const width of [1440, 736, 390, 320]) {
+  for (const width of [1440, 736]) {
     await page.setViewportSize({ width, height: 900 });
     for (const title of ['Previous', 'Back 30s', 'Forward 30s', 'Next', 'Shuffle off', 'Repeat off', 'Add bookmark']) {
       await expect(page.getByTitle(title, { exact: true })).toBeVisible();
@@ -743,7 +770,7 @@ test('player keeps its transport buttons and a contained current-track display',
   }
 });
 
-test('Sonos next and previous follow the queue without reverting to stale speaker status', async ({ page }) => {
+test('Sonos next and previous follow the queue without reverting to stale speaker status', async ({ page, sharedSession }) => {
   await mockBackend(page);
   const secondId = '44444444-4444-4444-8444-444444444444';
   const tracks = [...libraryItems, { ...libraryItems[0], id: secondId, name: 'Pink Moon', bookmarks: {} }];
@@ -796,6 +823,14 @@ test('Sonos next and previous follow the queue without reverting to stale speake
   await expect(next).toBeEnabled();
   // The speakers can also advance without a browser click.
   playingId = secondId;
+  // The backend now reconciles the durable context before broadcasting the
+  // speaker event; controllers no longer advance their own queue independently.
+  const state = sharedSession.snapshot.state as SharedPlaybackState;
+  sharedSession.snapshot = { revision: sharedSession.snapshot.revision + 1, state: {
+    ...state, currentItemId: secondId, position: 0,
+    queue: { ...state.queue, contextIndex: state.queue.contextItemIds.indexOf(secondId) },
+  } };
+  await page.evaluate(snapshot => window.dispatchEvent(new CustomEvent('reitunes:playback-session', { detail: snapshot })), sharedSession.snapshot);
   await page.evaluate(payload => window.dispatchEvent(new CustomEvent('reitunes:sonos', { detail: {
     type: 'sonos', namespace: 'playback', eventType: 'playbackStatus', targetId: 'group-1', payload,
   } })), status());

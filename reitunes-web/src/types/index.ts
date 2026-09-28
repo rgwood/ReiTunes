@@ -45,7 +45,8 @@ export interface SonosRealtimeUpdate {
   payload: unknown;
 }
 
-export type RealtimeUpdate = LibraryUpdate | SonosRealtimeUpdate;
+export type RealtimeUpdate = LibraryUpdate | SonosRealtimeUpdate |
+  { type: 'playbackSession'; snapshot: import('../stores/sharedSessionStore').SharedPlaybackSnapshot };
 
 // Queue item for playback queue
 export interface QueueItem {

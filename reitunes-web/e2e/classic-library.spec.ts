@@ -1,4 +1,4 @@
-import { expect, test, type Page, type WebSocketRoute } from '@playwright/test';
+import { expect, test, type Page, type WebSocketRoute } from './fixtures/test';
 import type { LibraryItem, Playlist } from '../src/types';
 import type { ItemTags } from '../src/hooks/useTags';
 
@@ -287,7 +287,7 @@ for (const width of [1440, 390]) {
   test(`smart rule groups can be removed and all rules cleared at ${width}`, async ({ page }, testInfo) => {
     await page.setViewportSize({ width, height: 900 });
     const { playlists } = await backend(page);
-    await page.goto('/');
+    await page.goto(width <= 700 ? '/#browse/playlists' : '/');
     await page.getByRole('button', { name: /New Smart Playlist/ }).click();
     const dialog = page.getByRole('dialog');
     await dialog.getByRole('textbox', { name: 'Name', exact: true }).fill('Group removal');
@@ -306,14 +306,16 @@ for (const width of [1440, 390]) {
     await expect(dialog.getByText(/2 matching tracks/)).toBeVisible();
     await dialog.getByRole('button', { name: 'Create playlist', exact: true }).click();
     expect(playlists[1].smart_rules?.expression).toEqual({ type: 'all', rules: [{ type: 'favourite', value: true }] });
+    await expect(dialog).toHaveCount(0);
+    if (width <= 700) await expect(page.locator('.mobile-collection-heading h2')).toHaveText('Group removal');
     await page.reload();
-    await page.getByRole('button', { name: 'Group removal', exact: true }).click();
-    await expect(page.locator('tbody tr')).toHaveCount(2);
-    await page.getByRole('button', { name: 'Edit rules…', exact: true }).click();
+    if (width > 700) await page.getByRole('button', { name: 'Group removal', exact: true }).click();
+    await expect(page.locator(width <= 700 ? '.mobile-song-list > li' : 'tbody tr')).toHaveCount(2);
+    await page.getByRole('button', { name: width <= 700 ? 'Edit rules' : 'Edit rules…', exact: true }).click();
     await dialog.getByRole('button', { name: 'Clear rules', exact: true }).click();
     await expect(dialog.getByText(/3 matching tracks/)).toBeVisible();
     await dialog.getByRole('button', { name: 'Save changes', exact: true }).click();
-    await expect(page.locator('tbody tr')).toHaveCount(3);
+    await expect(page.locator(width <= 700 ? '.mobile-song-list > li' : 'tbody tr')).toHaveCount(3);
     expect(playlists[1].smart_rules?.expression).toEqual({ type: 'all', rules: [] });
   });
 }
@@ -387,7 +389,7 @@ test('playing audio records its measured duration for the correct library file',
     .toEqual({ duration_seconds: 301.25, file_path: sample.file_path });
 });
 
-for (const width of [1440, 1024, 390]) {
+for (const width of [1440, 1024, 736]) {
   test('density and playback bookmark markers remain available at ' + width, async ({ page }, testInfo) => {
     await page.setViewportSize({ width, height: 900 });
     await backend(page);

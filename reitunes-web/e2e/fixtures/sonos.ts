@@ -1,4 +1,4 @@
-import { expect, test as base, type Page } from '@playwright/test';
+import { expect, test as base, type Page } from './test';
 import { writeFile } from 'node:fs/promises';
 
 export const trackId = '11111111-1111-4111-8111-111111111111';

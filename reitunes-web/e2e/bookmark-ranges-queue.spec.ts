@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Page } from './fixtures/test';
 import type { LibraryItem } from '../src/types';
 import { SonosSimulator, trackId } from './fixtures/sonos';
 
@@ -37,13 +37,14 @@ async function setup(page: Page) {
     Object.assign(items[0].bookmarks[new URL(route.request().url()).pathname.split('/').at(-1)!], body);
     return route.fulfill({ status: 200 });
   });
-  await page.goto('/');
-  await expect(page.locator('tbody tr')).toHaveCount(3);
+  const mobile = (page.viewportSize()?.width ?? 1440) <= 700;
+  await page.goto(mobile ? '/#browse/library' : '/');
+  await expect(page.locator(mobile ? '.mobile-song-list > li' : 'tbody tr')).toHaveCount(3);
   return { items, writes };
 }
 const player = (page: Page) => page.evaluate(() => JSON.parse(localStorage.getItem('reitunes-player') || '{"state":{}}').state);
 const queue = (page: Page) => page.evaluate(() => JSON.parse(localStorage.getItem('reitunes-queue')!).state);
-async function bookmarkView(page: Page) { await page.getByRole('navigation', { name: 'Music library', exact: true }).getByRole('button', { name: 'Bookmarks', exact: true }).click(); }
+async function bookmarkView(page: Page) { await page.getByRole('navigation', { name: (page.viewportSize()?.width ?? 1440) <= 700 ? 'Browse collections' : 'Music library', exact: true }).getByRole('button', { name: 'Bookmarks', exact: true }).click(); }
 async function time(page: Page, position: number) {
   await page.locator('audio').evaluate((audio: HTMLAudioElement, position) => { audio.currentTime = position; audio.dispatchEvent(new Event('timeupdate')); }, position);
 }
@@ -189,10 +190,15 @@ test('bookmark editor fits a phone and keeps playback controls reachable', async
 
 test('Up Next plays a clicked track and preserves manually queued entries and duplicates', async ({ page }, testInfo) => {
   const { items } = await setup(page);
-  await page.evaluate(items => localStorage.setItem('reitunes-queue', JSON.stringify({ state: {
-    manualQueue: [items[1], items[2], items[1]], contextItems: items, contextIndex: 0, contextName: 'All music', shuffleEnabled: false, repeatMode: 'off',
-  }, version: 1 })), items);
-  await page.reload();
+  await page.evaluate(async items => {
+    const queuePath = '/src/hooks/useQueue.ts';
+    const sessionPath = '/src/hooks/useSharedPlaybackSession.ts';
+    const { useQueueStore } = await import(queuePath);
+    const { flushSharedSession } = await import(sessionPath);
+    useQueueStore.setState({ manualQueue: [items[1], items[2], items[1]], manualQueueIds: ['first', 'second', 'third'],
+      contextItems: items, contextIndex: 0, contextName: 'All music', shuffleEnabled: false, repeatMode: 'off' });
+    await flushSharedSession();
+  }, items);
   await page.getByRole('button', { name: 'Queue', exact: true }).click();
   const panel = page.getByRole('region', { name: 'Up Next', exact: true });
   const added = panel.getByRole('region', { name: 'Added to queue' });

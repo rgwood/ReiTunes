@@ -1,4 +1,4 @@
-import { expect } from '@playwright/test';
+import { expect } from './fixtures/test';
 import { test, deferred, SonosSimulator } from './fixtures/sonos';
 
 test('Sonos rapid clicks survive intermediate readbacks and delayed volume events', async ({ page }) => {
@@ -276,6 +276,6 @@ for (const fails of [false, true]) {
       const { target, isSending, takeoverRequired, error } = usePlaybackTargetStore.getState();
       return { target, isSending, takeoverRequired, error, paused: document.querySelector('audio')?.paused };
     });
-    expect(result).toEqual({ target: { kind: 'browser' }, isSending: false, takeoverRequired: false, error: null, paused: true });
+    expect(result).toMatchObject({ target: { kind: 'browser', ownerId: expect.any(String) }, isSending: false, takeoverRequired: false, error: null, paused: true });
   });
 }

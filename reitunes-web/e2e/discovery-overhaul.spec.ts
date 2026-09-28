@@ -1,7 +1,7 @@
-import { expect, type Page } from '@playwright/test';
+import { expect, type Page } from './fixtures/test';
 import type { DiscoveryData, DiscoveryEntry, DiscoverySource } from '../src/hooks/useDiscovery';
 import type { DownloadJob } from '../src/hooks/useDownloads';
-import { test, SonosSimulator } from './fixtures/sonos';
+import { test, SonosSimulator, trackId } from './fixtures/sonos';
 
 const sources: DiscoverySource[] = ['Late Night Radio', 'Record Room', 'Sunday Selections'].map((title, index) => ({
   id: `source-${index}`, title, provider: 'SoundCloud', url: `https://soundcloud.com/source-${index}/tracks`,
@@ -80,6 +80,9 @@ test('long and missing notes keep browsing compact while selected details show t
   await expect(page.locator('iframe')).toHaveCount(0);
   await page.screenshot({ path: testInfo.outputPath('discover-compact-with-details.png'), fullPage: true });
   await page.setViewportSize({ width: 390, height: 844 });
+  await page.getByRole('navigation', { name: 'Main navigation' }).getByRole('button', { name: 'Browse', exact: true }).click();
+  await page.getByRole('navigation', { name: 'Browse collections' }).getByRole('button', { name: 'Discover', exact: true }).click();
+  await row(page, 'long').getByRole('button', { name: 'Selection long', exact: true }).click();
   await expect(details(page)).toBeVisible();
   await expect(details(page)).toContainText(notes);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
@@ -197,11 +200,16 @@ test('completed imports leave active activity even when the library item has not
 });
 
 for (const pauseResult of ['ok', 'rejected'] as const) {
-  test(`Sonos preview ${pauseResult === 'ok' ? 'pauses speakers first and stops when library playback resumes' : 'does not start when speakers reject pause'}`, async ({ page }) => {
+  test(`Sonos preview ${pauseResult === 'ok' ? 'pauses speakers first and stops when library playback resumes' : 'does not start when speakers reject pause'}`, async ({ page, sharedSession }) => {
     const { data, writes } = await setup(page, [entry('speaker-preview')]);
     const sonos = new SonosSimulator(page);
     sonos.pauseResult = pauseResult;
     await sonos.install();
+    sharedSession.snapshot = { revision: sharedSession.snapshot.revision + 1, state: {
+      target: { kind: 'sonos', householdId: 'household', groupId: 'group-1', groupName: 'Kitchen', playerNames: [] },
+      currentItemId: trackId, position: 50, playbackRange: null,
+      queue: { manualQueue: [], contextItemIds: [trackId], contextIndex: 0, contextName: 'Library', shuffleEnabled: false, shuffledIds: [], repeatMode: 'off' },
+    } };
     await page.route('**/api/discovery', route => route.fulfill({ json: data }));
     await page.route('**/api/sonos/status', route => route.fulfill({ json: { configured: true, connected: true } }));
     await page.reload();

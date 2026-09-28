@@ -1,6 +1,8 @@
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 import type { LibraryItem } from '../types';
+import { canEditSharedSession, ownsBrowserPlayback } from '../stores/sharedSessionStore';
+import { usePlaybackTargetStore } from '../stores/playbackTargetStore';
 
 type RepeatMode = 'off' | 'one' | 'all';
 
@@ -8,12 +10,24 @@ export const QUEUE_STORAGE_KEY = 'reitunes-queue';
 
 interface PersistedQueueState {
   manualQueue: LibraryItem[];
+  manualQueueIds: string[];
   contextItems: LibraryItem[];
   contextIndex: number;
   contextName: string;
   shuffleEnabled: boolean;
   shuffledIds: string[];
   repeatMode: RepeatMode;
+}
+
+// Queue occurrences have their own identity: adding the same song twice is
+// intentional, and another screen must be able to remove just one copy.
+export function queueOccurrenceIds(state: Pick<PersistedQueueState, 'manualQueue' | 'manualQueueIds'>): string[] {
+  return state.manualQueue.map((_, index) => state.manualQueueIds?.[index] ?? crypto.randomUUID());
+}
+
+function canSelectTrack() {
+  const output = usePlaybackTargetStore.getState();
+  return canEditSharedSession() && !output.isSending && !output.isSwitchingOutput && !output.isTransportPending;
 }
 
 function shuffled(items: LibraryItem[], currentId?: string): string[] {
@@ -39,7 +53,7 @@ interface QueueState extends PersistedQueueState {
   removeFromManualQueue: (index: number) => void;
   moveManualQueueItem: (fromIndex: number, toIndex: number) => void;
   setContext: (items: LibraryItem[], startIndex: number, name: string, preserveManualQueue?: boolean) => void;
-  playNext: () => LibraryItem | null;
+  playNext: (allowWhileOffline?: boolean) => LibraryItem | null;
   playPrevious: () => LibraryItem | null;
   clearManualQueue: () => void;
   takeQueuedItem: (index: number) => LibraryItem | null;
@@ -66,6 +80,7 @@ export const useQueueStore = create<QueueState>()(
   persist<QueueState, [], [], PersistedQueueState>(
     (set, get) => ({
       manualQueue: [],
+      manualQueueIds: [],
       editVersion: 0,
       contextItems: [],
       contextIndex: -1,
@@ -74,38 +89,50 @@ export const useQueueStore = create<QueueState>()(
       shuffledIds: [],
       repeatMode: 'off',
 
-      addToQueue: (item) => set((state) => ({
+      addToQueue: (item) => canEditSharedSession() && set((state) => ({
         editVersion: state.editVersion + 1,
         manualQueue: [...state.manualQueue, item],
+        manualQueueIds: [...queueOccurrenceIds(state), crypto.randomUUID()],
       })),
 
-      addNext: (item) => set((state) => ({
+      addNext: (item) => canEditSharedSession() && set((state) => ({
         editVersion: state.editVersion + 1,
         manualQueue: [item, ...state.manualQueue],
+        manualQueueIds: [crypto.randomUUID(), ...queueOccurrenceIds(state)],
       })),
 
-      removeFromManualQueue: (index) => set((state) => {
+      removeFromManualQueue: (index) => canEditSharedSession() && set((state) => {
         const newQueue = [...state.manualQueue];
+        const ids = queueOccurrenceIds(state);
         newQueue.splice(index, 1);
-        return { manualQueue: newQueue, editVersion: state.editVersion + 1 };
+        ids.splice(index, 1);
+        return { manualQueue: newQueue, manualQueueIds: ids, editVersion: state.editVersion + 1 };
       }),
 
-      moveManualQueueItem: (fromIndex, toIndex) => set((state) => {
+      moveManualQueueItem: (fromIndex, toIndex) => canEditSharedSession() && set((state) => {
+        if (fromIndex < 0 || toIndex < 0 || fromIndex >= state.manualQueue.length || toIndex >= state.manualQueue.length) return {};
         const newQueue = [...state.manualQueue];
+        const ids = queueOccurrenceIds(state);
         const [item] = newQueue.splice(fromIndex, 1);
         newQueue.splice(toIndex, 0, item);
-        return { manualQueue: newQueue, editVersion: state.editVersion + 1 };
+        const [id] = ids.splice(fromIndex, 1);
+        ids.splice(toIndex, 0, id);
+        return { manualQueue: newQueue, manualQueueIds: ids, editVersion: state.editVersion + 1 };
       }),
 
-      setContext: (items, startIndex, name, preserveManualQueue = false) => set((state) => ({
+      setContext: (items, startIndex, name, preserveManualQueue = false) => canSelectTrack() && set((state) => ({
         contextItems: items,
         contextIndex: startIndex,
         contextName: name,
         shuffledIds: state.shuffleEnabled ? shuffled(items, items[startIndex]?.id) : [],
         manualQueue: preserveManualQueue ? state.manualQueue : [],
+        manualQueueIds: preserveManualQueue ? queueOccurrenceIds(state) : [],
       })),
 
-      playNext: () => {
+      playNext: (allowWhileOffline = false) => {
+        const output = usePlaybackTargetStore.getState();
+        if (output.isSending || output.isSwitchingOutput || output.isTransportPending ||
+          (!canEditSharedSession() && !(allowWhileOffline && ownsBrowserPlayback(output.target)))) return null;
         const state = get();
 
         if (state.repeatMode === 'one') {
@@ -114,7 +141,7 @@ export const useQueueStore = create<QueueState>()(
 
         if (state.manualQueue.length > 0) {
           const [nextItem, ...rest] = state.manualQueue;
-          set({ manualQueue: rest });
+          set({ manualQueue: rest, manualQueueIds: queueOccurrenceIds(state).slice(1) });
           return nextItem;
         }
 
@@ -125,6 +152,7 @@ export const useQueueStore = create<QueueState>()(
       },
 
       playPrevious: () => {
+        if (!canSelectTrack()) return null;
         const state = get();
         const order = orderedContext(state);
         const index = order.findIndex(item => item.id === state.getCurrentItem()?.id);
@@ -136,14 +164,17 @@ export const useQueueStore = create<QueueState>()(
         return null;
       },
 
-      clearManualQueue: () => set(state => ({ manualQueue: [], editVersion: state.editVersion + 1 })),
+      clearManualQueue: () => canEditSharedSession() && set(state => ({ manualQueue: [], manualQueueIds: [], editVersion: state.editVersion + 1 })),
       takeQueuedItem: index => {
+        if (!canSelectTrack()) return null;
         const item = get().manualQueue[index];
         if (!item) return null;
-        set(state => ({ manualQueue: state.manualQueue.filter((_, i) => i !== index) }));
+        set(state => ({ manualQueue: state.manualQueue.filter((_, i) => i !== index),
+          manualQueueIds: queueOccurrenceIds(state).filter((_, i) => i !== index) }));
         return item;
       },
       chooseContextItem: id => {
+        if (!canSelectTrack()) return null;
         const index = get().contextItems.findIndex(item => item.id === id);
         if (index < 0) return null;
         set({ contextIndex: index });
@@ -158,13 +189,13 @@ export const useQueueStore = create<QueueState>()(
         return null;
       },
 
-      toggleShuffle: () => set((state) => ({
+      toggleShuffle: () => canEditSharedSession() && set((state) => ({
         shuffleEnabled: !state.shuffleEnabled,
         shuffledIds: !state.shuffleEnabled ? shuffled(state.contextItems, state.contextItems[state.contextIndex]?.id) : [],
         editVersion: state.editVersion + 1,
       })),
 
-      cycleRepeatMode: () => set((state) => {
+      cycleRepeatMode: () => canEditSharedSession() && set((state) => {
         const modes: RepeatMode[] = ['off', 'all', 'one'];
         const currentIdx = modes.indexOf(state.repeatMode);
         return { repeatMode: modes[(currentIdx + 1) % modes.length] };
@@ -194,6 +225,7 @@ export const useQueueStore = create<QueueState>()(
 
         return {
           manualQueue: reconcileLibraryItems(state.manualQueue, items),
+          manualQueueIds: queueOccurrenceIds(state).filter((_, index) => items.some(item => item.id === state.manualQueue[index].id)),
           contextItems,
           contextIndex,
         };
@@ -205,6 +237,7 @@ export const useQueueStore = create<QueueState>()(
       version: 1,
       merge: (persisted, current) => {
         const restored = { ...current, ...persisted as Partial<PersistedQueueState> };
+        restored.manualQueueIds = queueOccurrenceIds(restored);
         if (restored.shuffleEnabled && !restored.shuffledIds.length) {
           restored.shuffledIds = shuffled(restored.contextItems, restored.contextItems[restored.contextIndex]?.id);
         }
@@ -212,6 +245,7 @@ export const useQueueStore = create<QueueState>()(
       },
       partialize: (state) => ({
         manualQueue: state.manualQueue,
+        manualQueueIds: state.manualQueueIds,
         contextItems: state.contextItems,
         contextIndex: state.contextIndex,
         contextName: state.contextName,

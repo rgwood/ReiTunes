@@ -33,6 +33,9 @@ struct FakeSonos {
     playback: Arc<Mutex<Value>>,
     sessions_created: Arc<AtomicUsize>,
     loaded_sessions: Arc<Mutex<Vec<String>>>,
+    cloud_queue: Arc<Mutex<Option<(String, String)>>>,
+    refreshed_window: Arc<Mutex<Option<Value>>>,
+    fail_refresh: Arc<AtomicBool>,
 }
 
 impl FakeSonos {
@@ -47,6 +50,9 @@ impl FakeSonos {
             }))),
             sessions_created: Arc::new(AtomicUsize::new(0)),
             loaded_sessions: Arc::new(Mutex::new(Vec::new())),
+            cloud_queue: Arc::new(Mutex::new(None)),
+            refreshed_window: Arc::new(Mutex::new(None)),
+            fail_refresh: Arc::new(AtomicBool::new(false)),
         }
     }
 
@@ -79,6 +85,10 @@ impl FakeSonos {
                 "/control/api/v1/playbackSessions/{session_id}/playbackSession/loadCloudQueue",
                 post(Self::load_queue),
             )
+            .route(
+                "/control/api/v1/playbackSessions/{session_id}/playbackSession/refreshCloudQueue",
+                post(Self::refresh_queue),
+            )
             // Playback must still succeed when event subscription is down.
             .fallback(|| async { StatusCode::SERVICE_UNAVAILABLE })
             .with_state(self.clone())
@@ -105,6 +115,7 @@ impl FakeSonos {
         }
         let base = body["queueBaseUrl"].as_str().unwrap();
         let authorization = body["httpAuthorization"].as_str().unwrap();
+        *fake.cloud_queue.lock().unwrap() = Some((base.to_string(), authorization.to_string()));
         let client = reqwest::Client::builder()
             .timeout(Duration::from_secs(2))
             .build()
@@ -150,6 +161,19 @@ impl FakeSonos {
         });
         StatusCode::NO_CONTENT
     }
+
+    async fn refresh_queue(State(fake): State<Self>) -> StatusCode {
+        fake.record("queue: refresh".into());
+        if fake.fail_refresh.load(Ordering::SeqCst) { return StatusCode::SERVICE_UNAVAILABLE; }
+        let (base, authorization) = fake.cloud_queue.lock().unwrap().clone().unwrap();
+        let item_id = fake.playback.lock().unwrap()["itemId"].as_str().unwrap().to_string();
+        let window: Value = reqwest::Client::new().get(format!("{base}/itemWindow"))
+            .header("Authorization", authorization).query(&[("itemId", item_id.as_str()), ("upcomingWindowSize", "100")])
+            .send().await.unwrap().error_for_status().unwrap().json().await.unwrap();
+        fake.playback.lock().unwrap()["queueVersion"] = window["queueVersion"].clone();
+        *fake.refreshed_window.lock().unwrap() = Some(window);
+        StatusCode::NO_CONTENT
+    }
 }
 
 struct Harness {
@@ -183,7 +207,7 @@ impl Harness {
             fake.router(),
         )
         .await;
-        let control = sonos::test_support::connected_control(&sonos_server.url, db);
+        let control = sonos::test_support::connected_control(&sonos_server.url, db.clone());
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let base = format!("http://{}/", listener.local_addr().unwrap());
         let track_id = Uuid::new_v4();
@@ -212,9 +236,11 @@ impl Harness {
             ),
             sonos: Some(Arc::new(control)),
             cloud_queues: Arc::new(cloud_queue::CloudQueueStore::with_base_url(&base)),
+            playback_session: Arc::new(playback_session::PlaybackSessionStore::new(db).unwrap()),
             tagging: None,
         };
         let router = Router::new()
+            .route("/api/playback-session", get(playback_session::get).post(playback_session::update))
             .route("/api/sonos/play", post(sonos_play_handler))
             .route_layer(middleware::from_fn(api_session_auth))
             .route("/api/sonos/events", post(sonos_event_handler))
@@ -367,4 +393,100 @@ async fn sonos_event_route_forwards_only_new_authenticated_observations() {
     }
     assert_eq!(harness.event("11", true).await.status(), StatusCode::OK);
     assert!(events.try_recv().is_ok());
+}
+
+#[tokio::test]
+async fn shared_session_routes_authenticate_broadcast_and_reject_stale_playback() {
+    let harness = Harness::new().await;
+    let endpoint = format!("{}api/playback-session", harness.server.url);
+    assert_eq!(harness.client.get(&endpoint).send().await.unwrap().status(), StatusCode::UNAUTHORIZED);
+    let cookie = format!("{SESSION_COOKIE_NAME}={}", *PASSWORD_HASH);
+    let initial: Value = harness.client.get(&endpoint).header("Cookie", &cookie).send().await.unwrap().json().await.unwrap();
+    assert_eq!(initial, json!({"revision": 0, "state": null}));
+    let state = json!({
+        "target": {"kind": "browser", "ownerId": null},
+        "currentItemId": harness.track_id, "position": 5.5, "playbackRange": null,
+        "queue": {"manualQueue": [
+            {"id": "first", "itemId": harness.track_id}, {"id": "second", "itemId": harness.track_id}
+        ], "contextItemIds": [harness.track_id], "contextIndex": 0, "contextName": "Library",
+            "shuffleEnabled": false, "shuffledIds": [], "repeatMode": "off"}
+    });
+    let request = json!({"operationId": "initialize", "expectedRevision": 0, "state": state});
+    let mut events = harness.state.update_tx.subscribe();
+    let response = harness.client.post(&endpoint).header("Cookie", &cookie).json(&request).send().await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let snapshot: Value = response.json().await.unwrap();
+    assert_eq!(snapshot["revision"], 1);
+    assert_eq!(snapshot["state"], state);
+    let event = serde_json::to_value(events.try_recv().unwrap()).unwrap();
+    assert_eq!(event, json!({"type": "playbackSession", "snapshot": snapshot}));
+    let mut stale = request.clone();
+    stale["operationId"] = json!("other-controller");
+    let response = harness.client.post(&endpoint).header("Cookie", &cookie).json(&stale).send().await.unwrap();
+    assert_eq!(response.status(), StatusCode::CONFLICT);
+    assert_eq!(response.json::<Value>().await.unwrap(), snapshot);
+    let duplicate = harness.client.post(&endpoint).header("Cookie", &cookie).json(&request).send().await.unwrap();
+    assert_eq!(duplicate.status(), StatusCode::OK);
+    assert_eq!(duplicate.json::<Value>().await.unwrap(), snapshot);
+    assert!(events.try_recv().is_err());
+    let stale_play = harness.client.post(format!("{}api/sonos/play", harness.server.url))
+        .header("Cookie", &cookie)
+        .json(&json!({"groupId":"group-1", "itemIds":[harness.track_id], "startItemId":harness.track_id,
+            "expectedSessionRevision":0, "allowTakeover":true})).send().await.unwrap();
+    assert_eq!(stale_play.status(), StatusCode::CONFLICT);
+    assert!(harness.fake.loaded_sessions.lock().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn durable_queue_edits_refresh_without_a_controller_and_retry_after_restart() {
+    let mut harness = Harness::new().await;
+    let cookie = format!("{SESSION_COOKIE_NAME}={}", *PASSWORD_HASH);
+    let response = harness.client.post(format!("{}api/sonos/play", harness.server.url))
+        .header("Cookie", &cookie).json(&json!({"groupId":"group-1", "itemIds":[harness.track_id],
+            "startItemId":harness.track_id, "positionMillis":42000, "allowTakeover":true, "playOnCompletion":false}))
+        .send().await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let mut state = json!({
+        "target":{"kind":"sonos", "householdId":"home", "groupId":"group-1", "groupName":"Living room", "playerNames":[]},
+        "currentItemId":harness.track_id, "position":42, "playbackRange":null,
+        "queue":{"manualQueue":[], "contextItemIds":[harness.track_id], "contextIndex":0,
+            "contextName":"Library", "shuffleEnabled":false, "shuffledIds":[], "repeatMode":"off"}
+    });
+    let initial: playback_session::UpdateRequest = serde_json::from_value(json!({"operationId":"initial", "expectedRevision":0,"state":state})).unwrap();
+    harness.state.playback_session.update(&initial).unwrap();
+    state["queue"]["manualQueue"] = json!([
+        {"id":"first", "itemId":harness.track_id}, {"id":"second", "itemId":harness.track_id}
+    ]);
+    let edit: playback_session::UpdateRequest = serde_json::from_value(json!({"operationId":"edit", "expectedRevision":1,"state":state})).unwrap();
+    harness.state.playback_session.update(&edit).unwrap();
+    assert!(harness.state.playback_session.snapshot().unwrap().queue_sync_pending);
+    // There is no browser projection request: the durable worker does the work.
+    assert!(playback_session::sync_queue_once(&harness.state).await.unwrap());
+    assert!(!harness.state.playback_session.snapshot().unwrap().queue_sync_pending);
+    let window = harness.fake.refreshed_window.lock().unwrap().clone().unwrap();
+    assert_eq!(window["items"].as_array().unwrap().len(), 3);
+    assert_ne!(window["items"][1]["id"], window["items"][2]["id"]);
+    assert_eq!(harness.fake.loaded_sessions.lock().unwrap().len(), 1);
+    assert_eq!(harness.fake.playback.lock().unwrap()["playbackState"], "PLAYBACK_STATE_PAUSED");
+    assert_eq!(harness.fake.playback.lock().unwrap()["positionMillis"], 42000);
+
+    state["queue"]["manualQueue"].as_array_mut().unwrap().push(json!({"id":"third", "itemId":harness.track_id}));
+    let edit: playback_session::UpdateRequest = serde_json::from_value(json!({"operationId":"edit-again", "expectedRevision":2,"state":state})).unwrap();
+    harness.state.playback_session.update(&edit).unwrap();
+    harness.fake.fail_refresh.store(true, Ordering::SeqCst);
+    assert!(playback_session::sync_queue_once(&harness.state).await.is_err());
+    let snapshot = harness.state.playback_session.snapshot().unwrap();
+    assert!(snapshot.queue_sync_pending);
+    assert!(snapshot.queue_sync_error.is_some());
+    let db = open_connection_pool(harness._database.path().join("test.db").to_str().unwrap()).unwrap();
+    harness.state.playback_session = Arc::new(playback_session::PlaybackSessionStore::new(db).unwrap());
+    assert!(harness.state.playback_session.snapshot().unwrap().queue_sync_pending);
+    harness.fake.fail_refresh.store(false, Ordering::SeqCst);
+    assert!(playback_session::sync_queue_once(&harness.state).await.unwrap());
+    let snapshot = harness.state.playback_session.snapshot().unwrap();
+    assert!(!snapshot.queue_sync_pending);
+    assert!(snapshot.queue_sync_error.is_none());
+    assert_eq!(harness.fake.refreshed_window.lock().unwrap().as_ref().unwrap()["items"].as_array().unwrap().len(), 4);
+    assert_eq!(harness.fake.loaded_sessions.lock().unwrap().len(), 1);
+    assert_eq!(harness.fake.playback.lock().unwrap()["playbackState"], "PLAYBACK_STATE_PAUSED");
 }

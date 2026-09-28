@@ -1,4 +1,4 @@
-import { expect, type Locator, type Page } from '@playwright/test';
+import { expect, type Locator, type Page } from './fixtures/test';
 import { SonosSimulator, test, trackId } from './fixtures/sonos';
 import type { LibraryItem } from '../src/types';
 
@@ -78,7 +78,8 @@ async function paint(locator: Locator) {
 }
 
 for (const output of ['browser', 'sonos'] as const) {
-  for (const width of [1440, 1920, 736, 390, 320]) {
+  // Phone layouts have their own touch/navigation tests in mobile.spec.ts.
+  for (const width of [1440, 1920, 736]) {
     test(`${output} player remains compact and usable in Forest Palace at ${width}`, async ({ page }, testInfo) => {
       await page.setViewportSize({ width, height: 900 });
       const { seeks } = await openPlayer(page, output);

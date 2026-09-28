@@ -148,6 +148,8 @@ function sanitizedMediaError(audio: HTMLMediaElement): string | undefined {
   }
   return message
     .replace(/\b(?:https?|blob|data|file):[^\s"'<>]+/gi, '[redacted URL]')
+    // Strip control characters from browser-provided diagnostic text.
+    // eslint-disable-next-line no-control-regex
     .replace(/[\x00-\x1f\x7f]/g, ' ')
     .trim().slice(0, 512);
 }

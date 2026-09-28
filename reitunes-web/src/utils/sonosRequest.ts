@@ -1,9 +1,11 @@
 export class SonosRequestError extends Error {
   readonly status?: number;
-  constructor(message: string, status?: number) {
+  readonly code?: string;
+  constructor(message: string, status?: number, code?: string) {
     super(message);
     this.name = 'SonosRequestError';
     this.status = status;
+    this.code = code;
   }
 }
 
@@ -29,6 +31,7 @@ export async function sonosRequest<T = void>(
       throw new SonosRequestError(
         response.status === 401 ? 'Your ReiTunes session expired. Reload and sign in again.' : message,
         response.status,
+        body && typeof body === 'object' && 'code' in body && typeof body.code === 'string' ? body.code : undefined,
       );
     }
     if (text && body === undefined) throw new SonosRequestError('ReiTunes returned an unexpected response. Reload and try again.');

@@ -1,4 +1,4 @@
-import { expect, type Page } from '@playwright/test';
+import { expect, type Page } from './fixtures/test';
 import { test, deferred, SonosSimulator } from './fixtures/sonos';
 
 async function playerGeometry(page: Page) {
@@ -17,7 +17,7 @@ async function playerGeometry(page: Page) {
   });
 }
 
-for (const width of [1440, 390]) {
+for (const width of [1440, 736]) {
   test(`Sonos initial loading keeps the player and library fixed at ${width}px`, async ({ page }) => {
     const sonos = new SonosSimulator(page);
     const firstRead = { arrived: deferred(), release: deferred() };
@@ -33,6 +33,9 @@ for (const width of [1440, 390]) {
     await page.goto('/');
     await firstRead.arrived.promise;
     await expect(page.getByRole('status').filter({ hasText: 'Reading Kitchen…' })).toBeVisible();
+    // Session attachment can finish before the independent Sonos status read.
+    // Compare speaker loading states after the connection banner has settled.
+    await expect(page.locator('.session-banner')).toHaveCount(0);
 
     const initial = await playerGeometry(page);
     const groupName = 'Kitchen, dining room, living room, upstairs bedroom and garden speakers';

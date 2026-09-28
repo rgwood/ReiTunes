@@ -1,5 +1,5 @@
 import { writeFile } from 'node:fs/promises';
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Page } from './fixtures/test';
 import type { LibraryItem } from '../src/types';
 
 // Deliberately varied test data: albums, repeat artists, loose mixes and saved moments.
@@ -247,6 +247,11 @@ test('moves to the next saved moment from the live position and keeps queued mus
   await page.evaluate(() => {
     const audio = document.querySelector('audio');
     if (!audio) throw new Error('Expected a browser audio player');
+    // This fixture serves an empty audio body, so model loaded metadata before
+    // advancing playback. A canplay event alone cannot complete the pending seek.
+    Object.defineProperty(audio, 'readyState', { configurable: true, value: HTMLMediaElement.HAVE_ENOUGH_DATA });
+    Object.defineProperty(audio, 'duration', { configurable: true, value: 240 });
+    audio.dispatchEvent(new Event('loadedmetadata'));
     audio.dispatchEvent(new Event('canplay'));
     audio.currentTime = 95;
     audio.dispatchEvent(new Event('timeupdate'));
@@ -290,10 +295,10 @@ test('opens a playlist in its saved order and uses its name for playback', async
 test('keeps search and browsing reachable at a phone width', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await mockLibrary(page);
-  await page.goto('/');
+  await page.goto('/#browse/library');
   await expect(page.getByRole('searchbox', { name: 'Search library' })).toBeVisible();
   await page.getByRole('searchbox', { name: 'Search library' }).fill('Nick Drake');
-  await expect(page.getByRole('row').filter({ hasText: 'Northern Sky' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Play Northern Sky', exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Import music', exact: true })).toBeVisible();
   await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 });

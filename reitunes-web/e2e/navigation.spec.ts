@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Page } from './fixtures/test';
 import type { LibraryItem } from '../src/types';
 import type { DiscoveryData } from '../src/hooks/useDiscovery';
 
@@ -54,15 +54,33 @@ for (const viewport of [{ name: 'desktop', width: 1440, height: 900 }, { name: '
     await page.setViewportSize(viewport);
     await backend(page);
     await page.goto('/');
-    await page.getByRole('row').filter({ hasText: 'Northern Sky' }).dblclick();
+    if (viewport.name === 'mobile') {
+      await page.getByRole('navigation', { name: 'Main navigation' }).getByRole('button', { name: 'Browse', exact: true }).click();
+      await page.getByRole('button', { name: 'Play Northern Sky', exact: true }).click();
+    } else await page.getByRole('row').filter({ hasText: 'Northern Sky' }).dblclick();
     const audio = page.locator('audio');
     await audio.evaluate(element => {
       Object.defineProperty(element, 'duration', { configurable: true, value: 1200 });
+      Object.defineProperty(element, 'readyState', { configurable: true, value: HTMLMediaElement.HAVE_METADATA });
       Object.defineProperty(element, 'currentTime', { configurable: true, writable: true, value: 0 });
       element.dispatchEvent(new Event('loadedmetadata'));
       element.dispatchEvent(new Event('canplay'));
     });
     await page.mouse.move(0, viewport.height - 1);
+    if (viewport.name === 'mobile') {
+      await page.getByRole('navigation', { name: 'Main navigation' }).getByRole('button', { name: 'Playing', exact: true }).click();
+      const slider = page.getByRole('slider', { name: 'Playback position', exact: true });
+      for (const seconds of [0, 600, 1200]) {
+        await audio.evaluate((element, time) => { (element as HTMLAudioElement).currentTime = time; element.dispatchEvent(new Event('timeupdate')); }, seconds);
+        await expect(slider).toHaveValue(String(seconds));
+        await expect(page.locator('.mobile-player-times')).toBeVisible();
+      }
+      await slider.fill('300');
+      await slider.dispatchEvent('pointerup');
+      await expect.poll(() => audio.evaluate(element => (element as HTMLAudioElement).currentTime)).toBe(300);
+      await page.screenshot({ path: testInfo.outputPath('scrubber-mobile.png') });
+      return;
+    }
     const scrubber = page.locator('.playback-scrubber');
     const marker = scrubber.locator('.playback-fill > div');
     for (const seconds of [0, 600, 1200]) {
@@ -90,10 +108,36 @@ for (const viewport of [{ name: 'desktop', width: 1440, height: 900 }, { name: '
     await page.screenshot({ path: testInfo.outputPath(`scrubber-${viewport.name}.png`) });
   });
 
-  test(`sidebar navigation preserves browsing and playback on ${viewport.name}`, async ({ page }) => {
+  test(`navigation preserves browsing and playback on ${viewport.name}`, async ({ page }) => {
     await page.setViewportSize(viewport);
     await backend(page);
     await page.goto('/');
+    if (viewport.name === 'mobile') {
+      await page.getByRole('navigation', { name: 'Main navigation' }).getByRole('button', { name: 'Browse', exact: true }).click();
+      await page.getByRole('combobox', { name: 'Library collection' }).selectOption('favourites');
+      await page.getByRole('searchbox', { name: 'Search library', exact: true }).fill('Northern');
+      await page.getByRole('button', { name: 'Play Northern Sky', exact: true }).click();
+      const audio = page.locator('audio');
+      await audio.evaluate(element => { element.setAttribute('data-navigation-marker', 'same-player'); });
+      const state = () => audio.evaluate(element => ({ src: (element as HTMLAudioElement).src, plays: (element as HTMLElement).dataset.playCalls, paused: (element as HTMLAudioElement).paused }));
+      const before = await state();
+      const collections = page.getByRole('navigation', { name: 'Browse collections' });
+      await collections.getByRole('button', { name: 'Discover', exact: true }).click();
+      const discoverySearch = page.getByRole('searchbox', { name: 'Search discovery', exact: true });
+      await expect(discoverySearch).toHaveValue('');
+      await discoverySearch.fill('late night');
+      await expect(page.getByRole('article').filter({ hasText: 'A late night mix' })).toBeVisible();
+      await collections.getByRole('button', { name: 'Library', exact: true }).click();
+      await expect(page.getByRole('searchbox', { name: 'Search library', exact: true })).toHaveValue('Northern');
+      await expect(page.getByRole('combobox', { name: 'Library collection' })).toHaveValue('favourites');
+      await expect(page.locator('.mobile-song-list > li')).toHaveCount(1);
+      await collections.getByRole('button', { name: 'Discover', exact: true }).click();
+      await expect(discoverySearch).toHaveValue('late night');
+      await expect(audio).toHaveAttribute('data-navigation-marker', 'same-player');
+      expect(await state()).toEqual(before);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+      return;
+    }
     const sidebar = page.getByRole('navigation', { name: 'Music library', exact: true });
     const favourites = sidebar.getByRole('button', { name: 'Favourites', exact: true });
     await favourites.click();

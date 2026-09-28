@@ -1,5 +1,5 @@
 import { writeFile } from 'node:fs/promises';
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Page } from './fixtures/test';
 import type { DiscoveryData, DiscoveryEntry, DiscoverySource } from '../src/hooks/useDiscovery';
 
 const source: DiscoverySource = {
@@ -47,6 +47,11 @@ async function backend(page: Page, initial: Partial<DiscoveryData> = {}) {
 async function discover(page: Page) {
   await page.goto('/');
   await page.getByRole('button', { name: 'Discover', exact: true }).click();
+}
+
+async function mobileDiscover(page: Page) {
+  await page.getByRole('navigation', { name: 'Main navigation' }).getByRole('button', { name: 'Browse', exact: true }).click();
+  await page.getByRole('navigation', { name: 'Browse collections' }).getByRole('button', { name: 'Discover', exact: true }).click();
 }
 
 const titles = (page: Page) => page.locator('.discovery-entries article h2').allTextContents();
@@ -121,6 +126,7 @@ test('import activity stays compact and leads to progress and failure recovery i
   failed = true;
   await expect(activity).toContainText('1 need attention');
   await page.setViewportSize({ width: 390, height: 844 });
+  await mobileDiscover(page);
   await page.screenshot({ path: testInfo.outputPath('discovery-imports-mobile.png'), fullPage: true });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   await activity.getByRole('button', { name: 'View progress', exact: true }).click();
@@ -195,6 +201,8 @@ test('NTS episodes expose descriptions and lazy tracklists without a false impor
   await page.getByRole('article').getByRole('button', { name: 'Listen later', exact: true }).click();
   await page.getByRole('button', { name: 'Listen later (1)', exact: true }).click();
   await page.setViewportSize({ width: 390, height: 844 });
+  await mobileDiscover(page);
+  await page.getByRole('button', { name: 'Listen later (1)', exact: true }).click();
   await page.getByRole('button', { name: 'Set A', exact: true }).click();
   await expect(details.getByRole('link', { name: 'Open on NTS ↗' })).toBeVisible();
   await page.screenshot({ path: testInfo.outputPath('discovery-nts-mobile.png'), fullPage: true });
@@ -342,11 +350,12 @@ test('Discovery keeps rows compact and full show notes readable in details acros
   await expect(rows).toHaveCount(15);
 
   await page.setViewportSize({ width: 390, height: 844 });
+  await mobileDiscover(page);
   await rows.first().scrollIntoViewIfNeeded();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   expect(await rows.evaluateAll(elements => elements.every(element => {
     const box = element.getBoundingClientRect();
-    return box.left >= 0 && box.right <= window.innerWidth && box.height <= 90;
+    return box.left >= 0 && box.right <= window.innerWidth && box.height <= 160;
   }))).toBe(true);
   await page.screenshot({ path: testInfo.outputPath('discovery-dense-mobile.png'), fullPage: true });
   await rows.last().getByRole('button', { name: 'Yu Su', exact: true }).click();
@@ -362,6 +371,8 @@ test('Discovery keeps rows compact and full show notes readable in details acros
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'catppuccin');
   await expect(page.locator('html')).toHaveAttribute('data-theme-mode', 'dark');
   await page.setViewportSize({ width: 1440, height: 900 });
+  await expect(page.getByRole('navigation', { name: 'Music library', exact: true })).toBeVisible();
+  await expect(rows).toHaveCount(15);
   await rows.first().scrollIntoViewIfNeeded();
   await expect(rows.first().getByText(entries[0].description!, { exact: true })).toBeVisible();
   expect(await rows.first().evaluate(element => element.getBoundingClientRect().top)).toBe(measurements.firstRowTop);
@@ -372,6 +383,7 @@ test('Discovery keeps rows compact and full show notes readable in details acros
   await page.screenshot({ path: testInfo.outputPath('discovery-details-dark-desktop.png'), fullPage: true });
   await details.getByRole('button', { name: 'Close details' }).click();
   await page.setViewportSize({ width: 390, height: 844 });
+  await mobileDiscover(page);
   await rows.first().scrollIntoViewIfNeeded();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   await page.screenshot({ path: testInfo.outputPath('discovery-dense-dark-mobile.png'), fullPage: true });

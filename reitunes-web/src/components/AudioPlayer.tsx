@@ -10,6 +10,9 @@ import type { LibraryItem } from '../types';
 import { audioDiagnostics, observePlaybackMedia, recordPlaybackEvent } from '../utils/playbackDiagnostics';
 import { createAudioRecovery, isRetryableMediaError, type AudioRecoveryStatus } from '../utils/audioRecovery';
 import { saveDuration, trackDuration } from '../utils/duration';
+import { MusicIcon } from './MusicIcon';
+import { ownsBrowserPlayback, useSharedSessionStore } from '../stores/sharedSessionStore';
+import './MobilePlayer.css';
 
 // Minimal SVG icons - consistent 16px size, 1.5px stroke
 const Icons = {
@@ -148,9 +151,15 @@ interface AudioPlayerProps {
   items: LibraryItem[];
   onPlaybackPosition?: (itemId: string, position: number) => void;
   previewPauseRef?: RefObject<(() => Promise<boolean>) | null>;
+  mobile?: boolean;
+  expanded?: boolean;
+  onExpand?: () => void;
+  onQueue?: () => void;
+  onOutput?: () => void;
 }
 
-export function AudioPlayer({ audioRef: sharedAudioRef, items, onPlaybackPosition, previewPauseRef }: AudioPlayerProps) {
+export function AudioPlayer({ audioRef: sharedAudioRef, items, onPlaybackPosition, previewPauseRef,
+  mobile = false, expanded = true, onExpand, onQueue, onOutput }: AudioPlayerProps) {
   const audioRef = useRef<HTMLAudioElement>(null);
   const attachAudio = useCallback((audio: HTMLAudioElement | null) => {
     audioRef.current = audio;
@@ -171,6 +180,12 @@ export function AudioPlayer({ audioRef: sharedAudioRef, items, onPlaybackPositio
   const [sonosVolumeDraft, setSonosVolumeDraft] = useState<number | null>(null);
   const [sonosSeekDraft, setSonosSeekDraft] = useState<number | null>(null);
   const [bookmarkFeedback, setBookmarkFeedback] = useState<'idle' | 'success' | 'error'>('idle');
+  const [localPlaybackError, setLocalPlaybackError] = useState<string | null>(null);
+  const sharedReady = useSharedSessionStore(state => state.ready);
+  const sharedEnabled = useSharedSessionStore(state => state.enabled);
+  const sharedConnected = useSharedSessionStore(state => state.connected);
+  const sharedRefreshing = useSharedSessionStore(state => state.refreshing);
+  const canControlSession = sharedReady && sharedConnected && !sharedRefreshing;
 
   const {
     currentItem,
@@ -191,6 +206,8 @@ export function AudioPlayer({ audioRef: sharedAudioRef, items, onPlaybackPositio
   const play = usePlayback();
   const { target, isSending, isSwitchingOutput, error: playbackError, takeoverRequired } =
     usePlaybackTargetStore();
+  const localOwner = ownsBrowserPlayback(target);
+  const canPlayLocally = sharedReady && target.kind === 'browser' && localOwner;
   const sonos = useSonosControls(target.kind === 'sonos' ? target.groupId : null);
   const sonosQueue = useSonosQueueSync(sonos.playback, sonos.refreshPlayback);
   const remotePlayheadRef = useRef<{ groupId: string; itemId?: string } | null>(null);
@@ -203,7 +220,7 @@ export function AudioPlayer({ audioRef: sharedAudioRef, items, onPlaybackPositio
     sonosPlayback?.playbackState === 'PLAYBACK_STATE_PLAYING' ||
     sonosPlayback?.playbackState === 'PLAYBACK_STATE_BUFFERING';
   const duration = loadedDuration || (currentItem ? trackDuration(currentItem) ?? 0 : 0);
-  const mediaSessionActive = !!currentItem && (target.kind === 'browser' ||
+  const mediaSessionActive = sharedReady && !!currentItem && (canPlayLocally ||
     (sonosSessionActive && sonosPlayback?.sourceItemId === currentItem.id));
   const mediaPosition = target.kind === 'sonos' ? (sonos.requestedSeekMillis ?? sonos.positionMillis) / 1000 : currentTime;
   const refreshSonosPlayback = sonos.refreshPlayback;
@@ -304,10 +321,10 @@ export function AudioPlayer({ audioRef: sharedAudioRef, items, onPlaybackPositio
   useEffect(() => {
     const audio = audioRef.current;
     setRecoveryStatus('idle');
-    if (!audio || !currentItemId || target.kind !== 'browser') return;
+    if (!audio || !currentItemId || !canPlayLocally) return;
     let disposed = false;
     const canAct = () => !disposed && usePlayerStore.getState().currentItemId === currentItemId &&
-      usePlaybackTargetStore.getState().target.kind === 'browser' &&
+      ownsBrowserPlayback(usePlaybackTargetStore.getState().target) &&
       !usePlaybackTargetStore.getState().isSwitchingOutput;
     const controller = createAudioRecovery(audio, {
       canAct,
@@ -330,7 +347,7 @@ export function AudioPlayer({ audioRef: sharedAudioRef, items, onPlaybackPositio
     });
     recoveryRef.current = controller;
     return () => { disposed = true; controller.dispose(); if (recoveryRef.current === controller) recoveryRef.current = null; };
-  }, [currentItemId, target.kind]);
+  }, [currentItemId, canPlayLocally]);
 
   // Handle song changes
   useEffect(() => {
@@ -364,12 +381,14 @@ export function AudioPlayer({ audioRef: sharedAudioRef, items, onPlaybackPositio
     remotePlayheadRef.current = { groupId: target.groupId, itemId: sonos.playback.itemId };
     const queue = useQueueStore.getState();
     const fromManualQueue = advanced && queue.manualQueue[0]?.id === sonos.playback.sourceItemId;
-    if (fromManualQueue) queue.takeQueuedItem(0);
+    // The server reconciles queue occurrences as Sonos advances, including when
+    // every browser is closed. Controllers must not consume them a second time.
+    if (!sharedEnabled && fromManualQueue) queue.takeQueuedItem(0);
     if (!advanced && sonos.playback.sourceItemId === currentItem?.id) return;
     const contextIndex = queue.contextItems.findIndex(
       (candidate) => candidate.id === sonos.playback?.sourceItemId
     );
-    if (!fromManualQueue && contextIndex >= 0) useQueueStore.setState({ contextIndex });
+    if (!sharedEnabled && !fromManualQueue && contextIndex >= 0) useQueueStore.setState({ contextIndex });
     const item = items.find((candidate) => candidate.id === sonos.playback?.sourceItemId);
     if (item) selectRemoteItem(item, sonos.positionMillis / 1000);
   }, [
@@ -384,6 +403,7 @@ export function AudioPlayer({ audioRef: sharedAudioRef, items, onPlaybackPositio
     sonos.playback?.observedAt,
     sonos.positionMillis,
     target,
+    sharedEnabled,
   ]);
 
   // Restored tracks remain paused. Tracks selected by the user set isPlaying
@@ -392,7 +412,7 @@ export function AudioPlayer({ audioRef: sharedAudioRef, items, onPlaybackPositio
     const audio = audioRef.current;
     if (!audio || !currentItemId) return;
 
-    if (target.kind === 'sonos') {
+    if (!canPlayLocally) {
       if (!audio.paused) audio.pause();
       return;
     }
@@ -403,13 +423,14 @@ export function AudioPlayer({ audioRef: sharedAudioRef, items, onPlaybackPositio
       audio.play().catch((error) => {
         // A source switch or newer play/pause intent can settle an older promise.
         const player = usePlayerStore.getState();
-        const stale = superseded || !audio.paused || !player.isPlaying || player.currentItemId !== currentItemId || usePlaybackTargetStore.getState().target.kind !== 'browser';
+        const stale = superseded || !audio.paused || !player.isPlaying || player.currentItemId !== currentItemId || !ownsBrowserPlayback(usePlaybackTargetStore.getState().target);
         recordPlaybackEvent('play-rejected', { stale, itemId: currentItemId, errorName: error instanceof Error ? error.name : 'UnknownError', ...audioDiagnostics(audio) });
         // The rejected play promise can arrive before the media error event.
         // Keep play intent so that event can perform its one automatic retry.
         if (!stale && !isRetryableMediaError(audio.error)) {
           console.error('Failed to start playback:', error);
           setIsPlaying(false);
+          setLocalPlaybackError('Playback could not start. Tap Play to try again.');
         }
       });
     } else if (!isPlaying && !audio.paused) {
@@ -417,12 +438,12 @@ export function AudioPlayer({ audioRef: sharedAudioRef, items, onPlaybackPositio
       audio.pause();
     }
     return () => { superseded = true; };
-  }, [currentItemId, isPlaying, setIsPlaying, target.kind]);
+  }, [currentItemId, isPlaying, setIsPlaying, canPlayLocally]);
 
   // Handle pending seek
   useEffect(() => {
     const audio = audioRef.current;
-    if (!audio || pendingSeek === null || target.kind !== 'browser') return;
+    if (!audio || pendingSeek === null || !canPlayLocally) return;
 
     const doSeek = () => {
       recordPlaybackEvent('command', {
@@ -451,7 +472,7 @@ export function AudioPlayer({ audioRef: sharedAudioRef, items, onPlaybackPositio
       audio.addEventListener('loadedmetadata', handleMetadata, { once: true });
       return () => audio.removeEventListener('loadedmetadata', handleMetadata);
     }
-  }, [pendingSeek, clearPendingSeek, currentItem?.id, onPlaybackPosition, target.kind]);
+  }, [pendingSeek, clearPendingSeek, currentItem?.id, onPlaybackPosition, canPlayLocally]);
 
   // Sync volume
   useEffect(() => {
@@ -465,7 +486,7 @@ export function AudioPlayer({ audioRef: sharedAudioRef, items, onPlaybackPositio
     const player = usePlayerStore.getState();
     // Ignore the old source while a new track/bookmark seek is still pending.
     if (
-      !audio || usePlaybackTargetStore.getState().target.kind !== 'browser' ||
+      !audio || !ownsBrowserPlayback(usePlaybackTargetStore.getState().target) ||
       isChangingSourceRef.current || audio.seeking || player.pendingSeek !== null ||
       !player.currentItemId || player.currentItemId !== lastItemIdRef.current
     ) return;
@@ -503,20 +524,24 @@ export function AudioPlayer({ audioRef: sharedAudioRef, items, onPlaybackPositio
   }, []);
 
   const handleEnded = useCallback(() => {
+    if (!ownsBrowserPlayback(usePlaybackTargetStore.getState().target)) return;
     const range = usePlayerStore.getState().playbackRange;
     if (range?.end != null) { void finishRange(range); return; }
     setResumePosition(0);
     if (repeatMode === 'one' && audioRef.current) {
       audioRef.current.currentTime = 0;
-      audioRef.current.play();
+      void audioRef.current.play().catch(() => {
+        setIsPlaying(false);
+        setLocalPlaybackError('Playback could not start. Tap Play to try again.');
+      });
       return;
     }
-    const nextItem = playNext();
-    if (nextItem) void play(nextItem);
-  }, [playNext, play, repeatMode, setResumePosition, finishRange]);
+    const nextItem = playNext(true);
+    if (nextItem) void play(nextItem, 0, 'ended');
+  }, [playNext, play, repeatMode, setResumePosition, finishRange, setIsPlaying]);
 
   const handlePlayPause = useCallback(() => {
-    if (!audioRef.current) return;
+    if (!audioRef.current || !canPlayLocally) return;
     recordPlaybackEvent('command', { origin: isPlaying ? 'button-pause' : 'button-play', ...audioDiagnostics(audioRef.current) });
     if (isPlaying) {
       setIsPlaying(false);
@@ -525,18 +550,20 @@ export function AudioPlayer({ audioRef: sharedAudioRef, items, onPlaybackPositio
       audioRef.current.play().catch((error) => {
         recordPlaybackEvent('play-rejected', { origin: 'button-play', errorName: error instanceof Error ? error.name : 'UnknownError' });
         console.error('Failed to resume playback:', error);
+        setIsPlaying(false);
+        setLocalPlaybackError('Playback could not start. Tap Play to try again.');
       });
     }
-  }, [isPlaying, setIsPlaying]);
+  }, [isPlaying, setIsPlaying, canPlayLocally]);
 
   const handleProgressClick = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
-    if (!progressRef.current || !audioRef.current || !duration) return;
+    if (!canPlayLocally || !progressRef.current || !audioRef.current || !duration) return;
     const rect = progressRef.current.getBoundingClientRect();
     const percent = (e.clientX - rect.left) / rect.width;
     const position = percent * duration;
     usePlayerStore.getState().setPlaybackRange(null);
     usePlayerStore.getState().seekTo(position);
-  }, [duration]);
+  }, [duration, canPlayLocally]);
 
   const seekBack = useCallback(() => {
     if (audioRef.current) {
@@ -591,14 +618,14 @@ export function AudioPlayer({ audioRef: sharedAudioRef, items, onPlaybackPositio
 
   const handlePrevious = useCallback(() => {
     const output = usePlaybackTargetStore.getState();
-    if (output.isSending || output.isSwitchingOutput || output.isTransportPending) return;
+    if (!useSharedSessionStore.getState().ready || output.isSending || output.isSwitchingOutput || output.isTransportPending) return;
     const prevItem = playPrevious();
     if (prevItem) void play(prevItem);
   }, [playPrevious, play]);
 
   const handleNext = useCallback(() => {
     const output = usePlaybackTargetStore.getState();
-    if (output.isSending || output.isSwitchingOutput || output.isTransportPending) return;
+    if (!useSharedSessionStore.getState().ready || output.isSending || output.isSwitchingOutput || output.isTransportPending) return;
     const nextItem = playNext();
     if (nextItem) void play(nextItem);
   }, [playNext, play]);
@@ -606,7 +633,7 @@ export function AudioPlayer({ audioRef: sharedAudioRef, items, onPlaybackPositio
   const handleAudioPause = useCallback(() => {
     // Media events are queued tasks. An old pause can arrive after play() has
     // already made the element play again; feeding it back would pause that play.
-    if (usePlaybackTargetStore.getState().target.kind !== 'browser' ||
+    if (!ownsBrowserPlayback(usePlaybackTargetStore.getState().target) ||
       usePlaybackTargetStore.getState().isSwitchingOutput ||
       isChangingSourceRef.current || !audioRef.current?.paused) return;
     setIsPlaying(false);
@@ -614,7 +641,9 @@ export function AudioPlayer({ audioRef: sharedAudioRef, items, onPlaybackPositio
   }, [setIsPlaying, setResumePosition]);
 
   const handleAudioPlay = useCallback(() => {
-    if (!audioRef.current || audioRef.current.paused || usePlaybackTargetStore.getState().target.kind !== 'browser') return;
+    if (!audioRef.current || audioRef.current.paused) return;
+    if (!ownsBrowserPlayback(usePlaybackTargetStore.getState().target)) { audioRef.current.pause(); return; }
+    setLocalPlaybackError(null);
     isChangingSourceRef.current = false;
     const player = usePlayerStore.getState();
     if (player.pendingSeek === null && player.playbackRange?.end != null && audioRef.current.currentTime >= player.playbackRange.end) player.setPlaybackRange(null);
@@ -627,7 +656,7 @@ export function AudioPlayer({ audioRef: sharedAudioRef, items, onPlaybackPositio
 
   useEffect(() => {
     const checkpoint = () => {
-      if (audioRef.current) setResumePosition(audioRef.current.currentTime);
+      if (audioRef.current && ownsBrowserPlayback(usePlaybackTargetStore.getState().target)) setResumePosition(audioRef.current.currentTime);
     };
     window.addEventListener('pagehide', checkpoint);
     return () => window.removeEventListener('pagehide', checkpoint);
@@ -681,7 +710,7 @@ export function AudioPlayer({ audioRef: sharedAudioRef, items, onPlaybackPositio
       const output = usePlaybackTargetStore.getState();
       // Keep guarded handlers even without a Sonos session: removing them lets
       // the browser's default media-key behavior start the local audio element.
-      return mediaSessionActive && output.target === target && !output.isSending &&
+      return mediaSessionActive && (target.kind === 'browser' || canControlSession) && output.target === target && !output.isSending &&
         !output.isSwitchingOutput && (seeking || !output.isTransportPending);
     };
     const seek = (position: number, relative = false) => {
@@ -746,7 +775,7 @@ export function AudioPlayer({ audioRef: sharedAudioRef, items, onPlaybackPositio
         }
       }
     };
-  }, [duration, handleNext, handlePrevious, mediaSessionActive, pauseSonos, playSonos, seekOnSonos, setResumePosition, sonosPlayback, target]);
+  }, [canControlSession, duration, handleNext, handlePrevious, mediaSessionActive, pauseSonos, playSonos, seekOnSonos, setResumePosition, sonosPlayback, target]);
 
   const progress = duration > 0 ? (currentTime / duration) * 100 : 0;
   const bookmarks = currentItem?.bookmarks ? Object.entries(currentItem.bookmarks).map(([id, bookmark]) => ({ ...bookmark, id })) : [];
@@ -755,7 +784,7 @@ export function AudioPlayer({ audioRef: sharedAudioRef, items, onPlaybackPositio
   const sonosPosition = sonosSessionActive ? sonos.positionMillis / 1000 : 0;
   const displayedSonosPosition = sonosSeekDraft ?? (sonos.requestedSeekMillis === null ? sonosPosition : sonos.requestedSeekMillis / 1000);
   const sonosProgress = duration > 0 ? Math.min(100, (displayedSonosPosition / duration) * 100) : 0;
-  const sonosSeekDisabled = isSending || isSwitchingOutput || (sonos.isTransportPending && sonos.requestedSeekMillis === null) ||
+  const sonosSeekDisabled = !canControlSession || isSending || isSwitchingOutput || (sonos.isTransportPending && sonos.requestedSeekMillis === null) ||
     !sonosSessionActive || !sonos.playback?.itemId || !currentItem || duration <= 0;
   const seekSonos = (position: number, relative = false) => {
     if (sonosSeekDisabled) return;
@@ -765,17 +794,83 @@ export function AudioPlayer({ audioRef: sharedAudioRef, items, onPlaybackPositio
     return sonos.seek(position * 1000, { relative, maxPositionMillis: Math.max(0, duration - 0.001) * 1000 });
   };
   const displayedSonosVolume = sonosVolumeDraft ?? sonos.requestedVolume ?? sonos.volume?.volume ?? 0;
-  const sonosVolumeDisabled = !sonos.volume || sonos.volume.fixed || (sonos.isVolumePending && sonos.requestedVolume === null) || isSending || isSwitchingOutput;
+  const sonosVolumeDisabled = !canControlSession || !sonos.volume || sonos.volume.fixed || (sonos.isVolumePending && sonos.requestedVolume === null) || isSending || isSwitchingOutput;
   const adjustBrowserVolume = (step: number) => {
     setVolume(Math.min(100, Math.max(0, Math.round((isMuted ? 0 : volume) * 100) + step)) / 100);
     setMuted(false);
   };
   const sonosTransportDisabled =
-    isSending || isSwitchingOutput ||
+    !canControlSession || isSending || isSwitchingOutput ||
     !sonosSessionActive ||
     !currentItem ||
     sonos.isTransportPending ||
     (sonosIsPlaying && sonos.playback?.availablePlaybackActions?.canPause === false);
+
+  if (mobile) {
+    const remote = target.kind === 'sonos';
+    const playing = remote ? sonosIsPlaying : isPlaying && localOwner;
+    const position = remote ? displayedSonosPosition : pendingSeek ?? currentTime;
+    const outputName = remote ? target.groupName : localOwner ? 'This device' : currentItem ? 'Another browser' : 'Choose output';
+    const playDisabled = remote ? sonosTransportDisabled : !currentItem || !canPlayLocally || isSwitchingOutput;
+    const seekDisabled = remote ? sonosSeekDisabled : !currentItem || !canPlayLocally || !duration || isSwitchingOutput;
+    const error = remote ? playbackError || sonosQueue.error || sonos.error : localPlaybackError || playbackError;
+    const status = !sharedReady ? 'Connecting to your session…' : isSwitchingOutput ? 'Moving playback…'
+      : isSending ? `Sending to ${outputName}…` : remote && !sonos.playback ? `Reading ${outputName}…`
+        : remote && !sonosSessionActive ? `Choose a song to play on ${outputName}.`
+          : !remote && !localOwner && currentItem ? 'Playback is on another browser. Choose an output to listen here.' : null;
+    const toggle = () => remote ? void (sonosIsPlaying ? sonos.pause() : sonos.play()) : handlePlayPause();
+    const upcoming = [...useQueueStore.getState().manualQueue, ...useQueueStore.getState().getUpcomingContext()].slice(0, 2);
+    return <div className={`mobile-player ${expanded ? 'expanded' : 'mini'}`} data-expanded={expanded} aria-busy={isSwitchingOutput}>
+      <audio ref={attachAudio} preload="metadata" playsInline onLoadStart={handleLoadStart}
+        onTimeUpdate={handleTimeUpdate} onLoadedMetadata={handleLoadedMetadata} onEnded={handleEnded}
+        onPlay={handleAudioPlay} onPause={handleAudioPause} />
+      {expanded ? <>
+        <div className="mobile-player-heading"><h1>Now playing</h1><button type="button" className="mobile-output" onClick={onOutput} aria-label="Choose playback output"><MusicIcon name="speaker" />{outputName}</button></div>
+        <div className="mobile-playing-track">
+          <span className="mobile-playing-source">{useQueueStore.getState().contextName || 'ReiTunes'}</span>
+          <h2>{currentItem?.name || 'Choose some music'}</h2>
+          <p className="mobile-playing-artist">{currentItem?.artist}</p>
+          <p className="mobile-playing-album">{currentItem?.album}</p>
+        </div>
+        <div className="mobile-player-progress">
+          <input type="range" aria-label={remote ? 'Sonos playback position' : 'Playback position'} min="0" max={duration || 1} step="0.1"
+            value={Math.min(duration || 1, Math.max(0, position))} disabled={seekDisabled}
+            onChange={event => { const position = Number(event.target.value); usePlayerStore.getState().setPlaybackRange(null); if (remote) setSonosSeekDraft(position); else usePlayerStore.getState().seekTo(position); }}
+            onPointerUp={event => { if (remote) void seekSonos(Number(event.currentTarget.value)); }}
+            onPointerCancel={() => setSonosSeekDraft(null)}
+            onKeyUp={event => { if (remote && ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End', 'PageUp', 'PageDown'].includes(event.key)) void seekSonos(Number(event.currentTarget.value)); }} />
+          <div className="mobile-player-times"><span>{formatTime(position)}</span><span>{duration ? formatTime(duration) : '—:—'}</span></div>
+        </div>
+        <PlayerTransport playing={playing} sonos={remote} onToggle={toggle} onPrevious={handlePrevious} onNext={handleNext}
+          onBack={() => remote ? void seekSonos(-30, true) : seekBack()} onForward={() => remote ? void seekSonos(30, true) : seekForward()}
+          playDisabled={playDisabled} seekDisabled={seekDisabled} skipDisabled={!canControlSession || isSending || isSwitchingOutput || sonos.isTransportPending || (remote ? !sonosSessionActive : !canPlayLocally)} />
+        {remote ? <div className="mobile-volume">
+          <label htmlFor="mobile-sonos-volume"><span>{outputName} volume</span><span>{sonos.volume ? `${displayedSonosVolume}%` : '—'}</span></label>
+          <div className="mobile-volume-controls"><button type="button" aria-label={sonos.volume?.muted ? 'Unmute Sonos' : 'Mute Sonos'} disabled={sonosVolumeDisabled || sonos.isVolumePending}
+            onClick={() => void sonos.setMuted(!sonos.volume?.muted)}>{sonos.volume?.muted ? Icons.volumeMute : Icons.volume}</button>
+            <input id="mobile-sonos-volume" type="range" aria-label="Sonos group volume" min="0" max="100" value={displayedSonosVolume} disabled={sonosVolumeDisabled}
+              onChange={event => setSonosVolumeDraft(Number(event.target.value))}
+              onPointerUp={event => { setSonosVolumeDraft(null); void sonos.setGroupVolume(Number(event.currentTarget.value)); }}
+              onPointerCancel={() => setSonosVolumeDraft(null)}
+              onKeyUp={event => { setSonosVolumeDraft(null); void sonos.setGroupVolume(Number(event.currentTarget.value)); }} />
+          </div></div> : <p className="mobile-device-volume">Use your device’s volume controls</p>}
+        <div className="mobile-player-actions">
+          <button type="button" aria-label={shuffleEnabled ? 'Shuffle on' : 'Shuffle off'} aria-pressed={shuffleEnabled} onClick={toggleShuffle} disabled={!canControlSession || isSending || isSwitchingOutput}>{Icons.shuffle}<span>Shuffle</span></button>
+          {!remote && <button type="button" aria-label={`Repeat ${repeatMode}`} aria-pressed={repeatMode !== 'off'} onClick={cycleRepeatMode} disabled={!canPlayLocally}>{Icons.repeat}<span>{repeatMode === 'one' ? 'Repeat one' : 'Repeat'}</span></button>}
+          <button type="button" onClick={() => void (remote ? handleAddSonosBookmark() : handleAddBookmark())} disabled={!currentItem || (remote ? !sonosSessionActive : !canPlayLocally)} data-feedback={bookmarkFeedback} aria-label={remote ? 'Bookmark current Sonos time' : 'Add bookmark'}>{Icons.bookmark}<span>{bookmarkFeedback === 'success' ? 'Saved' : bookmarkFeedback === 'error' ? 'Retry' : 'Bookmark'}</span></button>
+          <button type="button" onClick={onQueue}><MusicIcon name="queue" /><span>Queue</span></button>
+        </div>
+        {upcoming.length > 0 && <section className="mobile-player-upcoming" aria-label="Up next"><div><h3>Up next</h3><button type="button" onClick={onQueue}>View queue</button></div>{upcoming.map((item, index) => <div className="mobile-upcoming-track" key={`${item.id}-${index}`}><span>{item.name}<small>{item.artist}</small></span><span>{trackDuration(item) ? formatTime(trackDuration(item)!) : ''}</span></div>)}</section>}
+      </> : <div className="mobile-mini-row"><button type="button" className="mobile-mini-title" onClick={onExpand} aria-label="Open now playing"><strong>{currentItem?.name || 'No song selected'}</strong><span>{outputName} · {playing ? 'Playing' : 'Paused'}</span></button>
+        <button type="button" aria-label={`${playing ? 'Pause' : 'Play'}${remote ? ' Sonos' : ''}`} disabled={playDisabled} onClick={toggle}>{playing ? Icons.pause : Icons.play}</button><button type="button" onClick={onQueue} aria-label="Open queue"><MusicIcon name="queue" /></button></div>}
+      {status && <p className="mobile-player-status" role="status">{status}</p>}
+      {error && <div className="mobile-player-error" role="alert">{error}
+        {remote && playbackError && currentItem && <button type="button" disabled={!canControlSession || isSending || isSwitchingOutput} onClick={() => void play(currentItem, resumePosition)}>{takeoverRequired ? 'Replace Sonos playback and retry' : 'Retry sending to Sonos'}</button>}
+        {remote && !playbackError && sonosQueue.error && <button type="button" onClick={sonosQueue.retry}>Retry queue update</button>}
+      </div>}
+      {!remote && recoveryStatus !== 'idle' && <div className="mobile-player-status" role="status">{recoveryStatus === 'failed' ? 'Audio stalled' : 'Buffering…'}{recoveryStatus === 'failed' && <button type="button" onClick={() => recoveryRef.current?.retry()}>Retry audio</button>}</div>}
+    </div>;
+  }
 
   if (target.kind === 'sonos') {
     // Transient speaker state shares the title's fixed line instead of adding a grid row.
@@ -931,6 +1026,7 @@ export function AudioPlayer({ audioRef: sharedAudioRef, items, onPlaybackPositio
       />
 
       <PlayerTrack item={currentItem} position={pendingSeek ?? currentTime} duration={duration}
+        status={!sharedReady ? 'Connecting to your session…' : !localOwner && currentItem ? 'Playback is on another browser. Choose an output to listen here.' : localPlaybackError ?? undefined}
         recovery={{ status: recoveryStatus, retry: () => recoveryRef.current?.retry() }} />
       <div className="player-progress player-timeline">
         <div
@@ -973,7 +1069,7 @@ export function AudioPlayer({ audioRef: sharedAudioRef, items, onPlaybackPositio
       </div>
       <PlayerTransport playing={isPlaying} onPrevious={handlePrevious} onNext={handleNext}
         onToggle={handlePlayPause} onBack={seekBack} onForward={seekForward}
-        playDisabled={!currentItem} seekDisabled={!currentItem} />
+        playDisabled={!currentItem || !canPlayLocally} seekDisabled={!currentItem || !canPlayLocally} skipDisabled={!canPlayLocally} />
       <div className="player-controls">
         <div className="player-options player-volume">
           <button

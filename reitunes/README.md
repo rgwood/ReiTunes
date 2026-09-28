@@ -2,6 +2,16 @@ This is a Rust + web UI port of ReiTunes. It can view+edit+play back audio using
 
 See [Sonos reliability tests](SONOS_TESTING.md) for the failure simulations, recovery rules and test commands.
 
+## Mobile
+
+On a phone, ReiTunes opens with Playing, Queue and Browse tabs. Playing controls the current output; Browse has songs, playlists, Discover and bookmarks. A song's ••• menu has queue, playlist, metadata and tracklist actions. Queue has up/down buttons for touch reordering. The desktop grid remains available above 700px.
+
+Open ReiTunes in iPhone Safari, then use Share → Add to Home Screen for a standalone window. Streaming needs a network connection; installation does not download the library. Use the output selector on Playing to control Sonos or choose Listen on this device. If Safari requires another gesture after a transfer, tap Play. Device volume buttons control phone/headphone playback; the on-screen slider controls Sonos.
+
+There is one shared playback session for the household. Opening another screen attaches to its output and queue without starting music. The server persists the queue and retries Sonos queue updates even after the browser closes. A waking screen refreshes before accepting edits; concurrent conflicting edits show a message instead of silently replacing the newer queue. Browser audio belongs to the page that explicitly started it; other pages can view the session and choose to move playback. A page reload stays paused.
+
+For the first upgrade from browser-local queues, refresh the existing desktop tab before opening a new phone window. That tab migrates its output and queue into the shared session once.
+
 ## Motivation/background
 
 I'm giving up on ReiTunes.Blazor; I'm not particularly enjoying working in .NET these days.

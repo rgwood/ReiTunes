@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Page } from './fixtures/test';
 import type { DiscoveryData, DiscoveryEntry, DiscoverySource } from '../src/hooks/useDiscovery';
 
 const source: DiscoverySource = {
@@ -105,7 +105,7 @@ test('failed imports remain retryable and queued sets cannot be submitted again'
 test('source errors, filters and narrow layouts remain usable', async ({ page }, testInfo) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await backend(page, { sources: [{ ...source, error: 'Source is temporarily unavailable.' }], entries: [set], refreshing: false });
-  await page.goto('/');
+  await page.goto('/#browse/discover');
   await page.getByRole('button', { name: 'Discover', exact: true }).click();
   await page.getByRole('searchbox', { name: 'Search discovery' }).fill('not a match');
   await expect(page.getByText('No matching sets')).toBeVisible();
@@ -158,6 +158,9 @@ test('older imports can return to the inbox or be resent from History', async ({
   await page.getByRole('button', { name: 'History', exact: true }).click();
   await expect(page.getByText('Sent to downloader', { exact: true })).toBeVisible();
   await page.setViewportSize({ width: 390, height: 844 });
+  await page.getByRole('navigation', { name: 'Main navigation' }).getByRole('button', { name: 'Browse', exact: true }).click();
+  await page.getByRole('navigation', { name: 'Browse collections' }).getByRole('button', { name: 'Discover', exact: true }).click();
+  await page.getByRole('button', { name: 'History', exact: true }).click();
   await page.screenshot({ path: testInfo.outputPath('discovery-recovery-mobile.png'), fullPage: true });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   await page.getByRole('button', { name: 'Return to inbox', exact: true }).click();

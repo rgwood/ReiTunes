@@ -2,6 +2,7 @@ import { QueryClient, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { metadataSuggestions } from '../utils/metadataSuggestions';
 import type { LibraryItem, LibraryUpdate, RealtimeUpdate } from '../types';
+import { PLAYBACK_SESSION_EVENT, REALTIME_RECONNECTED_EVENT } from './useSharedPlaybackSession';
 
 export const SONOS_REALTIME_EVENT = 'reitunes:sonos';
 
@@ -56,6 +57,8 @@ export function useLibrary() {
   // WebSocket connection for real-time updates
   useEffect(() => {
     let mounted = true;
+    let hasConnected = false;
+    let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const wsUrl = `${protocol}//${window.location.host}/updates`;
 
@@ -65,8 +68,21 @@ export function useLibrary() {
       const ws = new WebSocket(wsUrl);
       wsRef.current = ws;
 
+      ws.onopen = () => {
+        if (hasConnected) {
+          void queryClient.invalidateQueries({ queryKey: ['library'] });
+          window.dispatchEvent(new Event(REALTIME_RECONNECTED_EVENT));
+        }
+        hasConnected = true;
+      };
+
       ws.onmessage = (event) => {
         const message: RealtimeUpdate = JSON.parse(event.data);
+
+        if (message.type === 'playbackSession') {
+          window.dispatchEvent(new CustomEvent(PLAYBACK_SESSION_EVENT, { detail: message.snapshot }));
+          return;
+        }
 
         if (message.type === 'sonos') {
           window.dispatchEvent(
@@ -81,7 +97,7 @@ export function useLibrary() {
       ws.onclose = () => {
         // Reconnect after a delay, but not if we've been unmounted
         if (mounted) {
-          setTimeout(connect, 3000);
+          reconnectTimer = setTimeout(connect, 3000);
         }
       };
 
@@ -95,6 +111,7 @@ export function useLibrary() {
 
     return () => {
       mounted = false;
+      if (reconnectTimer) clearTimeout(reconnectTimer);
       wsRef.current?.close();
     };
   }, [queryClient]);

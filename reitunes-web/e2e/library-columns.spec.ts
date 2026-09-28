@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Page } from './fixtures/test';
 
 async function setup(page: Page) {
   await page.route('**/api/items', route => route.fulfill({ json: ['Northern Sky', 'Pink Moon'].map((name, index) => ({
@@ -22,7 +22,7 @@ async function choose(page: Page) {
 test('choose individual columns, reorder, persist across views/reload, and restore defaults', async ({ page }, testInfo) => {
   await page.addInitScript(() => localStorage.setItem('reitunes-theme', JSON.stringify({ lightTheme: 'neutral', darkTheme: 'forest-palace', mode: 'dark' })));
   await setup(page);
-  const defaults = ['is_favorite', 'name', 'artist', 'album', 'bookmarks', 'play_count', 'tags'];
+  const defaults = ['is_favorite', 'name', 'artist', 'album', 'bookmarks', 'play_count', 'duration_seconds', 'tags'];
   expect(await headers(page)).toEqual(defaults);
   const dialog = await choose(page);
   await expect(dialog.getByRole('checkbox', { name: /Name Always shown/ })).toBeDisabled();
@@ -33,7 +33,7 @@ test('choose individual columns, reorder, persist across views/reload, and resto
   await dialog.getByRole('button', { name: 'Move Album left' }).click();
   await page.screenshot({ path: testInfo.outputPath('choose-columns.png') });
   await dialog.getByRole('button', { name: 'Done' }).click();
-  const customized = ['album', 'name', 'bookmarks', 'play_count', 'tags', 'created_time_utc'];
+  const customized = ['album', 'name', 'bookmarks', 'play_count', 'duration_seconds', 'tags', 'created_time_utc'];
   expect(await headers(page)).toEqual(customized);
   await page.getByRole('button', { name: 'Favourites', exact: true }).click();
   expect(await headers(page)).toEqual(customized);
@@ -50,7 +50,7 @@ test('choose individual columns, reorder, persist across views/reload, and resto
 test('header dragging reorders without sorting or selecting songs; keyboard opens chooser', async ({ page }) => {
   await setup(page);
   await page.locator('th[data-column=album] button').dragTo(page.locator('th[data-column=name] button'));
-  expect(await headers(page)).toEqual(['is_favorite', 'album', 'name', 'artist', 'bookmarks', 'play_count', 'tags']);
+  expect(await headers(page)).toEqual(['is_favorite', 'album', 'name', 'artist', 'bookmarks', 'play_count', 'duration_seconds', 'tags']);
   await expect(page.locator('tbody tr[aria-selected=true]')).toHaveCount(0);
   await expect(page.locator('thead th[aria-sort]')).toHaveCount(0);
   const header = page.locator('th[data-column=name] button');
@@ -129,7 +129,7 @@ test('resizing the last column leaves preceding widths alone and does not sort',
 });
 
 test('old details preference migrates and Settings opens the chooser on a narrow screen', async ({ page }) => {
-  await page.setViewportSize({ width: 390, height: 700 });
+  await page.setViewportSize({ width: 736, height: 700 });
   await page.addInitScript(() => localStorage.setItem('reitunes-library-preferences', JSON.stringify({ state: { showDetails: true, density: 'comfortable' }, version: 0 })));
   await setup(page);
   expect(await headers(page)).toContain('track_number');
@@ -140,17 +140,17 @@ test('old details preference migrates and Settings opens the chooser on a narrow
   await expect(dialog).toBeVisible();
   const box = (await dialog.boundingBox())!;
   expect(box.x).toBeGreaterThanOrEqual(0);
-  expect(box.x + box.width).toBeLessThanOrEqual(390);
+  expect(box.x + box.width).toBeLessThanOrEqual(736);
   await dialog.getByRole('button', { name: 'Done' }).click();
   await expect(page.getByRole('dialog', { name: 'Settings', exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Choose columns…' })).toBeFocused();
 });
 
 test('a narrow grid with only Name has no leftover column width or positional styling', async ({ page }) => {
-  await page.setViewportSize({ width: 600, height: 800 });
+  await page.setViewportSize({ width: 736, height: 800 });
   await setup(page);
   const dialog = await choose(page);
-  for (const name of ['Favourite', 'Artist', 'Album', 'Bookmarks', 'Plays', 'Tags']) {
+  for (const name of ['Favourite', 'Artist', 'Album', 'Duration', 'Bookmarks', 'Plays', 'Tags']) {
     await dialog.getByRole('checkbox', { name, exact: true }).uncheck();
   }
   await dialog.getByRole('button', { name: 'Done' }).click();

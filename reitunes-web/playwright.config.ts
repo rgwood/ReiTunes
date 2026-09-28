@@ -17,6 +17,11 @@ export default defineConfig({
       name: 'chromium',
       use: { ...devices['Desktop Chrome'] },
     },
+    {
+      name: 'mobile-webkit',
+      testMatch: ['mobile.spec.ts', 'mobile-audio.spec.ts', 'shared-session.spec.ts', 'shared-session-continuity.spec.ts'],
+      use: { ...devices['iPhone 13'] },
+    },
   ],
   webServer: {
     command: `npm run dev -- --host 127.0.0.1 --port ${port} --strictPort`,

@@ -1,13 +1,14 @@
-import { expect } from '@playwright/test';
+import { expect } from './fixtures/test';
 import { test, deferred, speakerState, SonosSimulator } from './fixtures/sonos';
 
 test.use({ trace: 'retain-on-failure' });
 
-test('Sonos two controllers settle on speaker state after conflicting commands and reordered replies', async ({ page, browser }) => {
+test('Sonos two controllers settle on speaker state after conflicting commands and reordered replies', async ({ page, browser, sharedSession }) => {
   const shared = speakerState();
   const first = new SonosSimulator(page, shared, 'phone');
   await first.open();
   const secondContext = await browser.newContext({ baseURL: new URL(page.url()).origin });
+  await sharedSession.install(secondContext);
   try {
     const otherPage = await secondContext.newPage();
     const second = new SonosSimulator(otherPage, shared, 'laptop');
