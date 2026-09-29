@@ -4,7 +4,7 @@
 .up-next.drop-target > header { background: color-mix(in srgb, var(--accent) 25%, var(--surface)); color: var(--text); }
 .up-next h2 { margin: 0; font-size: 13px; font-weight: 600; }
 .queue-scroll { overflow: auto; flex: 1; min-height: 0; }
-.up-next h3 { display: flex; align-items: center; gap: 5px; padding: 5px 9px; margin: 0; color: var(--muted); font-size: 11px; font-weight: 500; background: var(--panel); border-bottom: 1px solid var(--line); }
+.up-next h3 { display: flex; align-items: center; gap: 5px; padding: 5px 9px; margin: 0; color: var(--muted); font-size: 11px; font-weight: 500; background: var(--panel); border-bottom: 1px solid var(--line); overflow-wrap: anywhere; }
 .up-next h3 > span { font-variant-numeric: tabular-nums; }
 .up-next h3 > button { margin-left: auto; padding: 0 3px; color: var(--text); }
 .up-next ol { padding: 0; margin: 0; list-style: none; }
@@ -26,3 +26,15 @@
 .up-next button:disabled { opacity: .5; }
 .queue-note { padding: 8px 10px; margin: 0; color: var(--muted); font-size: 11px; }
 .queue-show-all { width: 100%; padding: 7px; color: var(--accent); }
+.queue-source-picker { padding: 8px 10px; border-bottom: 1px solid var(--line); }
+.queue-use-view { padding: 4px 8px; border: 1px solid var(--line); border-radius: 3px; color: var(--text); background: var(--panel); }
+.queue-use-view:hover:not(:disabled) { border-color: var(--accent); background: var(--hover); }
+.queue-source-picker p { margin: 4px 0 0; color: var(--muted); font-size: 11px; overflow-wrap: anywhere; }
+.queue-feedback:empty { display: none; }
+.queue-feedback { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-top: 1px solid var(--line); background: var(--panel); }
+.queue-feedback > span { min-width: 0; flex: 1; overflow-wrap: anywhere; }
+.queue-feedback > button { flex: none; padding: 4px; color: var(--accent); }
+.mobile-queue .queue-use-view { min-height: 44px; }
+.mobile-queue .queue-source-picker, .mobile-queue .queue-feedback { padding: 10px 16px; }
+.mobile-queue .queue-source-picker p { font-size: 13px; }
+.mobile-queue .queue-feedback > button { min-height: 44px; min-width: 44px; }

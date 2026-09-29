@@ -57,6 +57,7 @@ interface LibraryTableProps {
   allowReordering?: boolean;
   onNewPlaylist?: (itemIds: string[]) => void;
   onSelectionCountChange?: (count: number) => void;
+  onViewItemsChange?: (items: LibraryItem[]) => void;
   playbackState?: 'playing' | 'paused';
   viewId?: string;
 }
@@ -143,7 +144,7 @@ function formatCreatedTime(value: string, short = false): string {
   });
 }
 
-export function LibraryTable({ items, searchQuery, onlyFavouriteTracks = false, playlistId, onSearchChange, revealRequest, onRevealed, onManageBookmarks, onManageTags, onFilterTag, tagItems, selectedTagItemId, contextName: sourceName, allowReordering, onNewPlaylist, onSelectionCountChange, playbackState, viewId = 'all' }: LibraryTableProps) {
+export function LibraryTable({ items, searchQuery, onlyFavouriteTracks = false, playlistId, onSearchChange, revealRequest, onRevealed, onManageBookmarks, onManageTags, onFilterTag, tagItems, selectedTagItemId, contextName: sourceName, allowReordering, onNewPlaylist, onSelectionCountChange, onViewItemsChange, playbackState, viewId = 'all' }: LibraryTableProps) {
   // TanStack Table v8 exposes mutable state through stable methods. Remove this
   // opt-out when useReactTable supports React Compiler memoization.
   'use no memo';
@@ -575,6 +576,7 @@ export function LibraryTable({ items, searchQuery, onlyFavouriteTracks = false, 
   }, []);
 
   const rows = table.getRowModel().rows;
+  useLayoutEffect(() => { onViewItemsChange?.(rows.map(row => row.original)); }, [rows, onViewItemsChange]);
   const selectedRows = rows.filter(row => selectedIds.has(row.id));
   const selectedCount = selectedRows.length;
   useEffect(() => { onSelectionCountChange?.(selectedCount); }, [selectedCount, onSelectionCountChange]);

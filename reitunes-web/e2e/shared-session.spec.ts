@@ -203,7 +203,7 @@ test('a phone removes exactly one duplicate queue occurrence and the desktop fol
     await phone.goto('/');
     await expect(phone.getByRole('button', { name: 'Pause Sonos', exact: true })).toBeEnabled();
     await phone.getByRole('navigation', { name: 'Main navigation' }).getByRole('button', { name: 'Queue' }).click();
-    await phone.getByRole('button', { name: 'Remove Cosmia from queue' }).first().click();
+    await phone.getByRole('button', { name: 'Remove Cosmia from Up Next' }).first().click();
     await expect.poll(() => queueState(phone)).toEqual({ ids: ['copy-b'], songs: [secondId], context: 'Housewarming' });
     await expect.poll(() => queueState(page)).toEqual({ ids: ['copy-b'], songs: [secondId], context: 'Housewarming' });
     // Durable projection belongs to the server, so both controllers can close

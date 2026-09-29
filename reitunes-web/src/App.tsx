@@ -72,6 +72,7 @@ function AppContent() {
   const collection = isMobile && mobileRoute.playlistId ? 'all' : selectedCollection;
   const [revealRequest, setRevealRequest] = useState<{ itemId: string } | null>(null);
   const [selectedTrackCount, setSelectedTrackCount] = useState(0);
+  const [gridView, setGridView] = useState<{ key: string; items: LibraryItem[] } | null>(null);
   const [playbackState, setPlaybackState] = useState<'playing' | 'paused'>();
   const finishReveal = useCallback(() => setRevealRequest(null), []);
   const [recentCutoff, setRecentCutoff] = useState(
@@ -205,6 +206,18 @@ function AppContent() {
       return matchesSearch(item);
     });
   }, [items, selectedPlaylist, collection, matchesSearch, recentCutoff, now, tags.data]);
+  const viewKey = `${selectedPlaylistId ?? collection}:${deferredLibrarySearch}`;
+  const reportViewItems = useCallback((visibleItems: LibraryItem[]) => {
+    setGridView(previous => previous?.key === viewKey && previous.items.length === visibleItems.length &&
+      previous.items.every((item, index) => item === visibleItems[index])
+      ? previous : { key: viewKey, items: visibleItems });
+  }, [viewKey]);
+  const collectionName = selectedPlaylist?.name ?? ({ all: 'All music', favourites: 'Favourites', recent: 'Recently added', unplayed: 'Unplayed' } as const)[collection];
+  const currentViewName = deferredLibrarySearch.trim() ? `${collectionName} · “${deferredLibrarySearch.trim()}”` : collectionName;
+  const viewAvailable = view === 'library' && !isLoading && !error && librarySearch === deferredLibrarySearch &&
+    (!selectedPlaylistId || !!selectedPlaylist) && !(isMobile && mobileRoute.browse === 'playlists' && !mobileRoute.playlistId);
+  const currentQueueView = viewAvailable && (isMobile || gridView?.key === viewKey)
+    ? { name: currentViewName, items: isMobile ? filteredItems : gridView!.items } : null;
   const moments = useMemo(
     () =>
       (view === 'bookmarks' ? items : filteredItems).flatMap((item) =>
@@ -407,7 +420,7 @@ function AppContent() {
 
       <main className={isMobile ? 'mobile-content' : `library-content${panel === 'tags' ? ' with-tags' : ''}`} aria-label={isMobile ? mobileRoute.tab === 'queue' ? 'Playback queue' : mobileRoute.tab === 'playing' ? 'Now playing' : 'Browse music' : view === 'discover' ? 'Music discovery' : 'Music library'}>
         {isMobile ? <>
-          {mobileRoute.tab === 'queue' && <QueuePanel mobile disabled={sessionBusy} dropActive={false} dropProps={{}} />}
+          {mobileRoute.tab === 'queue' && <QueuePanel mobile disabled={sessionBusy} currentView={currentQueueView} dropActive={false} dropProps={{}} />}
           {mobileRoute.tab === 'browse' && <div className="mobile-browse">
             <header className="mobile-browse-header"><h1>Browse</h1><div>
               <button aria-label="Import music" onClick={() => setIsImportOpen(true)}><MusicIcon name="plus" size={22} /></button>
@@ -452,7 +465,7 @@ function AppContent() {
                   : <div className="mobile-library-filter"><label>Show<select aria-label="Library collection" value={collection} onChange={event => chooseCollection(event.target.value as Collection)}>
                     <option value="all">All songs</option><option value="favourites">Favourites</option><option value="recent">Recently added</option><option value="unplayed">Unplayed</option></select></label><span>{filteredItems.length.toLocaleString()} songs</span></div>}
                 <MobileLibrary key={`${selectedPlaylistId || collection}:${librarySearch}`} items={filteredItems} playlists={playlists} disabled={sessionBusy}
-                  contextName={selectedPlaylist?.name ?? 'Library'} onTags={manageTags} onBookmarks={item => { setBookmarkItemId(item.id); setPanel('bookmarks'); }}
+                  contextName={currentViewName} onTags={manageTags} onBookmarks={item => { setBookmarkItemId(item.id); setPanel('bookmarks'); }}
                   onNewPlaylist={itemIds => setPlaylistDraft({ smart: false, itemIds })} />
                 {!filteredItems.length && <p className="mobile-empty">{items.length ? 'No matching songs.' : 'Your library is empty.'}</p>}
               </>}
@@ -478,9 +491,10 @@ function AppContent() {
                   onlyFavouriteTracks={collection === 'favourites' || selectedPlaylist?.smart_rules?.favourites_only === true}
                   viewId={selectedPlaylistId || collection}
                   playlistId={selectedPlaylist?.smart_rules ? null : selectedPlaylistId}
-                  contextName={selectedPlaylist?.name} allowReordering={!librarySearch && !!selectedPlaylist && !selectedPlaylist.smart_rules}
+                  contextName={currentViewName} allowReordering={!librarySearch && !!selectedPlaylist && !selectedPlaylist.smart_rules}
                   onNewPlaylist={itemIds => setPlaylistDraft({ smart: false, itemIds })}
                   onSelectionCountChange={setSelectedTrackCount}
+                  onViewItemsChange={reportViewItems}
                   onSearchChange={setLibrarySearch} revealRequest={revealRequest} onRevealed={finishReveal}
                   onManageTags={manageTags} onFilterTag={browseTag} tagItems={tags.data?.items}
                   selectedTagItemId={panel === 'tags' ? tagItemId : null}
@@ -515,7 +529,7 @@ function AppContent() {
         </aside>}
         {!isMobile && panel === 'queue' && <aside className="library-sidepanel queue-sidepanel">
           <button className="panel-close" aria-label="Close queue" onClick={() => setPanel(null)}><MusicIcon name="close" size={14} /></button>
-          <QueuePanel dropActive={queueDrop.dropTarget === 'panel'} dropProps={queueDrop.dropProps('panel')} />
+          <QueuePanel disabled={sessionBusy} currentView={currentQueueView} dropActive={queueDrop.dropTarget === 'panel'} dropProps={queueDrop.dropProps('panel')} />
         </aside>}
       </main>
       {isMobile && <nav className="mobile-bottom-nav" aria-label="Main navigation">

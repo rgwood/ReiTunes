@@ -18,6 +18,8 @@ Object.defineProperty(globalThis, 'localStorage', { value: storage });
 const { PLAYER_STORAGE_KEY, usePlayerStore } = await import('./playerStore');
 const { QUEUE_STORAGE_KEY, reconcileLibraryItems, useQueueStore } = await import('../hooks/useQueue');
 const { usePlaybackTargetStore } = await import('./playbackTargetStore');
+const { useSharedSessionStore } = await import('./sharedSessionStore');
+const { sharedUpcomingItemIds } = await import('../hooks/useSharedPlaybackSession');
 
 function item(id: string, name = id): LibraryItem {
   return {
@@ -49,13 +51,18 @@ describe('playback persistence', () => {
     });
     useQueueStore.setState({
       manualQueue: [],
+      manualQueueIds: [],
       contextItems: [],
       contextIndex: -1,
       contextName: 'Library',
+      contextId: null,
+      queueUndo: null,
       shuffleEnabled: false,
       shuffledIds: [],
       repeatMode: 'off',
     });
+    useSharedSessionStore.setState({ enabled: false });
+    usePlaybackTargetStore.setState({ isSending: false, isSwitchingOutput: false, isTransportPending: false });
     storage.clear();
   });
 
@@ -206,5 +213,243 @@ describe('playback persistence', () => {
     expect(JSON.parse(storage.getItem(PLAYER_STORAGE_KEY)!).state.playbackRange.end).toBe(50);
     usePlayerStore.getState().play(mix);
     expect(usePlayerStore.getState().playbackRange).toBeNull();
+  });
+
+  it('removes only the requested queued occurrence and Undo keeps later additions and playback', () => {
+    const queue = useQueueStore.getState();
+    queue.setContext([item('current'), item('duplicate'), item('last')], 0, 'Housewarming');
+    for (const id of ['first', 'duplicate', 'duplicate', 'last']) queue.addToQueue(item(id));
+    const before = useQueueStore.getState();
+    const occurrence = before.manualQueueIds[1];
+    queue.removeQueuedOccurrence(occurrence);
+    queue.addNext(item('new-first'));
+    queue.addToQueue(item('new-last'));
+    usePlayerStore.getState().play(item('playing'), 75);
+    queue.undoQueueEdit();
+    const after = useQueueStore.getState();
+    expect(after.manualQueue.map(item => item.id)).toEqual(['new-first', 'first', 'duplicate', 'duplicate', 'last', 'new-last']);
+    expect(after.manualQueueIds[2]).toBe(occurrence);
+    expect(after.manualQueueIds[3]).toBe(before.manualQueueIds[2]);
+    expect(after.contextItems).toBe(before.contextItems);
+    expect(usePlayerStore.getState().currentItemId).toBe('playing');
+    expect(usePlayerStore.getState().resumePosition).toBe(75);
+  });
+
+  it('ignores a stale manual remove and does not restore already-restored occurrences twice', () => {
+    const queue = useQueueStore.getState();
+    queue.addToQueue(item('one'));
+    const occurrence = useQueueStore.getState().manualQueueIds[0];
+    queue.removeQueuedOccurrence('not-an-occurrence');
+    expect(queue.getUpcomingManualQueue()).toHaveLength(1);
+    queue.removeQueuedOccurrence(occurrence);
+    useQueueStore.setState({ manualQueue: [item('one')], manualQueueIds: [occurrence] });
+    expect(queue.canUndoQueueEdit()).toBe(false);
+    queue.undoQueueEdit();
+    expect(queue.getUpcomingManualQueue()).toHaveLength(1);
+  });
+
+  it('restores a removed manual occurrence even after its neighbors were consumed', () => {
+    const queue = useQueueStore.getState();
+    for (const id of ['first', 'removed', 'last']) queue.addToQueue(item(id));
+    queue.removeQueuedOccurrence(useQueueStore.getState().manualQueueIds[1]);
+    expect(queue.playNext()?.id).toBe('first');
+    expect(queue.playNext()?.id).toBe('last');
+    queue.undoQueueEdit();
+    expect(queue.getUpcomingManualQueue().map(item => item.id)).toEqual(['removed']);
+  });
+
+  it('keeps automatic removal through shuffle, repeat, reload, and library reconciliation', async () => {
+    const queue = useQueueStore.getState();
+    const tracks = ['current', 'removed', 'next'].map(id => item(id));
+    queue.setContext(tracks, 0, 'Housewarming');
+    queue.addToQueue(tracks[1]);
+    queue.removeUpcomingContext('removed');
+    queue.toggleShuffle();
+    queue.cycleRepeatMode();
+    await useQueueStore.persist.rehydrate();
+    queue.reconcileWithLibrary(tracks);
+    expect(queue.getUpcomingContext().map(item => item.id)).toEqual(['next']);
+    expect(queue.getUpcomingManualQueue().map(item => item.id)).toEqual(['removed']);
+    expect(useQueueStore.getState().shuffledIds).not.toContain('removed');
+    queue.toggleShuffle();
+    expect(queue.getUpcomingContext().map(item => item.id)).toEqual(['next']);
+    queue.setContext(tracks, 0, 'Housewarming');
+    expect(queue.getUpcomingContext().map(item => item.id)).toEqual(['removed', 'next']);
+  });
+
+  it('removes an automatic repeat-all item before the cursor without changing the cursor', () => {
+    const queue = useQueueStore.getState();
+    queue.setContext(['earlier', 'current', 'next'].map(id => item(id)), 1, 'Housewarming');
+    queue.cycleRepeatMode();
+    queue.removeUpcomingContext('earlier');
+    expect(queue.getCurrentItem()?.id).toBe('current');
+    expect(useQueueStore.getState().contextIndex).toBe(0);
+    queue.undoQueueEdit();
+    expect(queue.getCurrentItem()?.id).toBe('current');
+    expect(useQueueStore.getState().contextIndex).toBe(1);
+    expect(queue.getUpcomingContext().map(item => item.id)).toEqual(['next', 'earlier']);
+  });
+
+  it('Undo restores just an automatic track while keeping newer manual entries and shuffle settings', () => {
+    const queue = useQueueStore.getState();
+    queue.setContext(['current', 'removed', 'next'].map(id => item(id)), 0, 'Housewarming');
+    queue.removeUpcomingContext('removed');
+    queue.addToQueue(item('manual'));
+    queue.toggleShuffle();
+    queue.cycleRepeatMode();
+    queue.undoQueueEdit();
+    expect(queue.getUpcomingContext().map(item => item.id)).toEqual(['removed', 'next']);
+    expect(queue.getUpcomingManualQueue().map(item => item.id)).toEqual(['manual']);
+    expect(useQueueStore.getState().shuffleEnabled).toBe(true);
+    expect(useQueueStore.getState().repeatMode).toBe('all');
+  });
+
+  it('rejects stale automatic removal after advancement, but can remove a future copy of a playing manual track', () => {
+    const queue = useQueueStore.getState();
+    queue.setContext(['current', 'next', 'last'].map(id => item(id)), 0, 'Housewarming');
+    usePlayerStore.getState().play(item('next'));
+    queue.removeUpcomingContext('next');
+    expect(queue.getUpcomingContext().map(item => item.id)).toEqual(['last']);
+    expect(usePlayerStore.getState().currentItemId).toBe('next');
+    queue.undoQueueEdit();
+    queue.chooseContextItem('next');
+    queue.removeUpcomingContext('next');
+    expect(queue.getCurrentItem()?.id).toBe('next');
+    expect(useQueueStore.getState().contextItems.map(item => item.id)).toEqual(['current', 'next', 'last']);
+  });
+
+  it('replaces only automatic playback with a snapshot, keeping current playback and manual occurrence IDs', () => {
+    const queue = useQueueStore.getState();
+    queue.setContext(['current', 'old-next'].map(id => item(id)), 0, 'Old');
+    queue.addToQueue(item('first'));
+    queue.addToQueue(item('second'));
+    usePlayerStore.getState().play(item('current'), 42);
+    const before = useQueueStore.getState();
+    const incoming = ['current', 'second', 'third', 'second'].map(id => item(id));
+    queue.replaceUpcomingContext(incoming, 'Search: foobar');
+    incoming.reverse();
+    const after = useQueueStore.getState();
+    expect(after.manualQueue).toBe(before.manualQueue);
+    expect(after.manualQueueIds).toBe(before.manualQueueIds);
+    expect(after.contextId).not.toBe(before.contextId);
+    expect(after.contextIndex).toBe(-1);
+    expect(after.getUpcomingContext().map(item => item.id)).toEqual(['second', 'third']);
+    expect(usePlayerStore.getState().currentItemId).toBe('current');
+    expect(usePlayerStore.getState().resumePosition).toBe(42);
+    expect(queue.playNext()?.id).toBe('first');
+    expect(queue.playNext()?.id).toBe('second');
+    expect(useQueueStore.getState().contextIndex).toBe(-1);
+    expect(queue.playNext()?.id).toBe('second');
+    expect(queue.playNext()?.id).toBe('third');
+  });
+
+  it('projects an unstarted shuffled replacement exactly once even with repeat-all', () => {
+    const queue = useQueueStore.getState();
+    queue.toggleShuffle();
+    queue.cycleRepeatMode();
+    queue.replaceUpcomingContext(['a', 'b', 'c'].map(id => item(id)), 'Favourites');
+    queue.addToQueue(item('manual'));
+    const state = useQueueStore.getState();
+    const expected = state.shuffledIds;
+    expect(expected).toHaveLength(3);
+    expect(state.getUpcomingContext().map(item => item.id)).toEqual(expected);
+    expect(sharedUpcomingItemIds({ target: { kind: 'browser' }, currentItemId: 'old', position: 10, playbackRange: null,
+      queue: { manualQueue: [{ id: 'manual-occurrence', itemId: 'manual' }], contextItemIds: state.contextItems.map(item => item.id),
+        contextIndex: -1, contextName: state.contextName, contextId: state.contextId,
+        shuffleEnabled: true, shuffledIds: expected, repeatMode: 'all' },
+    })).toEqual(['manual', ...expected]);
+    expect(queue.playNext()?.id).toBe('manual');
+    for (const id of expected) expect(queue.playNext()?.id).toBe(id);
+    expect(queue.playNext()?.id).toBe(expected[0]);
+  });
+
+  it('Undo replacement restores only the prior automatic plan and keeps newer manual playback and settings', () => {
+    const queue = useQueueStore.getState();
+    queue.setContext(['current', 'old-next'].map(id => item(id)), 0, 'Old');
+    const originalId = useQueueStore.getState().contextId;
+    queue.replaceUpcomingContext(['new-one', 'new-two'].map(id => item(id)), 'New');
+    queue.addNext(item('manual'));
+    const addedId = useQueueStore.getState().manualQueueIds[0];
+    queue.toggleShuffle();
+    queue.cycleRepeatMode();
+    usePlayerStore.getState().play(item('another-manual'), 99);
+    queue.undoQueueEdit();
+    const after = useQueueStore.getState();
+    expect(after.contextId).toBe(originalId);
+    expect(after.contextName).toBe('Old');
+    expect(after.getUpcomingContext().map(item => item.id)).toEqual(['old-next']);
+    expect(after.manualQueueIds).toEqual([addedId]);
+    expect(after.shuffleEnabled).toBe(true);
+    expect(after.repeatMode).toBe('all');
+    expect(usePlayerStore.getState().currentItemId).toBe('another-manual');
+    expect(usePlayerStore.getState().resumePosition).toBe(99);
+  });
+
+  it('invalidates automatic Undo after source advancement and fresh contexts', () => {
+    const queue = useQueueStore.getState();
+    queue.replaceUpcomingContext(['new-one', 'new-two'].map(id => item(id)), 'New');
+    expect(queue.canUndoQueueEdit()).toBe(true);
+    queue.playNext();
+    expect(queue.canUndoQueueEdit()).toBe(false);
+    queue.undoQueueEdit();
+    expect(queue.getCurrentItem()?.id).toBe('new-one');
+    queue.removeUpcomingContext('new-two');
+    queue.setContext([item('newer')], 0, 'Newer');
+    expect(queue.canUndoQueueEdit()).toBe(false);
+    queue.undoQueueEdit();
+    expect(useQueueStore.getState().contextName).toBe('Newer');
+  });
+
+  it('invalidates stale replacement Undo when its source ID changes even if the cursor is still unstarted', () => {
+    const queue = useQueueStore.getState();
+    queue.replaceUpcomingContext([item('one')], 'First');
+    useQueueStore.setState({ contextId: 'new-remote-context', contextItems: [item('remote')] });
+    expect(queue.canUndoQueueEdit()).toBe(false);
+    queue.undoQueueEdit();
+    expect(queue.getUpcomingContext().map(item => item.id)).toEqual(['remote']);
+  });
+
+  it('repeats the actual playing item after replacement or manual selection', () => {
+    const queue = useQueueStore.getState();
+    queue.setContext([item('automatic'), item('later')], 0, 'Old');
+    usePlayerStore.getState().play(item('manual'));
+    queue.replaceUpcomingContext([item('new')], 'New');
+    queue.cycleRepeatMode();
+    queue.cycleRepeatMode();
+    expect(queue.playNext()?.id).toBe('manual');
+    expect(useQueueStore.getState().contextIndex).toBe(-1);
+  });
+
+  it('blocks queue edits while disconnected or a playback command is pending', () => {
+    const queue = useQueueStore.getState();
+    queue.setContext(['one', 'two'].map(id => item(id)), 0, 'Old');
+    queue.addToQueue(item('manual'));
+    const occurrence = useQueueStore.getState().manualQueueIds[0];
+    queue.removeUpcomingContext('two');
+    const before = useQueueStore.getState();
+    for (const mode of ['disconnected', 'sending']) {
+      useSharedSessionStore.setState({ enabled: mode === 'disconnected', ready: true, connected: false });
+      usePlaybackTargetStore.setState({ isSending: mode === 'sending' });
+      queue.removeQueuedOccurrence(occurrence);
+      queue.replaceUpcomingContext([item('other')], 'Blocked');
+      queue.undoQueueEdit();
+      expect(queue.canUndoQueueEdit()).toBe(false);
+      expect(useQueueStore.getState().manualQueue).toBe(before.manualQueue);
+      expect(useQueueStore.getState().contextItems).toBe(before.contextItems);
+    }
+  });
+
+  it('persists source identity and bounds source labels without splitting Unicode', async () => {
+    const queue = useQueueStore.getState();
+    queue.replaceUpcomingContext([item('one')], '🎹'.repeat(400));
+    const state = useQueueStore.getState();
+    expect(state.contextName).toBe('🎹'.repeat(250));
+    const saved = JSON.parse(storage.getItem(QUEUE_STORAGE_KEY)!);
+    expect(saved.state.contextId).toBe(state.contextId);
+    expect(saved.state.queueUndo).toBeUndefined();
+    await useQueueStore.persist.rehydrate();
+    expect(useQueueStore.getState().contextId).toBe(state.contextId);
+    expect(useQueueStore.getState().queueUndo).toBeNull();
+    expect(queue.getUpcomingContext().map(item => item.id)).toEqual(['one']);
   });
 });

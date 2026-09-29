@@ -490,3 +490,83 @@ async fn durable_queue_edits_refresh_without_a_controller_and_retry_after_restar
     assert_eq!(harness.fake.loaded_sessions.lock().unwrap().len(), 1);
     assert_eq!(harness.fake.playback.lock().unwrap()["playbackState"], "PLAYBACK_STATE_PAUSED");
 }
+
+#[tokio::test]
+async fn replacing_and_removing_automatic_tracks_preserves_sonos_playhead_and_manual_occurrences() {
+    let harness = Harness::new().await;
+    let first_auto = Uuid::new_v4();
+    let second_auto = Uuid::new_v4();
+    for (id, name) in [(first_auto, "New source first"), (second_auto, "New source second")] {
+        harness.state.library.write().await.apply(
+            &EventWithMetadata::new(id, Event::LibraryItemCreatedEvent {
+                name: name.into(), file_path: format!("{id}.mp3"), artist: None,
+                album: None, track_number: None,
+            }).unwrap(),
+        );
+    }
+    assert_eq!(harness.play(true).await.status(), StatusCode::OK);
+    let playing_id = harness.fake.playback.lock().unwrap()["itemId"].clone();
+    let manual = json!([
+        {"id":"first", "itemId":harness.track_id},
+        {"id":"second", "itemId":harness.track_id},
+    ]);
+    let mut state = json!({
+        "target":{"kind":"sonos", "householdId":"home", "groupId":"group-1", "groupName":"Living room", "playerNames":[]},
+        "currentItemId":harness.track_id, "position":42, "playbackRange":null,
+        "queue":{"manualQueue":[], "contextItemIds":[harness.track_id], "contextIndex":0,
+            "contextName":"Library", "shuffleEnabled":false, "shuffledIds":[], "repeatMode":"all"}
+    });
+    let initial: playback_session::UpdateRequest = serde_json::from_value(json!({
+        "operationId":"initial", "expectedRevision":0, "state":state,
+    })).unwrap();
+    harness.state.playback_session.update(&initial).unwrap();
+    state["queue"]["manualQueue"] = manual.clone();
+    let queued: playback_session::UpdateRequest = serde_json::from_value(json!({
+        "operationId":"add-manual", "expectedRevision":1, "state":state,
+    })).unwrap();
+    harness.state.playback_session.update(&queued).unwrap();
+    assert!(playback_session::sync_queue_once(&harness.state).await.unwrap());
+    let original_window = harness.fake.refreshed_window.lock().unwrap().clone().unwrap();
+
+    state["queue"]["contextId"] = json!("new-source");
+    state["queue"]["contextItemIds"] = json!([first_auto, second_auto]);
+    state["queue"]["contextIndex"] = json!(-1);
+    state["queue"]["contextName"] = json!("Favourites");
+    let replace: playback_session::UpdateRequest = serde_json::from_value(json!({
+        "operationId":"replace-source", "expectedRevision":2, "state":state,
+    })).unwrap();
+    harness.state.playback_session.update(&replace).unwrap();
+    assert!(playback_session::sync_queue_once(&harness.state).await.unwrap());
+    let replacement_window = harness.fake.refreshed_window.lock().unwrap().clone().unwrap();
+    let items = replacement_window["items"].as_array().unwrap();
+    assert_eq!(items.len(), 5);
+    assert_eq!(items[3]["track"]["name"], "New source first");
+    assert_eq!(items[4]["track"]["name"], "New source second");
+    for index in 0..3 {
+        assert_eq!(items[index]["id"], original_window["items"][index]["id"]);
+    }
+
+    state["queue"]["contextItemIds"] = json!([second_auto]);
+    let remove: playback_session::UpdateRequest = serde_json::from_value(json!({
+        "operationId":"remove-automatic", "expectedRevision":3, "state":state,
+    })).unwrap();
+    harness.state.playback_session.update(&remove).unwrap();
+    assert!(playback_session::sync_queue_once(&harness.state).await.unwrap());
+    let removed_window = harness.fake.refreshed_window.lock().unwrap().clone().unwrap();
+    assert_eq!(removed_window["items"].as_array().unwrap().len(), 4);
+    assert_eq!(removed_window["items"][3]["id"], items[4]["id"]);
+    for index in 0..3 {
+        assert_eq!(removed_window["items"][index]["id"], original_window["items"][index]["id"]);
+    }
+    let snapshot = serde_json::to_value(harness.state.playback_session.snapshot().unwrap()).unwrap();
+    assert_eq!(snapshot["state"]["queue"]["manualQueue"], manual);
+    assert_eq!(snapshot["state"]["queue"]["contextIndex"], -1);
+    assert_eq!(snapshot["state"]["currentItemId"], harness.track_id.to_string());
+    assert_eq!(snapshot["state"]["position"], 42.0);
+    let playback = harness.fake.playback.lock().unwrap();
+    assert_eq!(playback["itemId"], playing_id);
+    assert_eq!(playback["positionMillis"], 42000);
+    assert_eq!(playback["playbackState"], "PLAYBACK_STATE_PLAYING");
+    assert_eq!(harness.fake.sessions_created.load(Ordering::SeqCst), 1);
+    assert_eq!(harness.fake.loaded_sessions.lock().unwrap().len(), 1);
+}

@@ -34,12 +34,12 @@ function takeReceivedSnapshot(): SharedPlaybackSnapshot | null {
 export function sharedUpcomingItemIds(state: SharedPlaybackState): string[] {
   const queue = state.queue;
   const current = queue.contextItemIds[queue.contextIndex];
-  const context = queue.contextIndex < 0 ? [] : queue.shuffleEnabled
+  const context = queue.shuffleEnabled
     ? [...new Set([...queue.shuffledIds, ...queue.contextItemIds])].filter(id => queue.contextItemIds.includes(id))
     : queue.contextItemIds;
   const index = context.indexOf(current);
   const remaining = context.slice(index + 1);
-  if (queue.repeatMode === 'all') remaining.push(...context.slice(0, index));
+  if (queue.repeatMode === 'all' && index >= 0) remaining.push(...context.slice(0, index));
   return [...queue.manualQueue.map(entry => entry.itemId), ...remaining];
 }
 
@@ -79,6 +79,7 @@ function localQueue(): SharedPlaybackState['queue'] {
     manualQueue: queue.manualQueue.map((item, index) => ({ id: ids[index], itemId: item.id })),
     contextItemIds: queue.contextItems.map(item => item.id),
     contextIndex: queue.contextIndex, contextName: queue.contextName,
+    ...(queue.contextId !== null ? { contextId: queue.contextId } : {}),
     shuffleEnabled: queue.shuffleEnabled, shuffledIds: queue.shuffledIds, repeatMode: queue.repeatMode,
   };
 }
@@ -108,13 +109,28 @@ export function applySharedPlaybackSnapshot(snapshot: SharedPlaybackSnapshot) {
   const currentContextId = queue.contextItemIds[queue.contextIndex];
   const contextItems = queue.contextItemIds.flatMap(id => byId.has(id) ? [byId.get(id)!] : []);
   const entries = queue.manualQueue.filter(entry => byId.has(entry.itemId));
+  const previous = useQueueStore.getState();
+  const incomingContext = {
+    contextItems, contextIndex: currentContextId ? contextItems.findIndex(item => item.id === currentContextId) : -1,
+    contextName: queue.contextName, contextId: queue.contextId ?? null,
+    shuffleEnabled: queue.shuffleEnabled, shuffledIds: reconcileShuffleOrder(queue.shuffledIds, contextItems),
+  };
+  // An acknowledgement or a manual-only edit from another screen is safe for
+  // inverse Undo. A changed automatic plan must not be overwritten by old Undo.
+  const sameContext = previous.contextId === incomingContext.contextId;
+  const sameAutomaticPlan = sameContext && previous.contextIndex === incomingContext.contextIndex
+    && previous.contextName === incomingContext.contextName && previous.shuffleEnabled === incomingContext.shuffleEnabled
+    && same(previous.contextItems.map(item => item.id), contextItems.map(item => item.id))
+    && same(previous.shuffledIds, incomingContext.shuffledIds);
+  const undo = previous.queueUndo;
+  const keepUndo = undo?.kind === 'manual'
+    ? sameContext && !entries.some(entry => entry.id === undo.occurrenceId)
+    : sameAutomaticPlan;
   applying = true;
   try {
     useQueueStore.setState({ manualQueue: entries.map(entry => byId.get(entry.itemId)!),
-      manualQueueIds: entries.map(entry => entry.id), contextItems,
-      contextIndex: currentContextId ? contextItems.findIndex(item => item.id === currentContextId) : -1,
-      contextName: queue.contextName, shuffleEnabled: queue.shuffleEnabled,
-      shuffledIds: reconcileShuffleOrder(queue.shuffledIds, contextItems), repeatMode: queue.repeatMode });
+      manualQueueIds: entries.map(entry => entry.id), ...incomingContext,
+      queueUndo: keepUndo ? undo : null, repeatMode: queue.repeatMode });
     const output = usePlaybackTargetStore.getState();
     if (!same(output.target, state.target)) {
       usePlaybackTargetStore.setState({ target: state.target, takeoverRequired: false,
@@ -326,7 +342,8 @@ export async function refreshSharedSession(): Promise<void> {
         applying = true;
         useQueueStore.setState({ manualQueue: validEntries.map(entry => byId.get(entry.itemId)!),
           manualQueueIds: validEntries.map(entry => entry.id),
-          ...(same(base?.contextItemIds, snapshot.state.queue.contextItemIds) ? { contextIndex: resumeIntent.queue.contextIndex } : {}) });
+          ...(base?.contextId === snapshot.state.queue.contextId && same(base?.contextItemIds, snapshot.state.queue.contextItemIds)
+            ? { contextIndex: resumeIntent.queue.contextIndex } : {}) });
         usePlayerStore.setState({ currentItem: player.currentItem, currentItemId: player.currentItemId,
           resumePosition: player.resumePosition, playbackRange: player.playbackRange,
           pendingSeek: player.pendingSeek, isPlaying: player.isPlaying });

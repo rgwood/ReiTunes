@@ -79,6 +79,9 @@ enum RepeatMode {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SessionQueue {
     manual_queue: Vec<QueueEntry>,
+    // Distinguishes fresh runs of the same source so controller Undo stays safe.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    context_id: Option<String>,
     context_item_ids: Vec<Uuid>,
     context_index: i64,
     context_name: String,
@@ -105,22 +108,26 @@ impl PlaybackSessionState {
             .iter()
             .map(|entry| entry.item_id)
             .collect();
-        if queue.context_index >= 0 {
+        let mut ordered = if queue.shuffle_enabled {
+            queue.shuffled_ids.clone()
+        } else {
+            queue.context_item_ids.clone()
+        };
+        if queue.shuffle_enabled {
+            let present: HashSet<_> = ordered.iter().copied().collect();
+            ordered.extend(
+                queue
+                    .context_item_ids
+                    .iter()
+                    .filter(|id| !present.contains(id)),
+            );
+        }
+        if queue.context_index < 0 {
+            // A replacement source has not started yet. The current song can
+            // still belong to the old source or the manually added queue.
+            ids.extend_from_slice(&ordered);
+        } else {
             let current = queue.context_item_ids.get(queue.context_index as usize);
-            let mut ordered = if queue.shuffle_enabled {
-                queue.shuffled_ids.clone()
-            } else {
-                queue.context_item_ids.clone()
-            };
-            if queue.shuffle_enabled {
-                let present: HashSet<_> = ordered.iter().copied().collect();
-                ordered.extend(
-                    queue
-                        .context_item_ids
-                        .iter()
-                        .filter(|id| !present.contains(id)),
-                );
-            }
             if let Some(index) = ordered.iter().position(|id| Some(id) == current) {
                 ids.extend_from_slice(&ordered[index + 1..]);
                 if queue.repeat_mode == RepeatMode::All {
@@ -187,6 +194,9 @@ impl PlaybackSessionState {
         }
         if queue.context_name.len() > 1000 {
             bail!("The queue context name is too long");
+        }
+        if let Some(id) = &queue.context_id {
+            short(id, 200)?;
         }
         let mut entries = HashSet::new();
         for entry in &queue.manual_queue {
@@ -724,6 +734,7 @@ mod tests {
                         item_id: Uuid::from_u128(2),
                     },
                 ],
+                context_id: None,
                 context_item_ids: vec![Uuid::from_u128(1), Uuid::from_u128(3)],
                 context_index: 0,
                 context_name: "Housewarming".into(),
@@ -827,6 +838,141 @@ mod tests {
         update.state.queue.context_index = 10;
         assert!(store.update(&update).is_err());
         assert_eq!(store.snapshot().unwrap().revision, 0);
+    }
+
+    #[test]
+    fn context_identity_is_optional_for_existing_sessions_and_bounded() {
+        let original = state();
+        let json = serde_json::to_value(&original).unwrap();
+        assert!(json["queue"].get("contextId").is_none());
+        assert_eq!(
+            serde_json::from_value::<PlaybackSessionState>(json).unwrap(),
+            original
+        );
+        let mut identified = original;
+        identified.queue.context_id = Some(Uuid::new_v4().to_string());
+        identified.validate().unwrap();
+        assert_eq!(
+            serde_json::from_value::<PlaybackSessionState>(
+                serde_json::to_value(&identified).unwrap()
+            )
+            .unwrap(),
+            identified
+        );
+        for invalid in [String::new(), "x".repeat(201)] {
+            identified.queue.context_id = Some(invalid);
+            assert!(identified.validate().is_err());
+        }
+    }
+
+    #[test]
+    fn an_unstarted_source_follows_manual_occurrences_in_order_without_repeat_duplication() {
+        let mut replacement = state();
+        replacement.queue.context_index = -1;
+        replacement.queue.context_item_ids = vec![Uuid::from_u128(2), Uuid::from_u128(3)];
+        for repeat_mode in [RepeatMode::Off, RepeatMode::One, RepeatMode::All] {
+            replacement.queue.repeat_mode = repeat_mode;
+            assert_eq!(
+                replacement.upcoming_item_ids(),
+                vec![2, 2, 2, 3]
+                    .into_iter()
+                    .map(Uuid::from_u128)
+                    .collect::<Vec<_>>()
+            );
+        }
+        replacement.queue.shuffle_enabled = true;
+        replacement.queue.shuffled_ids = vec![Uuid::from_u128(3)];
+        assert_eq!(
+            replacement.upcoming_item_ids(),
+            vec![2, 2, 3, 2]
+                .into_iter()
+                .map(Uuid::from_u128)
+                .collect::<Vec<_>>()
+        );
+        replacement.queue.context_index = 1;
+        assert_eq!(
+            replacement.upcoming_item_ids(),
+            vec![2, 2, 2]
+                .into_iter()
+                .map(Uuid::from_u128)
+                .collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn replacement_source_waits_for_manual_duplicates_and_remembers_removals_after_restart() {
+        let directory = tempfile::tempdir().unwrap();
+        let db = reitunes_workspace::open_connection_pool(
+            directory.path().join("test.db").to_str().unwrap(),
+        )
+        .unwrap();
+        let store = PlaybackSessionStore::new(db.clone()).unwrap();
+        let mut initial = request("initial", 0);
+        initial.state.target = PlaybackTarget::Sonos {
+            household_id: "home".into(),
+            group_id: "room".into(),
+            group_name: "Living room".into(),
+            player_names: vec![],
+        };
+        store.update(&initial).unwrap();
+        let mut history = vec![("playing".into(), Uuid::from_u128(1))];
+        store.observe_sonos("room", 42.0, &history).unwrap();
+
+        let mut replacement = initial;
+        replacement.operation_id = "replace-source".into();
+        replacement.expected_revision = 1;
+        replacement.state.position = 42.0;
+        replacement.state.queue.context_id = Some("replacement-source".into());
+        replacement.state.queue.context_name = "Favourites".into();
+        replacement.state.queue.context_index = -1;
+        replacement.state.queue.context_item_ids = vec![Uuid::from_u128(2), Uuid::from_u128(4)];
+        replacement.state.queue.repeat_mode = RepeatMode::All;
+        store.update(&replacement).unwrap();
+        let snapshot = store.snapshot().unwrap();
+        assert!(snapshot.queue_sync_pending);
+        let saved = snapshot.state.unwrap();
+        assert_eq!(saved.current_item_id, Some(Uuid::from_u128(1)));
+        assert_eq!(saved.position, 42.0);
+        assert_eq!(
+            saved.queue.manual_queue,
+            replacement.state.queue.manual_queue
+        );
+
+        // Each duplicate is consumed by occurrence before the same song in the
+        // automatic source starts. A repeated status does not consume again.
+        for (occurrence, remaining) in [("manual-first", 1), ("manual-second", 0)] {
+            history.push((occurrence.into(), Uuid::from_u128(2)));
+            let snapshot = store.observe_sonos("room", 0.0, &history).unwrap().unwrap();
+            let saved = snapshot.state.unwrap();
+            assert_eq!(saved.queue.manual_queue.len(), remaining);
+            assert_eq!(saved.queue.context_index, -1);
+            assert!(store
+                .observe_sonos("room", 1.0, &history)
+                .unwrap()
+                .is_none());
+        }
+        history.push(("source-first".into(), Uuid::from_u128(2)));
+        let snapshot = store.observe_sonos("room", 0.0, &history).unwrap().unwrap();
+        let mut removal = UpdateRequest {
+            operation_id: "remove-future-track".into(),
+            expected_revision: snapshot.revision,
+            state: snapshot.state.unwrap(),
+        };
+        assert_eq!(removal.state.queue.context_index, 0);
+        removal.state.queue.context_item_ids.pop();
+        store.update(&removal).unwrap();
+        drop(store);
+        let restored = PlaybackSessionStore::new(db)
+            .unwrap()
+            .snapshot()
+            .unwrap()
+            .state
+            .unwrap();
+        assert_eq!(
+            restored.queue.context_id.as_deref(),
+            Some("replacement-source")
+        );
+        assert!(restored.upcoming_item_ids().is_empty());
     }
 
     #[test]

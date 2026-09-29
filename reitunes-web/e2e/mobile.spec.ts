@@ -102,11 +102,40 @@ test('mobile song actions and touch queue controls update the shared queue witho
   expect(box!.height).toBeGreaterThanOrEqual(44);
   await moveUp.click();
   await expect(added.locator('.queue-track-text > span')).toHaveText(['Cosmia', 'Chemtrails']);
-  await added.getByRole('button', { name: 'Remove Chemtrails from queue', exact: true }).click();
+  await added.getByRole('button', { name: 'Remove Chemtrails from Up Next', exact: true }).click();
   await expect(added.locator('.queue-track-text > span')).toHaveText(['Cosmia']);
   expect(sonos.queueRequests).toHaveLength(0);
   expect(sonos.paused).toBe(true);
   await expect.poll(() => (sharedSession.snapshot.state as ReturnType<typeof snapshot>['state']).queue.manualQueue.length).toBe(1);
+});
+
+test('mobile uses the last browsed playlist after switching to Queue without restarting playback', async ({ page, sharedSession }) => {
+  sharedSession.snapshot = snapshot();
+  await page.setViewportSize({ width: 390, height: 844 });
+  const sonos = await installMobile(page);
+  await page.goto('/#browse/library');
+  await page.getByRole('button', { name: 'Actions for Cosmia', exact: true }).click();
+  await page.getByRole('button', { name: 'Add to queue', exact: true }).click();
+  await expect.poll(() => (sharedSession.snapshot.state as ReturnType<typeof snapshot>['state']).queue.manualQueue.length).toBe(1);
+  const manual = structuredClone((sharedSession.snapshot.state as ReturnType<typeof snapshot>['state']).queue.manualQueue);
+  await page.getByRole('navigation', { name: 'Browse collections' }).getByRole('button', { name: 'Playlists', exact: true }).click();
+  await page.getByRole('button', { name: 'Housewarming 2 songs', exact: true }).click();
+  await expect(page.locator('.mobile-song-list > li')).toHaveCount(2);
+  await nav(page, 'Queue');
+  const queue = page.getByRole('region', { name: 'Up Next', exact: true });
+  await queue.getByRole('button', { name: 'Use current view', exact: true }).click();
+  await expect.poll(() => (sharedSession.snapshot.state as ReturnType<typeof snapshot>['state']).queue.contextItemIds).toEqual([items[1].id]);
+  const saved = sharedSession.snapshot.state as ReturnType<typeof snapshot>['state'];
+  expect(saved.queue.manualQueue).toEqual(manual);
+  expect(saved.queue.contextIndex).toBe(-1);
+  expect(saved.queue.contextName).toBe('Housewarming');
+  expect(saved.currentItemId).toBe(trackId);
+  expect(saved.position).toBe(50);
+  await expect(queue.getByRole('region', { name: 'From Housewarming', exact: true }).locator('.queue-row .queue-track-text > span')).toHaveText(['Chemtrails']);
+  await expect(queue.getByRole('region', { name: 'Added to queue', exact: true }).locator('.queue-track-text > span')).toHaveText(['Cosmia']);
+  expect(sonos.commands).toEqual([]);
+  expect(sonos.queueRequests).toHaveLength(0);
+  expect(sonos.paused).toBe(true);
 });
 
 test('mobile search, song info, playlists and browser Back remain usable', async ({ page, sharedSession }) => {

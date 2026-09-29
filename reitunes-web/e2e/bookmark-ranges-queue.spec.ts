@@ -210,7 +210,7 @@ test('Up Next plays a clicked track and preserves manually queued entries and du
   expect((await queue(page)).contextIndex).toBe(2);
   expect((await queue(page)).manualQueue).toHaveLength(2);
   await page.screenshot({ path: testInfo.outputPath('up-next-playable.png'), fullPage: true });
-  await added.getByRole('button', { name: 'Remove Northern Sky from queue' }).click();
+  await added.getByRole('button', { name: 'Remove Northern Sky from Up Next' }).click();
   expect((await queue(page)).manualQueue.map((item: LibraryItem) => item.id)).toEqual([items[2].id]);
   expect((await player(page)).currentItemId).toBe(items[2].id);
 });

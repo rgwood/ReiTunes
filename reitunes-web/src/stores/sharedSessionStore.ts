@@ -13,6 +13,7 @@ export interface SharedPlaybackState {
     contextItemIds: string[];
     contextIndex: number;
     contextName: string;
+    contextId?: string | null;
     shuffleEnabled: boolean;
     shuffledIds: string[];
     repeatMode: 'off' | 'one' | 'all';
