@@ -10,12 +10,13 @@ import io
 import json
 from pathlib import Path
 import tempfile
+import subprocess
 from typing import Any
 import unittest
 from unittest.mock import patch
 
 import normalize_mp3s as batch
-from normalize_mp3_trial import POLICY, SilentAudio, digest, gain_steps, measure
+from normalize_mp3_trial import POLICY, SilentAudio, digest, gain_steps, measure, probe
 
 
 class Store:
@@ -95,6 +96,11 @@ class NormalizationTests(unittest.TestCase):
         with patch("normalize_mp3_trial.run", return_value="Summary:\n I: -70.0 LUFS\n Peak: -inf dBFS"):
             with self.assertRaises(SilentAudio):
                 measure(Path("silent.mp3"))
+
+    def test_probe_diagnostics_do_not_corrupt_json(self) -> None:
+        output = subprocess.CompletedProcess([], 0, b'{"streams": []}', b'An attachment diagnostic\n')
+        with patch("normalize_mp3_trial.subprocess.run", return_value=output):
+            self.assertEqual(probe(Path("song.mp3")), {"streams": []})
 
     def test_preparation_never_uploads(self) -> None:
         self.invoke(apply=False)

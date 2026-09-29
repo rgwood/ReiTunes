@@ -33,11 +33,12 @@ class SilentAudio(ValueError):
     """A silent recording has no finite gain target."""
 
 
-def run(*args: str) -> str:
+def run(*args: str, stdout_only: bool = False) -> str:
     result = subprocess.run(args, stdin=subprocess.DEVNULL, capture_output=True, timeout=120)
     if result.returncode:
         raise RuntimeError(f"{args[0]} failed: {result.stderr.decode(errors='replace')[-2000:]}")
-    return result.stdout.decode(errors="replace") + result.stderr.decode(errors="replace")
+    output = result.stdout.decode(errors="replace")
+    return output if stdout_only else output + result.stderr.decode(errors="replace")
 
 
 def measure(path: Path) -> dict[str, float]:
@@ -64,7 +65,7 @@ def gain_steps(lufs: float, peak_db: float) -> int:
 
 def probe(path: Path) -> dict[str, Any]:
     return json.loads(run("ffprobe", "-v", "error", "-select_streams", "a", "-count_packets", "-show_streams",
-                          "-show_format", "-of", "json", str(path)))
+                          "-show_format", "-of", "json", str(path), stdout_only=True))
 
 
 def audio_hash(path: Path) -> str:
