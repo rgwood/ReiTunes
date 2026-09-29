@@ -36,6 +36,7 @@ struct FakeSonos {
     cloud_queue: Arc<Mutex<Option<(String, String)>>>,
     refreshed_window: Arc<Mutex<Option<Value>>>,
     fail_refresh: Arc<AtomicBool>,
+    keep_playback_queue_version: Arc<AtomicBool>,
 }
 
 impl FakeSonos {
@@ -53,6 +54,7 @@ impl FakeSonos {
             cloud_queue: Arc::new(Mutex::new(None)),
             refreshed_window: Arc::new(Mutex::new(None)),
             fail_refresh: Arc::new(AtomicBool::new(false)),
+            keep_playback_queue_version: Arc::new(AtomicBool::new(false)),
         }
     }
 
@@ -170,7 +172,11 @@ impl FakeSonos {
         let window: Value = reqwest::Client::new().get(format!("{base}/itemWindow"))
             .header("Authorization", authorization).query(&[("itemId", item_id.as_str()), ("upcomingWindowSize", "100")])
             .send().await.unwrap().error_for_status().unwrap().json().await.unwrap();
-        fake.playback.lock().unwrap()["queueVersion"] = window["queueVersion"].clone();
+        if !fake.keep_playback_queue_version.load(Ordering::SeqCst) {
+            // Match the 64-character queueVersion observed in real playback
+            // status, even when the callback supplied a longer string.
+            fake.playback.lock().unwrap()["queueVersion"] = json!(window["queueVersion"].as_str().unwrap().chars().take(64).collect::<String>());
+        }
         *fake.refreshed_window.lock().unwrap() = Some(window);
         StatusCode::NO_CONTENT
     }
@@ -276,6 +282,14 @@ impl Harness {
             .json(&json!({"groupId": "group-1", "itemIds": [self.track_id], "startItemId": self.track_id,
                 "positionMillis": 42_000, "allowTakeover": allow_takeover}))
             .send().await.unwrap()
+    }
+
+    async fn queue_window(&self) -> Value {
+        let (base, authorization) = self.fake.cloud_queue.lock().unwrap().clone().unwrap();
+        let item_id = self.fake.playback.lock().unwrap()["itemId"].as_str().unwrap().to_string();
+        self.client.get(format!("{base}/itemWindow")).header("Authorization", authorization)
+            .query(&[("itemId", item_id.as_str()), ("previousWindowSize", "100"), ("upcomingWindowSize", "100")])
+            .send().await.unwrap().error_for_status().unwrap().json().await.unwrap()
     }
 
     async fn event(&self, sequence: &str, valid: bool) -> reqwest::Response {
@@ -489,6 +503,187 @@ async fn durable_queue_edits_refresh_without_a_controller_and_retry_after_restar
     assert_eq!(harness.fake.refreshed_window.lock().unwrap().as_ref().unwrap()["items"].as_array().unwrap().len(), 4);
     assert_eq!(harness.fake.loaded_sessions.lock().unwrap().len(), 1);
     assert_eq!(harness.fake.playback.lock().unwrap()["playbackState"], "PLAYBACK_STATE_PAUSED");
+}
+
+#[tokio::test]
+async fn successive_shuffle_and_queue_edits_accept_a_lagging_sonos_version() {
+    successive_shuffle_and_queue_edits(true).await;
+}
+
+#[tokio::test]
+async fn successive_shuffle_and_queue_edits_round_trip_sonos_version_limit() {
+    successive_shuffle_and_queue_edits(false).await;
+}
+
+async fn successive_shuffle_and_queue_edits(keep_playback_queue_version: bool) {
+    let harness = Harness::new().await;
+    let second = Uuid::new_v4();
+    let third = Uuid::new_v4();
+    for (id, name) in [(second, "Second track"), (third, "Third track")] {
+        harness.state.library.write().await.apply(&EventWithMetadata::new(id,
+            Event::LibraryItemCreatedEvent { name: name.into(), file_path: format!("{id}.mp3"),
+                artist: None, album: None, track_number: None }).unwrap());
+    }
+    assert_eq!(harness.play(true).await.status(), StatusCode::OK);
+    harness.fake.keep_playback_queue_version.store(keep_playback_queue_version, Ordering::SeqCst);
+    let original_playback = harness.fake.playback.lock().unwrap().clone();
+    let mut state = json!({
+        "target":{"kind":"sonos", "householdId":"home", "groupId":"group-1", "groupName":"Living room", "playerNames":[]},
+        "currentItemId":harness.track_id, "position":42, "playbackRange":null,
+        "queue":{"manualQueue":[{"id":"first", "itemId":harness.track_id}, {"id":"second", "itemId":harness.track_id}],
+            "contextItemIds":[harness.track_id, second, third], "contextIndex":0,
+            "contextName":"Library", "shuffleEnabled":false, "shuffledIds":[], "repeatMode":"off"}
+    });
+    let initial = serde_json::from_value(json!({"operationId":"initial", "expectedRevision":0,"state":state})).unwrap();
+    harness.state.playback_session.update(&initial).unwrap();
+    let mut previous_window: Option<Value> = None;
+    for (index, shuffle) in [true, false, true].into_iter().enumerate() {
+        state["queue"]["shuffleEnabled"] = json!(shuffle);
+        state["queue"]["shuffledIds"] = if shuffle { json!([harness.track_id, third, second]) } else { json!([]) };
+        if index == 2 { state["queue"]["manualQueue"].as_array_mut().unwrap().remove(1); }
+        let edit = serde_json::from_value(json!({"operationId":format!("edit-{index}"), "expectedRevision":index + 1, "state":state})).unwrap();
+        harness.state.playback_session.update(&edit).unwrap();
+        assert!(playback_session::sync_queue_once(&harness.state).await.unwrap());
+        let snapshot = harness.state.playback_session.snapshot().unwrap();
+        assert!(!snapshot.queue_sync_pending);
+        assert!(snapshot.queue_sync_error.is_none());
+        let window = harness.fake.refreshed_window.lock().unwrap().clone().unwrap();
+        assert!(window["queueVersion"].as_str().unwrap().len() <= 64);
+        let names: Vec<_> = window["items"].as_array().unwrap().iter().map(|item| item["track"]["name"].as_str().unwrap()).collect();
+        let expected = match index {
+            0 => vec!["Test track", "Test track", "Test track", "Third track", "Second track"],
+            1 => vec!["Test track", "Test track", "Test track", "Second track", "Third track"],
+            _ => vec!["Test track", "Test track", "Third track", "Second track"],
+        };
+        assert_eq!(names, expected);
+        assert_eq!(window["items"][0]["id"], original_playback["itemId"]);
+        assert_ne!(window["items"][0]["id"], window["items"][1]["id"]);
+        if index < 2 { assert_ne!(window["items"][1]["id"], window["items"][2]["id"]); }
+        if let Some(previous) = previous_window {
+            assert_ne!(window["queueVersion"], previous["queueVersion"]);
+            assert_eq!(window["items"][1]["id"], previous["items"][1]["id"]);
+        }
+        let mut expected_playback = original_playback.clone();
+        if !keep_playback_queue_version { expected_playback["queueVersion"] = window["queueVersion"].clone(); }
+        previous_window = Some(window);
+        // Neither playback nor the current occurrence moves, even if status
+        // keeps reporting the original version across every refresh.
+        assert_eq!(*harness.fake.playback.lock().unwrap(), expected_playback);
+        assert_eq!(harness.fake.loaded_sessions.lock().unwrap().len(), 1);
+    }
+}
+
+#[tokio::test]
+async fn pending_shuffle_rebases_after_natural_sonos_advance_without_rewinding() {
+    let harness = Harness::new().await;
+    let second = Uuid::new_v4();
+    let third = Uuid::new_v4();
+    let fourth = Uuid::new_v4();
+    for (id, name) in [(second, "Second track"), (third, "Third track"), (fourth, "Fourth track")] {
+        harness.state.library.write().await.apply(&EventWithMetadata::new(id,
+            Event::LibraryItemCreatedEvent { name: name.into(), file_path: format!("{id}.mp3"),
+                artist: None, album: None, track_number: None }).unwrap());
+    }
+    let mut state = json!({
+        "target":{"kind":"sonos", "householdId":"home", "groupId":"group-1", "groupName":"Living room", "playerNames":[]},
+        "currentItemId":harness.track_id, "position":42, "playbackRange":null,
+        "queue":{"manualQueue":[], "contextItemIds":[harness.track_id, second, third, fourth], "contextIndex":0,
+            "contextName":"Library", "shuffleEnabled":false, "shuffledIds":[], "repeatMode":"off"}
+    });
+    let initial = serde_json::from_value(json!({"operationId":"initial", "expectedRevision":0,"state":state})).unwrap();
+    harness.state.playback_session.update(&initial).unwrap();
+    let response = harness.client.post(format!("{}api/sonos/play", harness.server.url))
+        .header("Cookie", format!("{SESSION_COOKIE_NAME}={}", *PASSWORD_HASH))
+        .json(&json!({"groupId":"group-1", "itemIds":[harness.track_id, second, third, fourth],
+            "startItemId":harness.track_id, "positionMillis":42000, "allowTakeover":true}))
+        .send().await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let original = harness.queue_window().await;
+    state["queue"]["shuffleEnabled"] = json!(true);
+    state["queue"]["shuffledIds"] = json!([harness.track_id, third, second, fourth]);
+    let edit = serde_json::from_value(json!({"operationId":"shuffle", "expectedRevision":1,"state":state})).unwrap();
+    harness.state.playback_session.update(&edit).unwrap();
+    // The speaker advances in its old order before the pending shuffle applies.
+    {
+        let mut playback = harness.fake.playback.lock().unwrap();
+        playback["itemId"] = original["items"][1]["id"].clone();
+        playback["positionMillis"] = json!(1200);
+    }
+    let advanced_playback = harness.fake.playback.lock().unwrap().clone();
+    assert!(playback_session::sync_queue_once(&harness.state).await.is_err());
+    let snapshot = harness.state.playback_session.snapshot().unwrap();
+    assert_eq!(snapshot.revision, 3);
+    assert!(snapshot.queue_sync_pending);
+    assert!(harness.fake.refreshed_window.lock().unwrap().is_none());
+    assert!(playback_session::sync_queue_once(&harness.state).await.unwrap());
+    let snapshot = harness.state.playback_session.snapshot().unwrap();
+    assert!(!snapshot.queue_sync_pending);
+    let snapshot = serde_json::to_value(snapshot).unwrap();
+    assert_eq!(snapshot["revision"], 3);
+    assert_eq!(snapshot["state"]["currentItemId"], second.to_string());
+    assert_eq!(snapshot["state"]["position"], 1.2);
+    assert_eq!(snapshot["state"]["queue"]["contextIndex"], 1);
+    assert_eq!(snapshot["state"]["queue"]["shuffledIds"], state["queue"]["shuffledIds"]);
+    let window = harness.queue_window().await;
+    let names: Vec<_> = window["items"].as_array().unwrap().iter().map(|item| item["track"]["name"].as_str().unwrap()).collect();
+    assert_eq!(names, ["Test track", "Second track", "Fourth track"]);
+    assert_eq!(window["items"][0]["id"], original["items"][0]["id"]);
+    assert_eq!(window["items"][1]["id"], original["items"][1]["id"]);
+    let playback = harness.fake.playback.lock().unwrap();
+    for key in ["itemId", "positionMillis", "playbackState"] { assert_eq!(playback[key], advanced_playback[key]); }
+    assert_eq!(harness.fake.loaded_sessions.lock().unwrap().len(), 1);
+}
+
+#[tokio::test]
+async fn queue_projection_rejects_a_stale_occurrence_of_the_same_song() {
+    let harness = Harness::new().await;
+    let state = json!({
+        "target":{"kind":"sonos", "householdId":"home", "groupId":"group-1", "groupName":"Living room", "playerNames":[]},
+        "currentItemId":harness.track_id, "position":42, "playbackRange":null,
+        "queue":{"manualQueue":[{"id":"first", "itemId":harness.track_id}, {"id":"second", "itemId":harness.track_id}],
+            "contextItemIds":[harness.track_id], "contextIndex":0,
+            "contextName":"Library", "shuffleEnabled":false, "shuffledIds":[], "repeatMode":"off"}
+    });
+    let initial = serde_json::from_value(json!({"operationId":"initial", "expectedRevision":0,"state":state})).unwrap();
+    harness.state.playback_session.update(&initial).unwrap();
+    let response = harness.client.post(format!("{}api/sonos/play", harness.server.url))
+        .header("Cookie", format!("{SESSION_COOKIE_NAME}={}", *PASSWORD_HASH))
+        .json(&json!({"groupId":"group-1", "itemIds":[harness.track_id, harness.track_id, harness.track_id],
+            "startItemId":harness.track_id, "positionMillis":42000, "allowTakeover":true}))
+        .send().await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let original = harness.queue_window().await;
+    let current_id = original["items"][1]["id"].as_str().unwrap();
+    let history = harness.state.cloud_queues.history_through(original["queueVersion"].as_str(), Some(current_id)).unwrap();
+    harness.state.playback_session.observe_sonos("group-1", 1.2, &history).unwrap();
+    let mut advanced = serde_json::to_value(harness.state.playback_session.snapshot().unwrap()).unwrap();
+    assert_eq!(advanced["revision"], 2);
+    advanced["state"]["queue"]["manualQueue"].as_array_mut().unwrap().push(json!({"id":"third", "itemId":harness.track_id}));
+    let edit = serde_json::from_value(json!({"operationId":"append", "expectedRevision":2,"state":advanced["state"]})).unwrap();
+    harness.state.playback_session.update(&edit).unwrap();
+    // Status still reports occurrence zero, although the persisted playhead is
+    // occurrence one of the same source song. Reconciliation rejects that poll.
+    let error = playback_session::sync_queue_once(&harness.state).await.unwrap_err();
+    assert!(error.to_string().contains("current Sonos playhead"));
+    assert_eq!(harness.queue_window().await, original);
+    let pending = harness.state.playback_session.snapshot().unwrap();
+    assert_eq!(pending.revision, 3);
+    assert!(pending.queue_sync_pending);
+    assert!(harness.fake.refreshed_window.lock().unwrap().is_none());
+    {
+        let mut playback = harness.fake.playback.lock().unwrap();
+        playback["itemId"] = json!(current_id);
+        playback["positionMillis"] = json!(1200);
+    }
+    assert!(playback_session::sync_queue_once(&harness.state).await.unwrap());
+    let window = harness.queue_window().await;
+    assert_eq!(window["items"].as_array().unwrap().len(), 4);
+    for index in 0..3 { assert_eq!(window["items"][index]["id"], original["items"][index]["id"]); }
+    let snapshot = harness.state.playback_session.snapshot().unwrap();
+    assert_eq!(snapshot.revision, 3);
+    assert!(!snapshot.queue_sync_pending);
+    assert_eq!(harness.fake.playback.lock().unwrap()["itemId"], current_id);
+    assert_eq!(harness.fake.loaded_sessions.lock().unwrap().len(), 1);
 }
 
 #[tokio::test]

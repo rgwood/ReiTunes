@@ -422,6 +422,36 @@ impl PlaybackSessionStore {
         Ok(())
     }
 
+    fn with_sonos_projection<T>(
+        &self,
+        revision: u64,
+        item_id: &str,
+        operation: impl FnOnce() -> Result<T, crate::cloud_queue::CloudQueueError>,
+    ) -> Result<T, crate::cloud_queue::CloudQueueError> {
+        self.with_revision(Some(revision), || {
+            let current_item: Option<String> = self.db.get().map_err(anyhow::Error::from)?.query_row(
+                "SELECT sonos_item_id FROM playback_session WHERE singleton = 1",
+                [],
+                |row| row.get(0),
+            ).map_err(anyhow::Error::from)?;
+            // Reconciliation can reject a delayed status without changing the
+            // revision. Check the occurrence too: equal source IDs are not
+            // enough when the same song appears twice in the queue.
+            if current_item.as_deref() != Some(item_id) {
+                tracing::warn!(
+                    shared_revision = revision,
+                    observed_item_id = %item_id.chars().take(64).collect::<String>(),
+                    current_item_id = %current_item.as_deref().unwrap_or("").chars().take(64).collect::<String>(),
+                    "Deferring queue projection for an outdated Sonos playhead"
+                );
+                return Err(crate::cloud_queue::CloudQueueError::Conflict(
+                    "Waiting for the current Sonos playhead before updating the queue.".into(),
+                ));
+            }
+            operation()
+        })
+    }
+
     fn finish_queue_sync(
         &self,
         revision: u64,
@@ -623,55 +653,66 @@ pub(crate) async fn sync_queue_once(app: &AppState) -> Result<bool> {
     let PlaybackTarget::Sonos { group_id, .. } = &state.target else {
         return Ok(false);
     };
-    let result: crate::SonosApiResult<()> = async {
-        let control = crate::active_sonos_control(app, group_id)
-            .await
-            .map_err(crate::sonos_playback_failure)?;
-        let playback = control
-            .group_playback(group_id)
-            .await
-            .map_err(crate::sonos_failure)?;
-        let response = crate::sonos_group_playback_response(app, &control, group_id, playback)?;
-        crate::reconcile_sonos_session(app, group_id, &response)?;
-        let (Some(item_id), Some(queue_version)) =
-            (&response.playback.item_id, &response.playback.queue_version)
-        else {
-            return Err(crate::sonos_playback_failure(
-                crate::sonos::SonosPlaybackError::TakeoverRequired,
-            ));
-        };
-        let ids = state.upcoming_item_ids();
-        let tracks = crate::cloud_queue_tracks(app, &ids).await?;
-        let replacement = app
+    let result: crate::SonosApiResult<()> =
+        async {
+            let control = crate::active_sonos_control(app, group_id)
+                .await
+                .map_err(crate::sonos_playback_failure)?;
+            let playback = control
+                .group_playback(group_id)
+                .await
+                .map_err(crate::sonos_failure)?;
+            let response = crate::sonos_group_playback_response(app, &control, group_id, playback)?;
+            crate::reconcile_sonos_session(app, group_id, &response)?;
+            let (Some(item_id), Some(queue_version)) =
+                (&response.playback.item_id, &response.playback.queue_version)
+            else {
+                return Err(crate::sonos_playback_failure(
+                    crate::sonos::SonosPlaybackError::TakeoverRequired,
+                ));
+            };
+            let ids = state.upcoming_item_ids();
+            let tracks = crate::cloud_queue_tracks(app, &ids).await?;
+            let replacement = app
             .playback_session
-            .with_revision(Some(snapshot.revision), || {
+            .with_sonos_projection(snapshot.revision, item_id, || {
+                let stored_version = app
+                    .cloud_queues
+                    .stored_version_for_item(queue_version, item_id)?;
                 if app
                     .cloud_queues
                     .upcoming_matches(queue_version, item_id, &ids)?
+                    && stored_version.len() <= 64
                 {
                     return Ok(());
                 }
+                // Session CAS and the command mutex protect this server-owned
+                // projection. Sonos's status is an observation, not the version
+                // of the stored queue we are replacing. This also repairs old
+                // persisted 76-character versions that Sonos truncated to 64.
+                tracing::info!(
+                    shared_revision = snapshot.revision,
+                    queue_item_id = %item_id.chars().take(64).collect::<String>(),
+                    observed_queue_version = %queue_version.chars().take(96).collect::<String>(),
+                    stored_queue_version = %stored_version.chars().take(96).collect::<String>(),
+                    observed_version_length = queue_version.len(),
+                    stored_version_length = stored_version.len(),
+                    upcoming_count = ids.len(),
+                    "Projecting shared playback queue"
+                );
                 app.cloud_queues
-                    .replace_upcoming(queue_version, item_id, tracks)
+                    .replace_upcoming(&stored_version, item_id, tracks)
             });
-        if matches!(
-            &replacement,
-            Err(crate::cloud_queue::CloudQueueError::Conflict(_))
-        ) {
-            // The durable queue can be ahead of the speaker after a failed
-            // refresh. Ask it to refetch, then retry against its new version.
-            let _ = control.refresh_cloud_queue(group_id).await;
+            replacement.map_err(crate::cloud_queue_failure)?;
+            // Retrying refresh is safe, including when a prior refresh reply was
+            // lost. Matching stored contents above avoids needing an old version.
+            control
+                .refresh_cloud_queue(group_id)
+                .await
+                .map_err(crate::sonos_failure)?;
+            Ok(())
         }
-        replacement.map_err(crate::cloud_queue_failure)?;
-        // Retrying refresh is safe, including when a prior refresh reply was
-        // lost. Matching stored contents above avoids needing an old version.
-        control
-            .refresh_cloud_queue(group_id)
-            .await
-            .map_err(crate::sonos_failure)?;
-        Ok(())
-    }
-    .await;
+        .await;
     let error = result.as_ref().err().map(|(_, body)| body.0.error.as_str());
     if let Some(snapshot) = app
         .playback_session

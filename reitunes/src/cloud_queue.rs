@@ -414,6 +414,20 @@ impl CloudQueueStore {
         Ok(queue.items[index + 1..].iter().map(|item| item.source_id).eq(source_ids.iter().copied()))
     }
 
+    /// The durable session projector owns the desired queue, while Sonos may
+    /// report a cached (or truncated) version. Its write still uses the exact
+    /// stored version for CAS; callers must also hold the session revision gate.
+    pub(crate) fn stored_version_for_item(&self, observed_version: &str, item_id: &str) -> Result<String, CloudQueueError> {
+        let queues = self.queues.read().map_err(|_| anyhow::anyhow!("Cloud Queue lock was poisoned"))?;
+        let queue = queues.values().find(|queue| !queue_is_expired(queue)
+            && observed_version.starts_with(&format!("QV:{}:", queue.id)))
+            .ok_or(CloudQueueError::NotFound)?;
+        if !queue.items.iter().any(|item| item.id == item_id) {
+            return Err(CloudQueueError::NotFound);
+        }
+        Ok(queue.queue_version.clone())
+    }
+
     /// Keep the playhead and history stable while replacing the upcoming tracks.
     pub fn replace_upcoming(
         &self,
@@ -446,7 +460,11 @@ impl CloudQueueStore {
             }
             updated.items.push(item);
         }
-        updated.queue_version = format!("QV:{}:{}", queue.id, Uuid::new_v4());
+        // Sonos has been observed truncating playback queueVersion to 64
+        // characters. Keep the queue identity plus a fresh 96-bit nonce within
+        // that bound so its observation can round-trip through strict CAS.
+        let nonce = Uuid::new_v4().simple().to_string();
+        updated.queue_version = format!("QV:{}:{}", queue.id, &nonce[..24]);
         self.persist_snapshot(&updated, &[])?;
         *queue = updated;
         Ok(())
@@ -881,6 +899,7 @@ mod tests {
         let snapshot = store.snapshot(prepared.queue_id).unwrap();
         assert_eq!(snapshot.start_item_id, playback.item_id);
         assert_ne!(snapshot.queue_version, prepared.queue_version);
+        assert!(snapshot.queue_version.len() <= 64);
         assert_eq!(snapshot.items.iter().map(|item| item.source_id).collect::<Vec<_>>(),
             vec![Uuid::from_u128(1), Uuid::from_u128(3), Uuid::from_u128(3), Uuid::from_u128(2)]);
         assert_ne!(snapshot.items[1].id, snapshot.items[2].id);
@@ -901,5 +920,41 @@ mod tests {
         assert_eq!(window.window_playhead.item_id, playback.item_id);
         restored.replace_upcoming(&snapshot.queue_version, &playback.item_id, vec![]).unwrap();
         assert_eq!(restored.snapshot(prepared.queue_id).unwrap().items.len(), 1);
+    }
+
+    #[test]
+    fn projector_can_recover_a_persisted_oversized_version_without_relaxing_legacy_cas() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db = open_connection_pool(temp_dir.path().join("queue.db").to_str().unwrap()).unwrap();
+        let store = CloudQueueStore::with_base_url_and_db("https://example.com/", db.clone()).unwrap();
+        let prepared = store.prepare(vec![track(1), track(2), track(3)], None).unwrap();
+        let playback = store.playback_parameters(prepared.queue_id).unwrap();
+        let mut old = store.snapshot(prepared.queue_id).unwrap();
+        old.queue_version = format!("QV:{}:{}", old.id, Uuid::new_v4());
+        assert_eq!(old.queue_version.len(), 76);
+        store.persist_snapshot(&old, &[]).unwrap();
+        drop(store);
+
+        let restored = CloudQueueStore::with_base_url_and_db("https://example.com/", db.clone()).unwrap();
+        let observed = &old.queue_version[..64];
+        let current_id = &old.items[1].id;
+        assert!(matches!(restored.replace_upcoming(observed, current_id, vec![track(4)]), Err(CloudQueueError::Conflict(_))));
+        assert!(restored.stored_version_for_item(observed, "missing").is_err());
+        assert!(restored.stored_version_for_item(&format!("QV:{}:1", Uuid::new_v4()), current_id).is_err());
+        let stored_version = restored.stored_version_for_item(observed, current_id).unwrap();
+        assert_eq!(stored_version, old.queue_version);
+        restored.replace_upcoming(&stored_version, current_id, vec![track(4), track(3)]).unwrap();
+        let recovered = restored.snapshot(prepared.queue_id).unwrap();
+        assert_eq!(recovered.queue_version.len(), 64);
+        assert_eq!(recovered.items[0].id, old.items[0].id);
+        assert_eq!(recovered.items[1].id, old.items[1].id);
+        assert_eq!(recovered.items[3].id, old.items[2].id);
+        assert_eq!(recovered.start_item_id, old.start_item_id);
+        assert_eq!(recovered.authorization, playback.http_authorization);
+        assert_eq!(recovered.items.iter().map(|item| item.source_id).collect::<Vec<_>>(),
+            vec![Uuid::from_u128(1), Uuid::from_u128(2), Uuid::from_u128(4), Uuid::from_u128(3)]);
+        drop(restored);
+        let restarted = CloudQueueStore::with_base_url_and_db("https://example.com/", db).unwrap();
+        assert_eq!(restarted.snapshot(prepared.queue_id).unwrap().queue_version, recovered.queue_version);
     }
 }
