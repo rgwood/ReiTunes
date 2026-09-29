@@ -1,4 +1,5 @@
 import { Fragment, memo, useMemo, useState, useCallback, useEffect, useLayoutEffect, useRef, useId, type ReactNode, type Ref } from 'react';
+import { autoUpdate, flip, FloatingPortal, offset, safePolygon, shift, useFloating, useHover, useInteractions } from '@floating-ui/react';
 import {
   useReactTable,
   getCoreRowModel,
@@ -10,7 +11,7 @@ import {
   type ColumnFiltersState,
   type Table,
 } from '@tanstack/react-table';
-import type { LibraryItem, Bookmark } from '../types';
+import type { LibraryItem, Bookmark, Playlist } from '../types';
 import { usePlayerStore } from '../stores/playerStore';
 import { useQueueStore } from '../hooks/useQueue';
 import { usePlayback } from '../hooks/usePlayback';
@@ -41,6 +42,77 @@ import { durationLabel, trackDuration } from '../utils/duration';
 const columnHelper = createColumnHelper<LibraryItem>();
 const savedViews = new Map<string, { sorting: SortingState; scrollTop: number }>();
 const COLUMN_DRAG_TYPE = 'application/x-reitunes-column';
+
+function PlaylistSubmenu({ playlists, disabled, onSelect }: {
+  playlists: Playlist[]; disabled: boolean; onSelect: (id: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const focusOnOpen = useRef(false);
+  const triggerRef = useRef<HTMLButtonElement | null>(null);
+  const id = useId();
+  const { refs: { setReference, setFloating, floating }, floatingStyles, context, isPositioned } = useFloating({
+    open, onOpenChange: setOpen, placement: 'right-start', strategy: 'fixed',
+    middleware: [offset(2), flip({ padding: 4 }), shift({ padding: 4 })],
+    whileElementsMounted: autoUpdate,
+  });
+  const hover = useHover(context, { handleClose: safePolygon(), mouseOnly: true });
+  const { getReferenceProps, getFloatingProps } = useInteractions([hover]);
+  const close = () => { setOpen(false); triggerRef.current?.focus(); };
+  useLayoutEffect(() => {
+    if (!open || !isPositioned || !focusOnOpen.current) return;
+    focusOnOpen.current = false;
+    const menu = floating.current;
+    (menu?.querySelector<HTMLButtonElement>('button:not(:disabled)') ?? menu)?.focus();
+  }, [open, isPositioned, floating]);
+
+  return <>
+    <button type="button" ref={node => { triggerRef.current = node; setReference(node); }}
+      aria-haspopup="menu" aria-expanded={open} aria-controls={open ? id : undefined}
+      className="playlist-submenu-trigger w-full px-3 py-2 text-solarized-base1 cursor-pointer flex justify-between items-center"
+      {...getReferenceProps()}
+        onClick={event => {
+          focusOnOpen.current = event.detail === 0;
+          if (open && focusOnOpen.current) floating.current?.querySelector<HTMLButtonElement>('button:not(:disabled)')?.focus();
+          setOpen(true);
+        }}
+        onKeyDown={event => {
+          if (event.key === 'ArrowRight' || event.key === 'ArrowDown') {
+            event.preventDefault(); event.stopPropagation();
+            focusOnOpen.current = true;
+            if (open) floating.current?.querySelector<HTMLButtonElement>('button:not(:disabled)')?.focus();
+            else setOpen(true);
+          } else if (event.key === 'Escape' && open) {
+            event.preventDefault(); event.stopPropagation(); close();
+          }
+        }}>
+      <span>&#9835; Add to Playlist</span><span aria-hidden="true">&#9656;</span>
+    </button>
+    {open && <FloatingPortal>
+      <div ref={setFloating} style={floatingStyles} id={id} role="menu" aria-label="Add to playlist" tabIndex={-1}
+        className="playlist-submenu"
+        {...getFloatingProps()}
+          onKeyDown={event => {
+            if (event.key === 'Escape' || event.key === 'ArrowLeft') {
+              event.preventDefault(); event.stopPropagation(); close();
+            } else if (['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) {
+              event.preventDefault(); event.stopPropagation();
+              const buttons = Array.from(floating.current?.querySelectorAll<HTMLButtonElement>('button:not(:disabled)') ?? []);
+              const index = buttons.indexOf(document.activeElement as HTMLButtonElement);
+              const next = event.key === 'Home' ? 0 : event.key === 'End' ? buttons.length - 1
+                : (index + (event.key === 'ArrowDown' ? 1 : -1) + buttons.length) % buttons.length;
+              buttons[next]?.focus();
+            }
+          }}
+          onBlur={event => {
+            if (!event.currentTarget.contains(event.relatedTarget as Node | null) && event.relatedTarget !== triggerRef.current) setOpen(false);
+          }}>
+        {playlists.length === 0 ? <div className="px-3 py-2 text-solarized-base0 italic">No playlists</div>
+          : playlists.map(playlist => <button type="button" role="menuitem" key={playlist.id} tabIndex={-1}
+            title={playlist.name} disabled={disabled} onClick={() => onSelect(playlist.id)}>{playlist.name}</button>)}
+      </div>
+    </FloatingPortal>}
+  </>;
+}
 
 interface LibraryTableProps {
   items: LibraryItem[];
@@ -320,7 +392,6 @@ export const LibraryTable = memo(function LibraryTable({ items, searchQuery, onl
 
   // Context menu state
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; item: LibraryItem } | null>(null);
-  const [showPlaylistSubmenu, setShowPlaylistSubmenu] = useState(false);
   const contextMenuRef = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => {
     const menu = contextMenuRef.current;
@@ -329,7 +400,7 @@ export const LibraryTable = memo(function LibraryTable({ items, searchQuery, onl
     menu.style.left = `${Math.max(4, Math.min(contextMenu.x, innerWidth - bounds.width - 4))}px`;
     menu.style.top = `${Math.max(4, Math.min(contextMenu.y, innerHeight - bounds.height - 4))}px`;
     if (!menu.contains(document.activeElement)) menu.querySelector('button')?.focus();
-  }, [contextMenu, showPlaylistSubmenu]);
+  }, [contextMenu]);
   useLayoutEffect(() => {
     if (editingCell) {
       editInputRef.current?.focus();
@@ -629,12 +700,10 @@ export const LibraryTable = memo(function LibraryTable({ items, searchQuery, onl
   useEffect(() => {
     const handleClick = () => {
       setContextMenu(null);
-      setShowPlaylistSubmenu(false);
     };
     const handleEscape = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         setContextMenu(null);
-        setShowPlaylistSubmenu(false);
       }
     };
 
@@ -1072,38 +1141,11 @@ export const LibraryTable = memo(function LibraryTable({ items, searchQuery, onl
               <div className="border-t border-solarized-base01 my-1" />
             </>
           )}
-          <div
-            className="relative"
-            onMouseEnter={() => setShowPlaylistSubmenu(true)}
-            onMouseLeave={() => setShowPlaylistSubmenu(false)}
-          >
-            <button type="button" aria-expanded={showPlaylistSubmenu} onClick={() => setShowPlaylistSubmenu(!showPlaylistSubmenu)} className="w-full px-3 py-2 text-solarized-base1 hover:bg-solarized-blue hover:bg-opacity-30 cursor-pointer flex justify-between items-center">
-              <span>&#9835; Add to Playlist</span>
-              <span>&#9656;</span>
-            </button>
-            {showPlaylistSubmenu && (
-              <div className="playlist-submenu bg-solarized-base02 py-1 min-w-32">
-                {manualPlaylists.length === 0 ? (
-                  <div className="px-3 py-2 text-solarized-base0 italic">No playlists</div>
-                ) : (
-                  manualPlaylists.map((playlist) => (
-                    <button type="button"
-                      key={playlist.id}
-                      className="w-full text-left px-3 py-2 text-solarized-base1 hover:bg-solarized-blue hover:bg-opacity-30 cursor-pointer"
-                      disabled={playlistMutation.isPending}
-                      onClick={() => {
-                        void changePlaylist('/' + playlist.id + '/items', 'POST', { library_item_ids: contextIds });
-                        setContextMenu(null);
-                        setShowPlaylistSubmenu(false);
-                      }}
-                    >
-                      {playlist.name}
-                    </button>
-                  ))
-                )}
-              </div>
-            )}
-          </div>
+          <PlaylistSubmenu key={`${contextMenu.item.id}:${contextMenu.x}:${contextMenu.y}`}
+            playlists={manualPlaylists} disabled={playlistMutation.isPending} onSelect={id => {
+              void changePlaylist('/' + id + '/items', 'POST', { library_item_ids: contextIds });
+              setContextMenu(null); returnFocusRef.current?.focus();
+            }} />
           {onNewPlaylist && <button type="button" className="w-full text-left px-3 py-2" onClick={() => {
             onNewPlaylist(contextIds); setContextMenu(null);
           }}>New playlist from selection…</button>}

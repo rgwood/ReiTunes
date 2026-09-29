@@ -79,7 +79,7 @@ test('multi-selection, context menus and drag-and-drop update playlists without 
   await expect(page.locator('audio')).not.toHaveAttribute('src', /apricots/);
   await apricots.click({ button: 'right' });
   await page.getByRole('button', { name: 'Add to Playlist', exact: false }).click();
-  await page.locator('.playlist-submenu').getByRole('button', { name: 'Late nights', exact: true }).click();
+  await page.getByRole('menuitem', { name: 'Late nights', exact: true }).click();
   await expect.poll(() => mutations.filter(m => m.method === 'POST').length).toBe(1);
   expect(mutations[0].body.library_item_ids).toEqual([songs[0].id, songs[1].id]);
   await page.getByRole('row').filter({ hasText: 'Lush' }).dragTo(page.getByRole('button', { name: 'Late nights', exact: true }));
@@ -105,6 +105,103 @@ test('multi-selection, context menus and drag-and-drop update playlists without 
   await page.getByRole('button', { name: 'Create playlist', exact: true }).click();
   await expect(page.getByRole('button', { name: 'All three', exact: true })).toHaveAttribute('aria-current', 'page');
   await expect(rows).toHaveCount(3);
+});
+
+test('playlist submenu opens beside the menu and flips at the screen edge without moving its parent', async ({ page }, testInfo) => {
+  await page.setViewportSize({ width: 1440, height: 700 });
+  const { playlists, mutations } = await backend(page);
+  playlists.push(...Array.from({ length: 35 }, (_, index) => ({ id: `extra-${index}`, name: `Playlist ${String(index).padStart(2, '0')}`, items: {} })));
+  await page.goto('/');
+  const row = page.getByRole('row').filter({ hasText: 'Apricots' });
+  const menu = page.locator('.library-context-menu');
+  const submenu = page.getByRole('menu', { name: 'Add to playlist', exact: true });
+  let menuWidth = 0;
+  for (const edge of ['left', 'right']) {
+    const rowBox = (await row.boundingBox())!;
+    await row.click({ button: 'right', position: { x: edge === 'left' ? 40 : rowBox.width - 10, y: 12 } });
+    const before = (await menu.boundingBox())!;
+    if (edge === 'left') menuWidth = before.width;
+    else expect(before.width).toBe(menuWidth);
+    await page.getByRole('button', { name: 'Add to Playlist', exact: false }).hover();
+    await expect(submenu).toBeVisible();
+    expect(await submenu.evaluate(el => getComputedStyle(el).font)).toBe(await menu.evaluate(el => getComputedStyle(el).font));
+    await expect.poll(async () => {
+      const child = (await submenu.boundingBox())!;
+      return edge === 'left' ? child.x >= before.x + before.width : child.x + child.width <= before.x;
+    }).toBe(true);
+    expect(await menu.boundingBox()).toEqual(before);
+    const child = (await submenu.boundingBox())!;
+    expect(child.y).toBeGreaterThanOrEqual(4);
+    expect(child.y + child.height).toBeLessThanOrEqual(696);
+    // Cross the gap with a real pointer, then scroll the independent submenu.
+    const target = page.getByRole('menuitem', { name: 'Late nights', exact: true });
+    const targetBox = (await target.boundingBox())!;
+    await page.mouse.move(targetBox.x + targetBox.width / 2, targetBox.y + targetBox.height / 2, { steps: 12 });
+    await expect(submenu).toBeVisible();
+    await page.getByRole('menuitem', { name: 'Playlist 34', exact: true }).scrollIntoViewIfNeeded();
+    await expect(page.getByRole('menuitem', { name: 'Playlist 34', exact: true })).toBeVisible();
+    expect(await menu.boundingBox()).toEqual(before);
+    await page.screenshot({ path: testInfo.outputPath(`playlist-submenu-${edge}.png`) });
+    await page.getByRole('searchbox', { name: 'Search library' }).click();
+    await expect(menu).toHaveCount(0);
+    await expect(submenu).toHaveCount(0);
+  }
+  expect(mutations).toEqual([]);
+});
+
+test('playlist submenu supports keyboard navigation, escape and adding the selected tracks', async ({ page }) => {
+  const { playlists, mutations } = await backend(page);
+  playlists.push({ id: 'p2', name: 'Second playlist', items: {} });
+  await page.goto('/');
+  const rows = page.locator('tbody tr');
+  await rows.first().click();
+  await rows.nth(1).click({ modifiers: ['Control'] });
+  await rows.first().click({ button: 'right' });
+  const trigger = page.getByRole('button', { name: 'Add to Playlist', exact: false });
+  const first = page.getByRole('menuitem', { name: 'Late nights', exact: true });
+  const second = page.getByRole('menuitem', { name: 'Second playlist', exact: true });
+  await trigger.focus();
+  await page.keyboard.press('ArrowRight');
+  await expect(first).toBeFocused();
+  await page.keyboard.press('ArrowDown');
+  await expect(second).toBeFocused();
+  await page.keyboard.press('ArrowDown');
+  await expect(first).toBeFocused();
+  await page.keyboard.press('End');
+  await expect(second).toBeFocused();
+  await page.keyboard.press('ArrowLeft');
+  await expect(trigger).toBeFocused();
+  await expect(first).toHaveCount(0);
+  await page.keyboard.press('Enter');
+  await expect(first).toBeFocused();
+  await page.keyboard.press('Escape');
+  await expect(trigger).toBeFocused();
+  await expect(page.locator('.library-context-menu')).toBeVisible();
+  await page.keyboard.press('ArrowRight');
+  await expect(first).toBeFocused();
+  await page.keyboard.press('Enter');
+  await expect(page.locator('.library-context-menu')).toHaveCount(0);
+  await expect.poll(() => mutations.length).toBe(1);
+  expect(mutations[0].body.library_item_ids).toEqual([songs[0].id, songs[1].id]);
+  await expect(rows.first()).toBeFocused();
+});
+
+test('empty playlist submenu is dismissible without changing the library', async ({ page }) => {
+  const { playlists, mutations } = await backend(page);
+  playlists.length = 0;
+  await page.goto('/');
+  await page.locator('tbody tr').first().click({ button: 'right' });
+  const trigger = page.getByRole('button', { name: 'Add to Playlist', exact: false });
+  await trigger.focus();
+  await page.keyboard.press('ArrowRight');
+  const submenu = page.getByRole('menu', { name: 'Add to playlist', exact: true });
+  await expect(submenu).toHaveText('No playlists');
+  await expect(submenu).toBeFocused();
+  await page.keyboard.press('Escape');
+  await expect(trigger).toBeFocused();
+  await page.keyboard.press('Escape');
+  await expect(page.locator('.library-context-menu')).toHaveCount(0);
+  expect(mutations).toEqual([]);
 });
 
 test('playlist drop feedback stays visible over its label and clears on cancellation', async ({ page }, testInfo) => {
