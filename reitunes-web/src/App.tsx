@@ -10,6 +10,9 @@ import {
   QueryClient,
   QueryClientProvider,
 } from '@tanstack/react-query';
+import { useStore } from 'zustand';
+import { createStore, type StoreApi } from 'zustand/vanilla';
+import { useShallow } from 'zustand/react/shallow';
 import { AudioPlayer } from './components/AudioPlayer';
 import { LibraryTable } from './components/LibraryTable';
 import { hasFavourite } from './utils/tracklists';
@@ -50,6 +53,11 @@ import './components/MobileShell.css';
 const queryClient = new QueryClient();
 type Collection = 'all' | 'favourites' | 'recent' | 'unplayed';
 
+function LibrarySelectionCount({ store }: { store: StoreApi<{ count: number }> }) {
+  const count = useStore(store, state => state.count);
+  return count > 0 ? <span className="library-selection-count" title="Drag the selected tracks to a playlist or the queue"> · {count.toLocaleString()} selected</span> : null;
+}
+
 function AppContent() {
   const { isMobile, route: mobileRoute, navigate: navigateMobile } = useMobileNavigation();
   const [desktopView, setView] = useState<'library' | 'discover' | 'bookmarks'>('library');
@@ -71,7 +79,11 @@ function AppContent() {
   const [selectedCollection, setCollection] = useState<Collection>('all');
   const collection = isMobile && mobileRoute.playlistId ? 'all' : selectedCollection;
   const [revealRequest, setRevealRequest] = useState<{ itemId: string } | null>(null);
-  const [selectedTrackCount, setSelectedTrackCount] = useState(0);
+  // Only the footer subscribes, so selecting tracks doesn't render the whole app again.
+  const [selectionCountStore] = useState(() => createStore(() => ({ count: 0 })));
+  const reportSelectionCount = useCallback((count: number) => {
+    selectionCountStore.setState({ count });
+  }, [selectionCountStore]);
   const [gridView, setGridView] = useState<{ key: string; items: LibraryItem[] } | null>(null);
   const [playbackState, setPlaybackState] = useState<'playing' | 'paused'>();
   const finishReveal = useCallback(() => setRevealRequest(null), []);
@@ -143,9 +155,19 @@ function AppContent() {
     restoreCurrentItem,
     refreshCurrentItem,
     clearCurrentItem,
-  } = usePlayerStore();
+  } = usePlayerStore(useShallow(state => ({
+    currentItem: state.currentItem,
+    currentItemId: state.currentItemId,
+    restoreCurrentItem: state.restoreCurrentItem,
+    refreshCurrentItem: state.refreshCurrentItem,
+    clearCurrentItem: state.clearCurrentItem,
+  })));
   const playbackTarget = usePlaybackTargetStore((state) => state.target);
-  const { reconcileWithLibrary, setContext, manualQueue } = useQueueStore();
+  const { reconcileWithLibrary, setContext, manualQueue } = useQueueStore(useShallow(state => ({
+    reconcileWithLibrary: state.reconcileWithLibrary,
+    setContext: state.setContext,
+    manualQueue: state.manualQueue,
+  })));
   const { data: playlists = [], isError: playlistError } = usePlaylists();
   const playlistMutation = usePlaylistMutation();
   const [playlistActionError, setPlaylistActionError] = useState('');
@@ -343,6 +365,12 @@ function AppContent() {
         ? document.activeElement : document.querySelector<HTMLElement>(`tr[data-item-id="${CSS.escape(item.id)}"]`);
     setTagItemId(item.id); setPanel('tags');
   }, [isMobile]);
+  const manageBookmarks = useCallback((item: LibraryItem) => {
+    setBookmarkItemId(item.id); setPanel('bookmarks');
+  }, []);
+  const newPlaylistFromSelection = useCallback((itemIds: string[]) => {
+    setPlaylistDraft({ smart: false, itemIds });
+  }, []);
   const openTagBrowser = () => {
     if (panel !== 'tags') tagReturnFocus.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     setTagItemId(null); setTagWorkOpen(false); setPanel('tags');
@@ -464,9 +492,9 @@ function AppContent() {
                   {playlistActionError && <p role="alert">{playlistActionError}</p>}</div>
                   : <div className="mobile-library-filter"><label>Show<select aria-label="Library collection" value={collection} onChange={event => chooseCollection(event.target.value as Collection)}>
                     <option value="all">All songs</option><option value="favourites">Favourites</option><option value="recent">Recently added</option><option value="unplayed">Unplayed</option></select></label><span>{filteredItems.length.toLocaleString()} songs</span></div>}
-                <MobileLibrary key={`${selectedPlaylistId || collection}:${librarySearch}`} items={filteredItems} playlists={playlists} disabled={sessionBusy}
-                  contextName={currentViewName} onTags={manageTags} onBookmarks={item => { setBookmarkItemId(item.id); setPanel('bookmarks'); }}
-                  onNewPlaylist={itemIds => setPlaylistDraft({ smart: false, itemIds })} />
+                <MobileLibrary key={`${selectedPlaylistId || collection}:${deferredLibrarySearch}`} items={filteredItems} playlists={playlists} disabled={sessionBusy}
+                  contextName={currentViewName} onTags={manageTags} onBookmarks={manageBookmarks}
+                  onNewPlaylist={newPlaylistFromSelection} />
                 {!filteredItems.length && <p className="mobile-empty">{items.length ? 'No matching songs.' : 'Your library is empty.'}</p>}
               </>}
           </div>}
@@ -491,14 +519,14 @@ function AppContent() {
                   onlyFavouriteTracks={collection === 'favourites' || selectedPlaylist?.smart_rules?.favourites_only === true}
                   viewId={selectedPlaylistId || collection}
                   playlistId={selectedPlaylist?.smart_rules ? null : selectedPlaylistId}
-                  contextName={currentViewName} allowReordering={!librarySearch && !!selectedPlaylist && !selectedPlaylist.smart_rules}
-                  onNewPlaylist={itemIds => setPlaylistDraft({ smart: false, itemIds })}
-                  onSelectionCountChange={setSelectedTrackCount}
+                  contextName={currentViewName} allowReordering={!deferredLibrarySearch && !!selectedPlaylist && !selectedPlaylist.smart_rules}
+                  onNewPlaylist={newPlaylistFromSelection}
+                  onSelectionCountChange={reportSelectionCount}
                   onViewItemsChange={reportViewItems}
                   onSearchChange={setLibrarySearch} revealRequest={revealRequest} onRevealed={finishReveal}
                   onManageTags={manageTags} onFilterTag={browseTag} tagItems={tags.data?.items}
                   selectedTagItemId={panel === 'tags' ? tagItemId : null}
-                  onManageBookmarks={item => { setBookmarkItemId(item.id); setPanel('bookmarks'); }} />
+                  onManageBookmarks={manageBookmarks} />
               </div>
               {!filteredItems.length && <div className="library-message empty-grid-message">
                 {items.length === 0 ? <>No music. <button onClick={() => setIsImportOpen(true)}>Import files or a link</button></>
@@ -509,7 +537,7 @@ function AppContent() {
             {view === 'discover' ? <span>{discoveryCount} sets in inbox · {discovery?.sources.length ?? 0} sources</span>
               : view === 'bookmarks' ? <span>{items.reduce((n, item) => n + Object.keys(item.bookmarks).length, 0)} bookmarks</span>
               : <span>{filteredItems.length.toLocaleString()}{filteredItems.length !== items.length && ` of ${items.length.toLocaleString()}`} {filteredItems.length === 1 ? 'track' : 'tracks'}{selectedPlaylist && ` · ${selectedPlaylist.name}`}
-                {selectedTrackCount > 0 && <span className="library-selection-count" title="Drag the selected tracks to a playlist or the queue"> · {selectedTrackCount.toLocaleString()} selected</span>}</span>}
+                <LibrarySelectionCount store={selectionCountStore} /></span>}
             {view === 'library' && selectedPlaylist?.smart_rules && <button onClick={() => setPlaylistDraft({ playlist: selectedPlaylist, smart: true })}>Edit rules…</button>}
             {view === 'bookmarks' && <button onClick={nextMoment} disabled={!moments.length}>Next saved moment</button>}
           </footer>

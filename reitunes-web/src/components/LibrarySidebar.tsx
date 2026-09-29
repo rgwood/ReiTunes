@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { LibraryItem, Playlist } from '../types';
 import { playlistItems, type PlaylistTagItems } from '../utils/playlists';
 import { useTrackDrop } from '../hooks/useTrackDrop';
@@ -36,11 +36,15 @@ export function LibrarySidebar({ active, items, playlists, now, tagItems, discov
     return () => document.removeEventListener('click', close);
   }, []);
 
-  const count = (id: string) => id === 'all' ? items.length : id === 'recent'
-    ? items.filter(item => Date.parse(/Z|[+-]\d\d:\d\d$/.test(item.created_time_utc) ? item.created_time_utc : item.created_time_utc + 'Z') >= now - 30 * 86400000).length
-    : id === 'unplayed' ? items.filter(item => item.play_count === 0).length
-    : id === 'favourites' ? items.reduce((total, item) => total + Number(!!item.is_favorite) + (item.tracklist?.tracks.filter(track => track.is_favorite).length ?? 0), 0)
-    : items.reduce((total, item) => total + Object.keys(item.bookmarks).length, 0);
+  const collectionCounts = useMemo(() => ({
+    all: items.length,
+    recent: items.filter(item => Date.parse(/Z|[+-]\d\d:\d\d$/.test(item.created_time_utc) ? item.created_time_utc : item.created_time_utc + 'Z') >= now - 30 * 86400000).length,
+    unplayed: items.filter(item => item.play_count === 0).length,
+    favourites: items.reduce((total, item) => total + Number(!!item.is_favorite) + (item.tracklist?.tracks.filter(track => track.is_favorite).length ?? 0), 0),
+    bookmarks: items.reduce((total, item) => total + Object.keys(item.bookmarks).length, 0),
+  }), [items, now]);
+  const playlistCounts = useMemo(() => new Map(playlists.map(playlist =>
+    [playlist.id, playlistItems(playlist, items, now, tagItems).length])), [playlists, items, now, tagItems]);
 
   async function drop(draggedIds: string[], playlist: Playlist) {
     setError('');
@@ -68,7 +72,7 @@ export function LibrarySidebar({ active, items, playlists, now, tagItems, discov
       }}
       {...dropProps(playlist.id, !playlist.smart_rules && !mutation.isPending)}>
       <span className={playlist.smart_rules ? 'source-icon smart-icon' : 'source-icon'}><MusicIcon name={playlist.smart_rules ? 'smart' : 'playlist'} size={16} /></span>
-      <span className="source-name">{playlist.name}</span><span className="source-count" aria-hidden="true">{dropTarget === playlist.id ? '+ Add' : playlistItems(playlist, items, now, tagItems).length}</span>
+      <span className="source-name">{playlist.name}</span><span className="source-count" aria-hidden="true">{dropTarget === playlist.id ? '+ Add' : playlistCounts.get(playlist.id)}</span>
     </button>;
   }
 
@@ -76,7 +80,7 @@ export function LibrarySidebar({ active, items, playlists, now, tagItems, discov
     <div className="source-scroll">
       <section><h2>Library</h2>{collections.map(([id, label, icon]) => <button key={id} className="source-item"
         aria-label={label} aria-current={active === id ? 'page' : undefined} onClick={() => onSelect(id)}>
-        <span className="source-icon"><MusicIcon name={icon} size={16} /></span><span className="source-name">{label}</span><span className="source-count" aria-hidden="true">{count(id)}</span>
+        <span className="source-icon"><MusicIcon name={icon} size={16} /></span><span className="source-name">{label}</span><span className="source-count" aria-hidden="true">{collectionCounts[id]}</span>
       </button>)}
       <button className="source-item" aria-label="Tags" aria-pressed={tagsOpen} onClick={onTags}
         title={activeTagCount ? `${activeTagCount} tracks getting tags` : failedTagCount ? `${failedTagCount} tracks could not be tagged` : 'Browse and manage tags'}>

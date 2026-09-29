@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { memo, useEffect, useRef, useState } from 'react';
 import type { LibraryItem, Playlist } from '../types';
 import { MusicIcon } from './MusicIcon';
 import { SongInfoDialog } from './SongInfoDialog';
@@ -97,7 +97,7 @@ function MobileTracklist({ item, disabled, onClose, onEdit }: { item: LibraryIte
   </dialog>;
 }
 
-export function MobileLibrary({ items, playlists, contextName, disabled, onTags, onBookmarks, onNewPlaylist }: Props) {
+export const MobileLibrary = memo(function MobileLibrary({ items, playlists, contextName, disabled, onTags, onBookmarks, onNewPlaylist }: Props) {
   const currentItemId = usePlayerStore(state => state.currentItemId);
   const play = usePlayback();
   const [actionItem, setActionItem] = useState<LibraryItem | null>(null);
@@ -136,4 +136,4 @@ export function MobileLibrary({ items, playlists, contextName, disabled, onTags,
       ? <TracklistDialog item={items.find(item => item.id === tracklistItem.id) ?? tracklistItem} onClose={() => setTracklistItem(null)} onApplied={() => setNotice('Tracklist saved')} />
       : <MobileTracklist item={items.find(item => item.id === tracklistItem.id) ?? tracklistItem} disabled={disabled} onClose={() => setTracklistItem(null)} onEdit={() => setEditingTracklist(true)} />)}
   </>;
-}
+});
