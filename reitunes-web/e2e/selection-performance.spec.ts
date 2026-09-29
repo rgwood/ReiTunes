@@ -256,3 +256,56 @@ test('comfortable rows keep their height and scroll range when cells mount', asy
   await expect(first.locator('[data-column=name]')).toHaveText(library[0].name);
   expect(await page.locator('table').evaluate(table => table.parentElement!.scrollHeight)).toBe(scrollHeight);
 });
+
+test('modest scrolls expose populated rows before the viewport observer catches up', async ({ page }, testInfo) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  const tags = Object.fromEntries(songs.map(song => [song.id, {
+    status: 'ready', labels: {}, tags: ['indie-rock', 'alternative', 'energetic'].map(tag => ({
+      tag, basis: 'metadata', confidence: 0.9, evidence: '', sourceUrls: [],
+    })),
+  }]));
+  await page.route('**/api/items', route => route.fulfill({ json: songs }));
+  await page.route('**/api/tags', route => route.fulfill({ json: { enabled: true, items: tags } }));
+  await page.route('**/api/playlists', route => route.fulfill({ json: [] }));
+  await page.route('**/api/sonos/status', route => route.fulfill({ json: { configured: false, connected: false } }));
+  await page.route('**/api/discovery', route => route.fulfill({ json: { sources: [], entries: [], refreshing: false } }));
+  await page.route('**/api/log', route => route.fulfill({ status: 200 }));
+  await page.routeWebSocket('**/updates', () => {});
+  await page.goto('/');
+  await expect(page.locator('tbody tr[data-item-id]')).toHaveCount(songs.length);
+  // Settle the initial observer batch, then inspect each new viewport in the
+  // same task as its scroll. Waiting for cell text would conceal blank frames.
+  await page.waitForTimeout(300);
+  const sampleScrolls = (positions: number[]) => page.evaluate(positions => {
+    const scroller = document.querySelector('[data-library-scroll]') as HTMLElement;
+    const rows = Array.from(scroller.querySelectorAll<HTMLTableRowElement>('tbody tr[data-item-id]'));
+    const bounds = scroller.getBoundingClientRect();
+    const top = bounds.top + scroller.querySelector('thead')!.getBoundingClientRect().height;
+    const height = rows[0].getBoundingClientRect().height;
+    return positions.map(scrollTop => {
+      scroller.scrollTop = scrollTop;
+      const start = Math.max(0, Math.floor(scrollTop / height) - 1);
+      const candidates = rows.slice(start, start + Math.ceil(bounds.height / height) + 3);
+      const visible = candidates.filter(row => {
+        const rowBounds = row.getBoundingClientRect();
+        return rowBounds.bottom > top && rowBounds.top < bounds.bottom;
+      });
+      return { scrollTop, visible: visible.length,
+        blank: visible.filter(row => !row.querySelector('[data-column=name]')?.textContent?.trim()).map(row => row.dataset.itemId),
+      };
+    });
+  }, positions);
+  const samples = await sampleScrolls([200, 400, 900, 1200]);
+  await page.locator('[data-library-scroll]').evaluate(scroller => { scroller.scrollTop = 6000; });
+  await page.waitForTimeout(300);
+  samples.push(...await sampleScrolls([7200]));
+  await page.waitForTimeout(300);
+  samples.push(...await sampleScrolls([6000]));
+  writeFileSync(testInfo.outputPath('scroll-readiness.json'), JSON.stringify(samples));
+  await testInfo.attach('scroll-readiness.json', { path: testInfo.outputPath('scroll-readiness.json'), contentType: 'application/json' });
+  console.log('SCROLL_READINESS', JSON.stringify(samples.map(({ scrollTop, visible, blank }) => ({ scrollTop, visible, blank: blank.length }))));
+  expect(samples.every(sample => sample.visible > 0)).toBe(true);
+  expect(samples.map(sample => ({ scrollTop: sample.scrollTop, blank: sample.blank.length }))).toEqual(
+    samples.map(sample => ({ scrollTop: sample.scrollTop, blank: 0 })),
+  );
+});

@@ -1,5 +1,5 @@
-// Share one observer across the grid. Row shells retain their normal height,
-// order, and focus targets while expensive cells only mount near the viewport.
+// Render well ahead of the viewport so wheel scrolling doesn't expose rows
+// while the observer's React updates are still being processed.
 export function createLibraryRowVisibility() {
   const rows = new Map<Element, { visible: boolean; onChange: (visible: boolean) => void }>();
   let observer: IntersectionObserver | null = null;
@@ -12,7 +12,7 @@ export function createLibraryRowVisibility() {
           row.visible = entry.isIntersecting;
           row.onChange(entry.isIntersecting || entry.target.contains(document.activeElement));
         }
-      }, { root: row.closest('[data-library-scroll]'), rootMargin: '600px 0px' });
+      }, { root: row.closest('[data-library-scroll]'), rootMargin: '1800px 0px' });
       rows.set(row, { visible: false, onChange });
       observer.observe(row);
       return () => {
