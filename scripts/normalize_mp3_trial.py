@@ -72,7 +72,7 @@ def audio_hash(path: Path) -> str:
     # Check exact decoded samples. MP3Gain can change silent padding frame bits
     # during undo even when the decoded audio is identical.
     return run("ffmpeg", "-v", "error", "-xerror", "-i", str(path), "-map", "0:a:0",
-               "-c:a", "pcm_f32le", "-f", "hash", "-hash", "sha256", "-").strip()
+               "-c:a", "pcm_f32le", "-f", "hash", "-hash", "sha256", "-", stdout_only=True).strip()
 
 
 def digest(data: bytes) -> str:
