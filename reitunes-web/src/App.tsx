@@ -78,7 +78,7 @@ function AppContent() {
   const deferredLibrarySearch = useDeferredValue(librarySearch);
   const [selectedCollection, setCollection] = useState<Collection>('all');
   const collection = isMobile && mobileRoute.playlistId ? 'all' : selectedCollection;
-  const [revealRequest, setRevealRequest] = useState<{ itemId: string } | null>(null);
+  const [revealRequest, setRevealRequest] = useState<{ itemId: string; focus?: boolean } | null>(null);
   // Only the footer subscribes, so selecting tracks doesn't render the whole app again.
   const [selectionCountStore] = useState(() => createStore(() => ({ count: 0 })));
   const reportSelectionCount = useCallback((count: number) => {
@@ -299,6 +299,17 @@ function AppContent() {
     setRevealRequest({ itemId: next.item.id });
   }, [items, play, filteredItems]);
 
+  const revealCurrentSong = useCallback(() => {
+    if (!currentItemId || !items.some(item => item.id === currentItemId)) return;
+    if (librarySearch !== deferredLibrarySearch || !filteredItems.some(item => item.id === currentItemId)) {
+      setLibrarySearch('');
+      setCollection('all');
+      setSelectedPlaylistId(null);
+    }
+    setView('library');
+    setRevealRequest({ itemId: currentItemId, focus: true });
+  }, [currentItemId, items, filteredItems, librarySearch, deferredLibrarySearch]);
+
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (document.querySelector('dialog[open], [role="dialog"]')) return;
@@ -310,6 +321,13 @@ function AppContent() {
       const editing = (event.target as HTMLElement).closest(
         'input, textarea, select, [contenteditable="true"]'
       );
+      if (!isMobile && (event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'l'
+        && !event.altKey && !event.shiftKey && !event.isComposing
+        && (!editing || event.target === searchRef.current)) {
+        event.preventDefault();
+        if (!event.repeat) revealCurrentSong();
+        return;
+      }
       if (
         ((event.metaKey || event.ctrlKey) &&
           ['k', 'f'].includes(event.key.toLowerCase())) ||
@@ -330,7 +348,7 @@ function AppContent() {
     };
     document.addEventListener('keydown', onKeyDown);
     return () => document.removeEventListener('keydown', onKeyDown);
-  }, [randomFavourite]);
+  }, [randomFavourite, revealCurrentSong, isMobile]);
 
   const chooseCollection = (next: Collection) => {
     setView('library');
@@ -418,6 +436,7 @@ function AppContent() {
       <header className="player-bar">
         <div className="player-audio">
           <AudioPlayer audioRef={audioRef} previewPauseRef={previewPauseRef} onPlaybackPosition={reportPlaybackPosition} onPlaybackState={setPlaybackState} items={items}
+            onRevealCurrent={isMobile ? undefined : revealCurrentSong}
             mobile={isMobile} expanded={mobileRoute.tab === 'playing'}
             onExpand={() => { setPanel(null); navigateMobile({ ...mobileRoute, tab: 'playing' }); }}
             onQueue={() => { setPanel(null); navigateMobile({ ...mobileRoute, tab: 'queue' }); }}

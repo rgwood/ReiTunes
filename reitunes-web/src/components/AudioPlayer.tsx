@@ -80,17 +80,22 @@ function formatTime(seconds: number): string {
   return `${mins}:${secs.toString().padStart(2, '0')}`;
 }
 
-function PlayerTrack({ item, position, duration, sonos = false, status, recovery }: {
+function PlayerTrack({ item, position, duration, sonos = false, status, recovery, onReveal }: {
   item: LibraryItem | null; position: number; duration: number; sonos?: boolean; status?: string;
   recovery?: { status: AudioRecoveryStatus; retry: () => void };
+  onReveal?: () => void;
 }) {
+  const canReveal = !!item && !status && !!onReveal;
+  const Title = canReveal ? 'button' : 'div';
   return <div className="player-track">
-    <div className={`player-title ${sonos ? 'sonos-track-title' : 'player-now-playing'}`}
-      title={status ?? (item ? [item.name, item.artist, item.album].filter(Boolean).join(' — ') : undefined)}>
+    <Title className={`player-title ${sonos ? 'sonos-track-title' : 'player-now-playing'}`}
+      type={canReveal ? 'button' : undefined} onClick={canReveal ? onReveal : undefined}
+      aria-label={canReveal ? 'Show current song in library' : undefined}
+      title={status ?? (item ? [item.name, item.artist, item.album].filter(Boolean).join(' — ') + (canReveal ? '\nShow in library (Ctrl+L / ⌘L)' : '') : undefined)}>
       {status ? <span role="status">{status}</span>
         : item ? <><span>{item.name}</span>{item.artist && <span className="player-artist"> — {item.artist}</span>}</>
         : <span>No song selected</span>}
-    </div>
+    </Title>
     {recovery && recovery.status !== 'idle' && <span className="player-recovery">
       <span role="status">{recovery.status === 'buffering' ? 'Buffering…' : recovery.status === 'retrying' ? 'Reconnecting…' : 'Audio stalled'}</span>
       {recovery.status === 'failed' && <button type="button" onClick={recovery.retry}>Retry audio</button>}
@@ -157,10 +162,11 @@ interface AudioPlayerProps {
   onExpand?: () => void;
   onQueue?: () => void;
   onOutput?: () => void;
+  onRevealCurrent?: () => void;
 }
 
 export function AudioPlayer({ audioRef: sharedAudioRef, items, onPlaybackPosition, onPlaybackState, previewPauseRef,
-  mobile = false, expanded = true, onExpand, onQueue, onOutput }: AudioPlayerProps) {
+  mobile = false, expanded = true, onExpand, onQueue, onOutput, onRevealCurrent }: AudioPlayerProps) {
   const audioRef = useRef<HTMLAudioElement>(null);
   const attachAudio = useCallback((audio: HTMLAudioElement | null) => {
     audioRef.current = audio;
@@ -892,7 +898,7 @@ export function AudioPlayer({ audioRef: sharedAudioRef, items, onPlaybackPositio
           onLoadStart={handleLoadStart}
           onLoadedMetadata={handleLoadedMetadata}
         />
-        <PlayerTrack item={currentItem} position={displayedSonosPosition} duration={duration} status={connectionStatus} sonos />
+        <PlayerTrack item={currentItem} position={displayedSonosPosition} duration={duration} status={connectionStatus} sonos onReveal={onRevealCurrent} />
         {!connectionStatus && <div role="status" className={`sonos-status ${!playbackError && !sonos.error && !sonosQueue.error ? 'sr-only' : ''}`}>
           {playbackError ? (
             <span className="text-solarized-red">
@@ -1031,6 +1037,7 @@ export function AudioPlayer({ audioRef: sharedAudioRef, items, onPlaybackPositio
       />
 
       <PlayerTrack item={currentItem} position={pendingSeek ?? currentTime} duration={duration}
+        onReveal={onRevealCurrent}
         status={!sharedReady ? 'Connecting to your session…' : !localOwner && currentItem ? 'Playback is on another browser. Choose an output to listen here.' : localPlaybackError ?? undefined}
         recovery={{ status: recoveryStatus, retry: () => recoveryRef.current?.retry() }} />
       <div className="player-progress player-timeline">

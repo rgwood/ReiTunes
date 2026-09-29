@@ -118,6 +118,81 @@ async function playingRowIsRevealed(page: Page) {
   });
 }
 
+test('context menu filters use exact album and artist names', async ({ page }) => {
+  const items = [
+    { ...libraryItems[0], name: 'Cosmia', artist: 'Joanna Newsom', album: 'Ys' },
+    { ...libraryItems[1], name: 'Emily', artist: 'Joanna Newsom', album: 'Ys' },
+    { ...libraryItems[2], name: 'Another song', artist: 'Joanna Newsom and friends', album: 'Days' },
+  ];
+  await mockLibrary(page, items);
+  await page.goto('/');
+  const search = page.getByRole('searchbox', { name: 'Search library' });
+  await page.getByRole('row').filter({ hasText: 'Cosmia' }).click({ button: 'right' });
+  await page.getByText('Filter by Album', { exact: false }).click();
+  await expect(search).toHaveValue('album:"Ys"');
+  await expect(page.locator('tbody tr')).toHaveCount(2);
+  await search.fill('ys');
+  await expect(page.locator('tbody tr')).toHaveCount(3);
+  await page.getByRole('row').filter({ hasText: 'Cosmia' }).click({ button: 'right' });
+  await page.getByText('Filter by Artist', { exact: false }).click();
+  await expect(search).toHaveValue('artist:"Joanna Newsom"');
+  await expect(page.locator('tbody tr')).toHaveCount(2);
+});
+
+test('current song shortcuts reveal and select without changing playback or queue', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 600 });
+  await mockLibrary(page, randomJumpItems);
+  await page.addInitScript(() => {
+    // This navigation test simulates healthy audio; the empty fixture must not trigger recovery.
+    Object.defineProperty(HTMLMediaElement.prototype, 'error', { configurable: true, get: () => null });
+    Object.defineProperty(HTMLMediaElement.prototype, 'readyState', { configurable: true, get: () => 4 });
+  });
+  await page.route('**/api/playlists', route => route.fulfill({ json: [{
+    id: 'reveal-test-playlist', name: 'Other songs',
+    items: { first: { library_item_id: randomJumpItems[0].id, position: 0 } },
+  }] }));
+  await page.goto('/');
+  await expect(page.locator('tbody tr')).toHaveCount(120);
+  await page.keyboard.press('Control+e');
+  const current = page.locator('tbody tr[aria-current="true"]');
+  await expect(current).toContainText(randomJumpItems[60].name);
+  const queueBefore = await page.evaluate(() => localStorage.getItem('reitunes-queue'));
+  // Instrument after playback starts: revealing must neither restart nor pause audio.
+  await page.evaluate(() => {
+    const audio = document.querySelector('audio')!;
+    audio.dataset.playbackChanges = '0';
+    const record = () => { audio.dataset.playbackChanges = String(Number(audio.dataset.playbackChanges) + 1); };
+    const play = audio.play.bind(audio);
+    const pause = audio.pause.bind(audio);
+    audio.play = () => { record(); return play(); };
+    audio.pause = () => { record(); pause(); };
+  });
+  await page.locator('table').evaluate(table => { table.parentElement!.scrollTop = table.parentElement!.scrollHeight; });
+  await expect.poll(() => playingRowIsRevealed(page)).toBe(false);
+  await page.keyboard.press('Control+l');
+  await expect.poll(() => playingRowIsRevealed(page)).toBe(true);
+  await expect(current).toBeFocused();
+  await expect(current).toHaveAttribute('aria-selected', 'true');
+
+  const search = page.getByRole('searchbox', { name: 'Search library' });
+  await search.fill(randomJumpItems[60].name);
+  await expect(page.locator('tbody tr')).toHaveCount(1);
+  await page.keyboard.press('Control+l');
+  await expect(search).toHaveValue(randomJumpItems[60].name);
+  await expect(current).toBeFocused();
+
+  await page.getByText('Other songs', { exact: true }).click();
+  await search.fill('no matching songs');
+  await expect(page.locator('tbody tr')).toHaveCount(0);
+  await page.getByRole('button', { name: 'Show current song in library' }).click();
+  await expect(search).toHaveValue('');
+  await expect(page.locator('tbody tr')).toHaveCount(120);
+  await expect.poll(() => playingRowIsRevealed(page)).toBe(true);
+  await expect(current).toBeFocused();
+  expect(await page.evaluate(() => localStorage.getItem('reitunes-queue'))).toBe(queueBefore);
+  await expect(page.locator('audio')).toHaveAttribute('data-playback-changes', '0');
+});
+
 test('returning to a collection restores its sorting, column widths and scroll position', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 600 });
   await mockLibrary(page, densityItems);

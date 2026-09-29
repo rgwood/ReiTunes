@@ -48,7 +48,7 @@ interface LibraryTableProps {
   onlyFavouriteTracks?: boolean;
   playlistId?: string | null;
   onSearchChange?: (query: string) => void;
-  revealRequest?: { itemId: string } | null;
+  revealRequest?: { itemId: string; focus?: boolean } | null;
   onRevealed?: () => void;
   onManageBookmarks?: (item: LibraryItem) => void;
   onManageTags?: (item: LibraryItem) => void;
@@ -167,7 +167,7 @@ function parseSearchQuery(query: string): ParsedSearch {
     if (match[1] && match[2] !== undefined) {
       // Field filter: artist:"value" or album:"value"
       const field = match[1].toLowerCase();
-      const value = match[2].replace(/\\"/g, '"');
+      const value = match[2].replace(/\\(["\\])/g, '$1');
       if (field === 'artist') {
         artist = value;
       } else if (field === 'album') {
@@ -273,6 +273,12 @@ export const LibraryTable = memo(function LibraryTable({ items, searchQuery, onl
       scroller.scrollTop += rowBounds.top - visibleTop -
         (scroller.clientHeight - headerHeight - rowBounds.height) / 2;
     }
+    if (revealRequest.focus) {
+      setSelection({ rowId: revealRequest.itemId, field: 'name' });
+      setSelectedIds(new Set([revealRequest.itemId]));
+      anchor.current = revealRequest.itemId;
+      row.focus({ preventScroll: true });
+    }
     onRevealed?.();
   }, [revealRequest, items, onRevealed]);
   const [sorting, setSorting] = useState<SortingState>(savedViews.get(viewId)?.sorting ?? (playlistId ? [] : [
@@ -371,11 +377,11 @@ export const LibraryTable = memo(function LibraryTable({ items, searchQuery, onl
     if (searchQuery) {
       const { artist, album, text } = parseSearchQuery(searchQuery);
       result = result.filter(item => {
-        // Field-specific filters (case-insensitive contains match)
-        if (artist && !item.artist.toLowerCase().includes(artist.toLowerCase())) {
+        // Field filters identify one artist or album; free text remains a substring search.
+        if (artist && item.artist.toLowerCase() !== artist.toLowerCase()) {
           return false;
         }
-        if (album && !item.album.toLowerCase().includes(album.toLowerCase())) {
+        if (album && item.album.toLowerCase() !== album.toLowerCase()) {
           return false;
         }
         // General text search across all fields
@@ -605,7 +611,7 @@ export const LibraryTable = memo(function LibraryTable({ items, searchQuery, onl
 
   const handleFilterByArtist = useCallback(() => {
     if (contextMenu && onSearchChange) {
-      const escaped = contextMenu.item.artist.replace(/"/g, '\\"');
+      const escaped = contextMenu.item.artist.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
       onSearchChange(`artist:"${escaped}"`);
       setContextMenu(null);
     }
@@ -613,7 +619,7 @@ export const LibraryTable = memo(function LibraryTable({ items, searchQuery, onl
 
   const handleFilterByAlbum = useCallback(() => {
     if (contextMenu && onSearchChange) {
-      const escaped = contextMenu.item.album.replace(/"/g, '\\"');
+      const escaped = contextMenu.item.album.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
       onSearchChange(`album:"${escaped}"`);
       setContextMenu(null);
     }

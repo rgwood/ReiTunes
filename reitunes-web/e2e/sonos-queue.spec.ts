@@ -53,6 +53,27 @@ async function edit(page: Page, action: 'addNext' | 'addToQueue' | 'clearManualQ
   }, { action, index });
 }
 
+test('revealing the current Sonos song leaves playback and the queue alone', async ({ page, sharedSession }) => {
+  const { sonos, directQueueRequests } = await setup(page, sharedSession);
+  const queueBefore = structuredClone(queue(sharedSession));
+  const search = page.getByRole('searchbox', { name: 'Search library' });
+  for (const trigger of ['title', 'shortcut']) {
+    await search.fill('Queued song');
+    await expect(page.locator('tbody tr')).toHaveCount(1);
+    if (trigger === 'title') await page.getByRole('button', { name: 'Show current song in library' }).click();
+    else await page.keyboard.press('Control+l');
+    await expect(search).toHaveValue('');
+    const current = page.locator('tbody tr[aria-current="true"]');
+    await expect(current).toContainText('Current song');
+    await expect(current).toBeFocused();
+    await expect(current).toHaveAttribute('aria-selected', 'true');
+  }
+  expect(queue(sharedSession)).toEqual(queueBefore);
+  expect(directQueueRequests).toEqual([]);
+  expect(sonos.queueRequests).toEqual([]);
+  expect(sonos.commands).toEqual([]);
+});
+
 test('shuffle saves the upcoming shared order without restarting Sonos and restores ordinary order', async ({ page, sharedSession }) => {
   const { directQueueRequests, sonos } = await setup(page, sharedSession);
   await page.evaluate(() => { Math.random = () => 0; });

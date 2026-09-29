@@ -19,6 +19,15 @@ function item(id: string, changes: Partial<LibraryItem> = {}): LibraryItem {
 }
 
 describe('library search', () => {
+  it('matches whole artist and album names while keeping free text broad', () => {
+    const ys = item('ys', { artist: 'Joanna Newsom', album: 'Ys' });
+    const days = item('days', { artist: 'Joanna Newsom and friends', album: 'Days' });
+    expect(matchesLibrarySearch(ys, 'album:"ys" artist:"JOANNA NEWSOM"')).toBe(true);
+    expect(matchesLibrarySearch(days, 'album:Ys')).toBe(false);
+    expect(matchesLibrarySearch(days, 'artist:"Joanna Newsom"')).toBe(false);
+    expect(matchesLibrarySearch(days, 'ys')).toBe(true);
+    expect(matchesLibrarySearch(item('live', { album: 'Ys Live' }), 'album:Ys')).toBe(false);
+  });
   it('combines exact tag matches with text and artist/album filters', () => {
     const track = item('one');
     const tags = ['dj-mix', 'house', 'high-energy', 'odd"tag'];
