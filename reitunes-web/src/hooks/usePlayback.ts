@@ -85,7 +85,11 @@ export function usePlayback() {
       return true;
     } catch (error) {
       if (usePlaybackTargetStore.getState().target !== target) return false;
-      recordPlaybackEvent('play-rejected', { target: 'sonos', itemId: item.id, errorName: error instanceof Error ? error.name : 'UnknownError' });
+      recordPlaybackEvent('play-rejected', { target: 'sonos', itemId: item.id, origin,
+        errorName: error instanceof Error ? error.name : 'UnknownError',
+        errorMessage: error instanceof Error ? error.message : undefined,
+        httpStatus: error instanceof SonosRequestError ? error.status : undefined,
+        outcome: error instanceof SonosRequestError ? error.code : undefined });
       const message = error instanceof Error ? error.message : 'Could not play on Sonos';
       // An uncertain result must not carry permission to replace another app
       // into a later retry. Only a fresh conflict requests confirmation.

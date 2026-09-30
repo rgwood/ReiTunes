@@ -280,6 +280,75 @@ test('waking refreshes the shared queue before accepting edits', async ({ page, 
   expect(sharedSession.requests.filter(request => request.method === 'POST')).toEqual([]);
 });
 
+for (const width of [1280, 390]) {
+  test(`Next waits for a waking session and skips exactly once using its latest queue at ${width}`, async ({ page, sharedSession }) => {
+    await page.setViewportSize({ width, height: 844 });
+    sharedSession.snapshot = { revision: 7, state: state() };
+    const requests = await install(page);
+    await page.goto('/#playing');
+    const next = page.getByRole('button', { name: 'Next on Sonos', exact: true });
+    await expect(next).toBeEnabled();
+    const advanced = state();
+    advanced.currentItemId = secondId;
+    advanced.queue.manualQueue = [{ id: 'copy-b', itemId: secondId }];
+    sharedSession.snapshot = { revision: 8, state: advanced };
+    let release!: () => void;
+    let arrived!: () => void;
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    const waiting = new Promise<void>(resolve => { arrived = resolve; });
+    await page.route('**/api/playback-session', async route => {
+      if (route.request().method() === 'GET') { arrived(); await gate; }
+      await route.fallback();
+    });
+    await page.evaluate(() => window.dispatchEvent(new Event('online')));
+    await waiting;
+    await next.click();
+    await expect(page.getByRole('status').filter({ hasText: 'Updating playback before changing songs' })).toBeVisible();
+    await expect(next).toBeDisabled();
+    expect(requests).toEqual([]);
+    expect((await queueState(page)).ids).toEqual(['copy-a', 'copy-b']);
+    release();
+    await expect.poll(() => requests.filter(request => request.path === '/api/sonos/play').length).toBe(1);
+    expect(requests.find(request => request.path === '/api/sonos/play')?.body).toMatchObject({ startItemId: secondId });
+    await expect.poll(() => queueState(page)).toMatchObject({ ids: [] });
+    await expect(next).toBeEnabled();
+    expect(requests.filter(request => request.path === '/api/sonos/play')).toHaveLength(1);
+  });
+}
+
+for (const result of ['fails', 'changes output']) {
+test(`Next does not use the stale queue when the waking refresh ${result}`, async ({ page, sharedSession }) => {
+  await page.setViewportSize({ width: 1280, height: 844 });
+  sharedSession.snapshot = { revision: 7, state: state() };
+  const requests = await install(page);
+  await page.goto('/');
+  const next = page.getByRole('button', { name: 'Next on Sonos', exact: true });
+  await expect(next).toBeEnabled();
+  let release!: () => void;
+  let arrived!: () => void;
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  const waiting = new Promise<void>(resolve => { arrived = resolve; });
+  await page.route('**/api/playback-session', async route => {
+    if (route.request().method() !== 'GET') return route.fallback();
+    arrived(); await gate;
+    if (result === 'fails') await route.fulfill({ status: 503 });
+    else {
+      const changed = state();
+      changed.target = { kind: 'sonos', householdId: 'household', groupId: 'kitchen', groupName: 'Kitchen', playerNames: [] };
+      sharedSession.snapshot = { revision: 8, state: changed };
+      await route.fallback();
+    }
+  });
+  await page.evaluate(() => window.dispatchEvent(new Event('online')));
+  await waiting;
+  await next.click();
+  release();
+  await expect(page.getByRole('status').filter({ hasText: result === 'fails' ? 'Could not update playback' : 'Playback output changed' })).toBeVisible();
+  expect(requests).toEqual([]);
+  expect((await queueState(page)).ids).toEqual(['copy-a', 'copy-b']);
+});
+}
+
 test('a fresh observer transfers the shared browser position to Sonos instead of its silent audio element position', async ({ page, sharedSession }) => {
   const saved = state();
   saved.target = { kind: 'browser', ownerId: 'desktop-screen' };

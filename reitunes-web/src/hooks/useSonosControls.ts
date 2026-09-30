@@ -3,6 +3,7 @@ import { SONOS_REALTIME_EVENT } from './useLibrary';
 import { usePlaybackTargetStore, type PlaybackTarget } from '../stores/playbackTargetStore';
 import type { SonosRealtimeUpdate } from '../types';
 import { sonosRequest, SonosRequestError } from '../utils/sonosRequest';
+import { recordPlaybackEvent } from '../utils/playbackDiagnostics';
 
 const PLAYBACK_POLL_MILLIS = 30_000;
 const VOLUME_POLL_MILLIS = 60_000;
@@ -64,6 +65,12 @@ export function useSonosControls(groupId: string | null) {
 
   const applyPlayback = useCallback((next: SonosPlaybackStatus, requestedGroup: string) => {
     if (activeGroupRef.current !== requestedGroup) return;
+    const previous = latestPlayback.current;
+    if (previous?.sourceItemId !== next.sourceItemId || previous?.playbackState !== next.playbackState || previous?.itemId !== next.itemId) {
+      recordPlaybackEvent('media', { target: 'sonos', origin: 'sonos-observation',
+        mediaEvent: 'playbackStatus', itemId: next.sourceItemId, previousItemId: previous?.sourceItemId,
+        position: next.positionMillis / 1000, outcome: next.playbackState });
+    }
     const work = seekWork.current;
     if (work && (!next.reitunesSessionActive || next.itemId !== work.itemId || next.sourceItemId !== work.sourceItemId)) {
       // A queued jump belongs to one queue item, never the next song/session.

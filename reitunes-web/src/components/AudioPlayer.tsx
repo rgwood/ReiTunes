@@ -4,6 +4,7 @@ import { usePlayerStore, type PlaybackRange } from '../stores/playerStore';
 import { useQueueStore } from '../hooks/useQueue';
 import { getItemUrl, markPlayed, addBookmark, toggleFavorite } from '../hooks/useLibrary';
 import { usePlayback } from '../hooks/usePlayback';
+import { useTrackNavigation } from '../hooks/useTrackNavigation';
 import { useSonosControls } from '../hooks/useSonosControls';
 import { useSonosQueueSync } from '../hooks/useSonosQueueSync';
 import { usePlaybackTargetStore } from '../stores/playbackTargetStore';
@@ -230,6 +231,8 @@ export function AudioPlayer({ audioRef: sharedAudioRef, items, onPlaybackPositio
     selectRemoteItem,
   } = usePlayerStore();
   const play = usePlayback();
+  const trackNavigation = useTrackNavigation();
+  const navigateTrack = trackNavigation.navigate;
   const { target, isSending, isSwitchingOutput, error: playbackError, takeoverRequired } =
     usePlaybackTargetStore();
   const localOwner = ownsBrowserPlayback(target);
@@ -273,7 +276,7 @@ export function AudioPlayer({ audioRef: sharedAudioRef, items, onPlaybackPositio
     previewPauseRef.current = pauseForPreview;
     return () => { if (previewPauseRef.current === pauseForPreview) previewPauseRef.current = null; };
   }, [previewPauseRef, target, sonosPlayback, sonosSessionActive, pauseSonos, setIsPlaying]);
-  const { playNext, playPrevious, shuffleEnabled, repeatMode, toggleShuffle, cycleRepeatMode } = useQueueStore();
+  const { playNext, shuffleEnabled, repeatMode, toggleShuffle, cycleRepeatMode } = useQueueStore();
   const finishingRange = useRef<PlaybackRange | null>(null);
   const finishRange = useCallback(async (range: PlaybackRange) => {
     const player = usePlayerStore.getState();
@@ -647,18 +650,12 @@ export function AudioPlayer({ audioRef: sharedAudioRef, items, onPlaybackPositio
   }, [currentItem, sonos.playback?.reitunesSessionActive, sonos.positionMillis]);
 
   const handlePrevious = useCallback(() => {
-    const output = usePlaybackTargetStore.getState();
-    if (!useSharedSessionStore.getState().ready || output.isSending || output.isSwitchingOutput || output.isTransportPending) return;
-    const prevItem = playPrevious();
-    if (prevItem) void play(prevItem);
-  }, [playPrevious, play]);
+    void navigateTrack('previous');
+  }, [navigateTrack]);
 
   const handleNext = useCallback(() => {
-    const output = usePlaybackTargetStore.getState();
-    if (!useSharedSessionStore.getState().ready || output.isSending || output.isSwitchingOutput || output.isTransportPending) return;
-    const nextItem = playNext();
-    if (nextItem) void play(nextItem);
-  }, [playNext, play]);
+    void navigateTrack('next');
+  }, [navigateTrack]);
 
   const handleAudioPause = useCallback(() => {
     // Media events are queued tasks. An old pause can arrive after play() has
@@ -842,13 +839,13 @@ export function AudioPlayer({ audioRef: sharedAudioRef, items, onPlaybackPositio
     const position = remote ? displayedSonosPosition : pendingSeek ?? currentTime;
     const outputName = remote ? target.groupName : localOwner ? 'This device' : currentItem ? 'Another browser' : 'Choose output';
     const playDisabled = remote ? sonosTransportDisabled : !currentItem || !canPlayLocally || isSwitchingOutput;
-    const skipDisabled = !canControlSession || isSending || isSwitchingOutput || sonos.isTransportPending || (remote ? !sonosSessionActive : !canPlayLocally);
+    const skipDisabled = trackNavigation.pending || !sharedReady || (!sharedConnected && !sharedRefreshing) || isSending || isSwitchingOutput || sonos.isTransportPending || (remote ? !sonosSessionActive : !canPlayLocally);
     const seekDisabled = remote ? sonosSeekDisabled : !currentItem || !canPlayLocally || !duration || isSwitchingOutput;
     const error = remote ? playbackError || sonosQueue.error || sonos.error : localPlaybackError || playbackError;
-    const status = !sharedReady ? 'Connecting to your session…' : isSwitchingOutput ? 'Moving playback…'
+    const status = trackNavigation.notice || (!sharedReady ? 'Connecting to your session…' : isSwitchingOutput ? 'Moving playback…'
       : isSending ? `Sending to ${outputName}…` : remote && !sonos.playback ? `Reading ${outputName}…`
         : remote && !sonosSessionActive ? `Choose a song to play on ${outputName}.`
-          : !remote && !localOwner && currentItem ? 'Playback is on another browser. Choose an output to listen here.' : null;
+          : !remote && !localOwner && currentItem ? 'Playback is on another browser. Choose an output to listen here.' : null);
     const toggle = () => remote ? void (sonosIsPlaying ? sonos.pause() : sonos.play()) : handlePlayPause();
     const upcoming = [...useQueueStore.getState().manualQueue, ...useQueueStore.getState().getUpcomingContext()].slice(0, 2);
     return <div className={`mobile-player ${expanded ? 'expanded' : 'mini'}`} data-expanded={expanded} aria-busy={isSwitchingOutput}>
@@ -904,11 +901,11 @@ export function AudioPlayer({ audioRef: sharedAudioRef, items, onPlaybackPositio
 
   if (target.kind === 'sonos') {
     // Transient speaker state shares the title's fixed line instead of adding a grid row.
-    const connectionStatus = isSwitchingOutput ? 'Moving playback to this browser…'
+    const connectionStatus = trackNavigation.notice || (isSwitchingOutput ? 'Moving playback to this browser…'
       : isSending ? `Sending to ${target.groupName}…`
       : playbackError || sonos.error ? undefined
       : !sonos.playback ? `Reading ${target.groupName}…`
-      : !sonosSessionActive ? `Choose a song to play on ${target.groupName}.` : undefined;
+      : !sonosSessionActive ? `Choose a song to play on ${target.groupName}.` : undefined);
     return (
       <div className="player-chrome sonos-player-layout" aria-busy={isSwitchingOutput}>
         <audio
@@ -1001,7 +998,7 @@ export function AudioPlayer({ audioRef: sharedAudioRef, items, onPlaybackPositio
         <PlayerTransport playing={sonosIsPlaying} sonos onPrevious={handlePrevious} onNext={handleNext}
           onToggle={() => void (sonosIsPlaying ? sonos.pause() : sonos.play())}
           onBack={() => void seekSonos(-30, true)} onForward={() => void seekSonos(30, true)}
-          skipDisabled={isSending || isSwitchingOutput || sonos.isTransportPending || !sonosSessionActive}
+          skipDisabled={trackNavigation.pending || !sharedReady || (!sharedConnected && !sharedRefreshing) || isSending || isSwitchingOutput || sonos.isTransportPending || !sonosSessionActive}
           playDisabled={sonosTransportDisabled} seekDisabled={sonosSeekDisabled} />
         <div className="sonos-controls">
           <div className="sonos-volume player-volume">
@@ -1057,7 +1054,7 @@ export function AudioPlayer({ audioRef: sharedAudioRef, items, onPlaybackPositio
 
       <PlayerTrack item={currentItem} position={pendingSeek ?? currentTime} duration={duration}
         onReveal={onRevealCurrent}
-        status={!sharedReady ? 'Connecting to your session…' : !localOwner && currentItem ? 'Playback is on another browser. Choose an output to listen here.' : localPlaybackError ?? undefined}
+        status={trackNavigation.notice || (!sharedReady ? 'Connecting to your session…' : !localOwner && currentItem ? 'Playback is on another browser. Choose an output to listen here.' : localPlaybackError ?? undefined)}
         recovery={{ status: recoveryStatus, retry: () => recoveryRef.current?.retry() }} />
       <div className="player-progress player-timeline">
         <div
@@ -1100,7 +1097,7 @@ export function AudioPlayer({ audioRef: sharedAudioRef, items, onPlaybackPositio
       </div>
       <PlayerTransport playing={isPlaying} onPrevious={handlePrevious} onNext={handleNext}
         onToggle={handlePlayPause} onBack={seekBack} onForward={seekForward}
-        playDisabled={!currentItem || !canPlayLocally} seekDisabled={!currentItem || !canPlayLocally} skipDisabled={!canPlayLocally} />
+        playDisabled={!currentItem || !canPlayLocally} seekDisabled={!currentItem || !canPlayLocally} skipDisabled={trackNavigation.pending || !canPlayLocally} />
       <div className="player-controls">
         <div className="player-options player-volume">
           <button

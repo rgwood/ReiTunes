@@ -35,6 +35,9 @@ interface PlaybackDetails {
   shuffledCount?: number;
   staleShuffleCount?: number;
   duplicateShuffleCount?: number;
+  sessionReady?: boolean;
+  sessionConnected?: boolean;
+  sessionRefreshing?: boolean;
 }
 
 type PlaybackEvent =
