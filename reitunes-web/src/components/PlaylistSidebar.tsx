@@ -1,4 +1,5 @@
 import { useState, useCallback } from 'react';
+import { requestConfirmation } from '../stores/dialogStore';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 
 interface Playlist {
@@ -136,9 +137,9 @@ export function PlaylistSidebar({ selectedPlaylistId, onSelectPlaylist }: Playli
                 </div>
               </div>
               <button
-                onClick={(e) => {
+                onClick={async (e) => {
                   e.stopPropagation();
-                  if (confirm(`Delete "${playlist.name}"?`)) {
+                  if (await requestConfirmation({ title: 'Delete playlist?', message: `“${playlist.name}” will be deleted. The songs stay in your library.`, actionLabel: 'Delete playlist', destructive: true })) {
                     deleteMutation.mutate(playlist.id);
                   }
                 }}

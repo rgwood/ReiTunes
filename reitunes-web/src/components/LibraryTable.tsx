@@ -16,6 +16,7 @@ import { usePlayerStore } from '../stores/playerStore';
 import { useQueueStore } from '../hooks/useQueue';
 import { usePlayback } from '../hooks/usePlayback';
 import { useMetadataSuggestions, useUpdateLibraryItem, deleteItem as apiDeleteItem } from '../hooks/useLibrary';
+import { requestConfirmation, showMessage } from '../stores/dialogStore';
 import { FavoriteButton } from './FavoriteButton';
 import { Tooltip } from './Tooltip';
 import { usePlaylists, usePlaylistMutation } from '../hooks/usePlaylists';
@@ -652,15 +653,16 @@ export const LibraryTable = memo(function LibraryTable({ items, searchQuery, onl
   const handleDelete = useCallback(async () => {
     if (contextMenu) {
       const item = contextMenu.item;
-      if (confirm(`Delete "${item.name}"? Its audio file will also be permanently deleted unless another song uses it.`)) {
+      setContextMenu(null);
+      returnFocusRef.current?.focus();
+      if (await requestConfirmation({ title: 'Delete song?', message: `“${item.name}” will be deleted. Its audio file will also be permanently deleted unless another song uses it.`, actionLabel: 'Delete song', destructive: true })) {
         try {
           await apiDeleteItem(item.id);
         } catch (err) {
           console.error('Failed to delete:', err);
-          alert('Failed to delete item');
+          showMessage('Could not delete song', `“${item.name}” could not be deleted. Please try again.`);
         }
       }
-      setContextMenu(null);
     }
   }, [contextMenu]);
 

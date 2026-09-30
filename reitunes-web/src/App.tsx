@@ -1,3 +1,5 @@
+import { AppDialogs } from './components/AppDialogs';
+import { requestConfirmation } from './stores/dialogStore';
 import {
   useState,
   useCallback,
@@ -508,7 +510,7 @@ function AppContent() {
                 {selectedPlaylist ? <div className="mobile-collection-heading"><button onClick={() => browseMobile('playlists')}>‹ Playlists</button><h2>{selectedPlaylist.name}</h2>
                   <button onClick={() => setPlaylistDraft({ playlist: selectedPlaylist, smart: !!selectedPlaylist.smart_rules })}>Edit{selectedPlaylist.smart_rules ? ' rules' : ''}</button>
                   <button className="mobile-delete-playlist" disabled={playlistMutation.isPending} onClick={async () => {
-                    if (!window.confirm(`Delete playlist "${selectedPlaylist.name}"? The tracks stay in your library.`)) return;
+                    if (!await requestConfirmation({ title: 'Delete playlist?', message: `“${selectedPlaylist.name}” will be deleted. The songs stay in your library.`, actionLabel: 'Delete playlist', destructive: true })) return;
                     try {
                       await playlistMutation.mutateAsync({ path: `/${selectedPlaylist.id}`, method: 'DELETE' });
                       setSelectedPlaylistId(null); browseMobile('playlists');
@@ -607,6 +609,7 @@ function AppContent() {
           if (isMobile) browseMobile('library');
         }}
       />
+      <AppDialogs />
       <SonosModal audioRef={audioRef} items={items} isOpen={isSonosOpen} onClose={() => setIsSonosOpen(false)} />
       <SettingsDialog
         isOpen={isSettingsOpen}

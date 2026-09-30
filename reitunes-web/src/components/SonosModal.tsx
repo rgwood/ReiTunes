@@ -9,6 +9,7 @@ import { sonosRequest, SonosRequestError } from '../utils/sonosRequest';
 import { canEditSharedSession, ownsBrowserPlayback, useSharedSessionStore } from '../stores/sharedSessionStore';
 import { flushSharedSession, refreshSharedSession, stageSharedPlayback } from '../hooks/useSharedPlaybackSession';
 import './SonosModal.css';
+import { requestConfirmation } from '../stores/dialogStore';
 
 interface SonosStatus {
   configured: boolean;
@@ -196,7 +197,7 @@ export function SonosModal({ audioRef, isOpen, onClose, items }: SonosModalProps
       group: SonosGroup,
       players: Map<string, SonosPlayer>
     ) => {
-      const output = usePlaybackTargetStore.getState();
+      let output = usePlaybackTargetStore.getState();
       if (!canEditSharedSession() || output.isSending || output.isSwitchingOutput || output.isTransportPending) return;
       const playerNames = group.playerIds.map(
         (playerId) => players.get(playerId)?.name || playerId
@@ -205,13 +206,15 @@ export function SonosModal({ audioRef, isOpen, onClose, items }: SonosModalProps
       const isBusy =
         group.playbackState !== undefined &&
         group.playbackState !== 'PLAYBACK_STATE_IDLE';
-      if (
-        (isBusy || (isAlreadySelected && takeoverRequired && playbackError !== null)) &&
-        !window.confirm(
-          `${group.name} may already be in use. Playing from ReiTunes will replace its current Sonos queue. Continue?`
-        )
-      ) {
-        return;
+      if (isBusy || (isAlreadySelected && takeoverRequired && playbackError !== null)) {
+        if (!await requestConfirmation({
+          title: 'Replace Sonos queue?',
+          message: `${group.name} may already be in use. Playing from ReiTunes will replace its current Sonos queue.`,
+          actionLabel: 'Replace Sonos queue',
+        })) return;
+        // Playback can change on another screen while this dialog is open.
+        output = usePlaybackTargetStore.getState();
+        if (!canEditSharedSession() || output.isSending || output.isSwitchingOutput || output.isTransportPending) return;
       }
 
       output.setSwitchingOutput(true);

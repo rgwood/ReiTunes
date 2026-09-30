@@ -5,6 +5,7 @@ import { useTrackDrop } from '../hooks/useTrackDrop';
 import { usePlaylistMutation } from '../hooks/usePlaylists';
 import { MusicIcon } from './MusicIcon';
 import type { PlaylistDraft } from './PlaylistDialog';
+import { requestConfirmation } from '../stores/dialogStore';
 
 const collections = [
   ['all', 'All music', 'music'], ['recent', 'Recently added', 'clock'],
@@ -23,6 +24,7 @@ export function LibrarySidebar({ active, items, playlists, now, tagItems, discov
   const [error, setError] = useState('');
   const [menu, setMenu] = useState<{ playlist: Playlist; x: number; y: number } | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
+  const menuTrigger = useRef<HTMLButtonElement>(null);
   useLayoutEffect(() => {
     if (!menu || !menuRef.current) return;
     const el = menuRef.current;
@@ -62,11 +64,12 @@ export function LibrarySidebar({ active, items, playlists, now, tagItems, discov
     return <button key={playlist.id} className={dropTarget === playlist.id ? 'source-item drop-target' : 'source-item'}
       aria-label={playlist.name} aria-current={active === 'playlist:' + playlist.id ? 'page' : undefined}
       onClick={() => onSelect('playlist:' + playlist.id)}
-      onContextMenu={event => { event.preventDefault(); setMenu({ playlist, x: event.clientX, y: event.clientY }); }}
+      onContextMenu={event => { event.preventDefault(); menuTrigger.current = event.currentTarget; setMenu({ playlist, x: event.clientX, y: event.clientY }); }}
       onKeyDown={event => {
         if (event.key === 'F2') { event.preventDefault(); onEdit({ playlist, smart: !!playlist.smart_rules }); }
         if (event.key === 'ContextMenu' || (event.shiftKey && event.key === 'F10')) {
           event.preventDefault(); const box = event.currentTarget.getBoundingClientRect();
+          menuTrigger.current = event.currentTarget;
           setMenu({ playlist, x: box.left, y: box.bottom });
         }
       }}
@@ -109,11 +112,13 @@ export function LibrarySidebar({ active, items, playlists, now, tagItems, discov
         {menu.playlist.smart_rules ? 'Edit Smart Playlist…' : 'Rename playlist…'}
       </button>
       <button role="menuitem" disabled={mutation.isPending} onClick={async () => {
-        if (!confirm('Delete playlist "' + menu.playlist.name + '"? The tracks stay in your library.')) return;
+        const playlist = menu.playlist;
+        setMenu(null);
+        menuTrigger.current?.focus();
+        if (!await requestConfirmation({ title: 'Delete playlist?', message: `“${playlist.name}” will be deleted. The songs stay in your library.`, actionLabel: 'Delete playlist', destructive: true })) return;
         try {
-          await mutation.mutateAsync({ path: '/' + menu.playlist.id, method: 'DELETE' });
-          if (active === 'playlist:' + menu.playlist.id) onSelect('all');
-          setMenu(null);
+          await mutation.mutateAsync({ path: '/' + playlist.id, method: 'DELETE' });
+          if (active === 'playlist:' + playlist.id) onSelect('all');
         } catch { setError('Could not delete the playlist. Please try again.'); }
       }}>Delete playlist</button>
     </div>}

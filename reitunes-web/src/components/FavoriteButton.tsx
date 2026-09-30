@@ -1,5 +1,6 @@
 import { useCallback } from 'react';
 import { toggleFavorite } from '../hooks/useLibrary';
+import { showMessage } from '../stores/dialogStore';
 
 interface FavoriteButtonProps {
   itemId: string;
@@ -13,7 +14,7 @@ export function FavoriteButton({ itemId, isFavorite }: FavoriteButtonProps) {
       await toggleFavorite(itemId, isFavorite);
     } catch (err) {
       console.error('Failed to toggle favorite:', err);
-      alert('Failed to toggle favorite');
+      showMessage('Could not update favourite', 'Your change could not be saved. Please try again.');
     }
   }, [itemId, isFavorite]);
 

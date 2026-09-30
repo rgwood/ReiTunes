@@ -9,7 +9,7 @@ for (const playing of [true, false]) {
     await page.route('**/api/sonos/status', route => route.fulfill({ json: { configured: true, connected: true } }));
     await page.route('**/api/sonos/households', route => route.fulfill({ json: { households: [{ id: 'household' }] } }));
     await page.route('**/api/sonos/households/household/groups', route => route.fulfill({ json: {
-      groups: [{ id: 'group-1', name: 'Kitchen', playerIds: [] }], players: [],
+      groups: [{ id: 'group-1', name: 'Kitchen', playerIds: [], playbackState: 'PLAYBACK_STATE_PLAYING' }], players: [],
     } }));
     await page.route('**/api/sonos/groups/group-1/volume', route => route.fulfill({ json: { volume: 50, muted: false, fixed: false } }));
     await page.route('**/api/sonos/groups/group-1/playback', route => route.fulfill({ json: {
@@ -41,6 +41,20 @@ for (const playing of [true, false]) {
     await page.getByRole('button', { name: 'Sonos', exact: true }).click();
     const dialog = page.getByRole('dialog', { name: 'Sonos' });
     await dialog.getByRole('button', { name: 'Use this group' }).click();
+    const confirmation = page.getByRole('dialog', { name: 'Replace Sonos queue?' });
+    await expect(confirmation.getByRole('button', { name: 'Cancel' })).toBeFocused();
+    expect(requests).toHaveLength(0);
+    expect(await page.locator('audio').evaluate(audio => audio.paused)).toBe(!playing);
+    await page.keyboard.press('Tab');
+    await expect(confirmation.getByRole('button', { name: 'Replace Sonos queue' })).toBeFocused();
+    await page.keyboard.press('Shift+Tab');
+    await expect(confirmation.getByRole('button', { name: 'Cancel' })).toBeFocused();
+    await confirmation.press('Escape');
+    await expect(confirmation).toHaveCount(0);
+    await expect(dialog.getByRole('button', { name: 'Use this group' })).toBeFocused();
+    expect(requests).toHaveLength(0);
+    await dialog.getByRole('button', { name: 'Use this group' }).click();
+    await confirmation.getByRole('button', { name: 'Replace Sonos queue' }).click();
     await expect.poll(() => requests.length).toBe(1);
     expect(requests[0]).toMatchObject({ startItemId: trackId, positionMillis: 73_456, playOnCompletion: playing });
     expect(await page.locator('audio').evaluate(audio => audio.paused)).toBe(true);

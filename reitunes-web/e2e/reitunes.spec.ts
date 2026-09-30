@@ -89,10 +89,10 @@ test('shows, filters, edits and deletes bookmarks', async ({ page }) => {
   await expect.poll(() => updateBody).toEqual({ label: 'First chorus', emoji: '🔥', end_position: null });
   await expect(page.getByText('First chorus', { exact: true })).toBeVisible();
 
-  page.once('dialog', (dialog) => dialog.accept());
   const deleteButton = page.getByRole('button', { name: 'Delete bookmark for Northern Sky' }).first();
   await deleteButton.hover();
   await deleteButton.click();
+  await page.getByRole('dialog', { name: 'Delete bookmark?' }).getByRole('button', { name: 'Delete bookmark', exact: true }).click();
   await expect.poll(() => deleteRequested).toBe(true);
   await expect(page.getByText('First chorus', { exact: true })).toHaveCount(0);
 });

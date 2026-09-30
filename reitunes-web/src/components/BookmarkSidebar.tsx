@@ -5,6 +5,7 @@ import type { LibraryItem } from '../types';
 import { bookmarkEntries, filterBookmarkEntries, formatBookmarkPosition as format, type BookmarkEntry } from '../utils/bookmarks';
 import { BookmarkEditor, type BookmarkPlaybackProps } from './BookmarkEditor';
 import './Bookmarks.css';
+import { requestConfirmation } from '../stores/dialogStore';
 
 interface BookmarkSidebarProps extends BookmarkPlaybackProps {
   items: LibraryItem[];
@@ -90,7 +91,8 @@ export function BookmarkSidebar({ items, selectedItem, onClearItem, onPlay, quer
   const playEntry = ({ item, bookmark, bookmarkId }: BookmarkEntry) => onPlay(item, bookmark.position,
     { start: bookmark.position, end: bookmark.end_position ?? null, bookmarkId });
   async function remove(entry: BookmarkEntry) {
-    if (pending || editing || renaming || !confirm(`Delete bookmark "${entry.bookmark.label || 'Unlabelled bookmark'}"?`)) return;
+    if (pending || editing || renaming) return;
+    if (!await requestConfirmation({ title: 'Delete bookmark?', message: `Remove “${entry.bookmark.label || 'Unlabelled bookmark'}” from ${entry.item.name}? The song stays in your library.`, actionLabel: 'Delete bookmark', destructive: true })) return;
     setPending(true); setError('');
     try { await deleteBookmark(entry.item.id, entry.bookmarkId); await queryClient.invalidateQueries({ queryKey: ['library'] }); }
     catch { setError('Could not delete the bookmark.'); }
