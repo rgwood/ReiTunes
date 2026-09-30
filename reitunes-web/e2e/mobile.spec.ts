@@ -83,7 +83,7 @@ for (const width of [320, 390]) {
   });
 }
 
-test('mobile song actions and touch queue controls update the shared queue without restarting Sonos', async ({ page, sharedSession }) => {
+test('mobile song actions and touch queue controls update the shared queue without restarting Sonos', async ({ page, sharedSession }, testInfo) => {
   sharedSession.snapshot = snapshot();
   await page.setViewportSize({ width: 390, height: 844 });
   const sonos = await installMobile(page);
@@ -96,6 +96,8 @@ test('mobile song actions and touch queue controls update the shared queue witho
   await nav(page, 'Queue');
   const added = page.getByRole('region', { name: 'Added to queue', exact: true });
   await expect(added.locator('.queue-track-text > span')).toHaveText(['Chemtrails', 'Cosmia']);
+  await page.screenshot({ path: testInfo.outputPath('queue-with-added-songs.png') });
+  await added.getByRole('button', { name: 'Edit queue', exact: true }).click();
   const moveUp = added.getByRole('button', { name: 'Move Cosmia up', exact: true });
   const box = await moveUp.boundingBox();
   expect(box!.width).toBeGreaterThanOrEqual(44);
@@ -123,7 +125,8 @@ test('mobile uses the last browsed playlist after switching to Queue without res
   await expect(page.locator('.mobile-song-list > li')).toHaveCount(2);
   await nav(page, 'Queue');
   const queue = page.getByRole('region', { name: 'Up Next', exact: true });
-  await queue.getByRole('button', { name: 'Use current view', exact: true }).click();
+  await queue.getByRole('button', { name: 'Change source', exact: true }).click();
+  await page.getByRole('dialog', { name: 'Choose queue source' }).getByRole('button', { name: 'Use Housewarming', exact: true }).click();
   await expect.poll(() => (sharedSession.snapshot.state as ReturnType<typeof snapshot>['state']).queue.contextItemIds).toEqual([items[1].id]);
   const saved = sharedSession.snapshot.state as ReturnType<typeof snapshot>['state'];
   expect(saved.queue.manualQueue).toEqual(manual);
@@ -160,6 +163,89 @@ test('mobile search, song info, playlists and browser Back remain usable', async
   await expect(page.getByRole('button', { name: 'Housewarming 2 songs', exact: true })).toBeVisible();
   await page.getByRole('navigation', { name: 'Browse collections' }).getByRole('button', { name: 'Discover', exact: true }).click();
   await expect(page.getByRole('searchbox', { name: 'Search discovery', exact: true })).toBeVisible();
+});
+
+test('now playing favourites update immediately, handle failure, and never restart Sonos', async ({ page, sharedSession }) => {
+  sharedSession.snapshot = snapshot();
+  await page.setViewportSize({ width: 375, height: 812 });
+  const sonos = await installMobile(page);
+  let failing = true;
+  const writes: string[] = [];
+  await page.route(/\/ui\/[^/]+\/(?:unfavorite|favorite)$/, route => {
+    writes.push(new URL(route.request().url()).pathname);
+    return route.fulfill({ status: failing ? 503 : 204 });
+  });
+  await page.goto('/');
+  await expect(page.locator('.mobile-playing-source')).toHaveCount(0);
+  const heart = page.getByRole('button', { name: 'Remove favourite', exact: true });
+  await expect(heart).toHaveAttribute('aria-pressed', 'true');
+  await heart.click();
+  await expect(page.getByRole('alert')).toContainText('Couldn’t save');
+  await expect(heart).toHaveAttribute('aria-pressed', 'true');
+  failing = false;
+  await heart.click();
+  await expect(page.getByRole('button', { name: 'Favourite song', exact: true })).toHaveAttribute('aria-pressed', 'false');
+  await page.getByRole('button', { name: 'Favourite song', exact: true }).click();
+  await expect(heart).toHaveAttribute('aria-pressed', 'true');
+  expect(writes).toEqual([`/ui/${trackId}/unfavorite`, `/ui/${trackId}/unfavorite`, `/ui/${trackId}/favorite`]);
+  expect(sonos.queueRequests).toEqual([]);
+  expect(sonos.commands).toEqual([]);
+  await expect(page.getByRole('group', { name: 'Playback options' }).getByRole('button', { name: 'Queue', exact: true })).toHaveCount(0);
+});
+
+test('mobile queue offers playlists directly and removes upcoming songs with Undo', async ({ page, sharedSession }, testInfo) => {
+  sharedSession.snapshot = snapshot();
+  await page.setViewportSize({ width: 375, height: 812 });
+  const sonos = await installMobile(page);
+  await page.goto('/#queue');
+  const queue = page.getByRole('region', { name: 'Up Next', exact: true });
+  await expect(queue.getByRole('button', { name: 'Use current view' })).toHaveCount(0);
+  await expect(queue.getByRole('region', { name: 'Now playing' })).toHaveCount(0);
+  await queue.getByRole('button', { name: 'Change source', exact: true }).click();
+  await page.screenshot({ path: testInfo.outputPath('queue-source-sheet.png') });
+  await page.getByRole('dialog', { name: 'Choose queue source' }).getByRole('button', { name: 'Housewarming 2 songs', exact: true }).click();
+  await expect(queue.locator('.queue-row')).toHaveCount(1);
+  await queue.getByRole('button', { name: 'Remove Chemtrails from Up Next' }).click();
+  await expect(queue.locator('.queue-row')).toHaveCount(0);
+  await expect(queue.getByText('Your queue is clear.', { exact: true })).toBeVisible();
+  await queue.getByRole('button', { name: 'Undo', exact: true }).click();
+  await expect(queue.locator('.queue-row .queue-track-text > span')).toHaveText(['Chemtrails']);
+  expect(sonos.queueRequests).toEqual([]);
+  expect(sonos.commands).toEqual([]);
+});
+
+test('mobile layout fills the viewport with safe-area padding and long song titles', async ({ page, sharedSession }, testInfo) => {
+  sharedSession.snapshot = snapshot();
+  await page.setViewportSize({ width: 375, height: 812 });
+  await installMobile(page);
+  await page.addInitScript(() => Object.defineProperty(navigator, 'standalone', { value: true }));
+  const longItems = items.map((item, index) => index ? item : { ...item, name: 'Moonage Daydream - 2012 Remaster', artist: 'David Bowie', album: 'The Rise and Fall of Ziggy Stardust and the Spiders from Mars (2012 Remaster)' });
+  await page.route('**/api/items', route => route.fulfill({ json: longItems }));
+  await page.goto('/');
+  // Headless WebKit has no physical notch. Reproduce the inflated PWA inset
+  // from the screenshot and verify that it only reserves the home-indicator area.
+  await page.addStyleTag({ content: '.mobile-app { padding-top: 44px; --mobile-reported-bottom: 84px; }' });
+  await expect(page.locator('.mobile-app')).toHaveAttribute('data-ios-standalone', 'true');
+  const navigation = page.getByRole('navigation', { name: 'Main navigation' });
+  for (const tab of ['Playing', 'Queue', 'Browse'] as const) {
+    await nav(page, tab);
+    const bounds = (await navigation.boundingBox())!;
+    expect(bounds.y + bounds.height).toBeCloseTo(812, 0);
+    const button = (await navigation.getByRole('button', { name: tab, exact: true }).boundingBox())!;
+    expect(button.y + button.height).toBeLessThanOrEqual(778);
+    expect(await page.evaluate(() => document.documentElement.scrollHeight)).toBeLessThanOrEqual(812);
+    await page.screenshot({ path: testInfo.outputPath(`refined-${tab.toLowerCase()}.png`) });
+  }
+  await nav(page, 'Playing');
+  for (const inset of [0, 21, 34, 84]) {
+    await page.locator('.mobile-app').evaluate((element, inset) => (element as HTMLElement).style.setProperty('--mobile-reported-bottom', `${inset}px`), inset);
+    expect((await navigation.boundingBox())!.height).toBe(62 + Math.min(inset, 34));
+  }
+  await page.setViewportSize({ width: 320, height: 568 });
+  await page.getByRole('button', { name: 'Bookmark current Sonos time' }).scrollIntoViewIfNeeded();
+  const bookmark = (await page.getByRole('button', { name: 'Bookmark current Sonos time' }).boundingBox())!;
+  expect(bookmark.y + bookmark.height).toBeLessThanOrEqual((await navigation.boundingBox())!.y);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(320);
 });
 
 test('mobile install metadata uses a standalone manifest and a real touch icon', async ({ page, request }) => {

@@ -7,6 +7,7 @@ import { usePlayerStore } from '../stores/playerStore';
 import { usePlaybackTargetStore } from '../stores/playbackTargetStore';
 import { usePlayback } from '../hooks/usePlayback';
 import type { LibraryItem } from '../types';
+import { MobileQueue, type QueueSource } from './MobileQueue';
 import './QueuePanel.css';
 
 function TrackButton({ item, onPlay, disabled }: { item: LibraryItem; onPlay: () => void; disabled: boolean }) {
@@ -16,27 +17,23 @@ function TrackButton({ item, onPlay, disabled }: { item: LibraryItem; onPlay: ()
   </button>;
 }
 
-function QueuedTrack({ item, entryId, index, onPlay, disabled, mobile, count }: { item: LibraryItem; entryId: string; index: number; onPlay: () => void; disabled: boolean; mobile: boolean; count: number }) {
+function QueuedTrack({ item, entryId, onPlay, disabled }: { item: LibraryItem; entryId: string; onPlay: () => void; disabled: boolean }) {
   const { attributes, listeners, setNodeRef, transform, transition } = useSortable({ id: entryId, disabled });
   const remove = useQueueStore(state => state.removeQueuedOccurrence);
-  const move = useQueueStore(state => state.moveManualQueueItem);
   return <li ref={setNodeRef} style={{ transform: CSS.Transform.toString(transform), transition }} className="queue-row">
-    {!mobile && <button className="queue-drag" {...attributes} {...listeners} aria-label={`Reorder ${item.name}`} disabled={disabled} title="Drag to reorder; Space and arrow keys also work">⠿</button>}
+    <button className="queue-drag" {...attributes} {...listeners} aria-label={`Reorder ${item.name}`} disabled={disabled} title="Drag to reorder; Space and arrow keys also work">⠿</button>
     <TrackButton item={item} onPlay={onPlay} disabled={disabled} />
-    {mobile && <div className="queue-touch-reorder">
-      <button onClick={() => move(index, index - 1)} disabled={disabled || index === 0} aria-label={`Move ${item.name} up`}>↑</button>
-      <button onClick={() => move(index, index + 1)} disabled={disabled || index === count - 1} aria-label={`Move ${item.name} down`}>↓</button>
-    </div>}
     <button className="queue-remove" onClick={() => remove(entryId)} disabled={disabled} aria-label={`Remove ${item.name} from Up Next`} title="Remove from Up Next">×</button>
   </li>;
 }
 
-export function QueuePanel({ dropActive, dropProps, mobile = false, disabled = false, currentView = null }: {
+export function QueuePanel({ dropActive, dropProps, mobile = false, disabled = false, currentView = null, mobileSources = [] }: {
   dropActive: boolean;
   dropProps: Pick<HTMLAttributes<HTMLElement>, 'onDragEnter' | 'onDragOver' | 'onDragLeave' | 'onDrop'>;
   mobile?: boolean;
   disabled?: boolean;
   currentView?: { name: string; items: LibraryItem[] } | null;
+  mobileSources?: QueueSource[];
 }) {
   const queue = useQueueStore();
   const { currentItem } = usePlayerStore();
@@ -75,7 +72,10 @@ export function QueuePanel({ dropActive, dropProps, mobile = false, disabled = f
     setPending(false);
   }
 
-  return <section className={`up-next${dropActive ? ' drop-target' : ''}${mobile ? ' mobile-queue' : ''}`} aria-label="Up Next" {...dropProps}>
+  if (mobile) return <MobileQueue busy={busy} onPlay={(...args) => void playNow(...args)} currentView={currentView}
+    sources={mobileSources} currentItemId={currentItem?.id} />;
+
+  return <section className={`up-next${dropActive ? ' drop-target' : ''}`} aria-label="Up Next" {...dropProps}>
     <header><h2>{dropActive ? 'Drop to add to queue' : 'Up Next'}</h2></header>
     <div className="queue-scroll">
       {currentItem && <section aria-label="Now playing"><h3>Now playing</h3>
@@ -91,7 +91,7 @@ export function QueuePanel({ dropActive, dropProps, mobile = false, disabled = f
           if (from >= 0 && to >= 0) queue.moveManualQueueItem(from, to);
         }}>
           <SortableContext items={manualIds} strategy={verticalListSortingStrategy}>
-            <ol>{queue.manualQueue.map((item, index) => <QueuedTrack key={manualIds[index]} entryId={manualIds[index]} item={item} index={index} disabled={busy} mobile={mobile} count={queue.manualQueue.length}
+            <ol>{queue.manualQueue.map((item, index) => <QueuedTrack key={manualIds[index]} entryId={manualIds[index]} item={item} disabled={busy}
               onPlay={() => void playNow('manual', index, item.id)} />)}</ol>
           </SortableContext>
         </DndContext>
@@ -108,7 +108,7 @@ export function QueuePanel({ dropActive, dropProps, mobile = false, disabled = f
               }
             }}>Use current view</button>
           <p>{currentView ? `${currentView.name} · ${currentView.items.length.toLocaleString()} ${currentView.items.length === 1 ? 'track' : 'tracks'}`
-            : mobile ? 'Browse a playlist or your library to choose a source.' : 'Open a playlist or your library to choose a source.'}</p>
+            : 'Open a playlist or your library to choose a source.'}</p>
         </div>
         {queue.shuffleEnabled && !!upcoming.length && <p className="queue-note">Tracks play in this shuffled order.</p>}
         <ol>{(showAll ? upcoming : upcoming.slice(0, 30)).map((item, index) => <li className="queue-row" key={`${index}-${item.id}`}>
@@ -118,7 +118,7 @@ export function QueuePanel({ dropActive, dropProps, mobile = false, disabled = f
         </li>)}</ol>
         {!showAll && upcoming.length > 30 && <button className="queue-show-all" onClick={() => setShowAll(true)}>Show all {upcoming.length} tracks</button>}
       </section>
-      {!upcoming.length && !queue.manualQueue.length && <p className="queue-note">{currentItem ? 'Nothing else queued.' : 'Nothing queued yet.'} {mobile ? 'Open Browse and use a song’s ••• menu to add it.' : 'Drag songs here, or use Play Next or Add to Queue.'}</p>}
+      {!upcoming.length && !queue.manualQueue.length && <p className="queue-note">{currentItem ? 'Nothing else queued.' : 'Nothing queued yet.'} Drag songs here, or use Play Next or Add to Queue.</p>}
     </div>
     <div className="queue-feedback" role="status" aria-live="polite" aria-atomic="true">
       {queue.queueUndo && queue.canUndoQueueEdit() && <><span>{queue.queueUndo.message}</span><button disabled={busy} onClick={queue.undoQueueEdit}>Undo</button></>}

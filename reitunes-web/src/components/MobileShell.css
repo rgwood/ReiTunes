@@ -2,23 +2,28 @@
 .session-banner button { flex-shrink: 0; color: var(--accent); padding: 4px 8px; }
 
 @media (max-width: 700px) {
-  .mobile-app { --mobile-nav-height: 62px; --mobile-mini-height: 76px; font: 16px/1.45 system-ui, -apple-system, sans-serif; padding: env(safe-area-inset-top) env(safe-area-inset-right) 0 env(safe-area-inset-left); }
+  .mobile-app { --mobile-nav-height: 62px; --mobile-mini-height: 76px; --mobile-reported-bottom: env(safe-area-inset-bottom); --mobile-safe-bottom: var(--mobile-reported-bottom); height: 100%; font: 16px/1.45 system-ui, -apple-system, sans-serif; padding: env(safe-area-inset-top) env(safe-area-inset-right) 0 env(safe-area-inset-left); }
+  /* Some installed iOS builds include an absent Safari toolbar in the inset.
+     Reserve at most the iPhone's 34px home-indicator area, not that toolbar. */
+  .mobile-app[data-ios-standalone='true'] { height: 100lvh; --mobile-safe-bottom: min(var(--mobile-reported-bottom), 34px); }
   .mobile-app *, .mobile-app *::before, .mobile-app *::after { box-sizing: border-box; }
   .mobile-app button, .mobile-app a { touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
   .mobile-app input, .mobile-app select, .mobile-app textarea { font-size: 16px; }
   .mobile-app > .player-bar { display: block; padding: 0; min-height: 0; border: 0; background: var(--surface); }
   .mobile-app .player-tools { display: none; }
   .mobile-app .player-audio { display: contents; }
-  .mobile-app[data-mobile-tab='playing'] > .player-bar { flex: 1; min-height: 0; overflow-y: auto; padding-bottom: calc(var(--mobile-nav-height) + env(safe-area-inset-bottom)); }
+  .mobile-app[data-mobile-tab='playing'] > .player-bar { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior-y: contain; }
   .mobile-app[data-mobile-tab='playing'] .mobile-content { flex: 0; }
-  .mobile-app:not([data-mobile-tab='playing']) > .player-bar { position: fixed; z-index: 15; left: env(safe-area-inset-left); right: env(safe-area-inset-right); bottom: calc(var(--mobile-nav-height) + env(safe-area-inset-bottom)); height: var(--mobile-mini-height); border-top: 1px solid var(--line); background: var(--panel); }
-  .mobile-app .mobile-player.mini :is(.mobile-player-error, .mobile-player-status) { position: fixed; z-index: 16; left: env(safe-area-inset-left); right: env(safe-area-inset-right); bottom: calc(var(--mobile-nav-height) + var(--mobile-mini-height) + env(safe-area-inset-bottom)); max-height: 30dvh; overflow-y: auto; margin: 0; padding: 10px 16px; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); background: var(--panel); box-shadow: 0 -3px 12px #0002; }
+  .mobile-app:not([data-mobile-tab='playing']) > .player-bar { position: relative; order: 2; z-index: 15; flex: 0 0 auto; border-top: 1px solid var(--line); background: var(--panel); }
+  .mobile-app .mobile-player.mini :is(.mobile-player-error, .mobile-player-status) { position: absolute; z-index: 16; left: 0; right: 0; bottom: 100%; max-height: 30dvh; overflow-y: auto; margin: 0; padding: 10px 16px; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); background: var(--panel); box-shadow: 0 -3px 12px #0002; }
   .mobile-app .mobile-player.mini .mobile-player-status:has(~ .mobile-player-error) { display: none; }
-  .mobile-content { display: flex; flex: 1; min-height: 0; min-width: 0; overflow: hidden; padding-bottom: calc(var(--mobile-nav-height) + var(--mobile-mini-height) + env(safe-area-inset-bottom)); }
+  .mobile-content { display: flex; flex: 1; min-height: 0; min-width: 0; overflow: hidden; }
   .mobile-app[data-mobile-tab='playing'] .mobile-content { padding-bottom: 0; }
-  .mobile-bottom-nav { position: fixed; z-index: 20; bottom: 0; left: 0; right: 0; display: flex; height: calc(var(--mobile-nav-height) + env(safe-area-inset-bottom)); padding: 0 env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left); border-top: 1px solid var(--line); background: var(--surface); }
-  .mobile-bottom-nav button { display: flex; flex: 1; flex-direction: column; align-items: center; justify-content: center; gap: 3px; min-height: 44px; color: var(--muted); font-size: 12px; font-weight: 600; border-top: 3px solid transparent; }
-  .mobile-bottom-nav button[aria-current='page'] { color: var(--accent); background: color-mix(in srgb, var(--accent) 8%, var(--surface)); border-top-color: var(--accent); }
+  .mobile-bottom-nav { position: relative; order: 3; flex: 0 0 auto; z-index: 20; display: flex; height: calc(var(--mobile-nav-height) + var(--mobile-safe-bottom)); padding: 0 0 var(--mobile-safe-bottom); border-top: 1px solid var(--border-strong); background: var(--panel); }
+  .mobile-bottom-nav button { display: flex; flex: 1; flex-direction: column; align-items: center; justify-content: center; gap: 3px; min-height: 44px; color: var(--muted); font-size: 11px; font-weight: 600; }
+  .mobile-bottom-nav button svg { box-sizing: content-box; padding: 3px 16px; border-radius: 16px; }
+  .mobile-bottom-nav button[aria-current='page'] { color: var(--accent); }
+  .mobile-bottom-nav button[aria-current='page'] svg { background: var(--selection); }
   .mobile-app .session-banner { order: -1; flex-shrink: 0; min-height: 44px; padding: 8px 16px; }
   .mobile-app .session-banner button { min-width: 44px; min-height: 44px; }
   .mobile-browse { display: flex; flex: 1; flex-direction: column; min-width: 0; overflow-y: auto; overscroll-behavior-y: contain; }
@@ -50,7 +55,7 @@
   .mobile-song-more { flex-shrink: 0; width: 48px; min-height: 48px; font-size: 13px; letter-spacing: 1px; color: var(--muted); }
   .mobile-show-more { min-height: 48px; margin: 12px; color: var(--accent); }
   .mobile-loading, .mobile-empty { padding: 20px 16px; color: var(--muted); }
-  .mobile-notice { position: fixed; z-index: 30; bottom: calc(var(--mobile-nav-height) + var(--mobile-mini-height) + env(safe-area-inset-bottom) + 8px); left: 12px; right: 12px; margin: 0; padding: 12px 14px; color: var(--accent-text); background: var(--accent); border-radius: 9px; box-shadow: 0 4px 16px #0003; font-size: 14px; }
+  .mobile-notice { position: fixed; z-index: 30; bottom: calc(var(--mobile-nav-height) + var(--mobile-mini-height) + var(--mobile-safe-bottom) + 8px); left: 12px; right: 12px; margin: 0; padding: 12px 14px; color: var(--accent-text); background: var(--accent); border-radius: 9px; box-shadow: 0 4px 16px #0003; font-size: 14px; }
   .mobile-playlists { padding: 0 16px 20px; }
   .mobile-new-playlist { display: flex; align-items: center; gap: 10px; min-height: 48px; color: var(--accent); }
   .mobile-playlists > p { margin: 16px 0; color: var(--muted); }
@@ -67,21 +72,37 @@
   .mobile-app .library-message button { min-height: 44px; }
 
   .mobile-app .mobile-queue { width: 100%; font-size: 15px; }
-  .mobile-queue > header { padding: 20px 16px 14px; }
-  .mobile-queue h2 { font-size: 26px; }
-  .mobile-queue h3 { min-height: 44px; padding: 8px 16px; font-size: 13px; }
+  .mobile-queue > header { padding: 16px 20px 12px; border-bottom: 0; }
+  .mobile-queue h2 { font-size: 27px; font-weight: 700; }
+  .mobile-queue > header p { color: var(--muted); margin: 4px 0 0; font-size: 13px; }
+  .mobile-queue h3 { min-height: 44px; padding: 4px 16px; font-size: 14px; background: transparent; border: 0; color: var(--text); font-weight: 600; }
   .mobile-queue h3 > button { min-width: 44px; min-height: 44px; }
   .mobile-queue .queue-current { min-height: 72px; padding: 12px 16px; }
   .mobile-queue .queue-row { min-height: 72px; }
+  .mobile-queue .queue-row:nth-child(even) { background: transparent; }
+  .mobile-queue-number { flex: 0 0 20px; color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+  .mobile-queue .queue-track-text > span { white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+  .mobile-queue-source { display: flex; align-items: center; gap: 12px; padding: 14px 16px; margin-top: 8px; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+  .mobile-queue-source > div { display: flex; flex: 1; min-width: 0; flex-direction: column; gap: 2px; }
+  .mobile-queue-source small, .mobile-queue-source span { color: var(--muted); font-size: 12px; }
+  .mobile-queue-source strong { font-size: 15px; font-weight: 600; overflow-wrap: anywhere; }
+  .mobile-queue-source button { flex-shrink: 0; padding: 8px 12px; min-height: 44px; border: 1px solid var(--line); border-radius: 10px; font-size: 13px; color: var(--accent); background: var(--panel); }
+  .mobile-queue-clear { color: var(--error); padding: 8px 16px; min-height: 44px; }
+  .mobile-queue-empty { padding: 30px 24px; text-align: center; color: var(--muted); }
+  .mobile-queue-empty > svg { margin: auto; }
+  .mobile-queue-empty p { margin: 12px 0 6px; font-size: 17px; }
+  .mobile-queue-empty small { font-size: 14px; }
+  .mobile-action-list .mobile-source-label { padding: 12px; font-size: 12px; color: var(--muted); }
+  .mobile-action-list button small { display: block; color: var(--muted); font-size: 12px; margin-top: 3px; }
   .mobile-queue .queue-track { min-height: 72px; padding: 12px 10px 12px 16px; }
   .mobile-queue .queue-track-text small { font-size: 12px; margin-top: 3px; }
   .queue-touch-reorder { display: flex; flex-shrink: 0; }
   .queue-touch-reorder button, .mobile-queue .queue-remove { width: 44px; height: 48px; padding: 0; font-size: 20px; color: var(--muted); }
-  .mobile-queue .queue-remove { margin: 0; }
+  .mobile-queue .queue-remove { margin: 0 4px 0 0; display: grid; place-items: center; flex-shrink: 0; }
   .mobile-queue .queue-note { padding: 14px 16px; font-size: 14px; }
   .mobile-queue .queue-show-all { min-height: 48px; font-size: 14px; }
 
-  .mobile-action-sheet { position: fixed; inset: auto 0 0; width: 100%; max-width: none; max-height: min(85dvh, 720px); margin: 0; padding: 0 0 env(safe-area-inset-bottom); border: 1px solid var(--line); border-radius: 18px 18px 0 0; overflow: auto; background: var(--surface); color: var(--text); font: 16px/1.45 system-ui, sans-serif; }
+  .mobile-action-sheet { position: fixed; inset: auto 0 0; width: 100%; max-width: none; max-height: min(85dvh, 720px); margin: 0; padding: 0 0 var(--mobile-safe-bottom); border: 1px solid var(--line); border-radius: 18px 18px 0 0; overflow: auto; background: var(--surface); color: var(--text); font: 16px/1.45 system-ui, sans-serif; }
   .mobile-action-sheet::backdrop { background: #0007; }
   .mobile-action-sheet > header { display: flex; gap: 8px; align-items: start; padding: 18px 12px 12px 20px; border-bottom: 1px solid var(--line); }
   .mobile-action-sheet > header > div { min-width: 0; flex: 1; }
@@ -94,7 +115,7 @@
   .mobile-action-list button:active { background: var(--hover); }
   .mobile-action-sheet .mobile-action-error { padding: 12px 20px; color: var(--error); }
 
-  .mobile-app .library-sidepanel { position: fixed; z-index: 40; inset: env(safe-area-inset-top) env(safe-area-inset-right) calc(var(--mobile-nav-height) + env(safe-area-inset-bottom)) env(safe-area-inset-left); max-width: none; background: var(--surface); border: 0; box-shadow: 0 0 0 100vmax #0005; }
+  .mobile-app .library-sidepanel { position: fixed; z-index: 40; inset: env(safe-area-inset-top) env(safe-area-inset-right) calc(var(--mobile-nav-height) + var(--mobile-safe-bottom)) env(safe-area-inset-left); max-width: none; background: var(--surface); border: 0; box-shadow: 0 0 0 100vmax #0005; }
   .mobile-app .library-sidepanel > div, .mobile-app .bookmark-sidebar, .mobile-app .tag-browser, .mobile-app .tag-panel { width: 100%; max-width: none; }
   .mobile-app .panel-close { width: 44px; height: 44px; top: 4px; right: 6px; }
   .mobile-app .library-sidepanel h2 { padding: 12px 48px 12px 8px; font-size: 18px; }
@@ -110,16 +131,22 @@
   .mobile-app .discovery button, .mobile-app .discovery select { min-height: 44px; min-width: 44px; }
   .mobile-app .discovery input { min-height: 44px; }
   .mobile-app .discovery-toolbar { flex-wrap: wrap; }
-  .mobile-app .discovery-details { position: fixed; z-index: 30; inset: env(safe-area-inset-top) 0 calc(var(--mobile-nav-height) + var(--mobile-mini-height) + env(safe-area-inset-bottom)); width: 100%; max-width: none; }
+  .mobile-app .discovery-details { position: fixed; z-index: 30; inset: env(safe-area-inset-top) 0 calc(var(--mobile-nav-height) + var(--mobile-mini-height) + var(--mobile-safe-bottom)); width: 100%; max-width: none; }
   .mobile-app .discovery-details > header { height: 52px; }
   .mobile-app .discovery-details h2 { font-size: 18px; line-height: 1.4; }
   .mobile-app .discovery-details p { font-size: 14px; line-height: 1.6; }
-  .mobile-app dialog:not(.mobile-action-sheet) { max-width: calc(100vw - 24px); max-height: calc(100dvh - 24px - env(safe-area-inset-top) - env(safe-area-inset-bottom)); overflow-y: auto; }
+  .mobile-app dialog:not(.mobile-action-sheet) { max-width: calc(100vw - 24px); max-height: calc(100dvh - 24px - env(safe-area-inset-top) - var(--mobile-safe-bottom)); overflow-y: auto; }
   .mobile-app dialog:not(.mobile-action-sheet) button { min-height: 44px; }
   .mobile-app dialog input:not([type='checkbox']):not([type='radio']), .mobile-app dialog select { min-height: 44px; }
   .mobile-app dialog :is(input, select, textarea) { font-size: 16px; }
   .mobile-app .song-info-dialog fieldset > label { grid-template-columns: 1fr; gap: 5px; }
   .mobile-app .song-file-info dl { grid-template-columns: minmax(85px, auto) minmax(0, 1fr); }
+}
+
+/* Standalone has no collapsible browser toolbar. Keep navigation in the same
+   flex viewport as the content, avoiding WebKit's separate fixed-bottom offset. */
+@media (max-width: 700px) and (display-mode: standalone) {
+  #root { height: 100lvh; }
 }
 
 @media (max-width: 360px) {

@@ -38,5 +38,6 @@ export function useMobileNavigation() {
     if (window.location.hash !== hash) window.history.pushState(null, '', hash);
     setRoute(next);
   }, []);
-  return { isMobile, route, navigate };
+  const iosStandalone = 'standalone' in navigator && navigator.standalone === true;
+  return { isMobile, iosStandalone, route, navigate };
 }

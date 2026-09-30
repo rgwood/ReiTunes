@@ -1,7 +1,8 @@
 import { useEffect, useRef, useCallback, useState, type RefObject } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { usePlayerStore, type PlaybackRange } from '../stores/playerStore';
 import { useQueueStore } from '../hooks/useQueue';
-import { getItemUrl, markPlayed, addBookmark } from '../hooks/useLibrary';
+import { getItemUrl, markPlayed, addBookmark, toggleFavorite } from '../hooks/useLibrary';
 import { usePlayback } from '../hooks/usePlayback';
 import { useSonosControls } from '../hooks/useSonosControls';
 import { useSonosQueueSync } from '../hooks/useSonosQueueSync';
@@ -78,6 +79,24 @@ function formatTime(seconds: number): string {
   const mins = Math.floor(seconds / 60);
   const secs = Math.floor(seconds % 60);
   return `${mins}:${secs.toString().padStart(2, '0')}`;
+}
+
+function MobileFavourite({ item }: { item: LibraryItem }) {
+  const client = useQueryClient();
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState(false);
+  return <div className="mobile-playing-favourite">
+    <button type="button" aria-label={item.is_favorite ? 'Remove favourite' : 'Favourite song'} aria-pressed={!!item.is_favorite}
+      disabled={pending} onClick={async () => {
+        setPending(true); setError(false);
+        try {
+          await toggleFavorite(item.id, !!item.is_favorite);
+          client.setQueryData<LibraryItem[]>(['library'], items => items?.map(track => track.id === item.id ? { ...track, is_favorite: !item.is_favorite } : track));
+        } catch { setError(true); }
+        finally { setPending(false); }
+      }}><MusicIcon name="heart" size={24} /></button>
+    {error && <small role="alert">Couldn’t save. Tap the heart to retry.</small>}
+  </div>;
 }
 
 function PlayerTrack({ item, position, duration, sonos = false, status, recovery, onReveal }: {
@@ -823,6 +842,7 @@ export function AudioPlayer({ audioRef: sharedAudioRef, items, onPlaybackPositio
     const position = remote ? displayedSonosPosition : pendingSeek ?? currentTime;
     const outputName = remote ? target.groupName : localOwner ? 'This device' : currentItem ? 'Another browser' : 'Choose output';
     const playDisabled = remote ? sonosTransportDisabled : !currentItem || !canPlayLocally || isSwitchingOutput;
+    const skipDisabled = !canControlSession || isSending || isSwitchingOutput || sonos.isTransportPending || (remote ? !sonosSessionActive : !canPlayLocally);
     const seekDisabled = remote ? sonosSeekDisabled : !currentItem || !canPlayLocally || !duration || isSwitchingOutput;
     const error = remote ? playbackError || sonosQueue.error || sonos.error : localPlaybackError || playbackError;
     const status = !sharedReady ? 'Connecting to your session…' : isSwitchingOutput ? 'Moving playback…'
@@ -838,8 +858,8 @@ export function AudioPlayer({ audioRef: sharedAudioRef, items, onPlaybackPositio
       {expanded ? <>
         <div className="mobile-player-heading"><h1>Now playing</h1><button type="button" className="mobile-output" onClick={onOutput} aria-label="Choose playback output"><MusicIcon name="speaker" />{outputName}</button></div>
         <div className="mobile-playing-track">
-          <span className="mobile-playing-source">{useQueueStore.getState().contextName || 'ReiTunes'}</span>
-          <h2>{currentItem?.name || 'Choose some music'}</h2>
+          <div className="mobile-playing-title"><h2>{currentItem?.name || 'Choose some music'}</h2>
+            {currentItem && <MobileFavourite key={currentItem.id} item={currentItem} />}</div>
           <p className="mobile-playing-artist">{currentItem?.artist}</p>
           <p className="mobile-playing-album">{currentItem?.album}</p>
         </div>
@@ -854,7 +874,7 @@ export function AudioPlayer({ audioRef: sharedAudioRef, items, onPlaybackPositio
         </div>
         <PlayerTransport playing={playing} sonos={remote} onToggle={toggle} onPrevious={handlePrevious} onNext={handleNext}
           onBack={() => remote ? void seekSonos(-30, true) : seekBack()} onForward={() => remote ? void seekSonos(30, true) : seekForward()}
-          playDisabled={playDisabled} seekDisabled={seekDisabled} skipDisabled={!canControlSession || isSending || isSwitchingOutput || sonos.isTransportPending || (remote ? !sonosSessionActive : !canPlayLocally)} />
+          playDisabled={playDisabled} seekDisabled={seekDisabled} skipDisabled={skipDisabled} />
         {remote ? <div className="mobile-volume">
           <label htmlFor="mobile-sonos-volume"><span>{outputName} volume</span><span>{sonos.volume ? `${displayedSonosVolume}%` : '—'}</span></label>
           <div className="mobile-volume-controls"><button type="button" aria-label={sonos.volume?.muted ? 'Unmute Sonos' : 'Mute Sonos'} disabled={sonosVolumeDisabled || sonos.isVolumePending}
@@ -865,15 +885,14 @@ export function AudioPlayer({ audioRef: sharedAudioRef, items, onPlaybackPositio
               onPointerCancel={() => setSonosVolumeDraft(null)}
               onKeyUp={event => { setSonosVolumeDraft(null); void sonos.setGroupVolume(Number(event.currentTarget.value)); }} />
           </div></div> : <p className="mobile-device-volume">Use your device’s volume controls</p>}
-        <div className="mobile-player-actions">
+        <div className="mobile-player-actions" role="group" aria-label="Playback options">
           <button type="button" aria-label={shuffleEnabled ? 'Shuffle on' : 'Shuffle off'} aria-pressed={shuffleEnabled} onClick={toggleShuffle} disabled={!canControlSession || isSending || isSwitchingOutput}>{Icons.shuffle}<span>Shuffle</span></button>
           {!remote && <button type="button" aria-label={`Repeat ${repeatMode}`} aria-pressed={repeatMode !== 'off'} onClick={cycleRepeatMode} disabled={!canPlayLocally}>{Icons.repeat}<span>{repeatMode === 'one' ? 'Repeat one' : 'Repeat'}</span></button>}
           <button type="button" onClick={() => void (remote ? handleAddSonosBookmark() : handleAddBookmark())} disabled={!currentItem || (remote ? !sonosSessionActive : !canPlayLocally)} data-feedback={bookmarkFeedback} aria-label={remote ? 'Bookmark current Sonos time' : 'Add bookmark'}>{Icons.bookmark}<span>{bookmarkFeedback === 'success' ? 'Saved' : bookmarkFeedback === 'error' ? 'Retry' : 'Bookmark'}</span></button>
-          <button type="button" onClick={onQueue}><MusicIcon name="queue" /><span>Queue</span></button>
         </div>
         {upcoming.length > 0 && <section className="mobile-player-upcoming" aria-label="Up next"><div><h3>Up next</h3><button type="button" onClick={onQueue}>View queue</button></div>{upcoming.map((item, index) => <div className="mobile-upcoming-track" key={`${item.id}-${index}`}><span>{item.name}<small>{item.artist}</small></span><span>{trackDuration(item) ? formatTime(trackDuration(item)!) : ''}</span></div>)}</section>}
       </> : <div className="mobile-mini-row"><button type="button" className="mobile-mini-title" onClick={onExpand} aria-label="Open now playing"><strong>{currentItem?.name || 'No song selected'}</strong><span>{outputName} · {playing ? 'Playing' : 'Paused'}</span></button>
-        <button type="button" aria-label={`${playing ? 'Pause' : 'Play'}${remote ? ' Sonos' : ''}`} disabled={playDisabled} onClick={toggle}>{playing ? Icons.pause : Icons.play}</button><button type="button" onClick={onQueue} aria-label="Open queue"><MusicIcon name="queue" /></button></div>}
+        <button type="button" aria-label={`${playing ? 'Pause' : 'Play'}${remote ? ' Sonos' : ''}`} disabled={playDisabled} onClick={toggle}>{playing ? Icons.pause : Icons.play}</button><button type="button" onClick={handleNext} disabled={skipDisabled} aria-label="Next">{Icons.skipForward}</button></div>}
       {status && <p className="mobile-player-status" role="status">{status}</p>}
       {error && <div className="mobile-player-error" role="alert">{error}
         {remote && playbackError && currentItem && <button type="button" disabled={!canControlSession || isSending || isSwitchingOutput} onClick={() => void play(currentItem, resumePosition)}>{takeoverRequired ? 'Replace Sonos playback and retry' : 'Retry sending to Sonos'}</button>}

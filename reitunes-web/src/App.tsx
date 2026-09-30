@@ -59,7 +59,7 @@ function LibrarySelectionCount({ store }: { store: StoreApi<{ count: number }> }
 }
 
 function AppContent() {
-  const { isMobile, route: mobileRoute, navigate: navigateMobile } = useMobileNavigation();
+  const { isMobile, iosStandalone, route: mobileRoute, navigate: navigateMobile } = useMobileNavigation();
   const [desktopView, setView] = useState<'library' | 'discover' | 'bookmarks'>('library');
   const view = isMobile ? mobileRoute.browse === 'discover' || mobileRoute.browse === 'bookmarks' ? mobileRoute.browse : 'library' : desktopView;
   const [librarySearch, setLibrarySearch] = useState('');
@@ -240,6 +240,10 @@ function AppContent() {
     (!selectedPlaylistId || !!selectedPlaylist) && !(isMobile && mobileRoute.browse === 'playlists' && !mobileRoute.playlistId);
   const currentQueueView = viewAvailable && (isMobile || gridView?.key === viewKey)
     ? { name: currentViewName, items: isMobile ? filteredItems : gridView!.items } : null;
+  const mobileQueueSources = useMemo(() => isMobile && mobileRoute.tab === 'queue'
+    ? [{ id: 'library', name: 'Your library', items }, ...playlists.map(playlist => ({
+      id: playlist.id, name: playlist.name, items: playlistItems(playlist, items, now, tags.data?.items),
+    }))] : [], [isMobile, mobileRoute.tab, items, playlists, now, tags.data]);
   const moments = useMemo(
     () =>
       (view === 'bookmarks' ? items : filteredItems).flatMap((item) =>
@@ -408,6 +412,7 @@ function AppContent() {
       className={`music-app${isMobile ? ' mobile-app' : ''}`}
       data-density={density}
       data-mobile-tab={isMobile ? mobileRoute.tab : undefined}
+      data-ios-standalone={isMobile && iosStandalone ? 'true' : undefined}
       onDragEnter={(event) => {
         if (isImportOpen || !event.dataTransfer.types.includes('Files')) return;
         event.preventDefault();
@@ -467,7 +472,8 @@ function AppContent() {
 
       <main className={isMobile ? 'mobile-content' : `library-content${panel === 'tags' ? ' with-tags' : ''}`} aria-label={isMobile ? mobileRoute.tab === 'queue' ? 'Playback queue' : mobileRoute.tab === 'playing' ? 'Now playing' : 'Browse music' : view === 'discover' ? 'Music discovery' : 'Music library'}>
         {isMobile ? <>
-          {mobileRoute.tab === 'queue' && <QueuePanel mobile disabled={sessionBusy} currentView={currentQueueView} dropActive={false} dropProps={{}} />}
+          {mobileRoute.tab === 'queue' && <QueuePanel mobile disabled={sessionBusy} currentView={currentQueueView} dropActive={false} dropProps={{}}
+            mobileSources={mobileQueueSources} />}
           {mobileRoute.tab === 'browse' && <div className="mobile-browse">
             <header className="mobile-browse-header"><h1>Browse</h1><div>
               <button aria-label="Import music" onClick={() => setIsImportOpen(true)}><MusicIcon name="plus" size={22} /></button>

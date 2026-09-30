@@ -159,7 +159,7 @@ test('another controller sees the new source before it starts and can remove a f
     await panel(page).getByRole('button', { name: 'Use current view', exact: true }).click();
     await expect(songNames(automatic(phone, playlist.name))).toHaveCount(3);
     await expect(songNames(added(phone))).toHaveText(['Cosmia', 'Cosmia']);
-    await phone.getByRole('region', { name: 'Now playing', exact: true }).getByText('Chemtrails', { exact: true }).waitFor();
+    await expect(phone.getByRole('button', { name: 'Open now playing', exact: true })).toContainText('Chemtrails');
     await automatic(phone, playlist.name).getByRole('button', { name: 'Remove Delta from Up Next', exact: true }).click();
     await expect(songNames(automatic(page, playlist.name))).not.toContainText(['Delta']);
     await expect(panel(page).getByRole('button', { name: 'Undo', exact: true })).toHaveCount(0);
