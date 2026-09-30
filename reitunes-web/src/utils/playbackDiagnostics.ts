@@ -25,6 +25,9 @@ interface PlaybackDetails {
   outcome?: string;
   operationId?: string;
   expectedRevision?: number;
+  actualRevision?: number;
+  previousItemId?: string | null;
+  actualItemId?: string | null;
   httpStatus?: number;
   contextCount?: number;
   manualQueueCount?: number;
@@ -35,7 +38,7 @@ interface PlaybackDetails {
 }
 
 type PlaybackEvent =
-  'request' | 'command' | 'state' | 'media' | 'play-rejected' | 'oscillation' | 'buffering-slow' | 'buffering-end' | 'session-save-failed';
+  'request' | 'command' | 'state' | 'media' | 'play-rejected' | 'oscillation' | 'buffering-slow' | 'buffering-end' | 'session-save-failed' | 'session-save-conflict';
 const MAX_EVENTS = 40;
 const FLUSH_MS = 2000;
 const session = crypto.randomUUID?.() ?? `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
@@ -93,7 +96,7 @@ export function recordPlaybackEvent(
   event: PlaybackEvent,
   details: PlaybackDetails = {}
 ) {
-  if (event === 'oscillation' || event === 'play-rejected' || event === 'buffering-slow' || event === 'session-save-failed' || details.mediaEvent === 'error') warning = true;
+  if (event === 'oscillation' || event === 'play-rejected' || event === 'buffering-slow' || event === 'session-save-failed' || event === 'session-save-conflict' || details.mediaEvent === 'error') warning = true;
   if (!installed) {
     installed = true;
     window.addEventListener('pagehide', flushPlaybackDiagnostics);

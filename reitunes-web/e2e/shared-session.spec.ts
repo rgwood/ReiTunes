@@ -245,7 +245,7 @@ test('a stale concurrent queue edit is rejected visibly instead of overwriting a
   });
   await expect.poll(() => sharedSession.snapshot.revision).toBe(8);
   release();
-  await expect(page.getByRole('alert').filter({ hasText: 'Playback changed on another screen' })).toBeVisible();
+  await expect(page.getByRole('alert').filter({ hasText: 'Playback changed while saving' })).toBeVisible();
   expect(await queueState(page)).toEqual({ ids: ['copy-a'], songs: [secondId], context: 'Housewarming' });
   expect((sharedSession.snapshot.state as SharedPlaybackState).queue.manualQueue).toEqual([{ id: 'copy-a', itemId: secondId }]);
 });

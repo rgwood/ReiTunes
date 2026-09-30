@@ -87,6 +87,114 @@ test('shuffle saves the upcoming shared order without restarting Sonos and resto
   expect(sonos.commands).toEqual([]);
 });
 
+test('a manual selection wins a race with Sonos advancement while another screen is idle', async ({ page, context, sharedSession }) => {
+  const { sonos, items } = await setup(page, sharedSession);
+  await page.evaluate(async () => {
+    const path = '/src/stores/playbackTargetStore.ts';
+    const { usePlaybackTargetStore } = await import(path);
+    usePlaybackTargetStore.setState({ takeoverRequired: false });
+  });
+  const other = await context.newPage();
+  const otherSonos = new SonosSimulator(other);
+  await otherSonos.install();
+  await other.route('**/api/items', route => route.fulfill({ json: items }));
+  await other.goto('/');
+  await expect(other.getByRole('button', { name: 'Pause Sonos', exact: true })).toBeEnabled();
+  const writesBefore = sharedSession.requests.filter(request => request.method === 'POST').length;
+  let raced = false;
+  await page.route('**/api/playback-session', async route => {
+    if (route.request().method() === 'POST' && !raced) {
+      raced = true;
+      const advanced = structuredClone(sharedSession.snapshot.state as SharedPlaybackState);
+      advanced.currentItemId = items[1].id;
+      advanced.queue.contextIndex = 1;
+      advanced.position = 0;
+      await emitSnapshot(page, sharedSession, { revision: sharedSession.snapshot.revision + 1, state: advanced });
+    }
+    await route.fallback();
+  });
+  await page.getByRole('row').filter({ hasText: 'Queued song' }).dblclick();
+  await expect.poll(() => sonos.queueRequests.length).toBe(1);
+  expect(sonos.queueRequests[0]).toMatchObject({ startItemId: items[2].id, allowTakeover: false });
+  expect((sharedSession.snapshot.state as SharedPlaybackState).currentItemId).toBe(items[2].id);
+  // The simulator's play endpoint records commands; explicitly confirm the new
+  // speaker occurrence so its old poll response doesn't keep showing the old song.
+  const status = otherSonos.status();
+  otherSonos.status = () => ({ ...status, sourceItemId: items[2].id, itemId: 'selected-occurrence', positionMillis: 0 });
+  await otherSonos.emitPlayback();
+  await expect(other.locator('tbody tr[aria-current="true"]')).toContainText('Queued song');
+  await expect(page.getByRole('alert')).toHaveCount(0);
+  const writes = sharedSession.requests.filter(request => request.method === 'POST').slice(writesBefore);
+  expect(writes).toHaveLength(2);
+  expect(writes[0].body?.operationId).not.toBe(writes[1].body?.operationId);
+  expect(otherSonos.queueRequests).toEqual([]);
+});
+
+for (const conflict of ['queue-edit', 'second-advancement']) {
+  test(`selection retries do not overwrite ${conflict} or retry indefinitely`, async ({ page, sharedSession }) => {
+    const { sonos, items } = await setup(page, sharedSession);
+    let writes = 0;
+    await page.route('**/api/playback-session', async route => {
+      if (route.request().method() === 'POST') {
+        writes++;
+        const latest = structuredClone(sharedSession.snapshot.state as SharedPlaybackState);
+        if (conflict === 'queue-edit') latest.queue.manualQueue.push({ id: 'other-controller', itemId: items[1].id });
+        else { latest.queue.contextIndex = Math.min(writes, 2); latest.currentItemId = items[latest.queue.contextIndex].id; }
+        await emitSnapshot(page, sharedSession, { revision: sharedSession.snapshot.revision + 1, state: latest });
+      }
+      await route.fallback();
+    });
+    await page.getByRole('row').filter({ hasText: 'Queued song' }).dblclick();
+    await expect(page.getByRole('alert').filter({ hasText: 'Playback changed while saving' })).toBeVisible();
+    expect(writes).toBe(conflict === 'queue-edit' ? 1 : 2);
+    expect(sonos.queueRequests).toEqual([]);
+    if (conflict === 'queue-edit') expect(queue(sharedSession).manualQueue).toEqual([{ id: 'other-controller', itemId: items[1].id }]);
+  });
+}
+
+test('adding to the queue during a selection retry never restores a consumed duplicate', async ({ page, sharedSession }) => {
+  const { items } = await setup(page, sharedSession);
+  await edit(page, 'addToQueue', 1);
+  await edit(page, 'addToQueue', 1);
+  await expect.poll(() => queue(sharedSession).manualQueue.length).toBe(2);
+  const [consumed, retained] = queue(sharedSession).manualQueue;
+  const retryArrived = deferred();
+  const release = deferred();
+  let writes = 0;
+  await page.route('**/api/playback-session', async route => {
+    if (route.request().method() === 'POST') {
+      writes++;
+      if (writes === 1) {
+        const advanced = structuredClone(sharedSession.snapshot.state as SharedPlaybackState);
+        advanced.currentItemId = items[1].id;
+        advanced.queue.manualQueue.shift();
+        await emitSnapshot(page, sharedSession, { revision: sharedSession.snapshot.revision + 1, state: advanced });
+      } else if (writes === 2) { retryArrived.resolve(); await release.promise; }
+    }
+    await route.fallback();
+  });
+  const selection = page.evaluate(async item => {
+    const playerPath = '/src/stores/playerStore.ts';
+    const sessionPath = '/src/hooks/useSharedPlaybackSession.ts';
+    const { usePlayerStore } = await import(playerPath);
+    const { stageSharedPlayback, flushSharedSession } = await import(sessionPath);
+    usePlayerStore.getState().selectRemoteItem(item, 0);
+    stageSharedPlayback();
+    return flushSharedSession();
+  }, items[2]);
+  try {
+    await retryArrived.promise;
+    await edit(page, 'addToQueue', 0);
+    release.resolve();
+    expect(await selection).toBe(true);
+    await expect.poll(() => queue(sharedSession).manualQueue.map(entry => entry.itemId)).toEqual([items[1].id, items[0].id]);
+    expect(queue(sharedSession).manualQueue[0].id).toBe(retained.id);
+    expect(queue(sharedSession).manualQueue.some(entry => entry.id === consumed.id)).toBe(false);
+    expect((sharedSession.snapshot.state as SharedPlaybackState).currentItemId).toBe(items[2].id);
+    await expect(page.getByRole('alert')).toHaveCount(0);
+  } finally { release.resolve(); await selection; }
+});
+
 test('Play Next saves ahead of the library and the server consumes its occurrence', async ({ page, sharedSession }) => {
   const { sonos, items, directQueueRequests } = await setup(page, sharedSession);
   await page.getByText('Queued song', { exact: true }).click({ button: 'right' });

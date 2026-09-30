@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import type { LibraryItem } from '../types';
+import type { SharedPlaybackState } from './sharedSessionStore';
 
 const storedValues = new Map<string, string>();
 const storage: Storage = {
@@ -19,7 +20,68 @@ const { PLAYER_STORAGE_KEY, usePlayerStore } = await import('./playerStore');
 const { QUEUE_STORAGE_KEY, reconcileLibraryItems, useQueueStore } = await import('../hooks/useQueue');
 const { usePlaybackTargetStore } = await import('./playbackTargetStore');
 const { useSharedSessionStore } = await import('./sharedSessionStore');
-const { sharedUpcomingItemIds } = await import('../hooks/useSharedPlaybackSession');
+const { sharedUpcomingItemIds, rebaseSonosSelection } = await import('../hooks/useSharedPlaybackSession');
+
+function sonosState(): SharedPlaybackState {
+  return { target: { kind: 'sonos', householdId: 'home', groupId: 'living-room', groupName: 'Living room', playerNames: [] },
+    currentItemId: 'one', position: 100, playbackRange: null,
+    queue: { contextId: 'plan', contextItemIds: ['one', 'two', 'three'], contextIndex: 0, contextName: 'Library',
+      manualQueue: [], shuffleEnabled: false, shuffledIds: [], repeatMode: 'off' } };
+}
+
+describe('Sonos selection conflicts', () => {
+  it('keeps an explicit selection when the old automatic queue advances, including shuffle and repeat', () => {
+    for (const mode of ['ordinary', 'shuffle', 'repeat']) {
+      const base = sonosState();
+      if (mode === 'shuffle') { base.queue.shuffleEnabled = true; base.queue.shuffledIds = ['one', 'three', 'two']; }
+      if (mode === 'repeat') { base.queue.repeatMode = 'all'; base.currentItemId = 'three'; base.queue.contextIndex = 2; }
+      const selection = { ...structuredClone(base), currentItemId: 'chosen', position: 0 };
+      selection.queue.contextId = 'new-plan';
+      selection.queue.contextItemIds = ['chosen', 'next'];
+      selection.queue.contextIndex = 0;
+      const latest = structuredClone(base);
+      latest.currentItemId = mode === 'ordinary' ? 'two' : mode === 'shuffle' ? 'three' : 'one';
+      latest.queue.contextIndex = base.queue.contextItemIds.indexOf(latest.currentItemId);
+      latest.position = 0;
+      expect(rebaseSonosSelection(base, selection, latest)).toEqual(selection);
+    }
+  });
+
+  it('removes consumed queue occurrences without removing another copy of the same song', () => {
+    const base = sonosState();
+    base.queue.manualQueue = [{ id: 'copy-a', itemId: 'two' }, { id: 'copy-b', itemId: 'two' }];
+    const selection = { ...structuredClone(base), currentItemId: 'chosen', position: 0 };
+    const latest = structuredClone(base);
+    latest.queue.manualQueue.shift(); latest.currentItemId = 'two';
+    const rebased = rebaseSonosSelection(base, selection, latest);
+    expect(rebased?.currentItemId).toBe('chosen');
+    expect(rebased?.queue.manualQueue).toEqual([{ id: 'copy-b', itemId: 'two' }]);
+    expect(selection.queue.manualQueue).toHaveLength(2);
+    expect(base.queue.manualQueue).toHaveLength(2);
+  });
+
+  it('rejects unrelated queue, selection, range and output changes', () => {
+    const base = sonosState();
+    const selection = { ...structuredClone(base), currentItemId: 'chosen', position: 0 };
+    const changes: Array<(latest: SharedPlaybackState) => void> = [
+      state => { state.queue.manualQueue.push({ id: 'added', itemId: 'two' }); },
+      state => { state.queue.contextId = 'another-selection'; },
+      state => { state.queue.contextItemIds.reverse(); },
+      state => { state.queue.shuffleEnabled = true; },
+      state => { state.queue.repeatMode = 'all'; },
+      state => { state.currentItemId = 'outside-plan'; },
+      state => { state.playbackRange = { start: 1, end: 10 }; },
+      state => { state.target = { kind: 'browser', ownerId: 'other' }; },
+      state => { state.target = { ...base.target, groupId: 'other' } as SharedPlaybackState['target']; },
+    ];
+    for (const change of changes) {
+      const latest = structuredClone(base); change(latest);
+      expect(rebaseSonosSelection(base, selection, latest)).toBeNull();
+    }
+    const browser = { ...base, target: { kind: 'browser' as const, ownerId: 'owner' } };
+    expect(rebaseSonosSelection(browser, selection, browser)).toBeNull();
+  });
+});
 
 function item(id: string, name = id): LibraryItem {
   return {

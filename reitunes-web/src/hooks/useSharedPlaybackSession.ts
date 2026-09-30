@@ -45,6 +45,29 @@ export function sharedUpcomingItemIds(state: SharedPlaybackState): string[] {
 
 function same(a: unknown, b: unknown) { return JSON.stringify(a) === JSON.stringify(b); }
 
+// A speaker can advance between a double-click and our session save. Replay
+// only that advancement over the selection, never an unrelated controller edit.
+export function rebaseSonosSelection(base: SharedPlaybackState | null, selection: SharedPlaybackState,
+  latest: SharedPlaybackState | null): SharedPlaybackState | null {
+  if (!base || !latest || base.target.kind !== 'sonos' || !same(base.target, latest.target)
+    || !same(base.target, selection.target)) return null;
+  const queue = structuredClone(base.queue);
+  let advanced = same(queue, latest.queue) && base.currentItemId === latest.currentItemId
+    && same(base.playbackRange, latest.playbackRange);
+  if (!advanced && latest.playbackRange === null) {
+    for (const itemId of sharedUpcomingItemIds(base)) {
+      if (queue.manualQueue[0]?.itemId === itemId) queue.manualQueue.shift();
+      else queue.contextIndex = queue.contextItemIds.indexOf(itemId);
+      if (itemId === latest.currentItemId && same(queue, latest.queue)) { advanced = true; break; }
+    }
+  }
+  if (!advanced) return null;
+  const remaining = new Set(latest.queue.manualQueue.map(entry => entry.id));
+  const consumed = new Set(base.queue.manualQueue.filter(entry => !remaining.has(entry.id)).map(entry => entry.id));
+  return { ...selection, queue: { ...selection.queue,
+    manualQueue: selection.queue.manualQueue.filter(entry => !consumed.has(entry.id)) } };
+}
+
 function applyQueueSyncStatus(snapshot: SharedPlaybackSnapshot) {
   if (snapshot.revision < accepted.revision) return;
   useSharedSessionStore.setState({ queueSyncPending: snapshot.queueSyncPending ?? false,
@@ -190,29 +213,68 @@ export async function flushSharedSession(): Promise<boolean> {
   }
   if (!dirty) return true;
   const version = localVersion;
-  const next = capture();
-  const changedQueue = !same(next.queue, accepted.state?.queue);
-  const expectedRevision = accepted.revision;
-  const operationId = crypto.randomUUID();
+  let next = capture();
+  const base = accepted.state;
+  const selectedPlayback = playbackChanged;
+  let changedQueue = !same(next.queue, base?.queue);
+  let expectedRevision = accepted.revision;
+  let operationId = crypto.randomUUID();
+  let rebasedSelection = false;
   dirty = false;
   playbackChanged = false;
   const requestGeneration = generation;
   let httpStatus: number | undefined;
   writing = (async () => {
     try {
-      const response = await fetch('/api/playback-session', {
-        method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ operationId, expectedRevision, state: next }), signal: AbortSignal.timeout(20_000),
-      });
-      httpStatus = response.status;
-      if (requestGeneration !== generation) return false;
-      if (response.status === 409) {
-        const canonical = await response.json() as SharedPlaybackSnapshot;
-        dirty = false;
-        playbackChanged = false;
-        applySharedPlaybackSnapshot(canonical);
-        setError('Playback changed on another screen. Your last change was not applied; the current session is shown. Please try again.');
-        return false;
+      let response: Response;
+      for (let attempt = 0; ; attempt++) {
+        response = await fetch('/api/playback-session', {
+          method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ operationId, expectedRevision, state: next }), signal: AbortSignal.timeout(20_000),
+        });
+        httpStatus = response.status;
+        if (requestGeneration !== generation) return false;
+        if (response.status !== 409) break;
+        const reply = await response.json() as SharedPlaybackSnapshot;
+        const canonical = received && received.revision > reply.revision ? received : reply;
+        const rebased = attempt === 0 && selectedPlayback && localVersion === version
+          && canonical.revision >= accepted.revision
+          ? rebaseSonosSelection(base, next, canonical.state) : null;
+        recordPlaybackEvent('session-save-conflict', {
+          operationId, expectedRevision, actualRevision: canonical.revision, httpStatus,
+          target: next.target.kind, itemId: next.currentItemId,
+          previousItemId: base?.currentItemId, actualItemId: canonical.state?.currentItemId,
+          outcome: rebased ? 'retry-selection-after-advancement' : 'rejected',
+        });
+        if (!rebased) {
+          dirty = false;
+          playbackChanged = false;
+          applySharedPlaybackSnapshot(canonical);
+          setError('Playback changed while saving. Your last change was not applied; the current session is shown. Please try again.');
+          return false;
+        }
+        // A new operation ID is required because this is a different CAS write.
+        accepted = canonical;
+        applyQueueSyncStatus(canonical);
+        useSharedSessionStore.setState({ revision: canonical.revision });
+        next = rebased;
+        // Later local queue additions must start from the rebased occurrences,
+        // even if they arrive while the retry is still in flight.
+        const retained = new Set(next.queue.manualQueue.map(entry => entry.id));
+        const liveQueue = useQueueStore.getState();
+        if (liveQueue.manualQueueIds.some(id => !retained.has(id))) {
+          applying = true;
+          try {
+            useQueueStore.setState({
+              manualQueue: liveQueue.manualQueue.filter((_, index) => retained.has(liveQueue.manualQueueIds[index])),
+              manualQueueIds: liveQueue.manualQueueIds.filter(id => retained.has(id)),
+            });
+          } finally { applying = false; }
+        }
+        changedQueue = !same(next.queue, canonical.state?.queue);
+        expectedRevision = canonical.revision;
+        operationId = crypto.randomUUID();
+        rebasedSelection = true;
       }
       if (!response.ok) {
         // Only read the API's JSON error field, never a proxy's HTML error page.
@@ -234,7 +296,7 @@ export async function flushSharedSession(): Promise<boolean> {
       // An acknowledgement of exactly our state is not a remote change. Keep
       // store references stable so a later failed Sonos command can roll back
       // its own optimistic queue selection without disturbing newer edits.
-      if (localVersion === version && !same(result.state, next)) applySharedPlaybackSnapshot(result);
+      if (localVersion === version && (rebasedSelection || !same(result.state, next))) applySharedPlaybackSnapshot(result);
       return true;
     } catch (error) {
       if (requestGeneration !== generation) return false;
