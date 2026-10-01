@@ -60,11 +60,11 @@ for (const playing of [true, false]) {
     expect(await page.locator('audio').evaluate(audio => audio.paused)).toBe(true);
     await expect(dialog.getByRole('button', { name: 'Switching…' })).toBeDisabled();
     release();
-    await expect(dialog.getByRole('button', { name: 'Listen on this device' })).toBeEnabled();
+    await expect(dialog).not.toBeVisible();
     expect(remotePlaying).toBe(playing);
+    await page.getByRole('button', { name: 'Sonos', exact: true }).click();
     await dialog.getByRole('button', { name: 'Listen on this device' }).click();
-    await expect(dialog.getByRole('button', { name: 'Listen on this device' })).toHaveCount(0);
-    await dialog.getByRole('button', { name: 'Close', exact: true }).click();
+    await expect(dialog).not.toBeVisible();
     await expect(page.getByRole('button', { name: playing ? 'Pause' : 'Play', exact: true })).toBeVisible();
     const audio = await page.locator('audio').evaluate(audio => ({
       paused: audio.paused, position: audio.currentTime, src: audio.src,

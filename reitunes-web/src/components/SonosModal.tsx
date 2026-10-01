@@ -180,6 +180,7 @@ export function SonosModal({ audioRef, isOpen, onClose, items }: SonosModalProps
         position: item ? position : undefined,
         isPlaying: !!item && wasPlaying,
       });
+      onClose();
     } catch (err) {
       setError(`Could not switch to this browser: ${err instanceof Error ? err.message : 'Sonos did not respond'}`);
       recordPlaybackEvent('play-rejected', {
@@ -189,7 +190,7 @@ export function SonosModal({ audioRef, isOpen, onClose, items }: SonosModalProps
     } finally {
       output.setSwitchingOutput(false);
     }
-  }, [items, setBrowserTarget]);
+  }, [items, onClose, setBrowserTarget]);
 
   const chooseGroup = useCallback(
     async (
@@ -262,13 +263,14 @@ export function SonosModal({ audioRef, isOpen, onClose, items }: SonosModalProps
             throw err;
           }
         }
+        onClose();
       } catch (err) {
         setError(`Could not switch to Sonos: ${err instanceof Error ? err.message : 'Sonos did not respond'}`);
       } finally {
         output.setSwitchingOutput(false);
       }
     },
-    [audioRef, items, playbackError, setSonosTarget, takeoverRequired, target]
+    [audioRef, items, onClose, playbackError, setSonosTarget, takeoverRequired, target]
   );
 
   return (

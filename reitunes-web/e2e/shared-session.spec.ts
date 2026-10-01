@@ -365,6 +365,7 @@ test('a fresh observer transfers the shared browser position to Sonos instead of
   await page.getByRole('button', { name: 'Choose playback output' }).click();
   await page.getByRole('dialog', { name: 'Sonos' }).getByRole('button', { name: 'Use this group' }).click();
   await expect.poll(() => requests.filter(request => request.path === '/api/sonos/play').length).toBe(1);
+  await expect(page.getByRole('dialog', { name: 'Sonos' })).not.toBeVisible();
   expect(requests.find(request => request.path === '/api/sonos/play')?.body).toMatchObject({
     startItemId: firstId, positionMillis: 42_000, playOnCompletion: false,
   });

@@ -485,8 +485,7 @@ test('switches between Sonos and browser playback without playing twice', async 
   await expect(dialog.getByText('Downstairs')).toBeVisible();
   await expect(dialog.getByText('Kitchen + Dining Room')).toBeVisible();
   await dialog.getByRole('button', { name: 'Use this group' }).click();
-  await expect(dialog.getByRole('button', { name: 'Selected' })).toBeVisible();
-  await dialog.getByRole('button', { name: 'Close', exact: true }).click();
+  await expect(dialog).not.toBeVisible();
 
   await trackRow.dblclick();
   await expect.poll(() => sonosPlayRequests.length).toBe(1);
@@ -641,8 +640,7 @@ test('switches between Sonos and browser playback without playing twice', async 
   expect(await page.evaluate(() => (window as typeof window & { __playCalls: number }).__playCalls)).toBe(0);
   releasePause();
   pauseGate = null;
-  await expect(dialog.getByRole('button', { name: 'Listen on this device' })).toHaveCount(0);
-  await dialog.getByRole('button', { name: 'Close', exact: true }).click();
+  await expect(dialog).not.toBeVisible();
   await expect
     .poll(() =>
       page.evaluate(() => (window as typeof window & { __playCalls: number }).__playCalls)
@@ -668,9 +666,10 @@ test('switches between Sonos and browser playback without playing twice', async 
   const playCalls = await page.evaluate(() => (window as typeof window & { __playCalls: number }).__playCalls);
   await page.getByRole('button', { name: 'Sonos', exact: true }).click();
   await dialog.getByRole('button', { name: 'Use this group' }).click();
+  await expect(dialog).not.toBeVisible();
+  await page.getByRole('button', { name: 'Sonos', exact: true }).click();
   await dialog.getByRole('button', { name: 'Listen on this device' }).click();
-  await expect(dialog.getByRole('button', { name: 'Listen on this device' })).toHaveCount(0);
-  await dialog.getByRole('button', { name: 'Close', exact: true }).click();
+  await expect(dialog).not.toBeVisible();
   await expect(page.getByRole('button', { name: 'Play', exact: true })).toBeVisible();
   expect(await page.evaluate(() => (window as typeof window & { __playCalls: number }).__playCalls)).toBe(playCalls);
   expect(sonosPlayRequests).toHaveLength(4);
