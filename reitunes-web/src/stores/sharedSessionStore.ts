@@ -6,6 +6,7 @@ export interface SharedQueueEntry { id: string; itemId: string }
 export interface SharedPlaybackState {
   target: PlaybackTarget;
   currentItemId: string | null;
+  listenId?: string | null;
   position: number;
   playbackRange: PlaybackRange | null;
   queue: {

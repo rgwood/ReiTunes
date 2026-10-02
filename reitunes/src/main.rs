@@ -42,6 +42,7 @@ mod smapi;
 mod sonos;
 mod cloud_queue;
 mod playback_session;
+mod lastfm;
 mod storage;
 mod storage_cleanup;
 mod systemd;
@@ -140,6 +141,7 @@ struct AppState {
     sonos: Option<Arc<sonos::SonosControl>>,
     cloud_queues: Arc<cloud_queue::CloudQueueStore>,
     playback_session: Arc<playback_session::PlaybackSessionStore>,
+    lastfm: Arc<lastfm::LastFm>,
     tagging: Option<tagging::Tagging>,
 }
 
@@ -223,11 +225,13 @@ async fn main() -> Result<()> {
                 sonos: sonos::SonosControl::from_env(DB.clone())?,
                 cloud_queues: Arc::new(cloud_queue::CloudQueueStore::from_env(DB.clone())?),
                 playback_session: Arc::new(playback_session::PlaybackSessionStore::new(DB.clone())?),
+                lastfm: Arc::new(lastfm::LastFm::new(DB.clone())?),
                 tagging: Some(tagging.clone()),
             };
 
             let discovery = discovery::Discovery::new(DB.clone(), app_state.library.clone())?;
             playback_session::start_queue_sync(app_state.clone());
+            app_state.lastfm.start();
             discovery.start_refresh_loop();
             storage_cleanup::start(DB.clone(), app_state.library.clone(), app_state.storage.clone());
 
@@ -281,6 +285,13 @@ async fn main() -> Result<()> {
                 .route("/playlists/{id}/order", axum::routing::put(reorder_playlist_handler))
                 .route("/playlists/{playlist_id}/items/{item_id}", axum::routing::delete(remove_playlist_item_handler))
                 .route("/sonos/status", get(sonos_status_handler))
+                .route("/lastfm/status", get(lastfm::status))
+                .route("/lastfm/setup", post(lastfm::setup))
+                .route("/lastfm/authorize", post(lastfm::authorize))
+                .route("/lastfm/callback", get(lastfm::callback))
+                .route("/lastfm/enabled", post(lastfm::enabled))
+                .route("/lastfm/connection", axum::routing::delete(lastfm::disconnect))
+                .route("/lastfm/listen", post(lastfm::browser_report))
                 .route("/sonos/authorize", get(sonos_authorize_handler))
                 .route("/sonos/callback", get(sonos_callback_handler))
                 .route("/sonos/households", get(sonos_households_handler))
@@ -846,6 +857,11 @@ async fn send_sonos_queue(
         &request.group_id, request.expected_session_revision, request.start_item_id,
         &playback.item_id,
     ).map_err(sonos_failure)?;
+    let listen_id = app_state.playback_session.snapshot().map_err(sonos_failure)?
+        .state.and_then(|state| state.listen_id);
+    if let Err(error) = app_state.lastfm.bind_sonos(&playback.item_id, listen_id) {
+        tracing::warn!(%error, "Could not associate Sonos playback with Last.fm listening");
+    }
     Ok(Json(status))
 }
 
@@ -910,8 +926,12 @@ fn reconcile_sonos_session(
         let history = app_state.cloud_queues.history_through(
             response.playback.queue_version.as_deref(), response.playback.item_id.as_deref(),
         ).map_err(cloud_queue_failure)?;
-        if let Some(snapshot) = app_state.playback_session.observe_sonos(
-            group_id, response.playback.position_millis as f64 / 1000.0, &history,
+        let listen_id = if app_state.lastfm.status().is_ok_and(|status| status.connected) {
+            response.playback.item_id.as_deref()
+                .and_then(|id| app_state.lastfm.bind_sonos(id, None).ok())
+        } else { None };
+        if let Some(snapshot) = app_state.playback_session.observe_sonos_with_listen(
+            group_id, response.playback.position_millis as f64 / 1000.0, &history, listen_id,
         ).map_err(sonos_failure)? {
             let _ = app_state.update_tx.send(FrontendUpdate::PlaybackSession { snapshot });
         }
@@ -1156,12 +1176,21 @@ async fn cloud_queue_time_played_handler(
     State(app_state): State<AppState>,
     Path(queue_id): Path<Uuid>,
     headers: HeaderMap,
-    JsonExtractor(_report): JsonExtractor<serde_json::Value>,
+    JsonExtractor(report): JsonExtractor<lastfm::SonosReports>,
 ) -> SonosApiResult<StatusCode> {
     app_state
         .cloud_queues
         .accept_report(queue_id, authorization_header(&headers))
         .map_err(cloud_queue_failure)?;
+    if report.items.len() > 100 { return Err(sonos_failure(anyhow::anyhow!("Too many Sonos listening reports"))); }
+    let library = app_state.library.read().await;
+    for item in report.items {
+        if let Some(source) = app_state.cloud_queues.report_source(queue_id, &item.id).map_err(cloud_queue_failure)? {
+            if let Some(track) = library.items.get(&source) {
+                app_state.lastfm.record_sonos(track, &item).map_err(sonos_failure)?;
+            }
+        }
+    }
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -2080,6 +2109,7 @@ mod tests {
             sonos: None,
             cloud_queues: Arc::new(cloud_queue::CloudQueueStore::with_base_url("http://localhost")),
             playback_session: Arc::new(playback_session::PlaybackSessionStore::in_memory()),
+            lastfm: Arc::new(lastfm::LastFm::in_memory()),
             tagging: None,
         };
         let id = Uuid::new_v4();
@@ -2128,6 +2158,7 @@ mod tests {
             sonos: None,
             cloud_queues: Arc::new(cloud_queue::CloudQueueStore::with_base_url("http://localhost")),
             playback_session: Arc::new(playback_session::PlaybackSessionStore::in_memory()),
+            lastfm: Arc::new(lastfm::LastFm::in_memory()),
             tagging: None,
         };
         for (position, expected_status) in [

@@ -111,7 +111,7 @@ function localPlayback(): Omit<SharedPlaybackState, 'queue'> {
   const player = usePlayerStore.getState();
   const target = usePlaybackTargetStore.getState().target;
   return { target: target.kind === 'browser' ? { ...target, ownerId: target.ownerId ?? null } : target,
-    currentItemId: player.currentItemId, position: player.resumePosition, playbackRange: player.playbackRange };
+    currentItemId: player.currentItemId, listenId: player.listenId, position: player.resumePosition, playbackRange: player.playbackRange };
 }
 
 function capture(): SharedPlaybackState {
@@ -119,6 +119,7 @@ function capture(): SharedPlaybackState {
   // older position/current song over a newer speaker observation.
   const playback = playbackChanged || !accepted.state ? localPlayback() : accepted.state;
   return { target: playback.target, currentItemId: playback.currentItemId, position: playback.position,
+    listenId: playback.listenId,
     playbackRange: playback.playbackRange, queue: localQueue() };
 }
 
@@ -164,6 +165,7 @@ export function applySharedPlaybackSnapshot(snapshot: SharedPlaybackSnapshot) {
     const owner = state.target.kind === 'browser' && state.target.ownerId === getPlaybackClientId();
     const sameOwnedItem = owner && player.currentItem?.id === state.currentItemId;
     usePlayerStore.setState({ currentItem: item, currentItemId: item?.id ?? null,
+      listenId: state.listenId ?? null,
       playbackRange: same(player.playbackRange, state.playbackRange) ? player.playbackRange : state.playbackRange,
       resumePosition: sameOwnedItem ? player.resumePosition : state.position,
       isPlaying: sameOwnedItem ? player.isPlaying : false,
@@ -407,6 +409,7 @@ export async function refreshSharedSession(): Promise<void> {
           ...(base?.contextId === snapshot.state.queue.contextId && same(base?.contextItemIds, snapshot.state.queue.contextItemIds)
             ? { contextIndex: resumeIntent.queue.contextIndex } : {}) });
         usePlayerStore.setState({ currentItem: player.currentItem, currentItemId: player.currentItemId,
+          listenId: player.listenId,
           resumePosition: player.resumePosition, playbackRange: player.playbackRange,
           pendingSeek: player.pendingSeek, isPlaying: player.isPlaying });
         applying = false;

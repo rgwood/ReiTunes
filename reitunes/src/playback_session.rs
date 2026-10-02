@@ -95,6 +95,8 @@ pub struct SessionQueue {
 pub struct PlaybackSessionState {
     pub target: PlaybackTarget,
     pub current_item_id: Option<Uuid>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub listen_id: Option<Uuid>,
     pub position: f64,
     playback_range: Option<PlaybackRange>,
     queue: SessionQueue,
@@ -482,11 +484,18 @@ impl PlaybackSessionStore {
 
     /// Sonos owns its playhead even with every browser closed. Its stable queue
     /// item IDs distinguish two consecutive occurrences of the same song.
+    #[cfg(test)]
     pub fn observe_sonos(
         &self,
         group_id: &str,
         position: f64,
         history: &[(String, Uuid)],
+    ) -> Result<Option<PlaybackSessionSnapshot>> {
+        self.observe_sonos_with_listen(group_id, position, history, None)
+    }
+
+    pub fn observe_sonos_with_listen(
+        &self, group_id: &str, position: f64, history: &[(String, Uuid)], listen_id: Option<Uuid>,
     ) -> Result<Option<PlaybackSessionSnapshot>> {
         let Some((item_id, source_id)) = history.last() else {
             return Ok(None);
@@ -546,10 +555,13 @@ impl PlaybackSessionStore {
                 }
             }
             state.current_item_id = Some(*source_id);
+            state.listen_id = listen_id;
             state.playback_range = None;
             snapshot.revision += 1;
         }
         state.position = position;
+        let new_listen = listen_id.is_some() && state.listen_id != listen_id;
+        if new_listen { state.listen_id = listen_id; snapshot.revision += 1; }
         if advanced && state.queue.repeat_mode == RepeatMode::All && !state.queue.context_item_ids.is_empty() {
             snapshot.queue_sync_pending = true;
             snapshot.queue_sync_error = None;
@@ -560,7 +572,7 @@ impl PlaybackSessionStore {
         if advanced && snapshot.queue_sync_pending {
             self.sync_wakeup.notify_one();
         }
-        Ok(advanced.then_some(snapshot))
+        Ok((advanced || new_listen).then_some(snapshot))
     }
 }
 
@@ -787,6 +799,7 @@ mod tests {
         PlaybackSessionState {
             target: PlaybackTarget::Browser { owner_id: None },
             current_item_id: Some(Uuid::from_u128(1)),
+            listen_id: None,
             position: 12.5,
             playback_range: None,
             queue: SessionQueue {

@@ -63,6 +63,15 @@ pub struct QueueContext {
     queue_version: String,
     container: QueueContainer,
     playback_policies: PlaybackPolicies,
+    reports: PlaybackReports,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct PlaybackReports {
+    send_update_after_millis: u32,
+    periodic_interval_millis: u32,
+    send_playback_actions: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -383,6 +392,10 @@ impl CloudQueueStore {
             .map(|item| item.source_id))
     }
 
+    pub fn report_source(&self, queue_id: Uuid, occurrence: &str) -> Result<Option<Uuid>, CloudQueueError> {
+        Ok(self.snapshot(queue_id)?.items.iter().find(|item| item.id == occurrence).map(|item| item.source_id))
+    }
+
     pub fn version(
         &self,
         queue_id: Uuid,
@@ -493,6 +506,7 @@ impl CloudQueueStore {
     ) -> Result<QueueContext, CloudQueueError> {
         let snapshot = self.authorized_snapshot(queue_id, authorization)?;
         Ok(QueueContext {
+            reports: PlaybackReports { send_update_after_millis: 1000, periodic_interval_millis: 10_000, send_playback_actions: false },
             context_version: snapshot.context_version,
             queue_version: snapshot.queue_version,
             container: QueueContainer {

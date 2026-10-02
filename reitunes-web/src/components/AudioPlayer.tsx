@@ -10,6 +10,8 @@ import { useSonosQueueSync } from '../hooks/useSonosQueueSync';
 import { usePlaybackTargetStore } from '../stores/playbackTargetStore';
 import type { LibraryItem } from '../types';
 import { audioDiagnostics, observePlaybackMedia, recordPlaybackEvent } from '../utils/playbackDiagnostics';
+import { useLastFmListening } from '../hooks/useLastFmListening';
+import { stageSharedPlayback } from '../hooks/useSharedPlaybackSession';
 import { createAudioRecovery, isRetryableMediaError, type AudioRecoveryStatus } from '../utils/audioRecovery';
 import { saveDuration, trackDuration } from '../utils/duration';
 import { MusicIcon } from './MusicIcon';
@@ -188,6 +190,7 @@ interface AudioPlayerProps {
 export function AudioPlayer({ audioRef: sharedAudioRef, items, onPlaybackPosition, onPlaybackState, previewPauseRef,
   mobile = false, expanded = true, onExpand, onQueue, onOutput, onRevealCurrent }: AudioPlayerProps) {
   const audioRef = useRef<HTMLAudioElement>(null);
+  useLastFmListening(audioRef);
   const attachAudio = useCallback((audio: HTMLAudioElement | null) => {
     audioRef.current = audio;
     sharedAudioRef.current = audio;
@@ -562,6 +565,8 @@ export function AudioPlayer({ audioRef: sharedAudioRef, items, onPlaybackPositio
     if (range?.end != null) { void finishRange(range); return; }
     setResumePosition(0);
     if (repeatMode === 'one' && audioRef.current) {
+      usePlayerStore.setState({ listenId: crypto.randomUUID() });
+      stageSharedPlayback();
       audioRef.current.currentTime = 0;
       void audioRef.current.play().catch(() => {
         setIsPlaying(false);

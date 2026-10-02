@@ -19,7 +19,7 @@ export default defineConfig({
     },
     {
       name: 'mobile-webkit',
-      testMatch: ['mobile.spec.ts', 'mobile-audio.spec.ts', 'shared-session.spec.ts', 'shared-session-continuity.spec.ts', 'app-dialogs.spec.ts'],
+      testMatch: ['mobile.spec.ts', 'mobile-audio.spec.ts', 'shared-session.spec.ts', 'shared-session-continuity.spec.ts', 'app-dialogs.spec.ts', 'lastfm.spec.ts'],
       use: { ...devices['iPhone 13'] },
     },
   ],

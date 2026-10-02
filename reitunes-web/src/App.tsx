@@ -100,7 +100,7 @@ function AppContent() {
   const [tagWorkOpen, setTagWorkOpen] = useState(false);
   const tagReturnFocus = useRef<HTMLElement | null>(null);
   const [isImportOpen, setIsImportOpen] = useState(false);
-  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(() => new URLSearchParams(window.location.search).has('lastfm'));
   const [droppedFiles, setDroppedFiles] = useState<File[]>([]);
   const [isDragging, setIsDragging] = useState(false);
   const dragDepth = useRef(0);

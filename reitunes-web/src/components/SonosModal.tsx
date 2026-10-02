@@ -65,6 +65,9 @@ async function pauseSonosForHandoff(groupId: string) {
     await sonosRequest(`${url}/pause`, { method: 'POST', credentials: 'include' });
     playback = await fetchJson<SonosPlaybackStatus>(url).catch(() => before);
   }
+  // The speaker may have advanced while this screen was idle. Its playback
+  // response reconciles the shared listening ID before the handoff continues.
+  if (playback.reitunesSessionActive) await refreshSharedSession();
   return { playback, wasPlaying };
 }
 
@@ -164,7 +167,7 @@ export function SonosModal({ audioRef, isOpen, onClose, items }: SonosModalProps
       // Commit the output only after pause succeeds, so a failed request cannot
       // leave both outputs playing. A paused Sonos session stays paused locally.
       if (item) {
-        player.selectRemoteItem(item, position);
+        player.selectRemoteItem(item, position, undefined, usePlayerStore.getState().listenId ?? undefined);
       } else {
         player.setIsPlaying(false);
       }
@@ -172,7 +175,7 @@ export function SonosModal({ audioRef, isOpen, onClose, items }: SonosModalProps
       stageSharedPlayback();
       if (!await flushSharedSession()) throw new Error('The shared session changed. Please try again.');
       if (item) {
-        player.play(item, position);
+        player.play(item, position, undefined, usePlayerStore.getState().listenId ?? undefined);
         player.setIsPlaying(wasPlaying);
       }
       recordPlaybackEvent('command', {
@@ -241,7 +244,7 @@ export function SonosModal({ audioRef, isOpen, onClose, items }: SonosModalProps
         setSonosTarget({
           householdId: household.id, groupId: group.id, groupName: group.name, playerNames,
         });
-        if (item) player.selectRemoteItem(item, position);
+        if (item) player.selectRemoteItem(item, position, undefined, usePlayerStore.getState().listenId ?? undefined);
         stageSharedPlayback();
         if (!await flushSharedSession()) throw new Error('The shared session changed. Please try again.');
         if (item) {

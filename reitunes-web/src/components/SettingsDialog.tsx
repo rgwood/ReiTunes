@@ -11,6 +11,7 @@ import { MusicIcon } from './MusicIcon';
 import './SettingsDialog.css';
 import { useLibraryPreferences, type GridDensity } from '../stores/libraryPreferences';
 import { ColumnsDialog } from './ColumnsDialog';
+import { LastFmSettings } from './LastFmSettings';
 
 interface SettingsDialogProps {
   isOpen: boolean;
@@ -142,6 +143,7 @@ export function SettingsDialog({
             <button className="columns-choose" onClick={() => setChoosingColumns(true)}>Choose columns…</button>
           </div>
         </section>
+        <LastFmSettings isOpen={isOpen} />
         <footer>
           <button onClick={onClose}>Done</button>
         </footer>

@@ -20,6 +20,7 @@ interface PersistedPlayerState {
 
 interface PlayerState extends PersistedPlayerState {
   currentItem: LibraryItem | null;
+  listenId: string | null;
   isPlaying: boolean;
   pendingSeek: number | null;
 
@@ -28,8 +29,8 @@ interface PlayerState extends PersistedPlayerState {
   setResumePosition: (position: number) => void;
   setVolume: (volume: number) => void;
   setMuted: (muted: boolean) => void;
-  play: (item: LibraryItem, startPosition?: number, range?: PlaybackRange) => void;
-  selectRemoteItem: (item: LibraryItem, startPosition?: number, range?: PlaybackRange) => void;
+  play: (item: LibraryItem, startPosition?: number, range?: PlaybackRange, listenId?: string) => void;
+  selectRemoteItem: (item: LibraryItem, startPosition?: number, range?: PlaybackRange, listenId?: string) => void;
   setPlaybackRange: (range: PlaybackRange | null) => void;
   restoreCurrentItem: (item: LibraryItem) => void;
   refreshCurrentItem: (item: LibraryItem) => void;
@@ -45,6 +46,7 @@ export const usePlayerStore = create<PlayerState>()(
   persist<PlayerState, [], [], PersistedPlayerState>(
     (set, get) => ({
       currentItem: null,
+      listenId: null,
       currentItemId: null,
       isPlaying: false,
       pendingSeek: null,
@@ -60,10 +62,11 @@ export const usePlayerStore = create<PlayerState>()(
       setVolume: (volume) => set({ volume: Math.min(1, Math.max(0, volume)) }),
       setMuted: (muted) => set({ isMuted: muted }),
 
-      play: (item, startPosition = 0, range) => {
+      play: (item, startPosition = 0, range, listenId) => {
         const position = normalizePosition(startPosition);
         set({
           currentItem: item,
+          listenId: listenId ?? crypto.randomUUID(),
           currentItemId: item.id,
           isPlaying: true,
           pendingSeek: position,
@@ -72,10 +75,11 @@ export const usePlayerStore = create<PlayerState>()(
         });
       },
 
-      selectRemoteItem: (item, startPosition = 0, range) => {
+      selectRemoteItem: (item, startPosition = 0, range, listenId) => {
         const position = normalizePosition(startPosition);
         set({
           currentItem: item,
+          listenId: listenId ?? crypto.randomUUID(),
           currentItemId: item.id,
           isPlaying: false,
           pendingSeek: null,

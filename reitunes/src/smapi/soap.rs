@@ -736,6 +736,7 @@ mod tests {
                 "https://reitunes.example.com/",
             )),
             playback_session: Arc::new(crate::playback_session::PlaybackSessionStore::in_memory()),
+            lastfm: Arc::new(crate::lastfm::LastFm::in_memory()),
             tagging: None,
         };
 

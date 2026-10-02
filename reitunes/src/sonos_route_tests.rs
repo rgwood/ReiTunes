@@ -151,6 +151,7 @@ impl FakeSonos {
             .await
             .unwrap();
         assert_eq!(context["queueVersion"], body["queueVersion"]);
+        assert_eq!(context["reports"]["periodicIntervalMillis"], 10_000);
         assert_eq!(window["queueVersion"], body["queueVersion"]);
         assert_eq!(window["items"][0]["id"], body["itemId"]);
         assert_eq!(window["items"][0]["track"]["name"], "Test track");
@@ -242,7 +243,8 @@ impl Harness {
             ),
             sonos: Some(Arc::new(control)),
             cloud_queues: Arc::new(cloud_queue::CloudQueueStore::with_base_url(&base)),
-            playback_session: Arc::new(playback_session::PlaybackSessionStore::new(db).unwrap()),
+            playback_session: Arc::new(playback_session::PlaybackSessionStore::new(db.clone()).unwrap()),
+            lastfm: Arc::new(lastfm::LastFm::new(db).unwrap()),
             tagging: None,
         };
         let router = Router::new()
@@ -257,6 +259,10 @@ impl Harness {
             .route(
                 "/sonos/cloud-queue/{queue_id}/v2.3/itemWindow",
                 get(cloud_queue_item_window_handler),
+            )
+            .route(
+                "/sonos/cloud-queue/{queue_id}/v2.3/timePlayed",
+                post(cloud_queue_time_played_handler),
             )
             .layer(CookieManagerLayer::new())
             .with_state(state.clone());
@@ -315,6 +321,33 @@ impl Harness {
             .await
             .unwrap()
     }
+}
+
+#[tokio::test]
+async fn sonos_listening_reports_require_queue_auth_and_deduplicate_cumulative_time() {
+    let harness = Harness::new().await;
+    harness.state.lastfm.connect_for_test();
+    {
+        let mut library = harness.state.library.write().await;
+        let item = library.items.get_mut(&harness.track_id).unwrap();
+        item.artist = "Beck".into();
+        item.duration_seconds = Some(200.0);
+    }
+    assert!(harness.play(true).await.status().is_success());
+    let (base, authorization) = harness.fake.cloud_queue.lock().unwrap().clone().unwrap();
+    let item_id = harness.fake.playback.lock().unwrap()["itemId"].clone();
+    let mut body = json!({"items":[{"id":item_id,"reportId":Uuid::new_v4(),"type":"update",
+        "durationPlayedMillis":99_000,"timeSincePlaybackMillis":120_000}]});
+    let post = || harness.client.post(format!("{base}/timePlayed")).json(&body);
+    assert_eq!(post().send().await.unwrap().status(), StatusCode::UNAUTHORIZED);
+    assert_eq!(post().header("Authorization",&authorization).send().await.unwrap().status(),StatusCode::NO_CONTENT);
+    assert_eq!(harness.state.lastfm.status().unwrap().pending,0);
+    body["items"][0]["durationPlayedMillis"] = json!(100_000);
+    for _ in 0..2 {
+        assert_eq!(harness.client.post(format!("{base}/timePlayed")).header("Authorization",&authorization)
+            .json(&body).send().await.unwrap().status(),StatusCode::NO_CONTENT);
+    }
+    assert_eq!(harness.state.lastfm.status().unwrap().pending,1);
 }
 
 #[tokio::test]

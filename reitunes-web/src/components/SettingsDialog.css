@@ -131,3 +131,9 @@
 .columns-list input { accent-color: var(--accent); }
 .columns-dialog .columns-reset { margin-right: auto; }
 .columns-list button:focus-visible, .columns-choose:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.lastfm-settings p { font-size: 13px; line-height: 1.5; overflow-wrap: anywhere; }
+.lastfm-settings a { color: var(--accent); text-decoration: underline; }
+.lastfm-settings button { padding: 8px 12px; border: 1px solid var(--line); border-radius: 4px; }
+.lastfm-settings .settings-field input[type='password'] { min-width: 0; width: min(220px, 55%); padding: 6px; color: var(--text); background: var(--surface); border: 1px solid var(--line); }
+.lastfm-help { color: var(--muted); }
+.lastfm-settings [role='alert'] { color: var(--error); }
