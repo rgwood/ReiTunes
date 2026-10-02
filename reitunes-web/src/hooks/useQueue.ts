@@ -116,6 +116,7 @@ interface QueueState extends PersistedQueueState {
   getCurrentItem: () => LibraryItem | null;
   toggleShuffle: () => void;
   cycleRepeatMode: () => void;
+  toggleRepeatAll: () => void;
   getUpcomingManualQueue: () => LibraryItem[];
   getUpcomingContext: () => LibraryItem[];
   reconcileWithLibrary: (items: LibraryItem[]) => void;
@@ -339,6 +340,10 @@ export const useQueueStore = create<QueueState>()(
         const currentIdx = modes.indexOf(state.repeatMode);
         return { repeatMode: modes[(currentIdx + 1) % modes.length] };
       }),
+
+      toggleRepeatAll: () => canEditSharedSession() && set(state => ({
+        repeatMode: state.repeatMode === 'all' ? 'off' : 'all', editVersion: state.editVersion + 1,
+      })),
 
       getUpcomingManualQueue: () => get().manualQueue,
 

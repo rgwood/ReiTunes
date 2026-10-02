@@ -12,7 +12,10 @@ import { flushSharedSession, refreshSharedSession, stageSharedPlayback } from '.
 function sonosQueueFor(item: LibraryItem): LibraryItem[] {
   const queue = useQueueStore.getState();
   const upcomingContext = queue.getUpcomingContext();
-  return [item, ...queue.manualQueue, ...upcomingContext].slice(0, 500);
+  // Include the closing occurrence of a repeat cycle, even for a one-song
+  // playlist. The server replenishes this rolling queue as Sonos advances.
+  const repeatTail = queue.repeatMode === 'all' ? queue.contextItems[queue.contextIndex] : undefined;
+  return [item, ...queue.manualQueue, ...upcomingContext, ...(repeatTail ? [repeatTail] : [])].slice(0, 500);
 }
 
 export async function sendSonosQueue(

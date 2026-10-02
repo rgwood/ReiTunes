@@ -276,7 +276,7 @@ export function AudioPlayer({ audioRef: sharedAudioRef, items, onPlaybackPositio
     previewPauseRef.current = pauseForPreview;
     return () => { if (previewPauseRef.current === pauseForPreview) previewPauseRef.current = null; };
   }, [previewPauseRef, target, sonosPlayback, sonosSessionActive, pauseSonos, setIsPlaying]);
-  const { playNext, shuffleEnabled, repeatMode, toggleShuffle, cycleRepeatMode } = useQueueStore();
+  const { playNext, shuffleEnabled, repeatMode, toggleShuffle, cycleRepeatMode, toggleRepeatAll } = useQueueStore();
   const finishingRange = useRef<PlaybackRange | null>(null);
   const finishRange = useCallback(async (range: PlaybackRange) => {
     const player = usePlayerStore.getState();
@@ -885,6 +885,8 @@ export function AudioPlayer({ audioRef: sharedAudioRef, items, onPlaybackPositio
         <div className="mobile-player-actions" role="group" aria-label="Playback options">
           <button type="button" aria-label={shuffleEnabled ? 'Shuffle on' : 'Shuffle off'} aria-pressed={shuffleEnabled} onClick={toggleShuffle} disabled={!canControlSession || isSending || isSwitchingOutput}>{Icons.shuffle}<span>Shuffle</span></button>
           {!remote && <button type="button" aria-label={`Repeat ${repeatMode}`} aria-pressed={repeatMode !== 'off'} onClick={cycleRepeatMode} disabled={!canPlayLocally}>{Icons.repeat}<span>{repeatMode === 'one' ? 'Repeat one' : 'Repeat'}</span></button>}
+          {remote && <button type="button" aria-label={`Repeat playlist ${repeatMode === 'all' ? 'on' : 'off'}`} aria-pressed={repeatMode === 'all'} onClick={toggleRepeatAll}
+            disabled={!canControlSession || isSending || isSwitchingOutput || sonos.isTransportPending}>{Icons.repeat}<span>Repeat</span></button>}
           <button type="button" onClick={() => void (remote ? handleAddSonosBookmark() : handleAddBookmark())} disabled={!currentItem || (remote ? !sonosSessionActive : !canPlayLocally)} data-feedback={bookmarkFeedback} aria-label={remote ? 'Bookmark current Sonos time' : 'Add bookmark'}>{Icons.bookmark}<span>{bookmarkFeedback === 'success' ? 'Saved' : bookmarkFeedback === 'error' ? 'Retry' : 'Bookmark'}</span></button>
         </div>
         {upcoming.length > 0 && <section className="mobile-player-upcoming" aria-label="Up next"><div><h3>Up next</h3><button type="button" onClick={onQueue}>View queue</button></div>{upcoming.map((item, index) => <div className="mobile-upcoming-track" key={`${item.id}-${index}`}><span>{item.name}<small>{item.artist}</small></span><span>{trackDuration(item) ? formatTime(trackDuration(item)!) : ''}</span></div>)}</section>}
@@ -994,6 +996,9 @@ export function AudioPlayer({ audioRef: sharedAudioRef, items, onPlaybackPositio
             disabled={!sonosSessionActive || !currentItem || isSwitchingOutput} feedback={bookmarkFeedback} sonos />
           <PlayerShuffle enabled={shuffleEnabled} onClick={toggleShuffle}
             disabled={isSending || isSwitchingOutput || sonos.isTransportPending} />
+          <button type="button" className="player-repeat" onClick={toggleRepeatAll} aria-pressed={repeatMode === 'all'}
+            aria-label={`Repeat playlist ${repeatMode === 'all' ? 'on' : 'off'}`} title={`Repeat playlist ${repeatMode === 'all' ? 'on' : 'off'}`}
+            disabled={!canControlSession || isSending || isSwitchingOutput || sonos.isTransportPending}>{Icons.repeat}</button>
         </div>
         <PlayerTransport playing={sonosIsPlaying} sonos onPrevious={handlePrevious} onNext={handleNext}
           onToggle={() => void (sonosIsPlaying ? sonos.pause() : sonos.play())}

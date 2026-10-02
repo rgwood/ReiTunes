@@ -45,6 +45,9 @@
 .player-bar .transport-group button:focus-visible,
 .player-bar .player-bookmark:focus-visible, .player-bar .player-shuffle:focus-visible, .player-bar .player-volume button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 .player-bar .player-shuffle[aria-pressed='true'] { color: var(--accent); background: var(--selection); border-color: var(--accent); box-shadow: inset 0 -2px var(--accent); }
+.player-bar .player-repeat { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; width: 26px; height: 24px; padding: 3px; border: 1px solid transparent; border-radius: 3px; color: var(--muted); }
+.player-bar .player-repeat:hover:not(:disabled) { background: var(--hover); }
+.player-bar .player-repeat[aria-pressed='true'] { color: var(--accent); background: var(--selection); border-color: var(--accent); box-shadow: inset 0 -2px var(--accent); }
 .player-bar .timeline-bookmark { padding: 0; min-width: 4px; }
 .player-bar .timeline-bookmark:hover:not(:disabled), .player-bar .timeline-bookmark:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .sonos-status:not(.sr-only) { grid-column: 2 / -1; grid-row: 3; padding-top: 3px; font-size: 11px; }

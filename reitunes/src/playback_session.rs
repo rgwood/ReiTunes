@@ -131,7 +131,9 @@ impl PlaybackSessionState {
             if let Some(index) = ordered.iter().position(|id| Some(id) == current) {
                 ids.extend_from_slice(&ordered[index + 1..]);
                 if queue.repeat_mode == RepeatMode::All {
-                    ids.extend_from_slice(&ordered[..index]);
+                    // Close the cycle with a fresh occurrence of the current
+                    // context song. This also keeps one-song playlists going.
+                    ids.extend_from_slice(&ordered[..=index]);
                 }
             }
         }
@@ -417,8 +419,10 @@ impl PlaybackSessionStore {
         // A new cloud queue uses new occurrence IDs, even when restarting the
         // same song. Establish its baseline rather than treating it as a stale
         // observation from an old queue.
-        transaction.execute("UPDATE playback_session SET sonos_item_id = ?1, sonos_pending_until = 0, queue_sync_pending = 0, queue_sync_error = NULL WHERE singleton = 1", [queue_item_id])?;
+        let repeat = state.queue.repeat_mode == RepeatMode::All && !state.queue.context_item_ids.is_empty();
+        transaction.execute("UPDATE playback_session SET sonos_item_id = ?1, sonos_pending_until = 0, queue_sync_pending = ?2, queue_sync_error = NULL WHERE singleton = 1", params![queue_item_id, repeat])?;
         transaction.commit()?;
+        if repeat { self.sync_wakeup.notify_one(); }
         Ok(())
     }
 
@@ -546,8 +550,12 @@ impl PlaybackSessionStore {
             snapshot.revision += 1;
         }
         state.position = position;
-        transaction.execute("UPDATE playback_session SET revision = ?1, state_json = ?2, sonos_item_id = ?3, sonos_pending_until = 0 WHERE singleton = 1",
-            params![snapshot.revision, serde_json::to_string(state)?, item_id])?;
+        if advanced && state.queue.repeat_mode == RepeatMode::All && !state.queue.context_item_ids.is_empty() {
+            snapshot.queue_sync_pending = true;
+            snapshot.queue_sync_error = None;
+        }
+        transaction.execute("UPDATE playback_session SET revision = ?1, state_json = ?2, sonos_item_id = ?3, sonos_pending_until = 0, queue_sync_pending = ?4, queue_sync_error = ?5 WHERE singleton = 1",
+            params![snapshot.revision, serde_json::to_string(state)?, item_id, snapshot.queue_sync_pending, snapshot.queue_sync_error])?;
         transaction.commit()?;
         if advanced && snapshot.queue_sync_pending {
             self.sync_wakeup.notify_one();
@@ -622,7 +630,7 @@ pub fn start_queue_sync(app: AppState) {
                 }
                 Ok(Ok(false)) => {
                     retry_seconds = 2;
-                    60
+                    15
                 }
                 result => {
                     tracing::warn!(?result, "Shared Sonos queue sync will retry");
@@ -642,6 +650,20 @@ pub fn start_queue_sync(app: AppState) {
 }
 
 pub(crate) async fn sync_queue_once(app: &AppState) -> Result<bool> {
+    let snapshot = app.playback_session.snapshot()?;
+    if !snapshot.queue_sync_pending {
+        if let Some(state) = &snapshot.state {
+            if let PlaybackTarget::Sonos { group_id, .. } = &state.target {
+                if state.queue.repeat_mode == RepeatMode::All {
+                    // Events normally wake the projector. Poll as a fallback
+                    // and renew subscriptions with every browser closed. Reads
+                    // don't hold the command lock or delay a user's Next press.
+                    let _ = crate::sonos_group_playback_handler(State(app.clone()), axum::extract::Path(group_id.clone()))
+                        .await.map_err(|(_, body)| anyhow::anyhow!(body.0.error))?;
+                }
+            }
+        }
+    }
     let _command = app.playback_session.sonos_commands.lock().await;
     let snapshot = app.playback_session.snapshot()?;
     if !snapshot.queue_sync_pending {
@@ -710,6 +732,9 @@ pub(crate) async fn sync_queue_once(app: &AppState) -> Result<bool> {
                 .refresh_cloud_queue(group_id)
                 .await
                 .map_err(crate::sonos_failure)?;
+            if let Err(error) = control.ensure_event_subscriptions(group_id).await {
+                tracing::warn!(%error, group_id, "Could not renew Sonos event subscriptions");
+            }
             Ok(())
         }
         .await;
@@ -933,7 +958,7 @@ mod tests {
         replacement.queue.context_index = 1;
         assert_eq!(
             replacement.upcoming_item_ids(),
-            vec![2, 2, 2]
+            vec![2, 2, 2, 3]
                 .into_iter()
                 .map(Uuid::from_u128)
                 .collect::<Vec<_>>()
@@ -1013,7 +1038,7 @@ mod tests {
             restored.queue.context_id.as_deref(),
             Some("replacement-source")
         );
-        assert!(restored.upcoming_item_ids().is_empty());
+        assert_eq!(restored.upcoming_item_ids(), vec![Uuid::from_u128(2)]);
     }
 
     #[test]

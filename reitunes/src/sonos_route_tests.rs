@@ -318,6 +318,97 @@ impl Harness {
 }
 
 #[tokio::test]
+async fn repeat_replenishes_normal_shuffled_and_single_song_playlists_without_a_browser() {
+    for (count, shuffle) in [(3, false), (3, true), (1, false)] {
+        let harness = Harness::new().await;
+        let mut context = vec![harness.track_id];
+        let manual = Uuid::new_v4();
+        for index in 1..=count {
+            let id = if index == count { manual } else { Uuid::new_v4() };
+            if id != manual { context.push(id); }
+            harness.state.library.write().await.apply(
+                &EventWithMetadata::new(id, Event::LibraryItemCreatedEvent {
+                    name: id.to_string(), file_path: format!("{id}.mp3"), artist: None,
+                    album: None, track_number: None,
+                }).unwrap(),
+            );
+        }
+        let mut order = context.clone();
+        if shuffle { order[1..].reverse(); }
+        let state = json!({
+            "target":{"kind":"sonos", "householdId":"home", "groupId":"group-1", "groupName":"Living room", "playerNames":[]},
+            "currentItemId":harness.track_id, "position":42, "playbackRange":null,
+            "queue":{"manualQueue":[{"id":"manual", "itemId":manual}],
+                "contextItemIds":context, "contextIndex":0, "contextName":"Housewarming",
+                "shuffleEnabled":shuffle, "shuffledIds":order, "repeatMode":"all"}
+        });
+        let initial = serde_json::from_value(json!({
+            "operationId":"initial-repeat", "expectedRevision":0, "state":state,
+        })).unwrap();
+        harness.state.playback_session.update(&initial).unwrap();
+        let response = harness.client.post(format!("{}api/sonos/play", harness.server.url))
+            .header("Cookie", format!("{SESSION_COOKIE_NAME}={}", *PASSWORD_HASH))
+            .json(&json!({"groupId":"group-1", "itemIds":[harness.track_id],
+                "startItemId":harness.track_id, "positionMillis":42000, "allowTakeover":true,
+                "expectedRevision":1}))
+            .send().await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        assert!(harness.state.playback_session.snapshot().unwrap().queue_sync_pending);
+        assert!(playback_session::sync_queue_once(&harness.state).await.unwrap());
+
+        let mut expected = vec![manual];
+        expected.extend(order.iter().cycle().skip(1).take(count * 3).copied());
+        let mut occurrences = std::collections::HashSet::new();
+        for (index, expected_source) in expected.into_iter().enumerate() {
+            let window = harness.queue_window().await;
+            let current = harness.fake.playback.lock().unwrap()["itemId"].clone();
+            let items = window["items"].as_array().unwrap();
+            let current_index = items.iter().position(|item| item["id"] == current).unwrap();
+            let next = items[current_index + 1]["id"].as_str().unwrap();
+            assert!(occurrences.insert(next.to_string()), "Every loop needs fresh occurrences");
+            assert_eq!(harness.state.cloud_queues.source_item_id(
+                window["queueVersion"].as_str(), Some(next)).unwrap(), Some(expected_source));
+            {
+                let mut playback = harness.fake.playback.lock().unwrap();
+                playback["itemId"] = json!(next);
+                playback["positionMillis"] = json!(1234);
+                // Refresh must also leave a paused speaker paused.
+                playback["playbackState"] = json!("PLAYBACK_STATE_PAUSED");
+            }
+            if index % 2 == 0 {
+                // Speaker events alone, with no browser polling.
+                assert_eq!(harness.event(&(index + 1).to_string(), true).await.status(), StatusCode::OK);
+            }
+            // Odd iterations deliberately lose the event: the server catches up.
+            assert!(playback_session::sync_queue_once(&harness.state).await.unwrap());
+            let snapshot = serde_json::to_value(harness.state.playback_session.snapshot().unwrap()).unwrap();
+            assert_eq!(snapshot["state"]["currentItemId"], expected_source.to_string());
+            assert_eq!(snapshot["state"]["queue"]["manualQueue"], json!([]));
+            assert!(!harness.state.playback_session.snapshot().unwrap().queue_sync_pending);
+            let playback = harness.fake.playback.lock().unwrap();
+            assert_eq!(playback["itemId"], next);
+            assert_eq!(playback["positionMillis"], 1234);
+            assert_eq!(playback["playbackState"], "PLAYBACK_STATE_PAUSED");
+        }
+        let snapshot = serde_json::to_value(harness.state.playback_session.snapshot().unwrap()).unwrap();
+        let mut state = snapshot["state"].clone();
+        state["queue"]["repeatMode"] = json!("off");
+        let stop = serde_json::from_value(json!({
+            "operationId":"stop-repeat", "expectedRevision":snapshot["revision"], "state":state,
+        })).unwrap();
+        harness.state.playback_session.update(&stop).unwrap();
+        assert!(playback_session::sync_queue_once(&harness.state).await.unwrap());
+        let window = harness.queue_window().await;
+        let current = harness.fake.playback.lock().unwrap()["itemId"].clone();
+        let items = window["items"].as_array().unwrap();
+        let index = items.iter().position(|item| item["id"] == current).unwrap();
+        assert_eq!(items.len() - index - 1, count - 1);
+        assert!(!playback_session::sync_queue_once(&harness.state).await.unwrap());
+        assert_eq!(harness.fake.loaded_sessions.lock().unwrap().len(), 1);
+    }
+}
+
+#[tokio::test]
 async fn sonos_handoff_loads_a_paused_track_at_the_requested_position() {
     let harness = Harness::new().await;
     let response = harness.client.post(format!("{}api/sonos/play", harness.server.url))

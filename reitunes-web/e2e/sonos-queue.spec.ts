@@ -74,6 +74,28 @@ test('revealing the current Sonos song leaves playback and the queue alone', asy
   expect(sonos.commands).toEqual([]);
 });
 
+for (const mobile of [false, true]) {
+  test(`Sonos repeat persists without restarting playback (${mobile ? 'mobile' : 'desktop'})`, async ({ page, sharedSession }) => {
+    if (mobile) await page.setViewportSize({ width: 390, height: 844 });
+    const { sonos, directQueueRequests } = await setup(page, sharedSession);
+    const before = structuredClone(sharedSession.snapshot.state as SharedPlaybackState);
+    const height = mobile ? 0 : await page.locator('.player-bar').evaluate(element => element.getBoundingClientRect().height);
+    await page.getByRole('button', { name: 'Repeat playlist off', exact: true }).click();
+    await expect.poll(() => queue(sharedSession).repeatMode).toBe('all');
+    await expect(page.getByRole('button', { name: 'Repeat playlist on', exact: true })).toHaveAttribute('aria-pressed', 'true');
+    expect((sharedSession.snapshot.state as SharedPlaybackState).currentItemId).toBe(before.currentItemId);
+    expect(queue(sharedSession).contextIndex).toBe(before.queue.contextIndex);
+    if (!mobile) expect(await page.locator('.player-bar').evaluate(element => element.getBoundingClientRect().height)).toBe(height);
+    await page.reload();
+    await expect(page.getByRole('button', { name: 'Repeat playlist on', exact: true })).toHaveAttribute('aria-pressed', 'true');
+    await page.getByRole('button', { name: 'Repeat playlist on', exact: true }).click();
+    await expect.poll(() => queue(sharedSession).repeatMode).toBe('off');
+    expect(directQueueRequests).toEqual([]);
+    expect(sonos.queueRequests).toEqual([]);
+    expect(sonos.commands).toEqual([]);
+  });
+}
+
 test('shuffle saves the upcoming shared order without restarting Sonos and restores ordinary order', async ({ page, sharedSession }) => {
   const { directQueueRequests, sonos } = await setup(page, sharedSession);
   await page.evaluate(() => { Math.random = () => 0; });

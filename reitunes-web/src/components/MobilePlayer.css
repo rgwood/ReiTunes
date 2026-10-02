@@ -31,7 +31,8 @@
 .mobile-volume-controls button { flex: 0 0 44px; }
 .mobile-device-volume { color: var(--muted); text-align: center; font-size: 13px; padding: 12px 0; }
 .music-app .mobile-player-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 16px 0 22px; }
-.music-app .mobile-player-actions button { flex: 1; flex-direction: row; font-size: 13px; border: 1px solid var(--line); background: var(--panel); padding: 8px 12px; }
+.music-app .mobile-player-actions button { flex: 1 0 auto; flex-direction: row; gap: 5px; font-size: 13px; border: 1px solid var(--line); background: var(--panel); padding: 8px; }
+.music-app .mobile-player-actions svg { flex-shrink: 0; width: 16px; height: 16px; }
 .music-app .mobile-player-upcoming { margin-top: 18px; }
 .music-app .mobile-player-upcoming > div:first-child { display: flex; align-items: center; justify-content: space-between; }
 .music-app .mobile-player-upcoming h3 { color: var(--muted); font-size: 13px; margin: 0; font-weight: 600; }

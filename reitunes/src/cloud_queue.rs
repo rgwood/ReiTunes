@@ -453,6 +453,13 @@ impl CloudQueueStore {
         let mut updated = queue.clone();
         let mut previous_upcoming = updated.items.split_off(index + 1);
         updated.items.truncate(index + 1);
+        // Repeating playlists can run for days. Keep the current occurrence
+        // and enough history for Sonos's largest supported previous window.
+        updated.items.drain(..index.saturating_sub(MAX_WINDOW_ITEMS_EACH_SIDE));
+        if !updated.items.iter().any(|item| item.id == updated.start_item_id) {
+            updated.start_item_id = updated.items[0].id.clone();
+        }
+        updated.created_at_unix = unix_timestamp();
         for track in tracks {
             let mut item = QueueItem::from(track);
             if let Some(index) = previous_upcoming.iter().position(|old| old.source_id == item.source_id) {
@@ -883,6 +890,35 @@ mod tests {
                 Some(&restored_playback.http_authorization),
             )
             .unwrap();
+    }
+
+    #[test]
+    fn repeating_queue_bounds_history_and_keeps_current_and_future_occurrences() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db = open_connection_pool(temp_dir.path().join("queue.db").to_str().unwrap()).unwrap();
+        let store = CloudQueueStore::with_base_url_and_db("https://example.com/", db.clone()).unwrap();
+        let prepared = store.prepare(vec![track(1), track(2)], None).unwrap();
+        for _ in 0..150 {
+            let before = store.snapshot(prepared.queue_id).unwrap();
+            let current = before.items.last().unwrap();
+            let mut next = track(1);
+            next.queue_item_id = Uuid::new_v4();
+            store.replace_upcoming(&before.queue_version, &current.id, vec![next]).unwrap();
+            let after = store.snapshot(prepared.queue_id).unwrap();
+            assert!(after.items.len() <= MAX_WINDOW_ITEMS_EACH_SIDE + 2);
+            assert_eq!(after.items[after.items.len() - 2].id, current.id);
+            assert_ne!(after.items.last().unwrap().id, current.id);
+            assert!(after.items.iter().any(|item| item.id == after.start_item_id));
+        }
+        let snapshot = store.snapshot(prepared.queue_id).unwrap();
+        drop(store);
+        let restored = CloudQueueStore::with_base_url_and_db("https://example.com/", db).unwrap();
+        assert_eq!(restored.snapshot(prepared.queue_id).unwrap().items.len(), MAX_WINDOW_ITEMS_EACH_SIDE + 2);
+        let window = restored.item_window(prepared.queue_id, Some(&snapshot.authorization), &ItemWindowQuery {
+            item_id: String::new(), previous_window_size: 0, upcoming_window_size: 10,
+            _reason: "refresh".into(), _queue_version: snapshot.queue_version, _is_explicit: None,
+        }).unwrap();
+        assert!(!window.items.is_empty());
     }
 
     #[test]
