@@ -26,6 +26,9 @@ function AppDialog({ request }: { request: ReturnType<typeof useDialogStore.getS
     aria-describedby={`app-dialog-message-${request.id}`} onCancel={event => { event.preventDefault(); finish(false); }}>
     <h2 id={`app-dialog-title-${request.id}`}>{request.title}</h2>
     <p id={`app-dialog-message-${request.id}`}>{request.message}</p>
+    {request.details && <ul className="app-dialog-details" aria-label="Selected songs">
+      {request.details.map((detail, index) => <li key={index}>{detail}</li>)}
+    </ul>}
     <footer>
       {request.confirmation && <button ref={cancel} type="button" onClick={() => finish(false)}>Cancel</button>}
       <button ref={action} type="button" className={request.destructive ? 'destructive' : 'primary'} onClick={() => finish(true)}>{request.actionLabel}</button>

@@ -15,7 +15,8 @@ import type { LibraryItem, Bookmark, Playlist } from '../types';
 import { usePlayerStore } from '../stores/playerStore';
 import { useQueueStore } from '../hooks/useQueue';
 import { usePlayback } from '../hooks/usePlayback';
-import { useMetadataSuggestions, useUpdateLibraryItem, deleteItem as apiDeleteItem } from '../hooks/useLibrary';
+import { useMetadataSuggestions, useUpdateLibraryItem } from '../hooks/useLibrary';
+import { useLibraryActions, type LibraryAction } from '../hooks/useLibraryActions';
 import { requestConfirmation, showMessage } from '../stores/dialogStore';
 import { FavoriteButton } from './FavoriteButton';
 import { Tooltip } from './Tooltip';
@@ -363,6 +364,9 @@ export const LibraryTable = memo(function LibraryTable({ items, searchQuery, onl
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
   const [selection, setSelection] = useState<{ rowId: string; field: EditableField } | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const libraryActions = useLibraryActions();
+  const confirmingDelete = useRef(false);
+  const [actionFailure, setActionFailure] = useState<{ action: LibraryAction; items: LibraryItem[]; message: string } | null>(null);
   const anchor = useRef<string | null>(null);
   const dragPreviewRef = useRef<HTMLDivElement>(null);
   const [playlistError, setPlaylistError] = useState('');
@@ -650,21 +654,50 @@ export const LibraryTable = memo(function LibraryTable({ items, searchQuery, onl
     setContextMenu({ x: e.clientX, y: e.clientY, item });
   }, [editingCell, selectedIds, cancelClickEdit]);
 
-  const handleDelete = useCallback(async () => {
-    if (contextMenu) {
-      const item = contextMenu.item;
-      setContextMenu(null);
-      returnFocusRef.current?.focus();
-      if (await requestConfirmation({ title: 'Delete song?', message: `“${item.name}” will be deleted. Its audio file will also be permanently deleted unless another song uses it.`, actionLabel: 'Delete song', destructive: true })) {
-        try {
-          await apiDeleteItem(item.id);
-        } catch (err) {
-          console.error('Failed to delete:', err);
-          showMessage('Could not delete song', `“${item.name}” could not be deleted. Please try again.`);
-        }
+  function actionItems() {
+    const selected = table.getRowModel().rows.map(row => row.original).filter(item => selectedIds.has(item.id));
+    return selected.length ? selected : contextMenu ? [contextMenu.item] : [];
+  }
+
+  async function performAction(action: LibraryAction, targets: LibraryItem[]) {
+    if (!targets.length || libraryActions.pending) return;
+    setContextMenu(null);
+    setActionFailure(null);
+    const result = await libraryActions.run(targets, action);
+    if (!result) return;
+    if (result.failed.length) {
+      setSelectedIds(new Set(result.failed.map(item => item.id)));
+      if (targets.length === 1) {
+        showMessage(action === 'delete' ? 'Could not delete song' : 'Could not update favourite',
+          `“${targets[0].name}” could not be ${action === 'delete' ? 'deleted' : 'updated'}. Please try again.`);
+      } else {
+        const outcome = action === 'delete' ? 'deleted' : 'updated';
+        setActionFailure({ action, items: result.failed,
+          message: `${result.succeeded.length} of ${targets.length} songs ${outcome}. ${result.failed.length} failed; those songs remain selected.` });
       }
+    } else if (action === 'delete') {
+      const deleted = new Set(result.succeeded.map(item => item.id));
+      setSelectedIds(previous => new Set([...previous].filter(id => !deleted.has(id))));
+      setSelection(previous => previous && deleted.has(previous.rowId) ? null : previous);
     }
-  }, [contextMenu]);
+  }
+
+  async function handleDelete(targets = actionItems()) {
+    if (!targets.length || confirmingDelete.current || libraryActions.pending) return;
+    confirmingDelete.current = true;
+    setContextMenu(null);
+    returnFocusRef.current?.focus();
+    try {
+      const single = targets.length === 1;
+      if (await requestConfirmation({
+        title: single ? 'Delete song?' : `Delete ${targets.length} songs?`,
+        message: single ? `“${targets[0].name}” will be deleted. Its audio file will also be permanently deleted unless another song uses it.`
+          : `${targets.length} selected songs will be deleted from your library. Their audio files will also be permanently deleted unless another song uses them.`,
+        details: single ? undefined : targets.map(item => `${item.name}${item.artist ? ` — ${item.artist}` : ''}`),
+        actionLabel: single ? 'Delete song' : `Delete ${targets.length} songs`, destructive: true,
+      })) await performAction('delete', targets);
+    } finally { confirmingDelete.current = false; }
+  }
 
   const handleAddToQueue = useCallback(() => {
     if (contextMenu) {
@@ -726,6 +759,7 @@ export const LibraryTable = memo(function LibraryTable({ items, searchQuery, onl
   useEffect(() => { onSelectionCountChange?.(selectedCount); }, [selectedCount, onSelectionCountChange]);
   const contextItems = contextMenu ? selectedRows.map(row => row.original) : [];
   const contextIds = contextItems.length ? contextItems.map(item => item.id) : contextMenu ? [contextMenu.item.id] : [];
+  const contextTargets = contextItems.length ? contextItems : contextMenu ? [contextMenu.item] : [];
   const manualPlaylists = playlists.filter(playlist => !playlist.smart_rules);
   function selectRows(id: string, extend: boolean, toggle: boolean) {
     if (extend && anchor.current && rows.some(row => row.id === anchor.current)) {
@@ -795,13 +829,33 @@ export const LibraryTable = memo(function LibraryTable({ items, searchQuery, onl
   }
 
   return (
-    <div className="px-5 h-full flex flex-col">
+    <div className="px-5 h-full flex flex-col relative">
       <div ref={dragPreviewRef} className="library-drag-preview" aria-hidden="true" />
       {choosingColumns && <ColumnsDialog onClose={() => setChoosingColumns(false)} />}
       {tracklistItem && <TracklistDialog key={tracklistItem.id} item={tracklistItem} onClose={() => setTracklistItem(null)}
         onApplied={() => setExpandedAlbums(old => new Map(old).set(tracklistItem.id, true))} />}
       {editError && <div role="alert" className="library-edit-error">{editError}</div>}
       {playlistError && <div role="alert" className="library-edit-error">{playlistError}</div>}
+      {actionFailure && <div role="alert" className="library-edit-error library-action-feedback">
+        <span>{actionFailure.message}</span>
+        <button type="button" disabled={libraryActions.pending} onClick={() => {
+          if (actionFailure.action === 'delete') void handleDelete(actionFailure.items);
+          else void performAction(actionFailure.action, actionFailure.items);
+        }}>Retry failed changes</button>
+        <button type="button" onClick={() => setActionFailure(null)}>Dismiss</button>
+      </div>}
+      {(selectedCount > 1 || libraryActions.pending) && <div className="library-selection-actions" role="toolbar" aria-label="Selected song actions" aria-busy={libraryActions.pending}>
+        <span role={libraryActions.pending ? 'status' : undefined}>{libraryActions.progress
+          ? `${libraryActions.progress.action === 'delete' ? 'Deleting' : 'Updating'}… ${libraryActions.progress.completed} of ${libraryActions.progress.total}`
+          : `${selectedCount} selected`}</span>
+        <button type="button" disabled={libraryActions.pending || selectedRows.every(row => row.original.is_favorite)}
+          onClick={() => void performAction('favourite', selectedRows.map(row => row.original))}>Add to favourites</button>
+        <button type="button" disabled={libraryActions.pending || selectedRows.every(row => !row.original.is_favorite)}
+          onClick={() => void performAction('unfavourite', selectedRows.map(row => row.original))}>Remove from favourites</button>
+        <button type="button" className="destructive" disabled={libraryActions.pending}
+          onClick={() => void handleDelete(selectedRows.map(row => row.original))}>Delete…</button>
+        <button type="button" disabled={libraryActions.pending} onClick={() => setSelectedIds(new Set())}>Clear selection</button>
+      </div>}
       {infoItem && <SongInfoDialog key={infoItem.id} item={items.find(item => item.id === infoItem.id) ?? infoItem} onClose={() => {
         setInfoItem(null);
         queueMicrotask(() => returnFocusRef.current?.focus());
@@ -993,6 +1047,9 @@ export const LibraryTable = memo(function LibraryTable({ items, searchQuery, onl
                       event.preventDefault(); setSelectedIds(new Set(rows.map(row => row.id)));
                     } else if (event.key === 'Escape') {
                       setSelectedIds(new Set());
+                    } else if (event.key === 'Delete') {
+                      event.preventDefault(); event.stopPropagation();
+                      if (!event.repeat) void handleDelete(selectedRows.length ? selectedRows.map(row => row.original) : [row.original]);
                     } else if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'i') {
                       event.preventDefault();
                       setContextMenu(null);
@@ -1114,7 +1171,13 @@ export const LibraryTable = memo(function LibraryTable({ items, searchQuery, onl
           </div>
           {contextIds.length === 1 && <button type="button" className="w-full text-left px-3 py-2 text-solarized-base1 hover:bg-solarized-blue"
             onClick={() => { setTracklistItem(contextMenu.item); setContextMenu(null); }}>{contextMenu.item.tracklist ? 'Edit tracklist…' : 'Find tracklist…'}</button>}
-          {onManageBookmarks && Object.keys(contextMenu.item.bookmarks).length > 0 && (
+          {contextTargets.some(item => !item.is_favorite) && <button type="button" disabled={libraryActions.pending}
+            className="w-full text-left px-3 py-2 text-solarized-base1 hover:bg-solarized-blue"
+            onClick={() => void performAction('favourite', contextTargets)}>Add to favourites</button>}
+          {contextTargets.some(item => item.is_favorite) && <button type="button" disabled={libraryActions.pending}
+            className="w-full text-left px-3 py-2 text-solarized-base1 hover:bg-solarized-blue"
+            onClick={() => void performAction('unfavourite', contextTargets)}>Remove from favourites</button>}
+          {contextIds.length === 1 && onManageBookmarks && Object.keys(contextMenu.item.bookmarks).length > 0 && (
             <button type="button" className="w-full text-left px-3 py-2 text-solarized-base1 hover:bg-solarized-blue"
               onClick={() => {
                 onManageBookmarks(contextMenu.item);
@@ -1155,12 +1218,11 @@ export const LibraryTable = memo(function LibraryTable({ items, searchQuery, onl
             void changePlaylist('/' + selectedPlaylist.id + '/items', 'DELETE', { library_item_ids: contextIds });
             setContextMenu(null);
           }}>Remove from playlist</button>}
-          {contextIds.length === 1 && <div
-            className="px-3 py-2 text-solarized-base1 hover:bg-solarized-red hover:text-solarized-base3 cursor-pointer"
-            onClick={handleDelete}
-          >
-            &#128465; Delete from Library
-          </div>}
+          <button type="button" disabled={libraryActions.pending}
+            className="w-full text-left px-3 py-2 text-solarized-base1 hover:bg-solarized-red hover:text-solarized-base3"
+            onClick={() => void handleDelete(contextTargets)}>
+            <span aria-hidden="true">&#128465; </span>{contextIds.length > 1 ? `Delete ${contextIds.length} songs from Library…` : 'Delete from Library'}
+          </button>
         </div>
       )}
     </div>

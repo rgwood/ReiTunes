@@ -5,6 +5,7 @@ interface DialogOptions {
   message: string;
   actionLabel: string;
   destructive?: boolean;
+  details?: string[];
 }
 
 interface DialogRequest extends DialogOptions {
