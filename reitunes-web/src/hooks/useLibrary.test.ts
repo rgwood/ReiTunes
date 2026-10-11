@@ -13,40 +13,32 @@ function clientWithTrack() {
   const client = new QueryClient();
   client.setQueryData(['library'], [track]);
   client.setQueryData(['tags'], { enabled: true, items: {} });
+  client.setQueryData(['discovery'], { sources: [], entries: [], refreshing: false });
   return client;
 }
 
 describe('library updates and cached tags', () => {
-  it.each(['name', 'artist', 'album', 'file_path'] as const)('refreshes tags when %s changes', field => {
+  it.each(['name', 'artist', 'album', 'file_path', 'play_count'] as const)('leaves tags to the server when %s changes', field => {
+    // The server sends the item's new tags itself, instead of us refetching all of them.
     const client = clientWithTrack();
-    const changed = { ...track, [field]: 'Corrected metadata' };
+    const changed = { ...track, [field]: field === 'play_count' ? 1 : 'Corrected metadata' };
     applyLibraryUpdate(client, { type: 'update', item: changed });
     expect(client.getQueryData(['library'])).toEqual([changed]);
-    expect(client.getQueryState(['tags'])?.isInvalidated).toBe(true);
+    expect(client.getQueryState(['tags'])?.isInvalidated).toBe(false);
+    expect(client.getQueryState(['discovery'])?.isInvalidated).toBe(false);
     client.clear();
   });
 
-  it('refreshes tags when a track arrives or is deleted', () => {
+  it('refreshes discovery, which links entries to songs, when a track arrives or is deleted', () => {
     const client = clientWithTrack();
     const imported = { ...track, id: 'two' };
     applyLibraryUpdate(client, { type: 'update', item: imported });
     expect(client.getQueryData(['library'])).toEqual([track, imported]);
-    expect(client.getQueryState(['tags'])?.isInvalidated).toBe(true);
-    client.setQueryData(['tags'], { enabled: true, items: {} });
+    expect(client.getQueryState(['discovery'])?.isInvalidated).toBe(true);
+    client.setQueryData(['discovery'], { sources: [], entries: [], refreshing: false });
     applyLibraryUpdate(client, { type: 'delete', id: track.id });
     expect(client.getQueryData(['library'])).toEqual([imported]);
-    expect(client.getQueryState(['tags'])?.isInvalidated).toBe(true);
-    client.clear();
-  });
-
-  it('keeps tags fresh for listening, favourites, bookmarks and track numbers', () => {
-    const client = clientWithTrack();
-    const changed = {
-      ...track, play_count: 1, is_favorite: true, track_number: 3,
-      bookmarks: { moment: { position: 12, emoji: '🎹', label: 'Piano', created_time_utc: '' } },
-    };
-    applyLibraryUpdate(client, { type: 'update', item: changed });
-    expect(client.getQueryData(['library'])).toEqual([changed]);
+    expect(client.getQueryState(['discovery'])?.isInvalidated).toBe(true);
     expect(client.getQueryState(['tags'])?.isInvalidated).toBe(false);
     client.clear();
   });

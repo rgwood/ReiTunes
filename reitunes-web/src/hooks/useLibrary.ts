@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { metadataSuggestions } from '../utils/metadataSuggestions';
 import type { ChangedResource, LibraryItem, LibraryUpdate, RealtimeUpdate } from '../types';
 import { PLAYBACK_SESSION_EVENT, REALTIME_RECONNECTED_EVENT } from './useSharedPlaybackSession';
+import { applyTagPatch, refreshTagItem } from './useTags';
 
 export const SONOS_REALTIME_EVENT = 'reitunes:sonos';
 
@@ -13,16 +14,13 @@ const CHANGE_REFETCH_DELAY_MILLIS = 1000;
 export function applyLibraryUpdate(queryClient: QueryClient, message: LibraryUpdate) {
   const oldItems = queryClient.getQueryData<LibraryItem[]>(['library']);
   const previous = oldItems?.find(item => item.id === (message.type === 'update' ? message.item.id : message.id));
-  const tagsChanged = message.type === 'delete' || !previous ||
-    (['name', 'artist', 'album', 'file_path'] as const).some(field => previous[field] !== message.item[field]);
 
   queryClient.setQueryData<LibraryItem[]>(['library'], items => {
     if (!items) return items;
     if (message.type === 'delete') return items.filter(item => item.id !== message.id);
     return previous ? items.map(item => item.id === message.item.id ? message.item : item) : [...items, message.item];
   });
-  if (tagsChanged) void queryClient.invalidateQueries({ queryKey: ['tags'] });
-  // Discovery links entries to imported songs.
+  // The server sends the item's new tags itself. Discovery links entries to imported songs.
   if (message.type === 'delete' || !previous) void queryClient.invalidateQueries({ queryKey: ['discovery'] });
 }
 
@@ -108,7 +106,8 @@ export function useLibrary() {
         }
 
         if (message.type === 'changed') {
-          refetchSoon(message.resource);
+          if ('items' in message) applyTagPatch(queryClient, message);
+          else refetchSoon(message.resource);
           return;
         }
 
@@ -153,7 +152,8 @@ export function useUpdateLibraryItem() {
     queryClient.setQueryData<LibraryItem[]>(['library'], items => items?.map(item =>
       item.id === id ? { ...item, [field]: field === 'track_number' ? (value === '' ? null : Number(value)) : value } : item
     ));
-    if (field !== 'track_number') void queryClient.invalidateQueries({ queryKey: ['tags'] });
+    // Metadata edits make tags stale. The WebSocket will say so too, but don't depend on it.
+    if (field !== 'track_number') void refreshTagItem(queryClient, id).catch(() => {});
   }, [queryClient]);
 }
 

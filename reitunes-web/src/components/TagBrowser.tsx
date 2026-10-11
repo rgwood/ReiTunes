@@ -1,5 +1,4 @@
 import { useState } from 'react';
-import { useQueryClient } from '@tanstack/react-query';
 import type { LibraryItem } from '../types';
 import { effectiveTags, tagProgress, tagsRequest, type TagSnapshot } from '../hooks/useTags';
 import './Tags.css';
@@ -14,7 +13,6 @@ export function TagBrowser({ items, snapshot, showWork, onShowWork, onFilterTag,
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [receipt, setReceipt] = useState<string[] | null>(null);
-  const client = useQueryClient();
   const counts = new Map<string, number>();
   for (const item of items) for (const tag of effectiveTags(snapshot?.items[item.id])) counts.set(tag, (counts.get(tag) || 0) + 1);
   const sorted = [...items].sort((a, b) => b.created_time_utc.localeCompare(a.created_time_utc) || a.id.localeCompare(b.id));
@@ -28,8 +26,8 @@ export function TagBrowser({ items, snapshot, showWork, onShowWork, onFilterTag,
     setBusy(true); setError('');
     try {
       const result = await tagsRequest<{ queued: number; itemIds: string[] }>('/queue', { itemIds: candidates.map(item => item.id) });
+      // The WebSocket sends each item's new state as it's queued and tagged.
       setReceipt(result.itemIds);
-      await client.invalidateQueries({ queryKey: ['tags'] });
     } catch (error) { setError(error instanceof Error ? error.message : 'Could not queue suggestions'); }
     finally { setBusy(false); }
   }

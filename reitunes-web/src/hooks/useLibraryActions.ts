@@ -2,6 +2,7 @@ import { useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import type { LibraryItem } from '../types';
 import { deleteItem, toggleFavorite } from './useLibrary';
+import type { TagSnapshot } from './useTags';
 
 export type LibraryAction = 'delete' | 'favourite' | 'unfavourite';
 
@@ -36,7 +37,9 @@ export function useLibraryActions() {
       client.setQueryData<LibraryItem[]>(['library'], current => action === 'delete'
         ? current?.filter(item => !ids.has(item.id))
         : current?.map(item => ids.has(item.id) ? { ...item, is_favorite: action === 'favourite' } : item));
-      if (action === 'delete' && ids.size) void client.invalidateQueries({ queryKey: ['tags'] });
+      if (action === 'delete' && ids.size) client.setQueryData<TagSnapshot>(['tags'], snapshot => snapshot && {
+        ...snapshot, items: Object.fromEntries(Object.entries(snapshot.items).filter(([id]) => !ids.has(id))),
+      });
       return { succeeded, failed };
     } finally {
       running.current = false;

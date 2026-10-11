@@ -50,7 +50,9 @@ export type ChangedResource = 'tags' | 'discovery' | 'playlists';
 
 export type RealtimeUpdate = LibraryUpdate | SonosRealtimeUpdate |
   { type: 'playbackSession'; snapshot: import('../stores/sharedSessionStore').SharedPlaybackSnapshot } |
-  { type: 'changed'; resource: ChangedResource };
+  { type: 'changed'; resource: ChangedResource } |
+  // Tags send the changed items instead of asking for a refetch.
+  { type: 'changed'; resource: 'tags'; revision: import('../hooks/useTags').TagRevision; items: Record<string, import('../hooks/useTags').ItemTags | null> };
 
 // Queue item for playback queue
 export interface QueueItem {

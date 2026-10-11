@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import type { LibraryItem } from '../types';
-import { tagsRequest, normalizeLibraryTag, tagProgress } from '../hooks/useTags';
+import { tagsRequest, normalizeLibraryTag, tagProgress, refreshTagItem, useTagDetail } from '../hooks/useTags';
 import type { ItemTags, TagLabel, TagSnapshot, TagSuggestion, TagVerdict } from '../hooks/useTags';
 import './Tags.css';
 
@@ -40,7 +40,7 @@ function TagDecision({ itemId, tag, label, suggestion, refresh, onFilterTag }: {
       <summary>Why AI suggested this tag</summary>
       <div className="tag-ai-evidence">
         <p className="tag-basis">{basis}</p>
-        <blockquote>{suggestion.evidence}</blockquote>
+        {suggestion.evidence ? <blockquote>{suggestion.evidence}</blockquote> : <p role="status">Loading…</p>}
         {!!suggestion.sourceUrls?.length && <div className="tag-sources">{suggestion.sourceUrls.filter(url => /^https:\/\/musicbrainz\.org\//.test(url)).map(url => <a key={url} href={url} target="_blank" rel="noreferrer">MusicBrainz source ↗</a>)}</div>}
       </div>
     </details>}
@@ -69,11 +69,13 @@ export function TagPanel({ item, snapshot, loading, loadError, onPlay, onFilterT
 }) {
   const client = useQueryClient();
   const data: ItemTags | undefined = item && snapshot?.items[item.id];
+  // The list snapshot leaves out tag evidence and the model's notes; fetch them for this item.
+  const detail = useTagDetail(item?.id).data?.item;
   const [newTag, setNewTag] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState('');
-  const refresh = async () => { await client.invalidateQueries({ queryKey: ['tags'] }); };
+  const refresh = async () => { if (item) await refreshTagItem(client, item.id); };
   async function action(path: string, body?: unknown, method = 'POST') {
     setBusy(true); setError(''); setNotice('');
     try { await tagsRequest(path, body, method); await refresh(); setNotice(method === 'PUT' ? 'Tag saved' : ''); return true; }
@@ -96,12 +98,12 @@ export function TagPanel({ item, snapshot, loading, loadError, onPlay, onFilterT
       {error && <p role="alert">{error}</p>}
       {active && <p>Metadata lookup and generation can take a few minutes. You can keep browsing; this updates automatically.</p>}
       {data?.error && <p role="alert">{data.error}</p>}
-      {data?.uncertainty && <p>{data.uncertainty}</p>}
+      {detail?.uncertainty && <p>{detail.uncertainty}</p>}
       <form className="tag-add" onSubmit={event => { event.preventDefault(); const tag = normalizeLibraryTag(newTag); if (tag) void action(`/items/${item.id}/labels`, { tag, verdict: 'accepted', reason: data?.labels[tag]?.reason || '' }, 'PUT').then(saved => { if (saved) setNewTag(''); }); }}>
         <input aria-label="New library tag" placeholder="Add a tag" value={newTag} maxLength={60} onChange={event => setNewTag(event.target.value)} />
         <button disabled={busy || !newTag.trim()}>Add</button>
       </form>
-      {allTags.map(tag => <TagDecision key={`${item.id}:${tag}`} itemId={item.id} tag={tag} label={data?.labels[tag]} suggestion={data?.status === 'ready' ? data.tags.find(t => t.tag === tag) : undefined} refresh={refresh} onFilterTag={onFilterTag} />)}
+      {allTags.map(tag => <TagDecision key={`${item.id}:${tag}`} itemId={item.id} tag={tag} label={data?.labels[tag]} suggestion={data?.status === 'ready' ? (detail?.status === 'ready' && detail.tags.find(t => t.tag === tag)) || data.tags.find(t => t.tag === tag) : undefined} refresh={refresh} onFilterTag={onFilterTag} />)}
     </>}
     <footer className="tag-panel-footer">
       <p>Suggestions use metadata; no model has listened to the recording.</p>

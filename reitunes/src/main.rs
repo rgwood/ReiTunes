@@ -222,6 +222,7 @@ async fn main() -> Result<()> {
             let changes = Arc::new(ChangeFeed::default());
             let tagging = tagging::Tagging::new(DB.clone(), library.clone(), changes.clone())?;
             tagging.start_worker();
+            tagging.start_notifier();
             let app_state = AppState {
                 library,
                 playlists: Arc::new(RwLock::new(playlists)),
@@ -235,6 +236,7 @@ async fn main() -> Result<()> {
                 tagging: Some(tagging.clone()),
             };
 
+            forward_library_changes_to_tagging(&app_state.update_tx, tagging.clone());
             let discovery = discovery::Discovery::new(DB.clone(), app_state.library.clone(), app_state.changes.clone())?;
             playback_session::start_queue_sync(app_state.clone());
             app_state.lastfm.start();
@@ -380,6 +382,22 @@ async fn main() -> Result<()> {
     }
 
     Ok(())
+}
+
+/// A track's tags depend on its metadata, so library edits and deletions change its tags.
+fn forward_library_changes_to_tagging(updates: &broadcast::Sender<FrontendUpdate>, tagging: tagging::Tagging) {
+    let mut updates = updates.subscribe();
+    tokio::spawn(async move {
+        loop {
+            match updates.recv().await {
+                Ok(FrontendUpdate::Update { item }) => tagging.library_item_changed(item.id),
+                Ok(FrontendUpdate::Delete { id }) => tagging.library_item_changed(id),
+                Ok(_) => {}
+                Err(broadcast::error::RecvError::Lagged(_)) => tagging.resync_clients(),
+                Err(broadcast::error::RecvError::Closed) => break,
+            }
+        }
+    });
 }
 
 async fn updates_handler(

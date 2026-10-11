@@ -21,7 +21,7 @@ use std::{
 };
 use tokio::sync::{Notify, RwLock};
 
-use crate::change_feed::{versioned, ChangeFeed, Resource};
+use crate::change_feed::{versioned, ChangeFeed, Resource, Revision};
 use uuid::Uuid;
 
 mod evidence;
@@ -89,11 +89,56 @@ struct ItemTags {
     run_id: Option<String>,
     phase: Option<String>,
 }
+/// The library view's copy of one item. Tag evidence and the model's notes are only shown
+/// for one track at a time, so they're left out here (they were most of the snapshot) and
+/// fetched with `GET /tags/items/{id}`.
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ItemSummary {
+    status: String,
+    tags: Vec<TagSummary>,
+    labels: HashMap<String, Label>,
+    error: Option<String>,
+    updated_at: Option<i64>,
+    phase: Option<String>,
+}
+#[derive(Clone, Debug, Serialize)]
+struct TagSummary {
+    tag: String,
+    basis: String,
+    confidence: f64,
+}
+impl From<ItemTags> for ItemSummary {
+    fn from(item: ItemTags) -> Self {
+        Self {
+            status: item.status,
+            tags: item
+                .tags
+                .into_iter()
+                .map(|tag| TagSummary { tag: tag.tag, basis: tag.basis, confidence: tag.confidence })
+                .collect(),
+            labels: item.labels,
+            error: item.error,
+            updated_at: item.updated_at,
+            phase: item.phase,
+        }
+    }
+}
 #[derive(Serialize)]
 struct Snapshot {
     enabled: bool,
-    items: HashMap<String, ItemTags>,
+    /// Clients replay WebSocket patches newer than this over the snapshot.
+    revision: Revision,
+    items: HashMap<String, ItemSummary>,
 }
+#[derive(Serialize)]
+struct ItemDetail {
+    revision: Revision,
+    item: Option<ItemTags>,
+}
+/// How long the notifier waits for more changes before sending, so a tagging batch or the
+/// startup sweep becomes one message rather than hundreds.
+const NOTIFY_COALESCE: Duration = Duration::from_millis(100);
 
 struct Inner {
     pool: Pool,
@@ -105,6 +150,9 @@ struct Inner {
     wake: Notify,
     started: AtomicBool,
     changes: Arc<ChangeFeed>,
+    /// Items changed since the notifier last told clients. See `mark_changed`.
+    changed: std::sync::Mutex<HashSet<Uuid>>,
+    changed_wake: Notify,
 }
 #[derive(Clone)]
 pub struct Tagging(Arc<Inner>);
@@ -151,6 +199,8 @@ impl Tagging {
             wake: Notify::new(),
             started: AtomicBool::new(false),
             changes,
+            changed: Default::default(),
+            changed_wake: Notify::new(),
         })))
     }
 
@@ -289,7 +339,7 @@ impl Tagging {
         };
         tx.execute("INSERT INTO tagging_items (ItemId,MetadataHash,Status,Serialized,UpdatedAt) VALUES (?1,?2,'queued',?3,?4) ON CONFLICT(ItemId) DO UPDATE SET MetadataHash=excluded.MetadataHash,Status='queued',Serialized=excluded.Serialized,UpdatedAt=excluded.UpdatedAt", params![id.to_string(), hash, serde_json::to_string(&data)?, now()])?;
         tx.commit()?;
-        self.0.changes.bump(Resource::Tags);
+        self.mark_changed([id]);
         self.0.wake.notify_one();
         Ok(true)
     }
@@ -315,9 +365,7 @@ impl Tagging {
             )?;
         }
         tx.commit()?;
-        if !jobs.is_empty() {
-            self.0.changes.bump(Resource::Tags);
-        }
+        self.mark_changed(jobs.iter().map(|(id, _)| *id));
         Ok(jobs)
     }
 
@@ -330,7 +378,7 @@ impl Tagging {
             ..Default::default()
         };
         self.0.pool.get()?.execute("UPDATE tagging_items SET Status='failed',Serialized=?3,UpdatedAt=?4 WHERE ItemId=?1 AND MetadataHash=?2 AND Status='running'", params![id.to_string(), hash, serde_json::to_string(&data)?, now()])?;
-        self.0.changes.bump(Resource::Tags);
+        self.mark_changed([id]);
         Ok(())
     }
 
@@ -346,7 +394,7 @@ impl Tagging {
         }
         tx.commit()?;
         if updated {
-            self.0.changes.bump(Resource::Tags);
+            self.mark_changed([id]);
         }
         Ok(())
     }
@@ -596,70 +644,148 @@ impl Tagging {
         }
         let published = self.0.pool.get()?.execute("UPDATE tagging_items SET Status='ready',Serialized=?3,UpdatedAt=?4 WHERE ItemId=?1 AND MetadataHash=?2 AND Status='running'", params![id.to_string(),hash,serde_json::to_string(tags)?,now()])? == 1;
         if published {
-            self.0.changes.bump(Resource::Tags);
+            self.mark_changed([id]);
         }
         Ok(published)
     }
 
-    async fn snapshot(&self) -> Result<Snapshot> {
+    /// Current tag state for `ids`, or for every item when `ids` is `None`. Items with no
+    /// tagging row or labels, or no longer in the library, are absent.
+    async fn load(&self, ids: Option<&[Uuid]>) -> Result<HashMap<String, ItemTags>> {
         let library = self.0.library.read().await;
         let conn = self.0.pool.get()?;
+        let filter = if ids.is_some() { " WHERE ItemId=?1" } else { "" };
+        let keys: Vec<Option<String>> = match ids {
+            None => vec![None],
+            Some(ids) => ids.iter().map(|id| Some(id.to_string())).collect(),
+        };
+        let mut rows = conn.prepare(&format!(
+            "SELECT ItemId, MetadataHash, Status, Serialized FROM tagging_items{filter}"
+        ))?;
+        let mut labels =
+            conn.prepare(&format!("SELECT ItemId,Serialized FROM tagging_labels{filter}"))?;
         let mut items = HashMap::new();
-        let mut statement =
-            conn.prepare("SELECT ItemId, MetadataHash, Status, Serialized FROM tagging_items")?;
-        for row in statement.query_map([], |r| {
-            Ok((
-                r.get::<_, String>(0)?,
-                r.get::<_, String>(1)?,
-                r.get::<_, String>(2)?,
-                r.get::<_, String>(3)?,
-            ))
-        })? {
-            let (id, hash, status, serialized) = row?;
-            let Some(item) = Uuid::parse_str(&id)
-                .ok()
-                .and_then(|uuid| library.items.get(&uuid))
-            else {
-                continue;
-            };
-            let mut data: ItemTags = serde_json::from_str(&serialized)?;
-            data.status = status;
-            if Metadata::from(item).hash() != hash {
-                data.status = "stale".into();
-                data.tags.clear();
+        for key in &keys {
+            let params = rusqlite::params_from_iter(key.iter());
+            for row in rows.query_map(params, |r| {
+                Ok((
+                    r.get::<_, String>(0)?,
+                    r.get::<_, String>(1)?,
+                    r.get::<_, String>(2)?,
+                    r.get::<_, String>(3)?,
+                ))
+            })? {
+                let (id, hash, status, serialized) = row?;
+                let Some(item) = Uuid::parse_str(&id)
+                    .ok()
+                    .and_then(|uuid| library.items.get(&uuid))
+                else {
+                    continue;
+                };
+                let mut data: ItemTags = serde_json::from_str(&serialized)?;
+                data.status = status;
+                if Metadata::from(item).hash() != hash {
+                    data.status = "stale".into();
+                    data.tags.clear();
+                }
+                if data.status == "failed" && data.error.is_none() {
+                    data.error = Some(
+                        "Interrupted; explicit retry required. Billing may have occurred.".into(),
+                    );
+                }
+                items.insert(id, data);
             }
-            if data.status == "failed" && data.error.is_none() {
-                data.error =
-                    Some("Interrupted; explicit retry required. Billing may have occurred.".into());
+            let params = rusqlite::params_from_iter(key.iter());
+            for row in
+                labels.query_map(params, |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))?
+            {
+                let (id, serialized) = row?;
+                let Some(item) = Uuid::parse_str(&id)
+                    .ok()
+                    .and_then(|uuid| library.items.get(&uuid))
+                else {
+                    continue;
+                };
+                let label: Label = serde_json::from_str(&serialized)?;
+                items
+                    .entry(id)
+                    .or_insert_with(|| ItemTags {
+                        status: "stale".into(),
+                        metadata_hash: Metadata::from(item).hash(),
+                        ..Default::default()
+                    })
+                    .labels
+                    .insert(label.tag.clone(), label);
             }
-            items.insert(id, data);
         }
-        let mut statement = conn.prepare("SELECT ItemId,Serialized FROM tagging_labels")?;
-        for row in
-            statement.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))?
-        {
-            let (id, serialized) = row?;
-            let Some(item) = Uuid::parse_str(&id)
-                .ok()
-                .and_then(|uuid| library.items.get(&uuid))
-            else {
-                continue;
-            };
-            let label: Label = serde_json::from_str(&serialized)?;
-            items
-                .entry(id)
-                .or_insert_with(|| ItemTags {
-                    status: "stale".into(),
-                    metadata_hash: Metadata::from(item).hash(),
-                    ..Default::default()
-                })
-                .labels
-                .insert(label.tag.clone(), label);
-        }
+        Ok(items)
+    }
+
+    async fn snapshot(&self, revision: Revision) -> Result<Snapshot> {
+        let items = self.load(None).await?;
         Ok(Snapshot {
             enabled: self.0.key.is_some(),
-            items,
+            revision,
+            items: items.into_iter().map(|(id, item)| (id, item.into())).collect(),
         })
+    }
+
+    /// Records that `ids` changed (call after committing). The notifier sends clients their
+    /// new state shortly after. This only touches a set, so it's safe anywhere, including
+    /// while holding the library lock.
+    fn mark_changed(&self, ids: impl IntoIterator<Item = Uuid>) {
+        self.0.changed.lock().unwrap().extend(ids);
+        self.0.changed_wake.notify_one();
+    }
+
+    /// Tags are partly derived from library metadata (they go stale when it changes), so a
+    /// library change to an item is a tag change for it too.
+    pub fn library_item_changed(&self, id: Uuid) {
+        self.mark_changed([id]);
+    }
+
+    /// For when we can no longer say which items changed: clients refetch everything.
+    pub fn resync_clients(&self) {
+        self.0.changes.bump(Resource::Tags);
+    }
+
+    pub fn start_notifier(&self) {
+        let tagging = self.clone();
+        tokio::spawn(async move {
+            loop {
+                tagging.0.changed_wake.notified().await;
+                tokio::time::sleep(NOTIFY_COALESCE).await;
+                tagging.send_changes().await;
+            }
+        });
+    }
+
+    async fn send_changes(&self) {
+        let ids: Vec<Uuid> = std::mem::take(&mut *self.0.changed.lock().unwrap())
+            .into_iter()
+            .collect();
+        if ids.is_empty() {
+            return;
+        }
+        // Advance before loading, so what we send is at least as new as its revision.
+        let revision = self.0.changes.advance(Resource::Tags);
+        match self.load(Some(&ids)).await {
+            Ok(mut items) => {
+                let items: HashMap<String, Option<ItemSummary>> = ids
+                    .iter()
+                    .map(|id| {
+                        let id = id.to_string();
+                        let item = items.remove(&id).map(ItemSummary::from);
+                        (id, item)
+                    })
+                    .collect();
+                self.0.changes.patch(Resource::Tags, revision, json!(items));
+            }
+            Err(error) => {
+                tracing::warn!(%error, "Could not load changed tags; clients will refetch");
+                self.resync_clients();
+            }
+        }
     }
 
     async fn save_label(&self, id: Uuid, mut label: Label) -> Result<()> {
@@ -676,7 +802,7 @@ impl Tagging {
             bail!("Invalid label or reason longer than 2000 bytes");
         }
         self.0.pool.get()?.execute("INSERT INTO tagging_labels (ItemId,Tag,Serialized) VALUES (?1,?2,?3) ON CONFLICT(ItemId,Tag) DO UPDATE SET Serialized=excluded.Serialized", params![id.to_string(),label.tag,serde_json::to_string(&label)?])?;
-        self.0.changes.bump(Resource::Tags);
+        self.mark_changed([id]);
         Ok(())
     }
 }
@@ -707,6 +833,7 @@ pub fn router<S: Clone + Send + Sync + 'static>(tagging: Tagging) -> Router<S> {
     Router::new()
         .route("/tags", get(snapshot))
         .route("/tags/queue", post(queue))
+        .route("/tags/items/{id}", get(item_detail))
         .route("/tags/items/{id}/classify", post(classify))
         .route("/tags/items/{id}/labels", put(save_label))
         .route(
@@ -720,8 +847,17 @@ async fn snapshot(
     headers: HeaderMap,
 ) -> Result<Response, ApiError> {
     let library_revision = tagging.0.library.read().await.revision;
-    let etag = tagging.0.changes.etag(Resource::Tags, Some(library_revision));
-    versioned(&headers, etag, async { tagging.snapshot().await.map_err(internal) }).await
+    let revision = tagging.0.changes.revision(Resource::Tags);
+    let etag = tagging.0.changes.etag_at(revision, Resource::Tags, Some(library_revision));
+    versioned(&headers, etag, async { tagging.snapshot(revision).await.map_err(internal) }).await
+}
+async fn item_detail(
+    State(tagging): State<Tagging>,
+    Path(id): Path<Uuid>,
+) -> Result<Json<ItemDetail>, ApiError> {
+    let revision = tagging.0.changes.revision(Resource::Tags);
+    let item = tagging.load(Some(&[id])).await.map_err(internal)?.remove(&id.to_string());
+    Ok(Json(ItemDetail { revision, item }))
 }
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -830,13 +966,23 @@ async fn delete_label(
             params![id.to_string(), tag],
         )
         .map_err(|e| internal(e.into()))?;
-    tagging.0.changes.bump(Resource::Tags);
+    tagging.mark_changed([id]);
     Ok(StatusCode::NO_CONTENT)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Like the list snapshot, but with everything we store for each item.
+    struct FullSnapshot {
+        items: HashMap<String, ItemTags>,
+    }
+    impl Tagging {
+        async fn full_snapshot(&self) -> Result<FullSnapshot> {
+            Ok(FullSnapshot { items: self.load(None).await? })
+        }
+    }
 
     #[test]
     fn evaluated_request_and_response_replay_through_production_contract() {
@@ -1000,7 +1146,7 @@ mod tests {
         tagging.classify_prepared(jobs).await.unwrap();
         server.abort();
         assert_eq!(calls.load(Ordering::SeqCst), 3);
-        let snapshot = tagging.snapshot().await.unwrap();
+        let snapshot = tagging.full_snapshot().await.unwrap();
         assert_eq!(
             snapshot
                 .items
@@ -1056,7 +1202,7 @@ mod tests {
         tagging.classify_prepared(jobs).await.unwrap();
         server.abort();
         assert_eq!(*sizes.lock().unwrap(), vec![5, 1]);
-        assert_eq!(tagging.snapshot().await.unwrap().items.values().filter(|item| item.status == "ready").count(), 6);
+        assert_eq!(tagging.full_snapshot().await.unwrap().items.values().filter(|item| item.status == "ready").count(), 6);
     }
 
     #[tokio::test]
@@ -1088,7 +1234,7 @@ mod tests {
         let expected: Vec<_> = jobs.iter().map(|job| (job.id, job.metadata.name.clone())).collect();
         tagging.classify_prepared(jobs).await.unwrap();
         server.abort();
-        let snapshot = tagging.snapshot().await.unwrap();
+        let snapshot = tagging.full_snapshot().await.unwrap();
         for (index, (id, name)) in expected.iter().enumerate() {
             let tags = &snapshot.items[&id.to_string()];
             assert_eq!(tags.status, if index == 0 { "failed" } else { "ready" });
@@ -1162,7 +1308,7 @@ mod tests {
         tagging.classify_prepared(jobs.clone()).await.unwrap();
         server.abort();
         assert_eq!(calls.lock().unwrap().len(), 1);
-        let snapshot = tagging.snapshot().await.unwrap();
+        let snapshot = tagging.full_snapshot().await.unwrap();
         assert_eq!(snapshot.items[&edited.to_string()].status, "queued");
         assert_eq!(
             snapshot.items[&edited.to_string()].labels["folk"].reason,
@@ -1232,7 +1378,7 @@ mod tests {
         let jobs = prepared_jobs(&tagging).await;
         tagging.classify_prepared(jobs).await.unwrap();
         server.abort();
-        for item in tagging.snapshot().await.unwrap().items.values() {
+        for item in tagging.full_snapshot().await.unwrap().items.values() {
             assert_eq!(item.status, "failed");
         }
         assert!(tagging.next_batch().unwrap().is_empty());
@@ -1305,7 +1451,7 @@ mod tests {
                 .unwrap();
             server.abort();
             assert_eq!(calls.load(Ordering::SeqCst), if http_error { 1 } else { 2 });
-            let snapshot = tagging.snapshot().await.unwrap();
+            let snapshot = tagging.full_snapshot().await.unwrap();
             let item = &snapshot.items[&id.to_string()];
             assert_eq!(item.status, if http_error { "failed" } else { "ready" });
             assert_eq!(item.labels["folk"].reason, "Wrong recording");
@@ -1380,7 +1526,7 @@ mod tests {
             .unwrap();
         server.abort();
         assert_eq!(calls.load(Ordering::SeqCst), 2);
-        let snapshot = tagging.snapshot().await.unwrap();
+        let snapshot = tagging.full_snapshot().await.unwrap();
         assert_eq!(snapshot.items[&id.to_string()].status, "ready");
         assert_eq!(
             snapshot.items[&id.to_string()].labels["folk"].reason,
@@ -1447,14 +1593,85 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn label_changes_notify_clients() {
+    async fn changed_items_are_sent_as_one_patch() {
         let (_directory, tagging, id) = fixture();
         let mut changes = tagging.0.changes.subscribe();
         let label = Label { tag: "folk".into(), verdict: "accepted".into(), reason: String::new() };
         tagging.save_label(id, label).await.unwrap();
-        assert_eq!(changes.try_recv().unwrap().resource, Resource::Tags);
+        tagging.library_item_changed(id);
+        tagging.send_changes().await;
+        let message = serde_json::to_value(changes.try_recv().unwrap()).unwrap();
+        assert_eq!(message["resource"], "tags");
+        assert_eq!(message["revision"]["number"], 1);
+        assert_eq!(message["items"][id.to_string()]["labels"]["folk"]["verdict"], "accepted");
+        // Both changes went out together.
+        assert!(changes.try_recv().is_err());
+
         delete_label(State(tagging.clone()), Path((id, "folk".into()))).await.unwrap();
-        assert_eq!(changes.try_recv().unwrap().resource, Resource::Tags);
+        tagging.send_changes().await;
+        let message = serde_json::to_value(changes.try_recv().unwrap()).unwrap();
+        assert_eq!(message["revision"]["number"], 2);
+        // No tagging row or labels left, so the item drops out of the snapshot.
+        assert!(message["items"][id.to_string()].is_null());
+    }
+
+    #[tokio::test]
+    async fn notifier_sends_marked_changes_in_the_background() {
+        let (_directory, tagging, id) = fixture();
+        let mut changes = tagging.0.changes.subscribe();
+        tagging.start_notifier();
+        tagging.library_item_changed(id);
+        tagging.library_item_changed(id);
+        let message = tokio::time::timeout(Duration::from_secs(5), changes.recv()).await.unwrap().unwrap();
+        assert_eq!(message.revision.unwrap().number, 1);
+        assert!(tokio::time::timeout(NOTIFY_COALESCE * 3, changes.recv()).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn deleted_library_items_are_removed_from_clients() {
+        let (_directory, tagging, id) = fixture();
+        let label = Label { tag: "folk".into(), verdict: "accepted".into(), reason: String::new() };
+        tagging.save_label(id, label).await.unwrap();
+        tagging.send_changes().await;
+        let mut changes = tagging.0.changes.subscribe();
+        tagging.0.library.write().await.items.remove(&id);
+        tagging.library_item_changed(id);
+        tagging.send_changes().await;
+        let message = serde_json::to_value(changes.try_recv().unwrap()).unwrap();
+        assert!(message["items"][id.to_string()].is_null());
+    }
+
+    #[test]
+    fn summaries_leave_out_evidence_and_notes() {
+        let item = ItemTags {
+            status: "ready".into(),
+            tags: vec![Tag {
+                tag: "folk".into(),
+                basis: "database".into(),
+                confidence: 0.9,
+                evidence: "A long explanation".into(),
+                source_urls: vec!["https://musicbrainz.org/x".into()],
+            }],
+            uncertainty: Some("Some notes".into()),
+            ..Default::default()
+        };
+        let summary = serde_json::to_value(ItemSummary::from(item)).unwrap();
+        assert_eq!(summary["tags"][0]["tag"], "folk");
+        let text = summary.to_string();
+        for detail in ["evidence", "sourceUrls", "uncertainty", "A long explanation", "Some notes"] {
+            assert!(!text.contains(detail), "{detail} in {text}");
+        }
+    }
+
+    #[tokio::test]
+    async fn item_detail_includes_everything() {
+        let (_directory, tagging, id) = fixture();
+        let label = Label { tag: "folk".into(), verdict: "accepted".into(), reason: "Yes".into() };
+        tagging.save_label(id, label).await.unwrap();
+        let Json(detail) = item_detail(State(tagging.clone()), Path(id)).await.unwrap();
+        assert_eq!(detail.item.unwrap().labels["folk"].reason, "Yes");
+        let Json(missing) = item_detail(State(tagging.clone()), Path(Uuid::new_v4())).await.unwrap();
+        assert!(missing.item.is_none());
     }
 
     #[tokio::test]
@@ -1478,6 +1695,7 @@ mod tests {
         headers.insert(axum::http::header::IF_NONE_MATCH, response.headers()[axum::http::header::ETAG].clone());
         let label = Label { tag: "folk".into(), verdict: "accepted".into(), reason: String::new() };
         tagging.save_label(id, label).await.unwrap();
+        tagging.send_changes().await;
         assert_eq!(status(headers).await, StatusCode::OK);
     }
 
@@ -1565,7 +1783,7 @@ mod tests {
             .artist = "Corrected artist".into();
         assert_eq!(tagging.enqueue_missing().await.unwrap(), 1);
         assert_eq!(
-            tagging.snapshot().await.unwrap().items[&id.to_string()].labels["folk"].reason,
+            tagging.full_snapshot().await.unwrap().items[&id.to_string()].labels["folk"].reason,
             "My own tag"
         );
         tagging.enqueue_changed(id).await.unwrap();
@@ -1593,7 +1811,7 @@ mod tests {
         tagging.0.pool.get().unwrap().execute("INSERT INTO tagging_runs (Id,ItemId,MetadataHash,StartedAt,Request,Evidence) VALUES ('interrupted',?1,?2,?3,'{}','{}')", params![id.to_string(),hash,now()]).unwrap();
         let restarted = Tagging::new(tagging.0.pool.clone(), tagging.0.library.clone(), tagging.0.changes.clone()).unwrap();
         assert!(restarted.next_batch().unwrap().is_empty());
-        let snapshot = restarted.snapshot().await.unwrap();
+        let snapshot = restarted.full_snapshot().await.unwrap();
         assert_eq!(snapshot.items[&id.to_string()].status, "failed");
         assert_eq!(
             snapshot.items[&id.to_string()].labels["acoustic-folk"].reason,
@@ -1629,7 +1847,7 @@ mod tests {
         .unwrap();
         assert_eq!(result, json!({"queued":1,"itemIds":[second_id]}));
         assert!(!tagging
-            .snapshot()
+            .full_snapshot()
             .await
             .unwrap()
             .items
@@ -1646,14 +1864,14 @@ mod tests {
         let (_, hash) = tagging.next_batch().unwrap().remove(0);
         tagging.set_phase(second_id, &hash, "researching").unwrap();
         assert_eq!(
-            tagging.snapshot().await.unwrap().items[&second_id.to_string()]
+            tagging.full_snapshot().await.unwrap().items[&second_id.to_string()]
                 .phase
                 .as_deref(),
             Some("researching")
         );
         let restarted = Tagging::new(tagging.0.pool.clone(), tagging.0.library.clone(), tagging.0.changes.clone()).unwrap();
         assert_eq!(
-            restarted.snapshot().await.unwrap().items[&second_id.to_string()].status,
+            restarted.full_snapshot().await.unwrap().items[&second_id.to_string()].status,
             "queued"
         );
         assert_eq!(restarted.next_batch().unwrap().len(), 1);
@@ -1698,23 +1916,23 @@ mod tests {
             .await
             .unwrap());
         assert_eq!(
-            tagging.snapshot().await.unwrap().items[&id.to_string()].status,
+            tagging.full_snapshot().await.unwrap().items[&id.to_string()].status,
             "stale"
         );
         assert!(tagging.enqueue(id, false).await.unwrap());
         tagging.fail(id, &old_hash, "old request failed").unwrap();
-        let snapshot = tagging.snapshot().await.unwrap();
+        let snapshot = tagging.full_snapshot().await.unwrap();
         assert_eq!(snapshot.items[&id.to_string()].status, "queued");
         let (_, hash) = tagging.next_batch().unwrap().remove(0);
         tagging.fail(id, &hash, "provider unavailable").unwrap();
-        let snapshot = tagging.snapshot().await.unwrap();
+        let snapshot = tagging.full_snapshot().await.unwrap();
         assert_eq!(snapshot.items[&id.to_string()].status, "failed");
         assert_eq!(
             snapshot.items[&id.to_string()].labels["folk"].reason,
             "Wrong recording."
         );
         tagging.0.library.write().await.items.remove(&id);
-        assert!(tagging.snapshot().await.unwrap().items.is_empty());
+        assert!(tagging.full_snapshot().await.unwrap().items.is_empty());
     }
 
     #[test]

@@ -4,10 +4,13 @@
 //! WebSocket says that resource changed. Revisions also serve as ETags, so a refetch of
 //! unchanged data is answered with a 304 without touching the database.
 //!
-//! Ordering rule: bump *after* a change is visible to readers, and read the revision
-//! *before* building a response. A response may then carry an older revision than its
-//! contents (costing one redundant refetch) but never a newer one, which would hide a
-//! change behind a 304.
+//! Tags change a few items at a time, and their snapshot is big, so tag messages carry the
+//! changed items themselves and clients patch their copy instead of refetching.
+//!
+//! Ordering rule: advance the revision *after* a change is visible to readers, and read
+//! it *before* building a response. A response may then carry an older revision than its
+//! contents (costing one redundant refetch or patch) but never a newer one, which would
+//! hide a change behind a 304.
 
 use std::{
     future::Future,
@@ -31,11 +34,24 @@ pub enum Resource {
     Playlists,
 }
 
-/// Sent to WebSocket clients as `{"type":"changed","resource":"tags"}`.
+/// A resource's revision. `boot` tells revisions from different server runs apart.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+pub struct Revision {
+    pub boot: u64,
+    pub number: u64,
+}
+
+/// Sent to WebSocket clients as `{"type":"changed","resource":"playlists"}`, meaning
+/// "refetch". With `items`, it's a patch: each item's new state as of `revision`
+/// (`null` = gone), and clients apply it instead of refetching.
 #[derive(Clone, Debug, Serialize)]
 #[serde(tag = "type", rename = "changed")]
 pub struct Changed {
     pub resource: Resource,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub revision: Option<Revision>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub items: Option<serde_json::Value>,
 }
 
 pub struct ChangeFeed {
@@ -61,10 +77,27 @@ impl Default for ChangeFeed {
 }
 
 impl ChangeFeed {
-    /// Call after the change is visible to readers (committed, lock still held is fine).
+    /// Tells clients to refetch `resource`. Call after the change is visible to readers
+    /// (committed; still holding the write lock is fine).
     pub fn bump(&self, resource: Resource) {
-        self.revisions[resource as usize].fetch_add(1, Ordering::SeqCst);
-        let _ = self.tx.send(Changed { resource });
+        self.advance(resource);
+        let _ = self.tx.send(Changed { resource, revision: None, items: None });
+    }
+
+    /// Starts a new revision without telling anyone, for callers that send a patch.
+    pub fn advance(&self, resource: Resource) -> Revision {
+        let number = self.revisions[resource as usize].fetch_add(1, Ordering::SeqCst) + 1;
+        Revision { boot: self.boot, number }
+    }
+
+    pub fn revision(&self, resource: Resource) -> Revision {
+        let number = self.revisions[resource as usize].load(Ordering::SeqCst);
+        Revision { boot: self.boot, number }
+    }
+
+    /// Sends changed items' new state, as of `revision` from [`ChangeFeed::advance`].
+    pub fn patch(&self, resource: Resource, revision: Revision, items: serde_json::Value) {
+        let _ = self.tx.send(Changed { resource, revision: Some(revision), items: Some(items) });
     }
 
     pub fn subscribe(&self) -> broadcast::Receiver<Changed> {
@@ -74,7 +107,12 @@ impl ChangeFeed {
     /// `library_revision` is for responses partly derived from the library (tags go stale
     /// when metadata changes; discovery links entries to imported songs).
     pub fn etag(&self, resource: Resource, library_revision: Option<u64>) -> String {
-        let revision = self.revisions[resource as usize].load(Ordering::SeqCst);
+        self.etag_at(self.revision(resource), resource, library_revision)
+    }
+
+    /// For responses that also include `revision` in their body, so both agree.
+    pub fn etag_at(&self, revision: Revision, resource: Resource, library_revision: Option<u64>) -> String {
+        let revision = revision.number;
         let resource = match resource {
             Resource::Tags => "tags",
             Resource::Discovery => "discovery",
@@ -145,6 +183,21 @@ mod tests {
         assert_ne!(tags, feed.etag(Resource::Tags, Some(3)));
         assert_eq!(playlists, feed.etag(Resource::Playlists, None));
         assert_eq!(rx.try_recv().unwrap().resource, Resource::Tags);
+    }
+
+    #[test]
+    fn patches_carry_their_revision_and_items() {
+        let feed = ChangeFeed::default();
+        let mut rx = feed.subscribe();
+        let first = feed.advance(Resource::Tags);
+        let second = feed.advance(Resource::Tags);
+        assert!(second.number > first.number);
+        assert_eq!(feed.revision(Resource::Tags), second);
+        feed.patch(Resource::Tags, second, serde_json::json!({ "a": null }));
+        let message = serde_json::to_value(rx.try_recv().unwrap()).unwrap();
+        assert_eq!(message["type"], "changed");
+        assert_eq!(message["revision"]["number"], second.number);
+        assert_eq!(message["items"], serde_json::json!({ "a": null }));
     }
 
     #[test]
