@@ -45,8 +45,12 @@ export interface SonosRealtimeUpdate {
   payload: unknown;
 }
 
+/** Server-cached resources that are refetched when the server says they changed, instead of polled. */
+export type ChangedResource = 'tags' | 'discovery' | 'playlists';
+
 export type RealtimeUpdate = LibraryUpdate | SonosRealtimeUpdate |
-  { type: 'playbackSession'; snapshot: import('../stores/sharedSessionStore').SharedPlaybackSnapshot };
+  { type: 'playbackSession'; snapshot: import('../stores/sharedSessionStore').SharedPlaybackSnapshot } |
+  { type: 'changed'; resource: ChangedResource };
 
 // Queue item for playback queue
 export interface QueueItem {

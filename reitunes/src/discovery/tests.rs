@@ -134,7 +134,7 @@ async fn history_survives_restart_and_unfollowing() {
     let path = directory.path().join("discovery.db");
     let pool = reitunes_workspace::open_connection_pool(path.to_str().unwrap()).unwrap();
     let library = Arc::new(RwLock::new(Library::build_from_events(vec![])));
-    let discovery = Discovery::new(pool.clone(), library.clone()).unwrap();
+    let discovery = Discovery::new(pool.clone(), library.clone(), Arc::default()).unwrap();
     let id = entry("saved").id;
     discovery
         .change(|data| {
@@ -149,7 +149,7 @@ async fn history_survives_restart_and_unfollowing() {
         .await
         .unwrap();
     drop(discovery);
-    let restarted = Discovery::new(pool, library).unwrap();
+    let restarted = Discovery::new(pool, library, Arc::default()).unwrap();
     assert_eq!(
         restarted.snapshot().await.unwrap().data.entries[0].status,
         "dismissed"
@@ -186,6 +186,7 @@ async fn failed_persistence_does_not_change_memory() {
     let discovery = Discovery::new(
         pool.clone(),
         Arc::new(RwLock::new(Library::build_from_events(vec![]))),
+        Arc::default(),
     )
     .unwrap();
     pool.get()
@@ -215,6 +216,7 @@ async fn restores_legacy_imports_without_contacting_downloader() {
     let discovery = Discovery::new(
         pool,
         Arc::new(RwLock::new(Library::build_from_events(vec![]))),
+        Arc::default(),
     )
     .unwrap();
     let id = entry("queued").id;
@@ -304,6 +306,7 @@ async fn follows_refreshes_and_pages_through_metadata_endpoint() {
     let mut discovery = Discovery::new(
         pool,
         Arc::new(RwLock::new(Library::build_from_events(vec![]))),
+        Arc::default(),
     )
     .unwrap();
     Arc::get_mut(&mut discovery).unwrap().metadata_endpoint = endpoint;
@@ -396,14 +399,14 @@ async fn saved_sets_survive_dismissal_refresh_and_restart() {
     let directory = tempfile::tempdir().unwrap();
     let pool = reitunes_workspace::open_connection_pool(directory.path().join("library.db").to_str().unwrap()).unwrap();
     let library = Arc::new(RwLock::new(Library::build_from_events(vec![])));
-    let discovery = Discovery::new(pool.clone(), library.clone()).unwrap();
+    let discovery = Discovery::new(pool.clone(), library.clone(), Arc::default()).unwrap();
     let id = entry("saved").id;
     discovery.change(|data| { merge_entries(data, "source", vec![entry("saved")], 10); Ok(()) }).await.unwrap();
     save(State(discovery.clone()), Path(id.clone()), Json(SaveRequest { saved: true })).await.unwrap();
     set_status(&discovery, &id, "dismissed").await.unwrap();
     discovery.change(|data| { merge_entries(data, "source", vec![entry("saved")], 10); Ok(()) }).await.unwrap();
     drop(discovery);
-    let discovery = Discovery::new(pool, library).unwrap();
+    let discovery = Discovery::new(pool, library, Arc::default()).unwrap();
     let item = discovery.snapshot().await.unwrap().data.entries.remove(0);
     assert!(item.saved);
     assert_eq!(item.status, "dismissed");
@@ -458,7 +461,7 @@ fn publication_dates_are_validated_and_timestamp_fallbacks_are_supported() {
 async fn old_snapshots_get_youtube_artwork_without_contacting_a_provider() {
     let directory = tempfile::tempdir().unwrap();
     let pool = reitunes_workspace::open_connection_pool(directory.path().join("library.db").to_str().unwrap()).unwrap();
-    let discovery = Discovery::new(pool, Arc::new(RwLock::new(Library::build_from_events(vec![])))).unwrap();
+    let discovery = Discovery::new(pool, Arc::new(RwLock::new(Library::build_from_events(vec![]))), Arc::default()).unwrap();
     discovery.change(|data| {
         let mut older = entry("olderArt123"); older.artwork_url = None;
         data.entries.push(older); Ok(())
@@ -486,7 +489,7 @@ async fn background_metadata_backfill_is_bounded_cached_and_preserves_user_choic
     let server = tokio::spawn(axum::serve(listener, worker).into_future());
     let directory = tempfile::tempdir().unwrap();
     let pool = reitunes_workspace::open_connection_pool(directory.path().join("library.db").to_str().unwrap()).unwrap();
-    let mut discovery = Discovery::new(pool, Arc::new(RwLock::new(Library::build_from_events(vec![])))).unwrap();
+    let mut discovery = Discovery::new(pool, Arc::new(RwLock::new(Library::build_from_events(vec![]))), Arc::default()).unwrap();
     Arc::get_mut(&mut discovery).unwrap().metadata_endpoint = endpoint;
     discovery.change(|data| {
         merge_entries(data, "source", (0..8).map(|n| entry(&n.to_string())).collect(), 10);
@@ -524,7 +527,7 @@ async fn completed_imports_are_reconciled_and_survive_restart_without_a_library_
     let directory = tempfile::tempdir().unwrap();
     let pool = reitunes_workspace::open_connection_pool(directory.path().join("library.db").to_str().unwrap()).unwrap();
     let library = Arc::new(RwLock::new(Library::build_from_events(vec![])));
-    let mut discovery = Discovery::new(pool.clone(), library.clone()).unwrap();
+    let mut discovery = Discovery::new(pool.clone(), library.clone(), Arc::default()).unwrap();
     Arc::get_mut(&mut discovery).unwrap().downloads = crate::downloads::Downloads::new(&endpoint).unwrap();
     discovery.change(|data| {
         let mut imported = entry("imported");
@@ -543,7 +546,7 @@ async fn completed_imports_are_reconciled_and_survive_restart_without_a_library_
     assert!(snapshot.data.entries[1].error.as_deref().unwrap().contains("Check your library"));
     drop(discovery);
     server.abort();
-    let discovery = Discovery::new(pool, library).unwrap();
+    let discovery = Discovery::new(pool, library, Arc::default()).unwrap();
     assert!(discovery.snapshot().await.unwrap().data.entries[0].import_completed);
     discovery.reconcile_imports().await.unwrap();
     assert_eq!(restore(State(discovery.clone()), Path(entry("imported").id)).await.unwrap_err().0, StatusCode::CONFLICT);
@@ -564,7 +567,7 @@ async fn nts_import_uses_soundcloud_and_matches_the_resulting_callback() {
     let directory = tempfile::tempdir().unwrap();
     let pool = reitunes_workspace::open_connection_pool(directory.path().join("library.db").to_str().unwrap()).unwrap();
     let library = Arc::new(RwLock::new(Library::build_from_events(vec![])));
-    let mut discovery = Discovery::new(pool.clone(), library.clone()).unwrap();
+    let mut discovery = Discovery::new(pool.clone(), library.clone(), Arc::default()).unwrap();
     Arc::get_mut(&mut discovery).unwrap().downloads = crate::downloads::Downloads::new(&endpoint).unwrap();
     let mut episode = entry("nts");
     episode.url = "https://www.nts.live/shows/yu-su/episodes/yu-su-1st-june-2026".into();
@@ -590,7 +593,7 @@ async fn nts_import_uses_soundcloud_and_matches_the_resulting_callback() {
 async fn nts_without_supported_audio_can_be_saved_but_not_imported() {
     let directory = tempfile::tempdir().unwrap();
     let pool = reitunes_workspace::open_connection_pool(directory.path().join("library.db").to_str().unwrap()).unwrap();
-    let discovery = Discovery::new(pool, Arc::new(RwLock::new(Library::build_from_events(vec![])))).unwrap();
+    let discovery = Discovery::new(pool, Arc::new(RwLock::new(Library::build_from_events(vec![]))), Arc::default()).unwrap();
     let id = entry("external").id;
     discovery.change(|data| { let mut item = entry("external"); item.can_import = false; data.entries.push(item); Ok(()) }).await.unwrap();
     save(State(discovery.clone()), Path(id.clone()), Json(SaveRequest { saved: true })).await.unwrap();
@@ -693,7 +696,7 @@ async fn recognizes_completed_import_even_when_filename_changes() {
             [&id, &item_id.to_string()],
         )
         .unwrap();
-    let discovery = Discovery::new(pool, library).unwrap();
+    let discovery = Discovery::new(pool, library, Arc::default()).unwrap();
     discovery
         .change(|data| {
             data.entries.push(entry("completed"));
@@ -734,13 +737,13 @@ async fn job_ids_survive_restart_and_only_failed_jobs_can_be_retried() {
     let directory = tempfile::tempdir().unwrap();
     let pool = reitunes_workspace::open_connection_pool(directory.path().join("library.db").to_str().unwrap()).unwrap();
     let library = Arc::new(RwLock::new(Library::build_from_events(vec![])));
-    let mut discovery = Discovery::new(pool.clone(), library.clone()).unwrap();
+    let mut discovery = Discovery::new(pool.clone(), library.clone(), Arc::default()).unwrap();
     Arc::get_mut(&mut discovery).unwrap().downloads = crate::downloads::Downloads::new(&endpoint).unwrap();
     discovery.change(|data| { let mut old = entry("set"); old.status = "queued".into(); data.entries.push(old); Ok(()) }).await.unwrap();
     let id = entry("set").id;
     assert_eq!(import(State(discovery.clone()), Path(id.clone())).await.unwrap(), StatusCode::ACCEPTED);
     drop(discovery);
-    let mut discovery = Discovery::new(pool, library).unwrap();
+    let mut discovery = Discovery::new(pool, library, Arc::default()).unwrap();
     Arc::get_mut(&mut discovery).unwrap().downloads = crate::downloads::Downloads::new(&endpoint).unwrap();
     assert_eq!(discovery.snapshot().await.unwrap().data.entries[0].download_job_id, Some(1));
     assert_eq!(import(State(discovery.clone()), Path(id.clone())).await.unwrap_err().0, StatusCode::CONFLICT);
@@ -779,7 +782,7 @@ async fn recovery_preserves_active_completed_and_unavailable_jobs_but_allows_mis
     let server = tokio::spawn(axum::serve(listener, worker).into_future());
     let directory = tempfile::tempdir().unwrap();
     let pool = reitunes_workspace::open_connection_pool(directory.path().join("library.db").to_str().unwrap()).unwrap();
-    let mut discovery = Discovery::new(pool, Arc::new(RwLock::new(Library::build_from_events(vec![])))).unwrap();
+    let mut discovery = Discovery::new(pool, Arc::new(RwLock::new(Library::build_from_events(vec![]))), Arc::default()).unwrap();
     Arc::get_mut(&mut discovery).unwrap().downloads = crate::downloads::Downloads::new(&endpoint).unwrap();
     let id = entry("set").id;
     for (job_id, expected) in [(1, StatusCode::CONFLICT), (2, StatusCode::CONFLICT), (3, StatusCode::BAD_GATEWAY), (4, StatusCode::NO_CONTENT)] {
@@ -797,4 +800,22 @@ async fn recovery_preserves_active_completed_and_unavailable_jobs_but_allows_mis
         }
     }
     server.abort();
+}
+
+#[tokio::test]
+async fn changes_and_scans_notify_clients() {
+    let directory = tempfile::tempdir().unwrap();
+    let pool = reitunes_workspace::open_connection_pool(directory.path().join("discovery.db").to_str().unwrap()).unwrap();
+    let discovery = Discovery::new(pool, Arc::new(RwLock::new(Library::build_from_events(vec![]))), Arc::default()).unwrap();
+    let mut changes = discovery.changes.subscribe();
+    discovery.change(|data| { data.sources.push(source()); Ok(()) }).await.unwrap();
+    assert_eq!(changes.try_recv().unwrap().resource, Resource::Discovery);
+
+    // `refreshing` is part of the snapshot, so starting and finishing a scan are changes too.
+    let permit = discovery.try_scan().unwrap();
+    assert_eq!(changes.try_recv().unwrap().resource, Resource::Discovery);
+    assert!(discovery.snapshot().await.unwrap().refreshing);
+    drop(permit);
+    assert_eq!(changes.try_recv().unwrap().resource, Resource::Discovery);
+    assert!(!discovery.snapshot().await.unwrap().refreshing);
 }

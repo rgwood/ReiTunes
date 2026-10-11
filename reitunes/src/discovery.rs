@@ -1,7 +1,8 @@
 use anyhow::{bail, Context, Result};
 use axum::{
     extract::{Path, State},
-    http::StatusCode,
+    http::{HeaderMap, StatusCode},
+    response::Response,
     routing::{get, post},
     Json, Router,
 };
@@ -15,7 +16,9 @@ use std::{
     sync::{atomic::{AtomicUsize, Ordering}, Arc},
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
-use tokio::sync::{Mutex, RwLock, Semaphore};
+use tokio::sync::{Mutex, OwnedSemaphorePermit, RwLock, Semaphore, TryAcquireError};
+
+use crate::change_feed::{versioned, ChangeFeed, Resource};
 
 type Pool = r2d2::Pool<r2d2_sqlite::SqliteConnectionManager>;
 type ApiError = (StatusCode, String);
@@ -133,6 +136,22 @@ pub struct Discovery {
     // Only one scan at a time, including manual refresh and preview requests.
     scanner: Arc<Semaphore>,
     library: Arc<RwLock<Library>>,
+    changes: Arc<ChangeFeed>,
+}
+
+/// Holds the scanner for one refresh, follow or archive. The snapshot's `refreshing` flag
+/// is derived from it, so clients need to hear when it's taken and when it's released.
+struct ScanPermit {
+    permit: Option<OwnedSemaphorePermit>,
+    changes: Arc<ChangeFeed>,
+}
+
+impl Drop for ScanPermit {
+    fn drop(&mut self) {
+        // Release first, so a refetch triggered by the bump sees `refreshing: false`.
+        drop(self.permit.take());
+        self.changes.bump(Resource::Discovery);
+    }
 }
 
 fn now() -> i64 {
@@ -542,7 +561,7 @@ async fn list(endpoint: &str, source: &Source, start: usize, known: &[Entry]) ->
 }
 
 impl Discovery {
-    pub fn new(pool: Pool, library: Arc<RwLock<Library>>) -> Result<Arc<Self>> {
+    pub fn new(pool: Pool, library: Arc<RwLock<Library>>, changes: Arc<ChangeFeed>) -> Result<Arc<Self>> {
         let data = pool
             .get()?
             .query_row(
@@ -564,7 +583,14 @@ impl Discovery {
             import_poll_cursor: AtomicUsize::new(0),
             scanner: Arc::new(Semaphore::new(1)),
             library,
+            changes,
         }))
+    }
+
+    fn try_scan(&self) -> Result<ScanPermit, TryAcquireError> {
+        let permit = self.scanner.clone().try_acquire_owned()?;
+        self.changes.bump(Resource::Discovery);
+        Ok(ScanPermit { permit: Some(permit), changes: self.changes.clone() })
     }
 
     async fn change<T>(
@@ -577,6 +603,7 @@ impl Discovery {
         let json = serde_json::to_string(&next).map_err(internal)?;
         self.pool.get().map_err(internal)?.execute("INSERT INTO discovery_state(Id, Serialized) VALUES(1, ?1) ON CONFLICT(Id) DO UPDATE SET Serialized=excluded.Serialized", [json]).map_err(internal)?;
         *data = next;
+        self.changes.bump(Resource::Discovery);
         Ok(result)
     }
 
@@ -815,7 +842,7 @@ impl Discovery {
                     .map(|s| s.id.clone())
                     .collect();
                 if ids.is_empty() { continue; }
-                let Ok(_permit) = discovery.scanner.clone().try_acquire_owned() else {
+                let Ok(_permit) = discovery.try_scan() else {
                     continue;
                 };
                 for id in ids {
@@ -875,8 +902,13 @@ pub fn router(discovery: Arc<Discovery>) -> Router<crate::AppState> {
         .with_state(discovery)
 }
 
-async fn snapshot(State(discovery): State<Arc<Discovery>>) -> Result<Json<Snapshot>, ApiError> {
-    discovery.snapshot().await.map(Json)
+async fn snapshot(
+    State(discovery): State<Arc<Discovery>>,
+    headers: HeaderMap,
+) -> Result<Response, ApiError> {
+    let library_revision = discovery.library.read().await.revision;
+    let etag = discovery.changes.etag(Resource::Discovery, Some(library_revision));
+    versioned(&headers, etag, discovery.snapshot()).await
 }
 
 #[derive(Deserialize)]
@@ -930,7 +962,7 @@ async fn preview(
             "You already follow this source.".into(),
         ));
     }
-    let _permit = discovery.scanner.clone().try_acquire_owned().map_err(|_| {
+    let _permit = discovery.try_scan().map_err(|_| {
         (
             StatusCode::CONFLICT,
             "A source is being checked. Try again shortly.".into(),
@@ -1017,10 +1049,7 @@ async fn unfollow(
 }
 
 async fn refresh(State(discovery): State<Arc<Discovery>>) -> Result<StatusCode, ApiError> {
-    let permit = discovery
-        .scanner
-        .clone()
-        .try_acquire_owned()
+    let permit = discovery.try_scan()
         .map_err(|_| (StatusCode::CONFLICT, "A refresh is already running.".into()))?;
     tokio::spawn(async move {
         let _permit = permit;
@@ -1045,7 +1074,7 @@ async fn archive(
     State(discovery): State<Arc<Discovery>>,
     Path(id): Path<String>,
 ) -> Result<StatusCode, ApiError> {
-    let permit = discovery.scanner.clone().try_acquire_owned().map_err(|_| {
+    let permit = discovery.try_scan().map_err(|_| {
         (
             StatusCode::CONFLICT,
             "A source is being checked. Try again shortly.".into(),

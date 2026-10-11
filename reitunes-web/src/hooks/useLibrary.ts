@@ -1,10 +1,14 @@
 import { QueryClient, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { metadataSuggestions } from '../utils/metadataSuggestions';
-import type { LibraryItem, LibraryUpdate, RealtimeUpdate } from '../types';
+import type { ChangedResource, LibraryItem, LibraryUpdate, RealtimeUpdate } from '../types';
 import { PLAYBACK_SESSION_EVENT, REALTIME_RECONNECTED_EVENT } from './useSharedPlaybackSession';
 
 export const SONOS_REALTIME_EVENT = 'reitunes:sonos';
+
+const CHANGED_RESOURCES: ChangedResource[] = ['tags', 'discovery', 'playlists'];
+// A tagging run or discovery scan can report many changes in a burst. Refetch at most this often.
+const CHANGE_REFETCH_DELAY_MILLIS = 1000;
 
 export function applyLibraryUpdate(queryClient: QueryClient, message: LibraryUpdate) {
   const oldItems = queryClient.getQueryData<LibraryItem[]>(['library']);
@@ -18,6 +22,8 @@ export function applyLibraryUpdate(queryClient: QueryClient, message: LibraryUpd
     return previous ? items.map(item => item.id === message.item.id ? message.item : item) : [...items, message.item];
   });
   if (tagsChanged) void queryClient.invalidateQueries({ queryKey: ['tags'] });
+  // Discovery links entries to imported songs.
+  if (message.type === 'delete' || !previous) void queryClient.invalidateQueries({ queryKey: ['discovery'] });
 }
 
 export function getItemUrl(item: LibraryItem): string {
@@ -59,6 +65,14 @@ export function useLibrary() {
     let mounted = true;
     let hasConnected = false;
     let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
+    const pendingRefetches = new Map<ChangedResource, ReturnType<typeof setTimeout>>();
+    const refetchSoon = (resource: ChangedResource) => {
+      if (pendingRefetches.has(resource)) return;
+      pendingRefetches.set(resource, setTimeout(() => {
+        pendingRefetches.delete(resource);
+        void queryClient.invalidateQueries({ queryKey: [resource] });
+      }, CHANGE_REFETCH_DELAY_MILLIS));
+    };
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const wsUrl = `${protocol}//${window.location.host}/updates`;
 
@@ -70,7 +84,9 @@ export function useLibrary() {
 
       ws.onopen = () => {
         if (hasConnected) {
+          // Changes made while disconnected were never sent to us. ETags make this cheap.
           void queryClient.invalidateQueries({ queryKey: ['library'] });
+          for (const resource of CHANGED_RESOURCES) void queryClient.invalidateQueries({ queryKey: [resource] });
           window.dispatchEvent(new Event(REALTIME_RECONNECTED_EVENT));
         }
         hasConnected = true;
@@ -88,6 +104,11 @@ export function useLibrary() {
           window.dispatchEvent(
             new CustomEvent(SONOS_REALTIME_EVENT, { detail: message })
           );
+          return;
+        }
+
+        if (message.type === 'changed') {
+          refetchSoon(message.resource);
           return;
         }
 
@@ -112,6 +133,7 @@ export function useLibrary() {
     return () => {
       mounted = false;
       if (reconnectTimer) clearTimeout(reconnectTimer);
+      for (const timer of pendingRefetches.values()) clearTimeout(timer);
       wsRef.current?.close();
     };
   }, [queryClient]);

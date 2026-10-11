@@ -47,7 +47,6 @@ export async function tagsRequest<T>(path = '', body?: unknown, method = 'POST')
 export function useTags() {
   return useQuery<TagSnapshot>({
     queryKey: ['tags'], queryFn: () => tagsRequest('', undefined, 'GET'), retry: 1,
-    staleTime: 5_000,
-    refetchInterval: query => Object.values(query.state.data?.items || {}).some(item => ['queued', 'running'].includes(item.status)) ? 3_000 : 30_000,
+    staleTime: Infinity, // WebSocket says when tags change, including tagging progress
   });
 }

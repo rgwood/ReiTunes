@@ -139,12 +139,15 @@ impl EventWithMetadata {
 #[derive(Clone, Default)]
 pub struct Library {
     pub items: HashMap<Uuid, LibraryItem>,
+    /// Incremented by every `apply`, so derived views can tell when they're out of date.
+    pub revision: u64,
 }
 
 impl Library {
     pub fn new() -> Self {
         Library {
             items: HashMap::new(),
+            revision: 0,
         }
     }
 
@@ -180,6 +183,7 @@ impl Library {
 
     /// Apply an event to update the library state
     pub fn apply(&mut self, event: &EventWithMetadata) {
+        self.revision += 1;
         match &event.event {
             Event::LibraryItemCreatedEvent { name, file_path, artist, album, track_number } => {
                 let item = LibraryItem {

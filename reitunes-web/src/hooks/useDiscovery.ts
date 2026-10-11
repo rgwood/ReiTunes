@@ -66,8 +66,7 @@ export function useDiscovery() {
   return useQuery<DiscoveryData>({
     queryKey: ['discovery'],
     queryFn: () => discoveryRequest('', undefined, 'GET'),
-    staleTime: 10_000,
-    refetchInterval: (query) => query.state.data?.refreshing ? 2_000 : 30_000,
+    staleTime: Infinity, // WebSocket says when discovery changes, including refresh progress
     retry: 1,
   });
 }

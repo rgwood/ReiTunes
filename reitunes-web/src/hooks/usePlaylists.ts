@@ -19,7 +19,7 @@ export function usePlaylists() {
       if (!response.ok) throw new Error('Could not load playlists.');
       return response.json();
     },
-    refetchInterval: 30000,
+    staleTime: Infinity, // WebSocket says when playlists change
   });
 }
 

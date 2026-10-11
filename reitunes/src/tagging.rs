@@ -1,7 +1,8 @@
 use anyhow::{bail, Context, Result};
 use axum::{
     extract::{Path, State},
-    http::StatusCode,
+    http::{HeaderMap, StatusCode},
+    response::Response,
     routing::{get, post, put},
     Json, Router,
 };
@@ -19,6 +20,8 @@ use std::{
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 use tokio::sync::{Notify, RwLock};
+
+use crate::change_feed::{versioned, ChangeFeed, Resource};
 use uuid::Uuid;
 
 mod evidence;
@@ -101,6 +104,7 @@ struct Inner {
     engine_mode: tagging_engine::Mode,
     wake: Notify,
     started: AtomicBool,
+    changes: Arc<ChangeFeed>,
 }
 #[derive(Clone)]
 pub struct Tagging(Arc<Inner>);
@@ -119,7 +123,7 @@ fn internal(error: anyhow::Error) -> ApiError {
 }
 
 impl Tagging {
-    pub fn new(pool: Pool, library: Arc<RwLock<Library>>) -> Result<Self> {
+    pub fn new(pool: Pool, library: Arc<RwLock<Library>>, changes: Arc<ChangeFeed>) -> Result<Self> {
         let conn = pool.get()?;
         // Research has no model charge. Resume it after restart, but never resend
         // a request with a recorded in-flight member (including completed-but-unpublished calls).
@@ -146,6 +150,7 @@ impl Tagging {
             endpoint: "https://openrouter.ai/api/v1/chat/completions".into(),
             wake: Notify::new(),
             started: AtomicBool::new(false),
+            changes,
         })))
     }
 
@@ -284,6 +289,7 @@ impl Tagging {
         };
         tx.execute("INSERT INTO tagging_items (ItemId,MetadataHash,Status,Serialized,UpdatedAt) VALUES (?1,?2,'queued',?3,?4) ON CONFLICT(ItemId) DO UPDATE SET MetadataHash=excluded.MetadataHash,Status='queued',Serialized=excluded.Serialized,UpdatedAt=excluded.UpdatedAt", params![id.to_string(), hash, serde_json::to_string(&data)?, now()])?;
         tx.commit()?;
+        self.0.changes.bump(Resource::Tags);
         self.0.wake.notify_one();
         Ok(true)
     }
@@ -309,6 +315,9 @@ impl Tagging {
             )?;
         }
         tx.commit()?;
+        if !jobs.is_empty() {
+            self.0.changes.bump(Resource::Tags);
+        }
         Ok(jobs)
     }
 
@@ -321,6 +330,7 @@ impl Tagging {
             ..Default::default()
         };
         self.0.pool.get()?.execute("UPDATE tagging_items SET Status='failed',Serialized=?3,UpdatedAt=?4 WHERE ItemId=?1 AND MetadataHash=?2 AND Status='running'", params![id.to_string(), hash, serde_json::to_string(&data)?, now()])?;
+        self.0.changes.bump(Resource::Tags);
         Ok(())
     }
 
@@ -328,12 +338,16 @@ impl Tagging {
         let mut conn = self.0.pool.get()?;
         let tx = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
         let serialized: Option<String> = tx.query_row("SELECT Serialized FROM tagging_items WHERE ItemId=?1 AND MetadataHash=?2 AND Status='running'", params![id.to_string(), hash], |r| r.get(0)).optional()?;
+        let updated = serialized.is_some();
         if let Some(serialized) = serialized {
             let mut data: ItemTags = serde_json::from_str(&serialized)?;
             data.phase = Some(phase.into());
             tx.execute("UPDATE tagging_items SET Serialized=?3 WHERE ItemId=?1 AND MetadataHash=?2 AND Status='running'", params![id.to_string(),hash,serde_json::to_string(&data)?])?;
         }
         tx.commit()?;
+        if updated {
+            self.0.changes.bump(Resource::Tags);
+        }
         Ok(())
     }
 
@@ -580,7 +594,11 @@ impl Tagging {
         {
             return Ok(false);
         }
-        Ok(self.0.pool.get()?.execute("UPDATE tagging_items SET Status='ready',Serialized=?3,UpdatedAt=?4 WHERE ItemId=?1 AND MetadataHash=?2 AND Status='running'", params![id.to_string(),hash,serde_json::to_string(tags)?,now()])? == 1)
+        let published = self.0.pool.get()?.execute("UPDATE tagging_items SET Status='ready',Serialized=?3,UpdatedAt=?4 WHERE ItemId=?1 AND MetadataHash=?2 AND Status='running'", params![id.to_string(),hash,serde_json::to_string(tags)?,now()])? == 1;
+        if published {
+            self.0.changes.bump(Resource::Tags);
+        }
+        Ok(published)
     }
 
     async fn snapshot(&self) -> Result<Snapshot> {
@@ -658,6 +676,7 @@ impl Tagging {
             bail!("Invalid label or reason longer than 2000 bytes");
         }
         self.0.pool.get()?.execute("INSERT INTO tagging_labels (ItemId,Tag,Serialized) VALUES (?1,?2,?3) ON CONFLICT(ItemId,Tag) DO UPDATE SET Serialized=excluded.Serialized", params![id.to_string(),label.tag,serde_json::to_string(&label)?])?;
+        self.0.changes.bump(Resource::Tags);
         Ok(())
     }
 }
@@ -696,8 +715,13 @@ pub fn router<S: Clone + Send + Sync + 'static>(tagging: Tagging) -> Router<S> {
         )
         .with_state(tagging)
 }
-async fn snapshot(State(tagging): State<Tagging>) -> Result<Json<Snapshot>, ApiError> {
-    tagging.snapshot().await.map(Json).map_err(internal)
+async fn snapshot(
+    State(tagging): State<Tagging>,
+    headers: HeaderMap,
+) -> Result<Response, ApiError> {
+    let library_revision = tagging.0.library.read().await.revision;
+    let etag = tagging.0.changes.etag(Resource::Tags, Some(library_revision));
+    versioned(&headers, etag, async { tagging.snapshot().await.map_err(internal) }).await
 }
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -806,6 +830,7 @@ async fn delete_label(
             params![id.to_string(), tag],
         )
         .map_err(|e| internal(e.into()))?;
+    tagging.0.changes.bump(Resource::Tags);
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -1416,9 +1441,44 @@ mod tests {
                 is_favorite: false,
             },
         );
-        let mut tagging = Tagging::new(pool, Arc::new(RwLock::new(library))).unwrap();
+        let mut tagging = Tagging::new(pool, Arc::new(RwLock::new(library)), Arc::default()).unwrap();
         Arc::get_mut(&mut tagging.0).unwrap().key = None;
         (directory, tagging, id)
+    }
+
+    #[tokio::test]
+    async fn label_changes_notify_clients() {
+        let (_directory, tagging, id) = fixture();
+        let mut changes = tagging.0.changes.subscribe();
+        let label = Label { tag: "folk".into(), verdict: "accepted".into(), reason: String::new() };
+        tagging.save_label(id, label).await.unwrap();
+        assert_eq!(changes.try_recv().unwrap().resource, Resource::Tags);
+        delete_label(State(tagging.clone()), Path((id, "folk".into()))).await.unwrap();
+        assert_eq!(changes.try_recv().unwrap().resource, Resource::Tags);
+    }
+
+    #[tokio::test]
+    async fn snapshot_is_only_rebuilt_after_tag_or_library_changes() {
+        let (_directory, tagging, id) = fixture();
+        let response = snapshot(State(tagging.clone()), HeaderMap::new()).await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let mut headers = HeaderMap::new();
+        headers.insert(axum::http::header::IF_NONE_MATCH, response.headers()[axum::http::header::ETAG].clone());
+        let status = |headers: HeaderMap| {
+            let tagging = tagging.clone();
+            async move { snapshot(State(tagging), headers).await.unwrap().status() }
+        };
+        assert_eq!(status(headers.clone()).await, StatusCode::NOT_MODIFIED);
+        // Metadata edits make tags stale, so any library change invalidates the snapshot.
+        tagging.0.library.write().await.revision += 1;
+        assert_eq!(status(headers.clone()).await, StatusCode::OK);
+
+        let mut headers = HeaderMap::new();
+        let response = snapshot(State(tagging.clone()), HeaderMap::new()).await.unwrap();
+        headers.insert(axum::http::header::IF_NONE_MATCH, response.headers()[axum::http::header::ETAG].clone());
+        let label = Label { tag: "folk".into(), verdict: "accepted".into(), reason: String::new() };
+        tagging.save_label(id, label).await.unwrap();
+        assert_eq!(status(headers).await, StatusCode::OK);
     }
 
     #[tokio::test]
@@ -1531,7 +1591,7 @@ mod tests {
         let (_, hash) = tagging.next_batch().unwrap().remove(0);
         assert!(!tagging.enqueue(id, true).await.unwrap());
         tagging.0.pool.get().unwrap().execute("INSERT INTO tagging_runs (Id,ItemId,MetadataHash,StartedAt,Request,Evidence) VALUES ('interrupted',?1,?2,?3,'{}','{}')", params![id.to_string(),hash,now()]).unwrap();
-        let restarted = Tagging::new(tagging.0.pool.clone(), tagging.0.library.clone()).unwrap();
+        let restarted = Tagging::new(tagging.0.pool.clone(), tagging.0.library.clone(), tagging.0.changes.clone()).unwrap();
         assert!(restarted.next_batch().unwrap().is_empty());
         let snapshot = restarted.snapshot().await.unwrap();
         assert_eq!(snapshot.items[&id.to_string()].status, "failed");
@@ -1591,7 +1651,7 @@ mod tests {
                 .as_deref(),
             Some("researching")
         );
-        let restarted = Tagging::new(tagging.0.pool.clone(), tagging.0.library.clone()).unwrap();
+        let restarted = Tagging::new(tagging.0.pool.clone(), tagging.0.library.clone(), tagging.0.changes.clone()).unwrap();
         assert_eq!(
             restarted.snapshot().await.unwrap().items[&second_id.to_string()].status,
             "queued"

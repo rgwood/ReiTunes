@@ -236,6 +236,7 @@ impl Harness {
             library: Arc::new(RwLock::new(library)),
             playlists: Arc::new(RwLock::new(PlaylistStore::new())),
             update_tx: broadcast::channel(16).0,
+            changes: Arc::default(),
             storage: Arc::new(
                 S3Storage::new("https://storage.example.test", "test", None, "test", "test")
                     .await

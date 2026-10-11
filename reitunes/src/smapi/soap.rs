@@ -730,6 +730,7 @@ mod tests {
             library: Arc::new(RwLock::new(Library::build_from_events(events))),
             playlists: Arc::new(RwLock::new(PlaylistStore::new())),
             update_tx: broadcast::channel(1).0,
+            changes: Arc::default(),
             storage: Arc::new(storage),
             sonos: None,
             cloud_queues: Arc::new(crate::cloud_queue::CloudQueueStore::with_base_url(

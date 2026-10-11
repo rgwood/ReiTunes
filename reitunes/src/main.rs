@@ -49,6 +49,8 @@ mod systemd;
 mod discovery;
 mod downloads;
 mod tagging;
+mod change_feed;
+use change_feed::{versioned, ChangeFeed, Resource};
 mod tracklists;
 
 #[cfg(test)]
@@ -137,6 +139,8 @@ struct AppState {
     playlists: Arc<RwLock<PlaylistStore>>,
     // used to broadcast updates to all connected clients
     update_tx: broadcast::Sender<FrontendUpdate>,
+    // Tags, discovery and playlists changes, also broadcast to connected clients
+    changes: Arc<ChangeFeed>,
     storage: Arc<S3Storage>,
     sonos: Option<Arc<sonos::SonosControl>>,
     cloud_queues: Arc<cloud_queue::CloudQueueStore>,
@@ -215,12 +219,14 @@ async fn main() -> Result<()> {
             .expect("Failed to initialize S3 storage");
 
             let library = Arc::new(RwLock::new(library));
-            let tagging = tagging::Tagging::new(DB.clone(), library.clone())?;
+            let changes = Arc::new(ChangeFeed::default());
+            let tagging = tagging::Tagging::new(DB.clone(), library.clone(), changes.clone())?;
             tagging.start_worker();
             let app_state = AppState {
                 library,
                 playlists: Arc::new(RwLock::new(playlists)),
                 update_tx: broadcast::channel(100).0,
+                changes,
                 storage: Arc::new(storage),
                 sonos: sonos::SonosControl::from_env(DB.clone())?,
                 cloud_queues: Arc::new(cloud_queue::CloudQueueStore::from_env(DB.clone())?),
@@ -229,7 +235,7 @@ async fn main() -> Result<()> {
                 tagging: Some(tagging.clone()),
             };
 
-            let discovery = discovery::Discovery::new(DB.clone(), app_state.library.clone())?;
+            let discovery = discovery::Discovery::new(DB.clone(), app_state.library.clone(), app_state.changes.clone())?;
             playback_session::start_queue_sync(app_state.clone());
             app_state.lastfm.start();
             discovery.start_refresh_loop();
@@ -382,18 +388,34 @@ async fn updates_handler(
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
 ) -> impl IntoResponse {
     info!(addr = ?addr, "WebSocket upgrade request");
-    ws.on_upgrade(move |socket| handle_websocket(socket, app_state.update_tx, addr))
+    ws.on_upgrade(move |socket| {
+        handle_websocket(socket, app_state.update_tx.subscribe(), app_state.changes.subscribe(), addr)
+    })
 }
 
 async fn handle_websocket(
     mut socket: axum::extract::ws::WebSocket,
-    tx: broadcast::Sender<FrontendUpdate>,
+    mut updates: broadcast::Receiver<FrontendUpdate>,
+    mut changes: broadcast::Receiver<change_feed::Changed>,
     addr: SocketAddr,
 ) {
+    use broadcast::error::RecvError;
     info!(addr = ?addr, "WebSocket connected");
-    let mut rx = tx.subscribe();
-    while let Ok(update) = rx.recv().await {
-        let msg = serde_json::to_string(&update).unwrap();
+    loop {
+        let msg = tokio::select! {
+            update = updates.recv() => update.map(|update| serde_json::to_string(&update)),
+            change = changes.recv() => change.map(|change| serde_json::to_string(&change)),
+        };
+        let msg = match msg {
+            Ok(msg) => msg.unwrap(),
+            // The client missed messages. Closing makes it reconnect and refetch everything,
+            // which is the only way it can catch up now that it doesn't poll.
+            Err(RecvError::Lagged(skipped)) => {
+                warn!(addr = ?addr, skipped, "WebSocket client fell behind; closing so it resyncs");
+                break;
+            }
+            Err(RecvError::Closed) => break,
+        };
         if socket
             .send(axum::extract::ws::Message::Text(Utf8Bytes::from(msg)))
             .await
@@ -1415,10 +1437,15 @@ async fn queue_download(mut req: DownloadRequest) -> Result<downloads::Job, (Sta
 /// List all playlists
 async fn list_playlists_handler(
     State(app_state): State<AppState>,
-) -> Result<impl IntoResponse, AppError> {
+    headers: HeaderMap,
+) -> Result<Response, AppError> {
     let playlists = app_state.playlists.read().await;
-    let active: Vec<_> = playlists.active_playlists().into_iter().cloned().collect();
-    Ok(Json(active))
+    // Bumps happen under the write lock, so this can't race with a change.
+    let etag = app_state.changes.etag(Resource::Playlists, None);
+    versioned(&headers, etag, async {
+        Ok(playlists.active_playlists().into_iter().cloned().collect::<Vec<_>>())
+    })
+    .await
 }
 
 #[derive(Debug, Deserialize)]
@@ -1450,6 +1477,7 @@ async fn create_playlist_handler(
     let mut playlist = Playlist::new(playlist_id, request.name, event_with_metadata.created_time_utc);
     playlist.apply(&event_with_metadata.event);
     playlists.playlists.insert(playlist_id, playlist.clone());
+    app_state.changes.bump(Resource::Playlists);
 
     Ok((StatusCode::CREATED, Json(playlist)).into_response())
 }
@@ -1477,6 +1505,7 @@ async fn rename_playlist_handler(
     };
     save_playlist_events(id, std::slice::from_ref(&event))?;
     playlist.apply(&event);
+    app_state.changes.bump(Resource::Playlists);
 
     Ok(StatusCode::OK)
 }
@@ -1493,6 +1522,7 @@ async fn delete_playlist_handler(
     let event = PlaylistEvent::PlaylistDeletedEvent;
     save_playlist_events(id, std::slice::from_ref(&event))?;
     playlist.apply(&event);
+    app_state.changes.bump(Resource::Playlists);
 
     Ok(StatusCode::OK)
 }
@@ -1536,6 +1566,7 @@ async fn add_playlist_item_handler(
     }
     save_playlist_events(id, &events)?;
     *playlist = updated;
+    app_state.changes.bump(Resource::Playlists);
     Ok(StatusCode::CREATED)
 }
 
@@ -1563,6 +1594,7 @@ async fn update_playlist_rules_handler(
     let event = PlaylistEvent::SmartPlaylistRulesChangedEvent { rules };
     save_playlist_events(id, std::slice::from_ref(&event))?;
     playlist.apply(&event);
+    app_state.changes.bump(Resource::Playlists);
     Ok(StatusCode::OK)
 }
 
@@ -1583,6 +1615,7 @@ async fn remove_playlist_items_handler(
         .map(|library_item_id| PlaylistEvent::PlaylistItemRemovedEvent { library_item_id }).collect();
     save_playlist_events(id, &events)?;
     for event in events { playlist.apply(&event); }
+    app_state.changes.bump(Resource::Playlists);
     Ok(StatusCode::OK)
 }
 
@@ -1605,6 +1638,7 @@ async fn reorder_playlist_handler(
         PlaylistEvent::PlaylistItemMovedEvent { library_item_id, new_position: position as u32 }).collect();
     save_playlist_events(id, &events)?;
     for event in events { playlist.apply(&event); }
+    app_state.changes.bump(Resource::Playlists);
     Ok(StatusCode::OK)
 }
 
@@ -2105,6 +2139,7 @@ mod tests {
             library: Arc::new(RwLock::new(Library::new())),
             playlists: Arc::new(RwLock::new(PlaylistStore::new())),
             update_tx: broadcast::channel(16).0,
+            changes: Arc::default(),
             storage: Arc::new(S3Storage::new("https://storage.example.test", "test", None, "test", "test").await.unwrap()),
             sonos: None,
             cloud_queues: Arc::new(cloud_queue::CloudQueueStore::with_base_url("http://localhost")),
@@ -2112,6 +2147,7 @@ mod tests {
             lastfm: Arc::new(lastfm::LastFm::in_memory()),
             tagging: None,
         };
+        let unchanged = state.changes.etag(Resource::Playlists, None);
         let id = Uuid::new_v4();
         let item_id = Uuid::new_v4();
         let rules = SmartPlaylistRules { added_within_days: Some(0), play_state: PlayState::Any, favourites_only: false, bookmark_state: BookmarkState::Any, expression: None };
@@ -2142,6 +2178,18 @@ mod tests {
         let response = remove_playlist_items_handler(State(state.clone()), Path(id), JsonExtractor(PlaylistOrderRequest { library_item_ids: vec![item_id] })).await.unwrap();
         assert_eq!(response, StatusCode::BAD_REQUEST);
         assert_eq!(state.playlists.read().await.playlists[&id].items[&item_id].position, 0);
+        // Rejected requests change nothing, so clients aren't told to refetch.
+        assert_eq!(state.changes.etag(Resource::Playlists, None), unchanged);
+
+        let listing = list_playlists_handler(State(state.clone()), HeaderMap::new()).await.unwrap();
+        assert_eq!(listing.status(), StatusCode::OK);
+        let mut headers = HeaderMap::new();
+        headers.insert(axum::http::header::IF_NONE_MATCH, listing.headers()[axum::http::header::ETAG].clone());
+        let listing = list_playlists_handler(State(state.clone()), headers.clone()).await.unwrap();
+        assert_eq!(listing.status(), StatusCode::NOT_MODIFIED);
+        state.changes.bump(Resource::Playlists);
+        let listing = list_playlists_handler(State(state.clone()), headers).await.unwrap();
+        assert_eq!(listing.status(), StatusCode::OK);
     }
 
     #[tokio::test]
@@ -2150,6 +2198,7 @@ mod tests {
             library: Arc::new(RwLock::new(Library::new())),
             playlists: Arc::new(RwLock::new(PlaylistStore::new())),
             update_tx: broadcast::channel(16).0,
+            changes: Arc::default(),
             storage: Arc::new(
                 S3Storage::new("https://storage.example.test", "test", None, "test", "test")
                     .await
