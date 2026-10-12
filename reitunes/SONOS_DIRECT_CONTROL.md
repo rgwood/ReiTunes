@@ -64,11 +64,7 @@ Volume is sent when the user releases the slider, rather than on every fractiona
 
 ## Still missing
 
-The next useful work is:
-
-1. Subscribe to playback metadata and session events.
-2. Add remote skip and seek controls.
-3. Refresh an active Cloud Queue when the ReiTunes queue changes.
+ReiTunes doesn't subscribe to Sonos's `playbackMetadata` or `playbackSession` event namespaces yet. Seek, next/previous and refreshing the Cloud Queue when the ReiTunes queue changes all work.
 
 The queue sends direct `mediaUrl` values, which the Cloud Queue API supports as an alternative to Sonos music object IDs. The media URLs do not use the Cloud Queue bearer token; that token only protects the queue metadata endpoints.
 

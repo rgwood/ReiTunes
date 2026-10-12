@@ -377,3 +377,18 @@ reitunes/music/
 
 # Production secrets
 prod.env
+
+# Local secrets
+openrouterkey.txt
+
+# SQLite databases (the server creates its schema on startup)
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+
+# Per-machine agent and editor state
+.worktrees/
+.codex/
+.agents/
+**/.claude/settings.local.json

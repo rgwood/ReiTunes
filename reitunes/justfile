@@ -1,5 +1,4 @@
-# The following commands ARE relevant for agents
-
+# Build and deploy to spudnik. Needs prod.env (see prod.env.example).
 publish:
     #!/usr/bin/env bash
     set -euo pipefail
@@ -13,10 +12,9 @@ publish:
     rsync ../target/x86_64-unknown-linux-musl/release/reitunes spudnik:bin/
     ssh spudnik -t "systemctl --user restart reitunes"
 
+# Show the last n lines of the production server log
 get-logs n:
     ssh -q spudnik -t "journalctl --user -u reitunes.service -n {{n}} --no-pager"
-
-# The following commands are NOT for agent use
 
 install-deps:
     cargo install xh --locked
@@ -37,19 +35,3 @@ test:
 
 watch-tests:
     watchexec --exts=rs,sql,html -- cargo nextest run
-
-expected_filename := if os_family() == "windows" { "reitunes-rs.exe" } else { "reitunes-rs" }
-
-build-release:
-    cargo build --release
-    @$"Build size: (ls target/release/{{expected_filename}} | get size)"
-
-
-build-linux-x64:
-    cross build --target x86_64-unknown-linux-gnu --release
-
-build-linux-arm64:
-    cross build --target aarch64-unknown-linux-gnu --release
-
-build-windows-on-linux:
-    cross build --target x86_64-pc-windows-gnu --release

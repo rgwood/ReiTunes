@@ -1,6 +1,6 @@
 This is a Rust + web UI port of ReiTunes. It can view+edit+play back audio using a local library database and audio files in cloud storage.
 
-See [Sonos reliability tests](SONOS_TESTING.md) for the failure simulations, recovery rules and test commands.
+See [Sonos direct control](SONOS_DIRECT_CONTROL.md) for setup and design notes, and [Sonos reliability tests](SONOS_TESTING.md) for the failure simulations, recovery rules and test commands.
 
 ## Mobile
 
@@ -12,28 +12,25 @@ There is one shared playback session for the household. Opening another screen a
 
 For the first upgrade from browser-local queues, refresh the existing desktop tab before opening a new phone window. That tab migrates its output and queue into the shared session once.
 
-## Motivation/background
+## Smart Playlists and tags
 
-I'm giving up on ReiTunes.Blazor; I'm not particularly enjoying working in .NET these days.
+Create a Smart Playlist from the sidebar’s playlist menu. Choose **all (AND)** or **any (OR)** and add rules or nested groups. Rules cover tags, duration, artist, album, title, play count, date added, favourites and bookmarks. For example: duration under 10 minutes AND (tag includes folk OR tag includes indie-rock). Tag rules can include or exclude an exact tag, with suggestions from the library; **Has tags: No** finds tracks with no current tags. Matches use the same automatic and manually edited tags shown in the library, and update when tags change. The editor previews the matching tracks and their total duration. Existing playlists keep their original rules when edited.
 
-I want to be in Rust, and the easiest way to do that is with web UI. The web platform already has a ton of useful stuff like an <audio> player that can handle seeking etc. 
+Duration appears as a sortable library column. Uploads read it from the audio file, downloads can use source metadata, and playback saves the measured length. Duration comparisons exclude unknown lengths; use the **Duration known** rule to find recordings that still need a measurement.
 
-Someday it might be fun to explore something like Iced for the GUI but that will involve a lot of work. Would need to roll my own player widget and a lot of code for audio, files, network access etc.
+Shuffle uses a saved order without repeating tracks until that order is exhausted. The browser player, Sonos and Up Next use the same order. Changing shuffle on Sonos updates the upcoming queue without restarting the current song.
 
-## Future work
+Open **Tags** in the sidebar to browse tags, or right-click a song and choose **Edit tags…** to add or remove them. Clicking a tag searches the library; you can also type `tag:house` in search. Manual edits and saved suggestions work without an AI provider. Automatic suggestions require `OPENROUTER_API_KEY` at build time or runtime, and use song metadata rather than listening to the audio.
 
-This is entirely single-node right now. I'm not sure whether to forge ahead with the original multi-node offline-first vision. It still appeals to me, but:
+Import name/artist detection also uses OpenRouter, with `openai/gpt-6-luna`. If metadata detection is unavailable, imports keep the known Discover title or a cleaned filename. The downloader still completes the import.
 
-1. I'm not 100% offline very often
-2. A web UI makes it especially tempting to just have a single central server
-   1. If I'm already paying the complexity tax (HTTP requests, split brain thing) for web... maybe I should take advantage of that instead of treating this like a normal desktop app?
+The production publish command requires the OpenRouter key for import metadata and automatic tag suggestions. It accepts `OPENROUTER_API_KEY`, a file named by `OPENROUTER_API_KEY_FILE`, or `openrouterkey.txt` in the repository root. A direct OpenAI API key is not needed.
 
-### TODO
+## Deleting audio
 
-- [x] Add and manage bookmarks, including compact rows, inline name editing and access from a song's context menu.
-- [ ] Experiment with AI-driven classification, tags and browsing filters. Give an agent broad freedom to look through the library and propose useful categories, such as high energy, low energy and instrumental, including combinations of these concepts. Pay particular attention to newly imported songs.
-- [ ] Run a couple of classification experiments before choosing a model and agent harness. Use OpenRouter through the existing environment API key (it may only be available outside the sandbox; never print or commit it). Compare at least two model/harness combinations on the same representative library sample, including favourites, individual songs and long DJ sets. Record useful versus misleading tags, consistency, evidence used, latency and cost; distinguish metadata-based guesses from classifications supported by audio.
-- [ ] Use the experiment results to design persistent tags and library filters. Keep room for agent-created categories, manual corrections and model/harness version tracking. Consider classification after import, with a recurring pass for unclassified or changed items; decide on the schedule after the experiments.
+Deleting a song also permanently removes its audio from object storage, unless another song still uses the same file. The server checks deletion history on startup and every 30 seconds, including songs deleted before storage cleanup was added.
+
+The event log stays intact. A `storage_deletions` receipt is saved after each successful object deletion, so storage failures and interrupted requests are retried after a restart. Cleanup only deletes exact paths from deleted songs within the configured bucket and prefix; it does not scan for unrelated objects. Bucket versioning must be disabled: a versioned bucket needs a separate purge of retained versions to actually free storage, so cleanup refuses to mark those deletions complete.
 
 ## Playback diagnostics
 
@@ -78,3 +75,11 @@ Discovery job IDs persist in SQLite. Recent jobs also persist in this browser, i
 In Discovery → History, older entries without saved progress offer **Resend to downloader** and **Return to inbox**. Failed jobs and jobs the worker no longer knows about also offer retry and return controls. Returning a set clears its old job reference and makes it importable from the inbox without submitting anything. Resending gets a job ID so progress can be tracked. Active or completed jobs cannot be reset, and a temporary status outage does not permit a resend. Recovery and import requests for the same set are serialized to prevent simultaneous clicks from submitting duplicate work.
 
 Run `cargo test -p reitunes downloads` and `cargo test -p reitunes discovery::tests::job_ids` for the worker contract and persisted retry checks. From `reitunes-web`, run `npm run test:e2e -- e2e/downloads.spec.ts e2e/discovery.spec.ts --retries=0` for the UI scenarios. These tests use fake workers and do not download media.
+
+## Future work
+
+This is entirely single-node right now. I'm not sure whether to forge ahead with the original multi-node offline-first vision. It still appeals to me, but:
+
+1. I'm not 100% offline very often
+2. A web UI makes it especially tempting to just have a single central server
+   1. If I'm already paying the complexity tax (HTTP requests, split brain thing) for web... maybe I should take advantage of that instead of treating this like a normal desktop app?

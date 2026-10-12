@@ -17,25 +17,9 @@ Those weren't really met by any existing music services. I don't know if any giv
 
 ## What?
 
-These days I spend most of my time working on a Rust+web UI version of ReiTunes (in `reitunes-rs`).
+ReiTunes is now a Rust server with a React web UI. The server lives in [`reitunes/`](reitunes/README.md) and the frontend in [`reitunes-web/`](reitunes-web/README.md).
 
-The Windows client is a UWP application. It's quite polished but probably won't receive much investment going forward because I'm on Windows less these days.
-
-Once upon a time I also had a Blazor client but that's been retired.
-
-### Smart Playlists and tags
-
-Create a Smart Playlist from the sidebar’s playlist menu. Choose **all (AND)** or **any (OR)** and add rules or nested groups. Rules cover tags, duration, artist, album, title, play count, date added, favourites and bookmarks. For example: duration under 10 minutes AND (tag includes folk OR tag includes indie-rock). Tag rules can include or exclude an exact tag, with suggestions from the library; **Has tags: No** finds tracks with no current tags. Matches use the same automatic and manually edited tags shown in the library, and update when tags change. The editor previews the matching tracks and their total duration. Existing playlists keep their original rules when edited.
-
-Duration appears as a sortable library column. Uploads read it from the audio file, downloads can use source metadata, and playback saves the measured length. Duration comparisons exclude unknown lengths; use the **Duration known** rule to find recordings that still need a measurement.
-
-Shuffle uses a saved order without repeating tracks until that order is exhausted. The browser player, Sonos and Up Next use the same order. Changing shuffle on Sonos updates the upcoming queue without restarting the current song.
-
-Open **Tags** in the sidebar to browse tags, or right-click a song and choose **Edit tags…** to add or remove them. Clicking a tag searches the library; you can also type `tag:house` in search. Manual edits and saved suggestions work without an AI provider. Automatic suggestions require `OPENROUTER_API_KEY` at build time or runtime, and use song metadata rather than listening to the audio.
-
-Import name/artist detection also uses OpenRouter, with `openai/gpt-6-luna`. If metadata detection is unavailable, imports keep the known Discover title or a cleaned filename. The downloader still completes the import.
-
-The production publish command requires the OpenRouter key for import metadata and automatic tag suggestions. It accepts `OPENROUTER_API_KEY`, a file named by `OPENROUTER_API_KEY_FILE`, or `openrouterkey.txt` in the repository root. A direct OpenAI API key is not needed.
+Earlier versions included a UWP Windows client and a Blazor client. Both are retired; they're still in the Git history if you want to dig them up.
 
 ## Architecture
 
@@ -46,12 +30,6 @@ On the server side, a web API acts as a central sync point for library metadata.
 Library metadata changes are treated as events; they are serialized to JSON and stored in SQLite locally immediately, then pushed to the server asynchronously later. You can think of the events like Git commits.
 
 The entire library is rebuilt from events on launch (more than fast enough; sub-10ms in the Rust version).
-
-### Deleting audio
-
-Deleting a song also permanently removes its audio from object storage, unless another song still uses the same file. The server checks deletion history on startup and every 30 seconds, including songs deleted before storage cleanup was added.
-
-The event log stays intact. A `storage_deletions` receipt is saved after each successful object deletion, so storage failures and interrupted requests are retried after a restart. Cleanup only deletes exact paths from deleted songs within the configured bucket and prefix; it does not scan for unrelated objects. Bucket versioning must be disabled: a versioned bucket needs a separate purge of retained versions to actually free storage, so cleanup refuses to mark those deletions complete.
 
 ## Acknowledgments
 

@@ -27,10 +27,9 @@ sha2.workspace = true
 reqwest.workspace = true
 r2d2.workspace = true
 r2d2_sqlite.workspace = true
-rand.workspace = true
 
 [workspace]
-members = ["reitunes", "sonos-player", "tagging-engine"]
+members = ["reitunes", "tagging-engine"]
 resolver = "2"
 
 [workspace.dependencies]

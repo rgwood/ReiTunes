@@ -1,7 +1,7 @@
 //! Shared functionality for reitunes workspace
 //!
 //! This library contains common database operations, library management,
-//! and utility functions shared between the reitunes web server and sonos-player.
+//! and utility functions used by the reitunes web server.
 
 pub mod database;
 pub mod library;

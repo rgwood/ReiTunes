@@ -151,26 +151,6 @@ impl Library {
         }
     }
 
-    /// Get a random bookmark from the library (sonos-player specific)
-    pub fn random_bookmark(&self) -> Option<(Uuid, Uuid)> {
-        let all_bookmarks: Vec<(Uuid, Uuid)> = self
-            .items
-            .iter()
-            .flat_map(|(item_id, item)| {
-                item.bookmarks
-                    .iter()
-                    .map(move |(bookmark_id, _)| (*item_id, *bookmark_id))
-            })
-            .collect();
-
-        if all_bookmarks.is_empty() {
-            return None;
-        }
-
-        let random_index = rand::random::<usize>() % all_bookmarks.len();
-        Some(all_bookmarks[random_index])
-    }
-
     /// Build library from a list of events
     #[instrument(skip(events))]
     pub fn build_from_events(events: Vec<EventWithMetadata>) -> Self {
