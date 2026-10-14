@@ -110,13 +110,16 @@ function MobileFavourite({ item }: { item: LibraryItem }) {
   </div>;
 }
 
-function PlayerFavourite({ item }: { item: LibraryItem }) {
+function PlayerFavourite({ item, disabled = false }: { item: LibraryItem; disabled?: boolean }) {
   const { pending, toggle } = useFavouriteToggle(item,
     () => showMessage('Could not update favourite', 'Your change could not be saved. Please try again.'));
   return <button type="button" className="player-favourite" aria-label="Favourite current song" aria-pressed={!!item.is_favorite}
-    title={item.is_favorite ? 'Remove from favourites' : 'Add to favourites'} disabled={pending}
+    title={item.is_favorite ? 'Remove from favourites' : 'Add to favourites'} disabled={disabled || pending}
     onClick={() => void toggle()}><MusicIcon name="heart" size={16} /></button>;
 }
+
+/** Keeps the controls row the same width when nothing is playing. */
+const NoFavourite = () => <button type="button" className="player-favourite" aria-label="Favourite current song" disabled><MusicIcon name="heart" size={16} /></button>;
 
 function PlayerTrack({ item, position, duration, sonos = false, status, recovery, onReveal }: {
   item: LibraryItem | null; position: number; duration: number; sonos?: boolean; status?: string;
@@ -134,7 +137,6 @@ function PlayerTrack({ item, position, duration, sonos = false, status, recovery
         : item ? <><span>{item.name}</span>{item.artist && <span className="player-artist"> — {item.artist}</span>}</>
         : <span>No song selected</span>}
     </Title>
-    {item && !status && <PlayerFavourite key={item.id} item={item} />}
     {recovery && recovery.status !== 'idle' && <span className="player-recovery">
       <span role="status">{recovery.status === 'buffering' ? 'Buffering…' : recovery.status === 'retrying' ? 'Reconnecting…' : 'Audio stalled'}</span>
       {recovery.status === 'failed' && <button type="button" onClick={recovery.retry}>Retry audio</button>}
@@ -1016,6 +1018,7 @@ export function AudioPlayer({ audioRef: sharedAudioRef, items, onPlaybackPositio
           </div>
           <PlayerBookmark onClick={() => void handleAddSonosBookmark()}
             disabled={!sonosSessionActive || !currentItem || isSwitchingOutput} feedback={bookmarkFeedback} sonos />
+          {currentItem ? <PlayerFavourite key={currentItem.id} item={currentItem} disabled={isSwitchingOutput} /> : <NoFavourite />}
           <PlayerShuffle enabled={shuffleEnabled} onClick={toggleShuffle}
             disabled={isSending || isSwitchingOutput || sonos.isTransportPending} />
           <button type="button" className="player-repeat" onClick={toggleRepeatAll} aria-pressed={repeatMode === 'all'}
@@ -1120,6 +1123,7 @@ export function AudioPlayer({ audioRef: sharedAudioRef, items, onPlaybackPositio
           })}
         </div>
         <PlayerBookmark onClick={handleAddBookmark} disabled={!currentItem} feedback={bookmarkFeedback} />
+        {currentItem ? <PlayerFavourite key={currentItem.id} item={currentItem} /> : <NoFavourite />}
         <PlayerShuffle enabled={shuffleEnabled} onClick={toggleShuffle} />
       </div>
       <PlayerTransport playing={isPlaying} onPrevious={handlePrevious} onNext={handleNext}

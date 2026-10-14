@@ -109,7 +109,7 @@ for (const output of ['browser', 'sonos'] as const) {
       const bookmarkBox = await box(bookmark);
       const shuffleBox = await box(shuffle);
       expect(shuffleBox.x).toBeGreaterThanOrEqual(bookmarkBox.x + bookmarkBox.width);
-      expect(shuffleBox.x - bookmarkBox.x - bookmarkBox.width).toBeLessThanOrEqual(8);
+      expect(shuffleBox.x - bookmarkBox.x - bookmarkBox.width).toBeLessThanOrEqual(40); // the favourite heart sits between them
       expect(shuffleBox.y).toBe(bookmarkBox.y);
       expect(shuffleBox.height).toBe(bookmarkBox.height);
       expect(headerBox.height).toBeLessThanOrEqual(width > 650 ? 64 : 120);
@@ -241,11 +241,14 @@ for (const output of ['browser', 'sonos'] as const) {
     await expect(heart).toHaveAttribute('aria-pressed', 'true');
     await expect(heart).toHaveAttribute('title', 'Remove from favourites');
 
-    // It sits right after the title, not off at the far end of the bar.
-    const titleBox = await box(page.locator('.player-title'));
+    // It sits between the bookmark and shuffle buttons, the same size as them.
+    const bookmarkBox = await box(page.locator('.player-bookmark'));
     const heartBox = await box(heart);
-    expect(heartBox.x - titleBox.x - titleBox.width).toBeGreaterThanOrEqual(0);
-    expect(heartBox.x - titleBox.x - titleBox.width).toBeLessThanOrEqual(8);
+    const shuffleBox = await box(page.locator('.player-shuffle'));
+    expect(heartBox.x).toBeGreaterThanOrEqual(bookmarkBox.x + bookmarkBox.width);
+    expect(shuffleBox.x).toBeGreaterThanOrEqual(heartBox.x + heartBox.width);
+    expect(heartBox.y).toBe(bookmarkBox.y);
+    expect(heartBox.height).toBe(bookmarkBox.height);
     await page.locator('.player-bar').screenshot({ path: testInfo.outputPath(`${output}-favourite.png`), animations: 'disabled' });
 
     await heart.click();
