@@ -168,3 +168,23 @@ test('Ctrl+A deletes only the filtered view, and right-clicking an unselected ro
   await expect(page.locator('tbody tr[data-item-id]')).toHaveCount(2);
   expect(deleted).toEqual(['bulk-2', 'bulk-3']);
 });
+
+test('every song context menu item uses the same hover background', async ({ page }, info) => {
+  await setup(page);
+  await row(page, 'Bravo').click({ button: 'right' });
+  const menu = page.locator('.library-context-menu');
+  const items = menu.locator('button:not(:disabled)');
+  const count = await items.count();
+  expect(count).toBeGreaterThan(8);
+  const styles = new Set<string>();
+  for (let index = 0; index < count; index++) {
+    const item = items.nth(index);
+    await item.hover();
+    styles.add(await item.evaluate(el => getComputedStyle(el).backgroundColor));
+    if (index === 2) await page.screenshot({ path: info.outputPath('context-menu-hover.png') });
+  }
+  expect([...styles]).toHaveLength(1);
+  expect(styles.has('rgba(0, 0, 0, 0)')).toBe(false);
+  await items.last().hover();
+  await page.screenshot({ path: info.outputPath('context-menu-delete-hover.png') });
+});

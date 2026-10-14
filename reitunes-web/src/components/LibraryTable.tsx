@@ -70,7 +70,7 @@ function PlaylistSubmenu({ playlists, disabled, onSelect }: {
   return <>
     <button type="button" ref={node => { triggerRef.current = node; setReference(node); }}
       aria-haspopup="menu" aria-expanded={open} aria-controls={open ? id : undefined}
-      className="playlist-submenu-trigger w-full px-3 py-2 text-solarized-base1 cursor-pointer flex justify-between items-center"
+      className="playlist-submenu-trigger context-menu-item"
       {...getReferenceProps()}
         onClick={event => {
           focusOnOpen.current = event.detail === 0;
@@ -1149,36 +1149,38 @@ export const LibraryTable = memo(function LibraryTable({ items, searchQuery, onl
           }}
         >
           {contextIds.length > 1 && <div className="context-selection-count">{contextIds.length} selected tracks</div>}
-          {contextIds.length === 1 && <><button type="button" className="w-full text-left px-3 py-2 text-solarized-base1 hover:bg-solarized-blue"
+          {contextIds.length === 1 && <><button type="button" className="context-menu-item"
             onClick={() => { setInfoItem(contextMenu.item); setContextMenu(null); }}>
             Get Info… <span className="menu-shortcut">Ctrl+I</span>
           </button>
-          <button type="button" className="w-full text-left px-3 py-2 text-solarized-base1 hover:bg-solarized-blue"
+          <button type="button" className="context-menu-item"
             onClick={() => { beginCellEdit(contextMenu.item, selection?.field ?? 'name'); setContextMenu(null); }}>
             Edit {selection?.field ?? 'name'} <span className="menu-shortcut">F2</span>
           </button></>}
-          <div
-            className="px-3 py-2 text-solarized-base1 hover:bg-solarized-blue hover:bg-opacity-30 cursor-pointer"
+          <button
+            type="button"
+            className="context-menu-item"
             onClick={handlePlayNext}
           >
             &#9654; Play Next
-          </div>
-          <div
-            className="px-3 py-2 text-solarized-base1 hover:bg-solarized-blue hover:bg-opacity-30 cursor-pointer"
+          </button>
+          <button
+            type="button"
+            className="context-menu-item"
             onClick={handleAddToQueue}
           >
             &#43; Add to Queue
-          </div>
-          {contextIds.length === 1 && <button type="button" className="w-full text-left px-3 py-2 text-solarized-base1 hover:bg-solarized-blue"
+          </button>
+          {contextIds.length === 1 && <button type="button" className="context-menu-item"
             onClick={() => { setTracklistItem(contextMenu.item); setContextMenu(null); }}>{contextMenu.item.tracklist ? 'Edit tracklist…' : 'Find tracklist…'}</button>}
           {contextTargets.some(item => !item.is_favorite) && <button type="button" disabled={libraryActions.pending}
-            className="w-full text-left px-3 py-2 text-solarized-base1 hover:bg-solarized-blue"
+            className="context-menu-item"
             onClick={() => void performAction('favourite', contextTargets)}>Add to favourites</button>}
           {contextTargets.some(item => item.is_favorite) && <button type="button" disabled={libraryActions.pending}
-            className="w-full text-left px-3 py-2 text-solarized-base1 hover:bg-solarized-blue"
+            className="context-menu-item"
             onClick={() => void performAction('unfavourite', contextTargets)}>Remove from favourites</button>}
           {contextIds.length === 1 && onManageBookmarks && Object.keys(contextMenu.item.bookmarks).length > 0 && (
-            <button type="button" className="w-full text-left px-3 py-2 text-solarized-base1 hover:bg-solarized-blue"
+            <button type="button" className="context-menu-item"
               onClick={() => {
                 onManageBookmarks(contextMenu.item);
                 setContextMenu(null);
@@ -1186,23 +1188,25 @@ export const LibraryTable = memo(function LibraryTable({ items, searchQuery, onl
               Manage bookmarks
             </button>
           )}
-          {contextIds.length === 1 && onManageTags && <button type="button" className="w-full text-left px-3 py-2 text-solarized-base1 hover:bg-solarized-blue"
+          {contextIds.length === 1 && onManageTags && <button type="button" className="context-menu-item"
             onClick={() => { onManageTags(contextMenu.item); setContextMenu(null); }}>Edit tags…</button>}
           <div className="border-t border-solarized-base01 my-1" />
           {onSearchChange && (
             <>
-              <div
-                className="px-3 py-2 text-solarized-base1 hover:bg-solarized-blue hover:bg-opacity-30 cursor-pointer"
+              <button
+                type="button"
+                className="context-menu-item"
                 onClick={handleFilterByArtist}
               >
                 &#128269; Filter by Artist
-              </div>
-              <div
-                className="px-3 py-2 text-solarized-base1 hover:bg-solarized-blue hover:bg-opacity-30 cursor-pointer"
+              </button>
+              <button
+                type="button"
+                className="context-menu-item"
                 onClick={handleFilterByAlbum}
               >
                 &#128269; Filter by Album
-              </div>
+              </button>
               <div className="border-t border-solarized-base01 my-1" />
             </>
           )}
@@ -1211,15 +1215,15 @@ export const LibraryTable = memo(function LibraryTable({ items, searchQuery, onl
               void changePlaylist('/' + id + '/items', 'POST', { library_item_ids: contextIds });
               setContextMenu(null); returnFocusRef.current?.focus();
             }} />
-          {onNewPlaylist && <button type="button" className="w-full text-left px-3 py-2" onClick={() => {
+          {onNewPlaylist && <button type="button" className="context-menu-item" onClick={() => {
             onNewPlaylist(contextIds); setContextMenu(null);
           }}>New playlist from selection…</button>}
-          {selectedPlaylist && <button type="button" className="w-full text-left px-3 py-2" disabled={playlistMutation.isPending} onClick={() => {
+          {selectedPlaylist && <button type="button" className="context-menu-item" disabled={playlistMutation.isPending} onClick={() => {
             void changePlaylist('/' + selectedPlaylist.id + '/items', 'DELETE', { library_item_ids: contextIds });
             setContextMenu(null);
           }}>Remove from playlist</button>}
           <button type="button" disabled={libraryActions.pending}
-            className="w-full text-left px-3 py-2 text-solarized-base1 hover:bg-solarized-red hover:text-solarized-base3"
+            className="context-menu-item context-menu-danger"
             onClick={() => void handleDelete(contextTargets)}>
             <span aria-hidden="true">&#128465; </span>{contextIds.length > 1 ? `Delete ${contextIds.length} songs from Library…` : 'Delete from Library'}
           </button>

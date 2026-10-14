@@ -253,8 +253,11 @@ input::placeholder { color: var(--muted); opacity: 1; }
 .bg-solarized-cyan.text-solarized-base03 { color: var(--accent-text); background: var(--accent); }
 .bg-solarized-base01.text-solarized-base2 { color: var(--text); background: var(--header); }
 .bg-solarized-base01.text-solarized-base2:hover { background: var(--hover); }
-.library-context-menu .cursor-pointer:hover { background: var(--hover); color: var(--text); }
-.library-context-menu [class~="hover:bg-solarized-red"]:hover { color: var(--error); }
+/* Every library context menu item shares one hover/focus style. */
+.context-menu-item { display: block; width: 100%; padding: 8px 12px; text-align: left; color: var(--text); white-space: nowrap; }
+.context-menu-item.playlist-submenu-trigger { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.context-menu-item:hover:not(:disabled), .context-menu-item:focus-visible, .context-menu-item[aria-expanded="true"] { background: var(--hover); color: var(--text); }
+.context-menu-danger, .context-menu-danger:hover:not(:disabled), .context-menu-danger:focus-visible { color: var(--error); }
 @media (max-width: 420px) {
   .player-progress > span:last-child { display: none; }
 }
