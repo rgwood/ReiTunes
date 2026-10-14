@@ -225,3 +225,41 @@ for (const output of ['browser', 'sonos'] as const) {
     });
   }
 }
+
+for (const output of ['browser', 'sonos'] as const) {
+  test(`${output} player heart shows and toggles the current song's favourite`, async ({ page }, testInfo) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    let failing = false;
+    const writes: string[] = [];
+    await page.route(/\/ui\/[^/]+\/(?:unfavorite|favorite)$/, route => {
+      writes.push(new URL(route.request().url()).pathname);
+      return route.fulfill({ status: failing ? 503 : 204 });
+    });
+    await openPlayer(page, output);
+    const heart = page.locator('.player-bar').getByRole('button', { name: 'Favourite current song', exact: true });
+    const rowHeart = page.getByRole('row').filter({ hasText: items[0].name }).locator('td[data-column=is_favorite] button');
+    await expect(heart).toHaveAttribute('aria-pressed', 'true');
+    await expect(heart).toHaveAttribute('title', 'Remove from favourites');
+
+    // It sits right after the title, not off at the far end of the bar.
+    const titleBox = await box(page.locator('.player-title'));
+    const heartBox = await box(heart);
+    expect(heartBox.x - titleBox.x - titleBox.width).toBeGreaterThanOrEqual(0);
+    expect(heartBox.x - titleBox.x - titleBox.width).toBeLessThanOrEqual(8);
+    await page.locator('.player-bar').screenshot({ path: testInfo.outputPath(`${output}-favourite.png`), animations: 'disabled' });
+
+    await heart.click();
+    await expect(heart).toHaveAttribute('aria-pressed', 'false');
+    await expect(rowHeart).toHaveText('♡');
+    await heart.click();
+    await expect(heart).toHaveAttribute('aria-pressed', 'true');
+    await expect(rowHeart).toHaveText('♥');
+
+    failing = true;
+    await heart.click();
+    await expect(page.getByRole('dialog')).toContainText('Could not update favourite');
+    await expect(heart).toHaveAttribute('aria-pressed', 'true');
+    await expect(rowHeart).toHaveText('\u2665');
+    expect(writes).toEqual([`/ui/${trackId}/unfavorite`, `/ui/${trackId}/favorite`, `/ui/${trackId}/unfavorite`]);
+  });
+}

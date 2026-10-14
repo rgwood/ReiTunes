@@ -11,7 +11,14 @@
 .player-bar button.player-title { padding: 0; border: 0; border-radius: 0; background: transparent; cursor: pointer; }
 .player-bar button.player-title:hover > span:first-child { text-decoration: underline; }
 .player-bar button.player-title:focus-visible { outline: 1px solid var(--accent); outline-offset: 2px; }
-.player-timing { flex-shrink: 0; color: var(--muted); font-size: 10px; line-height: 20px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+/* Keep the heart beside the title, like Spotify, rather than at the far end. */
+.player-bar .player-title:has(+ .player-favourite) { flex: 0 1 auto; }
+.player-bar .player-favourite { display: inline-flex; flex: none; align-items: center; justify-content: center; width: 24px; height: 24px; margin-left: -6px; padding: 0; border: 1px solid transparent; border-radius: 4px; background: transparent; color: var(--muted); }
+.player-bar .player-favourite:hover:not(:disabled) { color: var(--error); background: var(--hover); }
+.player-bar .player-favourite:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.player-bar .player-favourite[aria-pressed='true'] { color: var(--error); }
+.player-bar .player-favourite[aria-pressed='true'] svg { fill: currentColor; }
+.player-timing { flex-shrink: 0; margin-left: auto; color: var(--muted); font-size: 10px; line-height: 20px; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .player-bar .player-timeline { grid-column: 2; grid-row: 2; display: flex; align-items: center; gap: 6px; min-width: 0; width: 100%; margin: 0; }
 .player-timeline .playback-scrubber { flex: 1; min-width: 0; }
 .player-bar .transport-group { grid-column: 1; grid-row: 1 / 3; display: flex; align-items: center; justify-content: center; gap: 4px; }

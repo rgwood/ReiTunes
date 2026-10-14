@@ -15,6 +15,7 @@ import { stageSharedPlayback } from '../hooks/useSharedPlaybackSession';
 import { createAudioRecovery, isRetryableMediaError, type AudioRecoveryStatus } from '../utils/audioRecovery';
 import { saveDuration, trackDuration } from '../utils/duration';
 import { MusicIcon } from './MusicIcon';
+import { showMessage } from '../stores/dialogStore';
 import { ownsBrowserPlayback, useSharedSessionStore } from '../stores/sharedSessionStore';
 import './MobilePlayer.css';
 
@@ -84,22 +85,37 @@ function formatTime(seconds: number): string {
   return `${mins}:${secs.toString().padStart(2, '0')}`;
 }
 
-function MobileFavourite({ item }: { item: LibraryItem }) {
+/** Toggles the song's favourite flag, updating the library cache once the server has saved it. */
+function useFavouriteToggle(item: LibraryItem, onError: () => void) {
   const client = useQueryClient();
   const [pending, setPending] = useState(false);
+  const toggle = async () => {
+    setPending(true);
+    try {
+      await toggleFavorite(item.id, !!item.is_favorite);
+      client.setQueryData<LibraryItem[]>(['library'], items => items?.map(track => track.id === item.id ? { ...track, is_favorite: !item.is_favorite } : track));
+    } catch { onError(); }
+    finally { setPending(false); }
+  };
+  return { pending, toggle };
+}
+
+function MobileFavourite({ item }: { item: LibraryItem }) {
   const [error, setError] = useState(false);
+  const { pending, toggle } = useFavouriteToggle(item, () => setError(true));
   return <div className="mobile-playing-favourite">
     <button type="button" aria-label={item.is_favorite ? 'Remove favourite' : 'Favourite song'} aria-pressed={!!item.is_favorite}
-      disabled={pending} onClick={async () => {
-        setPending(true); setError(false);
-        try {
-          await toggleFavorite(item.id, !!item.is_favorite);
-          client.setQueryData<LibraryItem[]>(['library'], items => items?.map(track => track.id === item.id ? { ...track, is_favorite: !item.is_favorite } : track));
-        } catch { setError(true); }
-        finally { setPending(false); }
-      }}><MusicIcon name="heart" size={24} /></button>
+      disabled={pending} onClick={() => { setError(false); void toggle(); }}><MusicIcon name="heart" size={24} /></button>
     {error && <small role="alert">Couldn’t save. Tap the heart to retry.</small>}
   </div>;
+}
+
+function PlayerFavourite({ item }: { item: LibraryItem }) {
+  const { pending, toggle } = useFavouriteToggle(item,
+    () => showMessage('Could not update favourite', 'Your change could not be saved. Please try again.'));
+  return <button type="button" className="player-favourite" aria-label="Favourite current song" aria-pressed={!!item.is_favorite}
+    title={item.is_favorite ? 'Remove from favourites' : 'Add to favourites'} disabled={pending}
+    onClick={() => void toggle()}><MusicIcon name="heart" size={16} /></button>;
 }
 
 function PlayerTrack({ item, position, duration, sonos = false, status, recovery, onReveal }: {
@@ -118,6 +134,7 @@ function PlayerTrack({ item, position, duration, sonos = false, status, recovery
         : item ? <><span>{item.name}</span>{item.artist && <span className="player-artist"> — {item.artist}</span>}</>
         : <span>No song selected</span>}
     </Title>
+    {item && !status && <PlayerFavourite key={item.id} item={item} />}
     {recovery && recovery.status !== 'idle' && <span className="player-recovery">
       <span role="status">{recovery.status === 'buffering' ? 'Buffering…' : recovery.status === 'retrying' ? 'Reconnecting…' : 'Audio stalled'}</span>
       {recovery.status === 'failed' && <button type="button" onClick={recovery.retry}>Retry audio</button>}
