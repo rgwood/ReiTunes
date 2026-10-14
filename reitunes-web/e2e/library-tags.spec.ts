@@ -1,4 +1,4 @@
-import { expect, test, type Page } from './fixtures/test';
+import { expect, test, type Page, type WebSocketRoute } from './fixtures/test';
 import type { LibraryItem } from '../src/types';
 import type { TagSnapshot, TagLabel } from '../src/hooks/useTags';
 
@@ -8,36 +8,47 @@ const tracks: LibraryItem[] = ['Evening set', 'Morning piano'].map((name, index)
   play_count: 0, bookmarks: {}, url: '/test.mp3',
 }));
 async function backend(page: Page, enabled = true) {
-  const data: TagSnapshot = { enabled, items: Object.fromEntries(tracks.map((track, index) => [track.id, {
+  const data: TagSnapshot = { enabled, revision: { boot: 1, number: 0 }, items: Object.fromEntries(tracks.map((track, index) => [track.id, {
     status: 'ready', provider: 'Z.AI', tags: (index ? ['piano'] : ['house', 'instrumental']).map(tag => ({ tag, confidence: .7, basis: 'metadata', evidence: 'Description names the genre.', sourceUrls: [] })), labels: {},
   }])) };
   const writes: string[] = [];
+  const sockets = new Set<WebSocketRoute>();
+  /** Like the server: bumps the revision and pushes these items' current state over the WebSocket. */
+  const push = (...ids: string[]) => {
+    data.revision = { boot: 1, number: data.revision.number + 1 };
+    const message = JSON.stringify({ type: 'changed', resource: 'tags', revision: data.revision, items: Object.fromEntries(ids.map(id => [id, data.items[id] ?? null])) });
+    for (const socket of sockets) socket.send(message);
+  };
   await page.route('**/api/items', route => route.fulfill({ json: tracks }));
   await page.route('**/api/playlists', route => route.fulfill({ json: [] }));
   await page.route('**/api/discovery', route => route.fulfill({ json: { sources: [], entries: [], refreshing: false } }));
   await page.route('**/api/sonos/status', route => route.fulfill({ json: { configured: false, connected: false } }));
   await page.route('**/api/log', route => route.fulfill({ status: 200 }));
-  await page.routeWebSocket('**/updates', () => {});
+  await page.routeWebSocket('**/updates', socket => { sockets.add(socket); socket.onClose(() => sockets.delete(socket)); });
   await page.route('**/api/tags**', async route => {
     const request = route.request(); const path = new URL(request.url()).pathname;
-    if (request.method() === 'GET') return route.fulfill({ json: data });
+    const parts = path.split('/'); const id = parts[4];
+    if (request.method() === 'GET') return route.fulfill({ json: path.startsWith('/api/tags/items/') ? { revision: data.revision, item: data.items[id] ?? null } : data });
     writes.push(path);
-    const parts = path.split('/'); const item = data.items[parts[4]];
+    const item = data.items[id];
     if (request.method() === 'PUT') { const label: TagLabel = request.postDataJSON(); item.labels[label.tag] = label; }
     if (request.method() === 'DELETE') delete item.labels[decodeURIComponent(parts[6])];
     if (path.endsWith('/classify')) {
-      data.items[parts[4]] = { ...(item || { tags: [], labels: {} }), status: 'queued' };
+      data.items[id] = { ...(item || { tags: [], labels: {} }), status: 'queued' };
+      push(id);
       return route.fulfill({ json: { queued: true } });
     }
     if (path.endsWith('/queue')) {
       const ids: string[] = request.postDataJSON().itemIds;
       const queued = ids.filter(id => !data.items[id] || data.items[id].status === 'stale');
       for (const id of queued) data.items[id] = { tags: [], labels: data.items[id]?.labels || {}, status: 'queued' };
+      push(...queued);
       return route.fulfill({ json: { queued: queued.length, itemIds: queued } });
     }
+    push(id);
     return route.fulfill({ status: 204 });
   });
-  return { data, writes };
+  return { data, writes, push };
 }
 
 async function openSongTags(page: Page, name: string) {
@@ -48,7 +59,7 @@ async function openSongTags(page: Page, name: string) {
 }
 
 test('automatic tags are searchable without review and removals with reasons survive reload and regeneration', async ({ page }) => {
-  const { data, writes } = await backend(page);
+  const { data, writes, push } = await backend(page);
   await page.goto('/');
   await expect(page.getByLabel('Filter by tags')).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Review results' })).toHaveCount(0);
@@ -71,6 +82,7 @@ test('automatic tags are searchable without review and removals with reasons sur
   await page.getByRole('button', { name: 'Regenerate tags', exact: true }).click();
   await expect(page.getByRole('button', { name: 'In progress', exact: true })).toBeDisabled();
   data.items[tracks[0].id].status = 'ready';
+  push(tracks[0].id);
   await expect(page.getByRole('button', { name: 'Regenerate tags', exact: true })).toBeEnabled({ timeout: 10000 });
   await page.getByRole('searchbox', { name: 'Search library' }).fill('tag:house');
   await expect(page.getByRole('row').filter({ hasText: 'Evening set' })).toHaveCount(0);
@@ -368,7 +380,7 @@ test('tag corrections are reachable from the track context menu without changing
 });
 
 test('selected track generation shows phases, survives closing the editor, and offers retry on failure', async ({ page }) => {
-  const { data, writes } = await backend(page);
+  const { data, writes, push } = await backend(page);
   delete data.items[tracks[0].id];
   await page.goto('/');
   await page.getByRole('button', { name: 'Edit tags for Evening set' }).click();
@@ -379,6 +391,7 @@ test('selected track generation shows phases, survives closing the editor, and o
   expect(writes).toEqual([`/api/tags/items/${tracks[0].id}/classify`]);
   data.items[tracks[0].id].status = 'running';
   data.items[tracks[0].id].phase = 'researching';
+  push(tracks[0].id);
   await expect(page.getByText('Looking up music metadata…', { exact: true })).toBeVisible({ timeout: 10000 });
   await page.getByRole('button', { name: 'Close tags' }).click();
   await expect(page.locator('.source-sidebar').getByRole('button', { name: 'Tags', exact: true })).toHaveAttribute('title', '1 tracks getting tags');
@@ -386,9 +399,11 @@ test('selected track generation shows phases, survives closing the editor, and o
   await page.getByRole('button', { name: 'Automatic tags (1)', exact: true }).click();
   await expect(page.getByRole('list', { name: 'Suggestion progress' })).toContainText('Evening set');
   data.items[tracks[0].id].phase = 'classifying';
+  push(tracks[0].id);
   await expect(page.getByText('GLM is generating suggestions…', { exact: true })).toBeVisible({ timeout: 10000 });
   data.items[tracks[0].id].status = 'failed';
   data.items[tracks[0].id].error = 'Provider unavailable';
+  push(tracks[0].id);
   await expect(page.getByText('Could not generate tags — retry available', { exact: true })).toBeVisible({ timeout: 10000 });
   await page.getByRole('list', { name: 'Suggestion progress' }).getByRole('button', { name: /Evening set/ }).click();
   await expect(page.getByText('Provider unavailable', { exact: true })).toBeVisible();
@@ -397,7 +412,7 @@ test('selected track generation shows phases, survives closing the editor, and o
 });
 
 test('bulk generation names its tracks, reports completion and handles an empty queue response', async ({ page }) => {
-  const { data, writes } = await backend(page);
+  const { data, writes, push } = await backend(page);
   delete data.items[tracks[0].id];
   await page.goto('/');
   await page.getByRole('button', { name: 'Tags', exact: true }).first().click();
@@ -411,6 +426,7 @@ test('bulk generation names its tracks, reports completion and handles an empty 
   expect(writes).toEqual(['/api/tags/queue']);
   data.items[tracks[0].id].status = 'ready';
   data.items[tracks[0].id].updatedAt = Date.now() / 1000;
+  push(tracks[0].id);
   await expect(page.getByText('1 of 1 tracks ready.', { exact: true })).toBeVisible({ timeout: 10000 });
   await expect(page.getByText('No tags found. You can add your own.')).toBeVisible();
   await page.getByRole('button', { name: 'Close tags' }).click();

@@ -424,7 +424,11 @@ test('tag rules combine with duration, persist, and update membership and counts
     labels: i === 1 ? { house: { tag: 'house', verdict: 'rejected', reason: '' }, 'indie-rock': { tag: 'indie-rock', verdict: 'accepted', reason: '' } } : {},
   }]));
   await page.route('**/api/items', route => route.fulfill({ json: songs.map(song => ({ ...song, duration_seconds: 300 })) }));
-  await page.route('**/api/tags', route => route.fulfill({ json: { enabled: true, items: tagItems } }));
+  await page.route('**/api/tags', route => route.fulfill({ json: { enabled: true, items: tagItems, revision: { boot: 1, number: 0 } } }));
+  let revision = 0;
+  await page.route('**/api/tags/items/*', route => route.fulfill({ json: {
+    revision: { boot: 1, number: ++revision }, item: tagItems[new URL(route.request().url()).pathname.split('/')[4]] ?? null,
+  } }));
   await page.route('**/api/tags/items/*/labels', async route => {
     const id = new URL(route.request().url()).pathname.split('/')[4];
     const label = route.request().postDataJSON();
