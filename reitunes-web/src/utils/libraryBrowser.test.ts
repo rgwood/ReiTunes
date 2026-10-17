@@ -39,6 +39,15 @@ describe('library search', () => {
     expect(matchesLibrarySearch(track, tagSearch('odd"tag'), tags)).toBe(true);
     expect(tagSearch('dj-mix')).toBe('tag:dj-mix');
   });
+  it('matches plain search terms against tags', () => {
+    const track = item('one');
+    const tags = ['dj-mix', 'house'];
+    expect(matchesLibrarySearch(track, 'house', tags)).toBe(true);
+    expect(matchesLibrarySearch(track, 'dj mix', tags)).toBe(true);
+    expect(matchesLibrarySearch(track, 'dj-mix night', tags)).toBe(true);
+    expect(matchesLibrarySearch(track, 'techno', tags)).toBe(false);
+    expect(matchesLibrarySearch(track, 'house')).toBe(false);
+  });
   it('searches across words, bookmark labels, and existing artist/album syntax', () => {
     const track = item('one', {
       bookmarks: {
