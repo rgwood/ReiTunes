@@ -7,6 +7,7 @@ import {
   getFilteredRowModel,
   flexRender,
   createColumnHelper,
+  sortingFns,
   type SortingState,
   type ColumnFiltersState,
   type Table,
@@ -475,6 +476,10 @@ export const LibraryTable = memo(function LibraryTable({ items, searchQuery, onl
     return result;
   }, [items, searchQuery, selectedPlaylist]);
 
+  // Read by the album sorting function, which TanStack negates for descending sorts.
+  const albumSortDesc = useRef(false);
+  albumSortDesc.current = sorting.find(sort => sort.id === 'album')?.desc ?? false;
+
   const columns = useMemo(() => [
     columnHelper.accessor('is_favorite', {
       header: '\u2665',
@@ -495,6 +500,14 @@ export const LibraryTable = memo(function LibraryTable({ items, searchQuery, onl
     columnHelper.accessor('album', {
       header: 'Album',
       size: 140,
+      // Songs within an album stay in track order (missing numbers last), whichever way albums are sorted.
+      sortingFn: (a, b, columnId) => {
+        const byAlbum = sortingFns.alphanumeric(a, b, columnId);
+        if (byAlbum) return byAlbum;
+        const byTrack = (a.original.track_number ?? Infinity) - (b.original.track_number ?? Infinity);
+        const order = Number.isNaN(byTrack) ? 0 : Math.sign(byTrack);
+        return albumSortDesc.current ? -order : order;
+      },
     }),
     columnHelper.accessor('track_number', {
       header: '#',

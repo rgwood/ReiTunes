@@ -162,3 +162,23 @@ test('a narrow grid with only Name has no leftover column width or positional st
   expect(dimensions.align).not.toBe('center');
   expect(await headers(page)).toEqual(['name']);
 });
+
+test('sorting by album keeps songs in track order within each album', async ({ page }) => {
+  const songs = [['Hazey Jane I', 'Bryter Layter', 3], ['Pink Moon', 'Pink Moon', 1], ['Northern Sky', 'Bryter Layter', 8],
+    ['Untitled', 'Bryter Layter', null], ['Place to Be', 'Pink Moon', 2], ['Introduction', 'Bryter Layter', 1]] as const;
+  await page.route('**/api/items', route => route.fulfill({ json: songs.map(([name, album, track_number], index) => ({
+    id: `song-${index}`, name, artist: 'Nick Drake', album, track_number,
+    created_time_utc: `2026-01-0${index + 1}T00:00:00`, file_path: `${index}.mp3`,
+    url: `/audio/${index}.mp3`, play_count: 0, bookmarks: {},
+  })) }));
+  await page.route('**/api/playlists', route => route.fulfill({ json: [] }));
+  await page.route('**/api/tags', route => route.fulfill({ json: { enabled: false, items: {} } }));
+  await page.route('**/api/log', route => route.fulfill({ status: 200 }));
+  await page.routeWebSocket('**/updates', () => {});
+  await page.goto('/');
+  const names = () => page.locator('tbody td[data-column=name]').allTextContents();
+  await page.locator('th[data-column=album] button').click();
+  await expect.poll(names).toEqual(['Introduction', 'Hazey Jane I', 'Northern Sky', 'Untitled', 'Pink Moon', 'Place to Be']);
+  await page.locator('th[data-column=album] button').click();
+  await expect.poll(names).toEqual(['Pink Moon', 'Place to Be', 'Introduction', 'Hazey Jane I', 'Northern Sky', 'Untitled']);
+});
