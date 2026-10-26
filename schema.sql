@@ -18,6 +18,21 @@ CREATE TABLE IF NOT EXISTS storage_deletions (
     PRIMARY KEY (StorageScope, DeletionEventId)
 );
 
+-- One row per audio object the loudness normalizer has looked at. A new file
+-- path is a new object, so it gets checked again. Failed rows are retried a few
+-- times; every other outcome is final for this policy.
+CREATE TABLE IF NOT EXISTS loudness_normalization (
+    StorageScope TEXT NOT NULL,
+    FilePath TEXT NOT NULL,
+    ItemId TEXT NOT NULL,
+    Policy TEXT NOT NULL,
+    Outcome TEXT NOT NULL,
+    Details TEXT NOT NULL,
+    Attempts INTEGER NOT NULL,
+    UpdatedAt TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (StorageScope, FilePath)
+);
+
 -- Sonos OAuth tokens are encrypted before they reach SQLite. This singleton row
 -- survives application restarts without putting a refresh token in source or in
 -- a browser cookie.

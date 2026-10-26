@@ -247,6 +247,7 @@ impl Harness {
             playback_session: Arc::new(playback_session::PlaybackSessionStore::new(db.clone()).unwrap()),
             lastfm: Arc::new(lastfm::LastFm::new(db).unwrap()),
             tagging: None,
+            normalization: None,
         };
         let router = Router::new()
             .route("/api/playback-session", get(playback_session::get).post(playback_session::update))

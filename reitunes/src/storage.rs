@@ -1,7 +1,16 @@
 use anyhow::{ensure, Context, Result};
 use aws_sdk_s3::primitives::ByteStream;
-use std::path::Path;
+use std::{collections::HashMap, path::Path};
 use tracing::info;
+
+/// What a HEAD request says about a stored audio object.
+#[derive(Debug, Clone)]
+pub struct StoredObject {
+    pub etag: String,
+    pub size: i64,
+    pub content_type: Option<String>,
+    pub metadata: HashMap<String, String>,
+}
 
 /// S3-compatible object storage (OVHcloud, AWS, etc.)
 pub struct S3Storage {
@@ -23,12 +32,65 @@ impl S3Storage {
         // not record that as reclaimed storage; it needs a version-aware purge.
         let versioning = self.client.get_bucket_versioning().bucket(&self.bucket).send().await?;
         ensure!(versioning.status().is_none(), "Storage cleanup requires an unversioned bucket");
-        let key = match &self.prefix {
+        self.client.delete_object().bucket(&self.bucket).key(self.key(file_path)).send().await
+            .context("Failed to delete audio from object storage")?;
+        Ok(())
+    }
+
+    fn key(&self, file_path: &str) -> String {
+        match &self.prefix {
             Some(prefix) => format!("{prefix}/{file_path}"),
             None => file_path.to_string(),
-        };
-        self.client.delete_object().bucket(&self.bucket).key(key).send().await
-            .context("Failed to delete audio from object storage")?;
+        }
+    }
+
+    pub async fn head(&self, file_path: &str) -> Result<StoredObject> {
+        ensure!(valid_file_path(file_path), "Refusing to read an invalid storage path");
+        let head = self.client.head_object().bucket(&self.bucket).key(self.key(file_path)).send().await
+            .context("Failed to read audio object metadata")?;
+        Ok(StoredObject {
+            etag: head.e_tag().context("Audio object has no ETag")?.to_string(),
+            size: head.content_length().unwrap_or_default(),
+            content_type: head.content_type().map(str::to_string),
+            metadata: head.metadata().cloned().unwrap_or_default(),
+        })
+    }
+
+    /// Download an object only if it still has this ETag.
+    pub async fn download(&self, file_path: &str, etag: &str, max_bytes: i64) -> Result<Vec<u8>> {
+        ensure!(valid_file_path(file_path), "Refusing to read an invalid storage path");
+        let response = self.client.get_object().bucket(&self.bucket).key(self.key(file_path)).if_match(etag)
+            .send().await.context("Failed to download audio object")?;
+        ensure!(response.content_length().unwrap_or_default() <= max_bytes, "Audio object is too large");
+        let data = response.body.collect().await.context("Failed to read audio object")?.to_vec();
+        ensure!(data.len() as i64 <= max_bytes, "Audio object is too large");
+        Ok(data)
+    }
+
+    /// Replace an object in place, failing if it changed since `etag` was read.
+    /// The URL stays the same, so browsers and Sonos pick up the new audio.
+    pub async fn replace(
+        &self,
+        file_path: &str,
+        etag: &str,
+        data: Vec<u8>,
+        content_type: &str,
+        metadata: HashMap<String, String>,
+    ) -> Result<()> {
+        ensure!(valid_file_path(file_path), "Refusing to replace an invalid storage path");
+        self.client
+            .put_object()
+            .bucket(&self.bucket)
+            .key(self.key(file_path))
+            .if_match(etag)
+            .body(ByteStream::from(data))
+            .content_type(content_type)
+            .cache_control("no-cache")
+            .set_metadata(Some(metadata))
+            .acl(aws_sdk_s3::types::ObjectCannedAcl::PublicRead)
+            .send()
+            .await
+            .context("Failed to replace audio object")?;
         Ok(())
     }
 
@@ -96,12 +158,7 @@ impl S3Storage {
 
     pub async fn upload(&self, filename: &str, data: &[u8]) -> Result<String> {
         let unique_name = self.unique_filename(filename);
-
-        // Compute the S3 key (with prefix if configured)
-        let s3_key = match &self.prefix {
-            Some(prefix) => format!("{}/{}", prefix, unique_name),
-            None => unique_name.clone(),
-        };
+        let s3_key = self.key(&unique_name);
 
         // Guess content type from filename
         let content_type = mime_guess::from_path(&unique_name)

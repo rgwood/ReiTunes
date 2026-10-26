@@ -56,22 +56,28 @@ Add `--apply` to restore those originals. This refuses to overwrite later extern
 changes. The five-song trial has its own `normalize_mp3_trial.py restore` command
 and manifest format; keep its original trial directory for rollback.
 
-## Toward normalization on import
+## Normalization on import
 
-This is a manual batch for now. Nothing in the import paths runs it, so songs
-added after the last batch play at whatever volume they arrived with. Check for
-them by looking for objects without `x-amz-meta-reitunes-normalization`.
+The server now does this itself (`reitunes/src/normalization.rs`), with the same
+policy and the same object metadata, so these scripts are mostly for reference
+and manual rollback. After `/api/upload` or `/api/add` creates a song, a
+background worker measures it, applies the gain and replaces the object in place.
+A sweep two minutes after startup, then daily, queues anything not yet checked:
+the backlog, songs whose file changed, and failures (retried up to three times).
+Objects that already carry `x-amz-meta-reitunes-normalization` are recorded
+without being downloaded.
 
-All imports end at the server's `/api/upload` or `/api/add`, so the server is the
-natural place to automate this. The fit is a background job queued after the item
-is created, like `durations::import`. It would normalize the stored object in place
-using this policy and set the same metadata. Things to sort out first:
+Each object's result goes in the `loudness_normalization` table, keyed by storage
+scope and file path. Unlike the batch, the server keeps no local backup: MP3Gain's
+undo record in the file is the rollback (`mp3gain -u`), and the worker checks that
+undo restores identical decoded audio before uploading.
 
-- `mp3gain` has to be installed on `spudnik`. The batch used a binary extracted
-  from the Debian `mp3gain` 1.6.2 package.
-- Eligibility needs a duration. `/api/add` only records one when the caller sends
-  `duration_seconds`; otherwise it appears after the first playback.
-- M4As and recordings of 15 minutes or longer stay excluded.
+The server needs `ffmpeg`, `ffprobe` and `mp3gain` on `PATH` (or `FFMPEG_PATH`,
+`FFPROBE_PATH` and `MP3GAIN_PATH`). Without them it logs a warning and skips
+normalization. On `spudnik`: `sudo apt install ffmpeg mp3gain`.
+
+To run the Rust end-to-end tests, point `MP3GAIN_PATH` at an `mp3gain` binary if
+it isn't installed; otherwise those tests skip themselves.
 
 ## Checks
 

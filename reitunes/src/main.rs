@@ -45,6 +45,7 @@ mod playback_session;
 mod lastfm;
 mod storage;
 mod storage_cleanup;
+mod normalization;
 mod systemd;
 mod discovery;
 mod downloads;
@@ -147,6 +148,7 @@ struct AppState {
     playback_session: Arc<playback_session::PlaybackSessionStore>,
     lastfm: Arc<lastfm::LastFm>,
     tagging: Option<tagging::Tagging>,
+    normalization: Option<normalization::Normalization>,
 }
 
 #[tokio::main]
@@ -219,21 +221,24 @@ async fn main() -> Result<()> {
             .expect("Failed to initialize S3 storage");
 
             let library = Arc::new(RwLock::new(library));
+            let storage = Arc::new(storage);
             let changes = Arc::new(ChangeFeed::default());
             let tagging = tagging::Tagging::new(DB.clone(), library.clone(), changes.clone())?;
             tagging.start_worker();
             tagging.start_notifier();
+            let normalization = normalization::Normalization::start(DB.clone(), library.clone(), storage.clone());
             let app_state = AppState {
                 library,
                 playlists: Arc::new(RwLock::new(playlists)),
                 update_tx: broadcast::channel(100).0,
                 changes,
-                storage: Arc::new(storage),
+                storage: storage.clone(),
                 sonos: sonos::SonosControl::from_env(DB.clone())?,
                 cloud_queues: Arc::new(cloud_queue::CloudQueueStore::from_env(DB.clone())?),
                 playback_session: Arc::new(playback_session::PlaybackSessionStore::new(DB.clone())?),
                 lastfm: Arc::new(lastfm::LastFm::new(DB.clone())?),
                 tagging: Some(tagging.clone()),
+                normalization: Some(normalization),
             };
 
             forward_library_changes_to_tagging(&app_state.update_tx, tagging.clone());
@@ -1364,6 +1369,7 @@ async fn upload_handler(
         drop(conn);
         drop(library);
         queue_tag_suggestions(&app_state, item_id).await;
+        queue_normalization(&app_state, item_id);
         return Ok(Json(UploadResponse {
             id: item_id,
             name,
@@ -1735,6 +1741,12 @@ async fn queue_tag_suggestions(app_state: &AppState, item_id: Uuid) {
     }
 }
 
+fn queue_normalization(app_state: &AppState, item_id: Uuid) {
+    if let Some(normalization) = &app_state.normalization {
+        normalization.enqueue(item_id);
+    }
+}
+
 #[derive(Debug, Deserialize, Serialize)]
 struct AddItemRequest {
     file_path: String,
@@ -1826,6 +1838,7 @@ async fn add_item_handler(
     drop(library);
     queue_tag_suggestions(&app_state, item_id).await;
     durations::import(app_state.clone(), item_id, duration_path, request.source_url, request.duration_seconds);
+    queue_normalization(&app_state, item_id);
     Ok(StatusCode::CREATED)
 }
 
@@ -2164,6 +2177,7 @@ mod tests {
             playback_session: Arc::new(playback_session::PlaybackSessionStore::in_memory()),
             lastfm: Arc::new(lastfm::LastFm::in_memory()),
             tagging: None,
+            normalization: None,
         };
         let unchanged = state.changes.etag(Resource::Playlists, None);
         let id = Uuid::new_v4();
@@ -2227,6 +2241,7 @@ mod tests {
             playback_session: Arc::new(playback_session::PlaybackSessionStore::in_memory()),
             lastfm: Arc::new(lastfm::LastFm::in_memory()),
             tagging: None,
+            normalization: None,
         };
         for (position, expected_status) in [
             (Some(-1.0), StatusCode::BAD_REQUEST),
