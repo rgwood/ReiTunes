@@ -123,7 +123,8 @@ def main() -> None:
     folder.mkdir(parents=True, exist_ok=True)
 
     def download(key: str, etag: str | None = None) -> bytes:
-        response = s3.get_object(Bucket=bucket, Key=key, **({"IfMatch": etag} if etag else {}))
+        response = (s3.get_object(Bucket=bucket, Key=key, IfMatch=etag) if etag
+                    else s3.get_object(Bucket=bucket, Key=key))
         with response["Body"] as body:
             data = body.read(MAX_BYTES + 1)
         if len(data) > MAX_BYTES:

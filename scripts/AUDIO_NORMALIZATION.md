@@ -56,6 +56,23 @@ Add `--apply` to restore those originals. This refuses to overwrite later extern
 changes. The five-song trial has its own `normalize_mp3_trial.py restore` command
 and manifest format; keep its original trial directory for rollback.
 
+## Toward normalization on import
+
+This is a manual batch for now. Nothing in the import paths runs it, so songs
+added after the last batch play at whatever volume they arrived with. Check for
+them by looking for objects without `x-amz-meta-reitunes-normalization`.
+
+All imports end at the server's `/api/upload` or `/api/add`, so the server is the
+natural place to automate this. The fit is a background job queued after the item
+is created, like `durations::import`. It would normalize the stored object in place
+using this policy and set the same metadata. Things to sort out first:
+
+- `mp3gain` has to be installed on `spudnik`. The batch used a binary extracted
+  from the Debian `mp3gain` 1.6.2 package.
+- Eligibility needs a duration. `/api/add` only records one when the caller sends
+  `duration_seconds`; otherwise it appears after the first playback.
+- M4As and recordings of 15 minutes or longer stay excluded.
+
 ## Checks
 
 ```sh
