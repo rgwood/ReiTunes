@@ -25,6 +25,7 @@ import { LibrarySidebar } from './components/LibrarySidebar';
 import { PlaylistDialog, type PlaylistDraft } from './components/PlaylistDialog';
 import { usePlaylists, usePlaylistMutation } from './hooks/usePlaylists';
 import { playlistItems } from './utils/playlists';
+import { totalDurationLabel } from './utils/duration';
 import { useLibraryPreferences } from './stores/libraryPreferences';
 import { BookmarkSidebar } from './components/BookmarkSidebar';
 import type { PlaybackRange } from './stores/playerStore';
@@ -563,7 +564,7 @@ function AppContent() {
           <footer className="library-status" role="status">
             {view === 'discover' ? <span>{discoveryCount} sets in inbox · {discovery?.sources.length ?? 0} sources</span>
               : view === 'bookmarks' ? <span>{items.reduce((n, item) => n + Object.keys(item.bookmarks).length, 0)} bookmarks</span>
-              : <span>{filteredItems.length.toLocaleString()}{filteredItems.length !== items.length && ` of ${items.length.toLocaleString()}`} {filteredItems.length === 1 ? 'track' : 'tracks'}{selectedPlaylist && ` · ${selectedPlaylist.name}`}
+              : <span>{filteredItems.length.toLocaleString()}{!selectedPlaylist && filteredItems.length !== items.length && ` of ${items.length.toLocaleString()}`} {filteredItems.length === 1 ? 'track' : 'tracks'}{selectedPlaylist && totalDurationLabel(filteredItems) && `, ${totalDurationLabel(filteredItems)}`}{selectedPlaylist && ` · ${selectedPlaylist.name}`}
                 <LibrarySelectionCount store={selectionCountStore} /></span>}
             {view === 'library' && selectedPlaylist?.smart_rules && <button onClick={() => setPlaylistDraft({ playlist: selectedPlaylist, smart: true })}>Edit rules…</button>}
             {view === 'bookmarks' && <button onClick={nextMoment} disabled={!moments.length}>Next saved moment</button>}

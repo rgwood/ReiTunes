@@ -19,3 +19,12 @@ export async function saveDuration(item: LibraryItem, seconds: number): Promise<
   });
   if (!response.ok) throw new Error('Could not save recording duration');
 }
+
+/** Human-readable total length, e.g. "3 hr 12 min"; null when no track has a known duration. */
+export function totalDurationLabel(items: LibraryItem[]): string | null {
+  const seconds = items.reduce((sum, item) => sum + (trackDuration(item) ?? 0), 0);
+  if (seconds <= 0) return null;
+  const minutes = Math.round(seconds / 60), hours = Math.floor(minutes / 60);
+  if (hours === 0) return `${Math.max(minutes, 1)} min`;
+  return minutes % 60 ? `${hours} hr ${minutes % 60} min` : `${hours} hr`;
+}
