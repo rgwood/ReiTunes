@@ -62,6 +62,14 @@ sonos_playback_sessions(
     SessionId TEXT NOT NULL
 );
 
+-- The speakers Reilly usually groups together, so ReiTunes can put them back
+-- together after Sonos splits them up. Stored as JSON in a singleton row.
+CREATE TABLE IF NOT EXISTS
+sonos_preferred_group(
+    Id INTEGER PRIMARY KEY NOT NULL CHECK (Id = 1),
+    Serialized TEXT NOT NULL
+);
+
 -- Discovery is a personal feed, separate from the library's event history.
 -- Keep dismissed URLs too, so refreshing a source cannot resurrect them.
 CREATE TABLE IF NOT EXISTS discovery_state (

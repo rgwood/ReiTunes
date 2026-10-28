@@ -15,6 +15,10 @@ export interface SonosPlaybackTarget {
   groupId: string;
   groupName: string;
   playerNames: string[];
+  // The server keeps these current as Sonos regroups speakers. Older saved
+  // targets lack them.
+  playerIds?: string[];
+  preferredGroup?: boolean;
 }
 
 export type PlaybackTarget = BrowserPlaybackTarget | SonosPlaybackTarget;

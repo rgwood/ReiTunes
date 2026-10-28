@@ -10,6 +10,7 @@ import { canEditSharedSession, ownsBrowserPlayback, useSharedSessionStore } from
 import { flushSharedSession, refreshSharedSession, stageSharedPlayback } from '../hooks/useSharedPlaybackSession';
 import './SonosModal.css';
 import { requestConfirmation } from '../stores/dialogStore';
+import { isPreferredGroup, usePreferredSonosGroupStore, type PreferredSonosGroup } from '../stores/preferredSonosGroupStore';
 
 interface SonosStatus {
   configured: boolean;
@@ -51,6 +52,74 @@ interface SonosModalProps {
   items: LibraryItem[];
 }
 
+// Offline speakers can't be grouped, so only the online ones need to be together.
+function groupHoldingPreferred(discovery: GroupsResponse, preferred: PreferredSonosGroup | null) {
+  if (!preferred) return undefined;
+  const online = preferred.playerIds.filter(id => discovery.players.some(player => player.id === id));
+  return online.length ? discovery.groups.find(group => online.every(id => group.playerIds.includes(id))) : undefined;
+}
+
+function sameSpeakers(preferred: PreferredSonosGroup | null, householdId: string, playerIds: string[]) {
+  return !!preferred && preferred.householdId === householdId && preferred.playerIds.length === playerIds.length
+    && isPreferredGroup(householdId, playerIds, preferred);
+}
+
+function PreferredGroupCard({ preferred, discovery, target, busy, isRegrouping, error, onPlay, onForget }: {
+  preferred: PreferredSonosGroup;
+  discovery: GroupsResponse;
+  target: ReturnType<typeof usePlaybackTargetStore.getState>['target'];
+  busy: boolean;
+  isRegrouping: boolean;
+  error: string | null;
+  onPlay: () => void;
+  onForget: () => void;
+}) {
+  const online = new Set(discovery.players.map(player => player.id));
+  const nameOf = (id: string) => preferred.playerNames[preferred.playerIds.indexOf(id)] ?? id;
+  const offline = preferred.playerIds.filter(id => !online.has(id));
+  const fragments = discovery.groups.filter(group => group.playerIds.some(id => preferred.playerIds.includes(id)));
+  const together = fragments.length <= 1;
+  const grouped = groupHoldingPreferred(discovery, preferred);
+  const isSelected = target.kind === 'sonos' && target.preferredGroup === true &&
+    fragments.some(group => group.id === target.groupId);
+  const status = [
+    together ? `${preferred.playerIds.length - offline.length} of ${preferred.playerIds.length} speakers grouped`
+      : `Split across ${fragments.length} groups`,
+    offline.length ? `${offline.map(nameOf).join(', ')} offline` : null,
+  ].filter(Boolean).join(' · ');
+  return (
+    <div
+      className={`border rounded p-3 flex items-center justify-between gap-4 ${
+        isSelected ? 'border-solarized-cyan bg-solarized-base03' : 'border-solarized-base01'
+      }`}
+      data-testid="preferred-sonos-group"
+    >
+      <div className="min-w-0">
+        <div className="text-solarized-base1">{preferred.name}</div>
+        <div className="text-xs text-solarized-base0 mt-1 truncate">{preferred.playerNames.join(' + ')}</div>
+        <div className={`text-xs mt-1 ${together && !offline.length ? 'text-solarized-base0' : 'text-solarized-yellow'}`}>
+          {isRegrouping ? 'Regrouping…' : status}
+        </div>
+        {error && <div role="alert" className="text-xs text-solarized-red mt-1">{error}</div>}
+        <button type="button" onClick={onForget} disabled={busy} aria-label={`Forget ${preferred.name}`}
+          className="text-xs text-solarized-base00 hover:underline mt-1">
+          Forget
+        </button>
+      </div>
+      <div className="shrink-0">
+        <button
+          type="button"
+          onClick={onPlay}
+          disabled={busy || (isSelected && !!grouped)}
+          className="px-3 py-1.5 text-xs bg-solarized-base01 text-solarized-base2 rounded hover:bg-solarized-base00 disabled:text-solarized-cyan disabled:bg-solarized-base02 transition-colors"
+        >
+          {isSelected ? grouped ? 'Selected' : 'Regroup' : grouped ? `Use ${preferred.name}` : 'Regroup and use'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 async function fetchJson<T>(url: string): Promise<T> {
   return sonosRequest<T>(url, {}, 20_000);
 }
@@ -89,6 +158,8 @@ export function SonosModal({ audioRef, isOpen, onClose, items }: SonosModalProps
     isTransportPending,
   } =
     usePlaybackTargetStore();
+  const preferredGroups = usePreferredSonosGroupStore();
+  const preferred = preferredGroups.preferred;
 
   const discover = useCallback(async () => {
     setIsLoading(true);
@@ -101,9 +172,10 @@ export function SonosModal({ audioRef, isOpen, onClose, items }: SonosModalProps
         return;
       }
 
-      const householdResponse = await fetchJson<{ households: SonosHousehold[] }>(
-        '/api/sonos/households'
-      );
+      const [householdResponse] = await Promise.all([
+        fetchJson<{ households: SonosHousehold[] }>('/api/sonos/households'),
+        usePreferredSonosGroupStore.getState().load(),
+      ]);
       const discovered = await Promise.all(
         householdResponse.households.map(async (household) => ({
           household,
@@ -199,7 +271,8 @@ export function SonosModal({ audioRef, isOpen, onClose, items }: SonosModalProps
     async (
       household: SonosHousehold,
       group: SonosGroup,
-      players: Map<string, SonosPlayer>
+      players: Map<string, SonosPlayer>,
+      preferredGroup = isPreferredGroup(household.id, group.playerIds, usePreferredSonosGroupStore.getState().preferred),
     ) => {
       let output = usePlaybackTargetStore.getState();
       if (!canEditSharedSession() || output.isSending || output.isSwitchingOutput || output.isTransportPending) return;
@@ -243,6 +316,9 @@ export function SonosModal({ audioRef, isOpen, onClose, items }: SonosModalProps
         player.setIsPlaying(false);
         setSonosTarget({
           householdId: household.id, groupId: group.id, groupName: group.name, playerNames,
+          playerIds: group.playerIds,
+          // Match the server's serialization, which omits a false flag.
+          ...(preferredGroup ? { preferredGroup: true } : {}),
         });
         if (item) player.selectRemoteItem(item, position, undefined, usePlayerStore.getState().listenId ?? undefined);
         stageSharedPlayback();
@@ -275,6 +351,66 @@ export function SonosModal({ audioRef, isOpen, onClose, items }: SonosModalProps
     },
     [audioRef, items, onClose, playbackError, setSonosTarget, takeoverRequired, target]
   );
+
+  const savePreferred = useCallback(async (household: SonosHousehold, group: SonosGroup, players: Map<string, SonosPlayer>) => {
+    setError(null);
+    try {
+      await usePreferredSonosGroupStore.getState().save({
+        householdId: household.id,
+        name: usePreferredSonosGroupStore.getState().preferred?.name ?? 'Whole house',
+        playerIds: group.playerIds,
+        playerNames: group.playerIds.map(id => players.get(id)?.name || id),
+      });
+    } catch (err) {
+      setError(`Could not save the preferred group: ${err instanceof Error ? err.message : 'ReiTunes did not respond'}`);
+    }
+  }, []);
+
+  const forgetPreferred = useCallback(async () => {
+    setError(null);
+    try {
+      await usePreferredSonosGroupStore.getState().forget();
+    } catch (err) {
+      setError(`Could not forget the preferred group: ${err instanceof Error ? err.message : 'ReiTunes did not respond'}`);
+    }
+  }, []);
+
+  // Regrouping changes membership, so re-read the household afterwards.
+  const regroup = useCallback(async (household: SonosHousehold) => {
+    const result = await usePreferredSonosGroupStore.getState().regroup();
+    if (!result) return null;
+    const discovery = await fetchJson<GroupsResponse>(
+      `/api/sonos/households/${encodeURIComponent(household.id)}/groups`
+    ).catch(() => null);
+    if (discovery) {
+      setHouseholds(current => current.map(entry =>
+        entry.household.id === household.id ? { household, discovery } : entry));
+    }
+    return { result, discovery };
+  }, []);
+
+  const playOnPreferred = useCallback(async (household: SonosHousehold, discovery: GroupsResponse) => {
+    let groups = discovery;
+    let group = groupHoldingPreferred(groups, preferred);
+    if (!group) {
+      const regrouped = await regroup(household);
+      if (!regrouped) return;
+      groups = regrouped.discovery ?? groups;
+      group = groups.groups.find(candidate => candidate.id === regrouped.result.group.id) ?? regrouped.result.group;
+    }
+    const output = usePlaybackTargetStore.getState();
+    if (output.target.kind === 'sonos' && output.target.groupId === group.id) {
+      // Already playing here: just mark it so ReiTunes keeps it together.
+      if (!output.target.preferredGroup && canEditSharedSession()) {
+        usePlaybackTargetStore.setState({ target: { ...output.target, playerIds: group.playerIds, preferredGroup: true } });
+        stageSharedPlayback();
+        await flushSharedSession();
+      }
+      onClose();
+      return;
+    }
+    await chooseGroup(household, group, new Map(groups.players.map(player => [player.id, player] as const)), true);
+  }, [chooseGroup, onClose, preferred, regroup]);
 
   return (
     <dialog
@@ -384,6 +520,18 @@ export function SonosModal({ audioRef, isOpen, onClose, items }: SonosModalProps
                       </h3>
                     )}
                     <div className="space-y-2">
+                      {preferred?.householdId === household.id && (
+                        <PreferredGroupCard
+                          preferred={preferred}
+                          discovery={discovery}
+                          target={target}
+                          busy={(session.enabled && (!session.ready || !session.connected || session.refreshing)) || isSending || isSwitchingOutput || isTransportPending || preferredGroups.isRegrouping}
+                          isRegrouping={preferredGroups.isRegrouping}
+                          error={preferredGroups.error}
+                          onPlay={() => void playOnPreferred(household, discovery)}
+                          onForget={() => void forgetPreferred()}
+                        />
+                      )}
                       {discovery.groups.map((group) => {
                         const isSelected =
                           target.kind === 'sonos' && target.groupId === group.id;
@@ -405,6 +553,15 @@ export function SonosModal({ audioRef, isOpen, onClose, items }: SonosModalProps
                                   .map((playerId) => players.get(playerId)?.name || playerId)
                                   .join(' + ')}
                               </div>
+                              {group.playerIds.length > 1 && !sameSpeakers(preferred, household.id, group.playerIds) && (
+                                <button
+                                  type="button"
+                                  onClick={() => void savePreferred(household, group, players)}
+                                  className="text-xs text-solarized-cyan hover:underline mt-1"
+                                >
+                                  {preferred ? `Save as ${preferred.name}` : 'Save as Whole house'}
+                                </button>
+                              )}
                             </div>
                             <button
                               type="button"

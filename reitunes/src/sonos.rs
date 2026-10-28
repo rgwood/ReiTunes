@@ -170,6 +170,16 @@ pub struct SonosPlayer {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct PreferredGroup {
+    pub household_id: String,
+    pub name: String,
+    pub player_ids: Vec<String>,
+    // Remembered so a missing speaker can still be named while it is offline.
+    pub player_names: Vec<String>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 pub struct GroupsResponse {
     #[serde(default)]
     pub groups: Vec<SonosGroup>,
@@ -302,6 +312,18 @@ struct SetMuteRequest {
     muted: bool,
 }
 
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ModifyGroupMembersRequest<'a> {
+    player_ids_to_add: &'a [String],
+    player_ids_to_remove: &'a [String],
+}
+
+#[derive(Debug, Deserialize)]
+struct GroupInfo {
+    group: SonosGroup,
+}
+
 #[derive(Debug, Clone, Deserialize, Serialize)]
 struct StoredTokenSet {
     access_token: String,
@@ -350,6 +372,8 @@ pub struct SonosControl {
     event_subscriptions: StdMutex<HashMap<String, Instant>>,
     event_sequences: StdMutex<HashMap<String, u64>>,
     refresh_lock: Mutex<()>,
+    /// Wakes the group follower when Sonos reports that groups changed.
+    pub group_changed: tokio::sync::Notify,
 }
 
 impl SonosControl {
@@ -385,6 +409,7 @@ impl SonosControl {
             event_subscriptions: StdMutex::new(HashMap::new()),
             event_sequences: StdMutex::new(HashMap::new()),
             refresh_lock: Mutex::new(()),
+            group_changed: tokio::sync::Notify::new(),
         })
     }
 
@@ -452,6 +477,39 @@ impl SonosControl {
     pub async fn groups(&self, household_id: &str) -> Result<GroupsResponse> {
         let url = self.control_url(&["households", household_id, "groups"])?;
         self.get_url(url).await
+    }
+
+    /// Adding players keeps the group's coordinator, so its ID and any playback
+    /// session normally survive. Sonos may group only some of the players, or
+    /// not reply at all, so callers must re-read the groups to learn the outcome.
+    pub async fn add_group_members(&self, group_id: &str, player_ids: &[String]) -> Result<SonosGroup> {
+        let url = self.control_url(&["groups", group_id, "groups", "modifyGroupMembers"])?;
+        let info: GroupInfo = self
+            .post_json(url, &ModifyGroupMembersRequest { player_ids_to_add: player_ids, player_ids_to_remove: &[] })
+            .await?;
+        Ok(info.group)
+    }
+
+    /// A group gets a new ID when its coordinator changes. Sonos moves our
+    /// playback session along with the music, so follow it here too.
+    pub fn move_group(&self, old_group_id: &str, new_group_id: &str) -> Result<()> {
+        let session_id = self
+            .playback_sessions
+            .lock()
+            .map_err(|_| anyhow::anyhow!("Sonos playback session lock was poisoned"))?
+            .get(old_group_id)
+            .cloned();
+        if let Some(session_id) = session_id {
+            self.remember_session(new_group_id, &session_id)?;
+            self.forget_session(old_group_id, &session_id)?;
+        }
+        let mut subscriptions = self
+            .event_subscriptions
+            .lock()
+            .map_err(|_| anyhow::anyhow!("Sonos event subscription lock was poisoned"))?;
+        subscriptions.remove(old_group_id);
+        subscriptions.remove(new_group_id);
+        Ok(())
     }
 
     pub async fn play_cloud_queue(
@@ -684,6 +742,30 @@ impl SonosControl {
             sequences.insert(sequence_key, sequence_id);
         }
         Ok(is_new)
+    }
+
+    pub fn preferred_group(&self) -> Result<Option<PreferredGroup>> {
+        let serialized: Option<String> = self
+            .db
+            .get()?
+            .query_row("SELECT Serialized FROM sonos_preferred_group WHERE Id = 1", [], |row| row.get(0))
+            .optional()?;
+        serialized
+            .map(|json| serde_json::from_str(&json).context("Invalid stored preferred Sonos group"))
+            .transpose()
+    }
+
+    pub fn save_preferred_group(&self, group: &PreferredGroup) -> Result<()> {
+        self.db.get()?.execute(
+            "INSERT OR REPLACE INTO sonos_preferred_group (Id, Serialized) VALUES (1, ?1)",
+            [serde_json::to_string(group)?],
+        )?;
+        Ok(())
+    }
+
+    pub fn forget_preferred_group(&self) -> Result<()> {
+        self.db.get()?.execute("DELETE FROM sonos_preferred_group", [])?;
+        Ok(())
     }
 
     pub fn disconnect(&self) -> Result<()> {

@@ -40,6 +40,7 @@ mod file_info;
 mod import_metadata;
 mod smapi;
 mod sonos;
+mod sonos_groups;
 mod cloud_queue;
 mod playback_session;
 mod lastfm;
@@ -244,6 +245,7 @@ async fn main() -> Result<()> {
             forward_library_changes_to_tagging(&app_state.update_tx, tagging.clone());
             let discovery = discovery::Discovery::new(DB.clone(), app_state.library.clone(), app_state.changes.clone())?;
             playback_session::start_queue_sync(app_state.clone());
+            sonos_groups::start_group_follower(app_state.clone());
             app_state.lastfm.start();
             discovery.start_refresh_loop();
             storage_cleanup::start(DB.clone(), app_state.library.clone(), app_state.storage.clone());
@@ -338,6 +340,16 @@ async fn main() -> Result<()> {
                 .route(
                     "/sonos/households/{household_id}/groups",
                     get(sonos_groups_handler),
+                )
+                .route(
+                    "/sonos/preferred-group",
+                    get(sonos_groups::preferred_group_handler)
+                        .put(sonos_groups::save_preferred_group_handler)
+                        .delete(sonos_groups::forget_preferred_group_handler),
+                )
+                .route(
+                    "/sonos/preferred-group/regroup",
+                    post(sonos_groups::regroup_handler),
                 )
                 .route(
                     "/sonos/connection",
@@ -710,6 +722,11 @@ async fn sonos_event_handler(
         return Ok(StatusCode::OK);
     }
     info!(namespace, event_type, target_id, sequence_id, "Accepted Sonos event callback");
+    if namespace == "global" || namespace == "groups" {
+        // Group changes can give the target a new ID. Follow it after replying:
+        // Sonos expects event replies within a second.
+        control.group_changed.notify_one();
+    }
 
     let frontend_payload = if namespace == "playback" && event_type == "playbackStatus" {
         let playback: sonos::SonosGroupPlayback = serde_json::from_value(payload)
@@ -887,6 +904,7 @@ async fn send_sonos_queue(
         .map_err(cloud_queue_failure)?;
     app_state.playback_session.with_revision(request.expected_session_revision, || Ok(()))
         .map_err(cloud_queue_failure)?;
+    sonos_groups::top_up_preferred_group(&app_state, &control, &request.group_id).await;
     let status = control
         .play_cloud_queue(
             &request.group_id,
@@ -1017,6 +1035,7 @@ async fn sonos_group_play_handler(
     let control = active_sonos_control(&app_state, &group_id)
         .await
         .map_err(sonos_playback_failure)?;
+    sonos_groups::top_up_preferred_group(&app_state, &control, &group_id).await;
     control
         .play(&group_id)
         .await

@@ -40,6 +40,12 @@ pub enum PlaybackTarget {
         group_id: String,
         group_name: String,
         player_names: Vec<String>,
+        // Older clients and stored sessions predate these fields.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        player_ids: Vec<String>,
+        /// Chosen as the saved preferred group, so ReiTunes may regroup it.
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        preferred_group: bool,
     },
 }
 
@@ -164,14 +170,16 @@ impl PlaybackSessionState {
                 group_id,
                 group_name,
                 player_names,
+                player_ids,
+                ..
             } => {
                 short(household_id, 500)?;
                 short(group_id, 500)?;
                 short(group_name, 500)?;
-                if player_names.len() > 100 {
+                if player_names.len() > 100 || player_ids.len() > 100 {
                     bail!("Too many Sonos players");
                 }
-                for name in player_names {
+                for name in player_names.iter().chain(player_ids) {
                     short(name, 500)?;
                 }
             }
@@ -480,6 +488,39 @@ impl PlaybackSessionStore {
         let updated = read_snapshot(&transaction)?;
         transaction.commit()?;
         Ok(Some(updated))
+    }
+
+    /// Replace the Sonos target with what Sonos now reports for the same
+    /// speakers. This keeps the playhead observation: the music is unchanged.
+    pub fn retarget_sonos(
+        &self,
+        expected_group_id: &str,
+        target: PlaybackTarget,
+    ) -> Result<Option<PlaybackSessionSnapshot>> {
+        let _gate = self
+            .gate
+            .lock()
+            .map_err(|_| anyhow::anyhow!("Playback session lock was poisoned"))?;
+        let mut conn = self.db.get()?;
+        let transaction = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let mut snapshot = read_snapshot(&transaction)?;
+        let Some(state) = &mut snapshot.state else {
+            return Ok(None);
+        };
+        if !matches!(&state.target, PlaybackTarget::Sonos { group_id, .. } if group_id == expected_group_id)
+            || state.target == target
+        {
+            return Ok(None);
+        }
+        state.target = target;
+        state.validate()?;
+        snapshot.revision += 1;
+        transaction.execute(
+            "UPDATE playback_session SET revision = ?1, state_json = ?2 WHERE singleton = 1",
+            params![snapshot.revision, serde_json::to_string(state)?],
+        )?;
+        transaction.commit()?;
+        Ok(Some(snapshot))
     }
 
     /// Sonos owns its playhead even with every browser closed. Its stable queue
@@ -992,6 +1033,8 @@ mod tests {
             group_id: "room".into(),
             group_name: "Living room".into(),
             player_names: vec![],
+            player_ids: vec![],
+            preferred_group: false,
         };
         store.update(&initial).unwrap();
         let mut history = vec![("playing".into(), Uuid::from_u128(1))];
@@ -1086,6 +1129,8 @@ mod tests {
             group_id: "room".into(),
             group_name: "Living room".into(),
             player_names: vec![],
+            player_ids: vec![],
+            preferred_group: false,
         };
         store.update(&initial).unwrap();
         let first = ("playing".into(), Uuid::from_u128(1));
@@ -1129,6 +1174,8 @@ mod tests {
             group_id: "room".into(),
             group_name: "Living room".into(),
             player_names: vec![],
+            player_ids: vec![],
+            preferred_group: false,
         };
         store.update(&initial).unwrap();
         store
@@ -1170,6 +1217,8 @@ mod tests {
             group_id: "room".into(),
             group_name: "Living room".into(),
             player_names: vec![],
+            player_ids: vec![],
+            preferred_group: false,
         };
         store.update(&initial).unwrap();
         store
@@ -1205,6 +1254,8 @@ mod tests {
             group_id: "room".into(),
             group_name: "Living room".into(),
             player_names: vec![],
+            player_ids: vec![],
+            preferred_group: false,
         };
         store.update(&update).unwrap();
         update.operation_id = "edit".into();

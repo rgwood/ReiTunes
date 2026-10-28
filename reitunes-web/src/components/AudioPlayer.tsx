@@ -17,6 +17,7 @@ import { saveDuration, trackDuration } from '../utils/duration';
 import { MusicIcon } from './MusicIcon';
 import { showMessage } from '../stores/dialogStore';
 import { ownsBrowserPlayback, useSharedSessionStore } from '../stores/sharedSessionStore';
+import { missingPreferredSpeakers, usePreferredSonosGroupStore } from '../stores/preferredSonosGroupStore';
 import './MobilePlayer.css';
 
 // Minimal SVG icons - consistent 16px size, 1.5px stroke
@@ -257,6 +258,19 @@ export function AudioPlayer({ audioRef: sharedAudioRef, items, onPlaybackPositio
   const navigateTrack = trackNavigation.navigate;
   const { target, isSending, isSwitchingOutput, error: playbackError, takeoverRequired } =
     usePlaybackTargetStore();
+  const preferredGroups = usePreferredSonosGroupStore();
+  const targetsSonos = target.kind === 'sonos';
+  useEffect(() => {
+    if (targetsSonos && !usePreferredSonosGroupStore.getState().loaded) void usePreferredSonosGroupStore.getState().load();
+  }, [targetsSonos]);
+  // Sonos sometimes drops speakers from a group. The server keeps the target's
+  // members current, so compare them with the saved preferred group.
+  const missingSpeakers = missingPreferredSpeakers(target, preferredGroups.preferred);
+  const driftWarning = missingSpeakers.length > 0 || preferredGroups.error ? <>
+    {preferredGroups.error ?? `${missingSpeakers.join(', ')} ${missingSpeakers.length === 1 ? 'is' : 'are'} not in this group.`}
+    <button type="button" className="ml-2 text-solarized-cyan hover:underline" disabled={preferredGroups.isRegrouping}
+      onClick={() => void preferredGroups.regroup()}>{preferredGroups.isRegrouping ? 'Regrouping…' : 'Regroup'}</button>
+  </> : null;
   const localOwner = ownsBrowserPlayback(target);
   const canPlayLocally = sharedReady && target.kind === 'browser' && localOwner;
   const sonos = useSonosControls(target.kind === 'sonos' ? target.groupId : null);
@@ -917,6 +931,7 @@ export function AudioPlayer({ audioRef: sharedAudioRef, items, onPlaybackPositio
       </> : <div className="mobile-mini-row"><button type="button" className="mobile-mini-title" onClick={onExpand} aria-label="Open now playing"><strong>{currentItem?.name || 'No song selected'}</strong><span>{outputName} · {playing ? 'Playing' : 'Paused'}</span></button>
         <button type="button" aria-label={`${playing ? 'Pause' : 'Play'}${remote ? ' Sonos' : ''}`} disabled={playDisabled} onClick={toggle}>{playing ? Icons.pause : Icons.play}</button><button type="button" onClick={handleNext} disabled={skipDisabled} aria-label="Next">{Icons.skipForward}</button></div>}
       {status && <p className="mobile-player-status" role="status">{status}</p>}
+      {remote && driftWarning && <p className="mobile-player-status" role="status">{driftWarning}</p>}
       {error && <div className="mobile-player-error" role="alert">{error}
         {remote && playbackError && currentItem && <button type="button" disabled={!canControlSession || isSending || isSwitchingOutput} onClick={() => void play(currentItem, resumePosition)}>{takeoverRequired ? 'Replace Sonos playback and retry' : 'Retry sending to Sonos'}</button>}
         {remote && !playbackError && sonosQueue.error && <button type="button" onClick={sonosQueue.retry}>Retry queue update</button>}
@@ -941,7 +956,7 @@ export function AudioPlayer({ audioRef: sharedAudioRef, items, onPlaybackPositio
           onLoadedMetadata={handleLoadedMetadata}
         />
         <PlayerTrack item={currentItem} position={displayedSonosPosition} duration={duration} status={connectionStatus} sonos onReveal={onRevealCurrent} />
-        {!connectionStatus && <div role="status" className={`sonos-status ${!playbackError && !sonos.error && !sonosQueue.error ? 'sr-only' : ''}`}>
+        {!connectionStatus && <div role="status" className={`sonos-status ${!playbackError && !sonos.error && !sonosQueue.error && !driftWarning ? 'sr-only' : ''}`}>
           {playbackError ? (
             <span className="text-solarized-red">
               {playbackError}
@@ -962,6 +977,8 @@ export function AudioPlayer({ audioRef: sharedAudioRef, items, onPlaybackPositio
             </span>
           ) : sonos.error ? (
             <span className="text-solarized-red">{sonos.error}</span>
+          ) : driftWarning ? (
+            <span className="text-solarized-yellow">{driftWarning}</span>
           ) : (
             <span className="text-solarized-base0">
               Sonos · {target.groupName} · {sonosIsPlaying ? 'Playing' : 'Paused'}

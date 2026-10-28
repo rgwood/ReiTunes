@@ -37,6 +37,7 @@ struct FakeSonos {
     refreshed_window: Arc<Mutex<Option<Value>>>,
     fail_refresh: Arc<AtomicBool>,
     keep_playback_queue_version: Arc<AtomicBool>,
+    groups: Arc<Mutex<Value>>,
 }
 
 impl FakeSonos {
@@ -55,6 +56,7 @@ impl FakeSonos {
             refreshed_window: Arc::new(Mutex::new(None)),
             fail_refresh: Arc::new(AtomicBool::new(false)),
             keep_playback_queue_version: Arc::new(AtomicBool::new(false)),
+            groups: Arc::new(Mutex::new(json!({"groups": [], "players": []}))),
         }
     }
 
@@ -90,6 +92,17 @@ impl FakeSonos {
             .route(
                 "/control/api/v1/playbackSessions/{session_id}/playbackSession/refreshCloudQueue",
                 post(Self::refresh_queue),
+            )
+            .route(
+                "/control/api/v1/households/home/groups",
+                get(|State(fake): State<Self>| async move {
+                    fake.record("groups: read".into());
+                    Json(fake.groups.lock().unwrap().clone())
+                }),
+            )
+            .route(
+                "/control/api/v1/groups/{group_id}/groups/modifyGroupMembers",
+                post(Self::modify_group_members),
             )
             // Playback must still succeed when event subscription is down.
             .fallback(|| async { StatusCode::SERVICE_UNAVAILABLE })
@@ -163,6 +176,26 @@ impl FakeSonos {
             "queueVersion": body["queueVersion"], "itemId": body["itemId"],
         });
         StatusCode::NO_CONTENT
+    }
+
+    // Like Sonos, move the added players out of their old groups.
+    async fn modify_group_members(
+        State(fake): State<Self>,
+        Path(group_id): Path<String>,
+        Json(body): Json<Value>,
+    ) -> Json<Value> {
+        let added: Vec<Value> = body["playerIdsToAdd"].as_array().unwrap().clone();
+        fake.record(format!("groups: add {} to {group_id}", Value::Array(added.clone())));
+        let mut household = fake.groups.lock().unwrap();
+        let groups = household["groups"].as_array_mut().unwrap();
+        for group in groups.iter_mut() {
+            group["playerIds"].as_array_mut().unwrap().retain(|id| !added.contains(id));
+        }
+        let target = groups.iter_mut().find(|group| group["id"] == group_id.as_str()).unwrap();
+        target["playerIds"].as_array_mut().unwrap().extend(added);
+        let grouped = target.clone();
+        groups.retain(|group| !group["playerIds"].as_array().unwrap().is_empty());
+        Json(json!({"group": grouped}))
     }
 
     async fn refresh_queue(State(fake): State<Self>) -> StatusCode {
@@ -890,4 +923,101 @@ async fn replacing_and_removing_automatic_tracks_preserves_sonos_playhead_and_ma
     assert_eq!(playback["playbackState"], "PLAYBACK_STATE_PLAYING");
     assert_eq!(harness.fake.sessions_created.load(Ordering::SeqCst), 1);
     assert_eq!(harness.fake.loaded_sessions.lock().unwrap().len(), 1);
+}
+
+fn sonos_group(id: &str, players: &[&str], state: &str) -> Value {
+    json!({"id": id, "name": format!("{} group", players[0]), "coordinatorId": players[0],
+        "playerIds": players, "playbackState": state})
+}
+
+fn sonos_household(groups: Vec<Value>, players: &[&str]) -> Value {
+    let players: Vec<Value> = players.iter()
+        .map(|id| json!({"id": id, "name": format!("{id} speaker"), "capabilities": []}))
+        .collect();
+    json!({"groups": groups, "players": players})
+}
+
+impl Harness {
+    fn target_sonos(&self, group_id: &str, player_ids: &[&str], preferred_group: bool) {
+        let mut target = json!({"kind": "sonos", "householdId": "home", "groupId": group_id,
+            "groupName": "Old name", "playerNames": [], "playerIds": player_ids});
+        if preferred_group {
+            target["preferredGroup"] = json!(true);
+        }
+        let revision = self.state.playback_session.snapshot().unwrap().revision;
+        let request = serde_json::from_value(json!({
+            "operationId": format!("target-{revision}"), "expectedRevision": revision,
+            "state": {"target": target, "currentItemId": self.track_id, "position": 0.0,
+                "playbackRange": null, "queue": {"manualQueue": [], "contextItemIds": [self.track_id],
+                    "contextIndex": 0, "contextName": "Library", "shuffleEnabled": false,
+                    "shuffledIds": [], "repeatMode": "off"}},
+        })).unwrap();
+        self.state.playback_session.update(&request).unwrap();
+    }
+
+    fn target(&self) -> Value {
+        serde_json::to_value(self.state.playback_session.snapshot().unwrap().state.unwrap().target).unwrap()
+    }
+}
+
+#[tokio::test]
+async fn split_groups_are_followed_to_the_fragment_that_kept_the_music() {
+    let harness = Harness::new().await;
+    harness.target_sonos("group-1", &["A", "B", "C", "D"], true);
+    // The coordinator dropped out: the music and our session moved to B.
+    *harness.fake.groups.lock().unwrap() = sonos_household(vec![
+        sonos_group("A:2", &["A"], "PLAYBACK_STATE_IDLE"),
+        sonos_group("B:3", &["B", "C"], "PLAYBACK_STATE_PLAYING"),
+        sonos_group("D:4", &["D"], "PLAYBACK_STATE_IDLE"),
+    ], &["A", "B", "C", "D"]);
+    let mut events = harness.state.update_tx.subscribe();
+    let control = harness.state.sonos.clone().unwrap();
+    sonos_groups::follow_target(&harness.state, &control).await.unwrap();
+    assert_eq!(harness.target(), json!({"kind": "sonos", "householdId": "home", "groupId": "B:3",
+        "groupName": "B group", "playerNames": ["B speaker", "C speaker"], "playerIds": ["B", "C"],
+        "preferredGroup": true}));
+    assert!(matches!(events.try_recv().unwrap(), FrontendUpdate::PlaybackSession { .. }));
+    assert!(control.has_playback_session("B:3").unwrap());
+    assert!(!control.has_playback_session("group-1").unwrap());
+    // Nothing changed, so a second pass neither writes nor broadcasts.
+    sonos_groups::follow_target(&harness.state, &control).await.unwrap();
+    assert!(events.try_recv().is_err());
+}
+
+#[tokio::test]
+async fn preferred_group_is_topped_up_before_playback_and_regrouped_on_request() {
+    let harness = Harness::new().await;
+    let control = harness.state.sonos.clone().unwrap();
+    control.save_preferred_group(&sonos::PreferredGroup {
+        household_id: "home".into(), name: "Whole house".into(),
+        player_ids: vec!["A".into(), "B".into(), "C".into()],
+        player_names: vec!["Kitchen".into(), "Den".into(), "Porch".into()],
+    }).unwrap();
+    // C is offline, so Sonos doesn't list it at all.
+    *harness.fake.groups.lock().unwrap() = sonos_household(vec![
+        sonos_group("group-1", &["A"], "PLAYBACK_STATE_PAUSED"),
+        sonos_group("B:2", &["B"], "PLAYBACK_STATE_IDLE"),
+    ], &["A", "B"]);
+    harness.target_sonos("group-1", &["A", "B", "C"], true);
+    assert_eq!(harness.play(true).await.status(), StatusCode::OK);
+    let transcript = harness.fake.transcript.lock().unwrap().join("\n");
+    let added = transcript.find("groups: add [\"B\"] to group-1").expect(&transcript);
+    assert!(added < transcript.find("queue: load").unwrap(), "regroup before loading:\n{transcript}");
+
+    // Sonos splits B out again; the Regroup button puts it back.
+    *harness.fake.groups.lock().unwrap() = sonos_household(vec![
+        sonos_group("group-1", &["A"], "PLAYBACK_STATE_PLAYING"),
+        sonos_group("B:5", &["B"], "PLAYBACK_STATE_IDLE"),
+    ], &["A", "B"]);
+    let response = sonos_groups::regroup_handler(State(harness.state.clone())).await.unwrap().0;
+    let response = serde_json::to_value(response).unwrap();
+    assert_eq!(response["group"]["playerIds"], json!(["A", "B"]));
+    assert_eq!(response["missingPlayerIds"], json!(["C"]));
+    assert_eq!(harness.target()["playerIds"], json!(["A", "B"]));
+
+    // A group chosen on its own is never regrouped behind Reilly's back.
+    harness.target_sonos("B:5", &["B"], false);
+    harness.fake.transcript.lock().unwrap().clear();
+    sonos_groups::top_up_preferred_group(&harness.state, &control, "B:5").await;
+    assert!(harness.fake.transcript.lock().unwrap().is_empty());
 }
