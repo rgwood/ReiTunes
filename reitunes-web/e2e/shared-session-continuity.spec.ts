@@ -1,4 +1,4 @@
-import { test, expect } from './fixtures/test';
+import { test, expect, type Page, type SharedSessionSimulator } from './fixtures/test';
 import type { SharedPlaybackSnapshot, SharedPlaybackState } from '../src/stores/sharedSessionStore';
 
 test.beforeEach(async ({ page }) => { await page.setViewportSize({ width: 390, height: 844 }); });
@@ -8,32 +8,37 @@ const tracks = ids.map((id, index) => ({ id, name: index ? 'Cosmia' : 'Chemtrail
   created_time_utc: '2026-01-01T00:00:00', file_path: `${id}.mp3`, url: `/audio/${id}.mp3`,
   track_number: null, play_count: 0, bookmarks: {}, duration_seconds: 280 }));
 
+async function startOwnedAudio(page: Page, sharedSession: SharedSessionSimulator) {
+  await page.addInitScript(() => {
+    const paused = new WeakMap<HTMLMediaElement, boolean>();
+    const times = new WeakMap<HTMLMediaElement, number>();
+    Object.defineProperty(HTMLMediaElement.prototype, 'paused', { get() { return paused.get(this) ?? true; } });
+    Object.defineProperty(HTMLMediaElement.prototype, 'readyState', { get() { return 4; } });
+    Object.defineProperty(HTMLMediaElement.prototype, 'duration', { get() { return 280; } });
+    Object.defineProperty(HTMLMediaElement.prototype, 'currentTime', { get() { return times.get(this) ?? 0; }, set(value) { times.set(this, value); } });
+    HTMLMediaElement.prototype.play = function () { paused.set(this, false); this.dispatchEvent(new Event('loadedmetadata')); this.dispatchEvent(new Event('play')); return Promise.resolve(); };
+    HTMLMediaElement.prototype.pause = function () { paused.set(this, true); this.dispatchEvent(new Event('pause')); };
+  });
+  await page.route('**/api/items', route => route.fulfill({ json: tracks }));
+  await page.route('**/api/items/*/duration', route => route.fulfill({ status: 204 }));
+  await page.route('**/api/playlists', route => route.fulfill({ json: [] }));
+  await page.route('**/api/tags', route => route.fulfill({ json: { enabled: false, items: {} } }));
+  await page.route('**/api/discovery', route => route.fulfill({ json: { sources: [], entries: [] } }));
+  await page.route('**/api/log', route => route.fulfill({ status: 200 }));
+  await page.route('**/ui/play', route => route.fulfill({ status: 200 }));
+  await page.route('**/audio/*.mp3', route => route.fulfill({ contentType: 'audio/mpeg', body: '' }));
+  await page.routeWebSocket('**/updates', () => {});
+  await page.goto('/#browse/library');
+  await page.getByRole('button', { name: 'Play Chemtrails', exact: true }).click();
+  await expect.poll(() => (sharedSession.snapshot.state as SharedPlaybackState)?.currentItemId).toBe(ids[0]);
+  const playing = () => page.evaluate(() => document.querySelector('audio')?.paused === false);
+  await expect.poll(playing).toBe(true);
+  return playing;
+}
+
 for (const differentOwner of [false, true]) {
   test(`owned browser audio survives a failed refresh and ${differentOwner ? 'pauses when a different owner reconnects' : 'keeps its advanced song after reconnect'}`, async ({ page, sharedSession }) => {
-    await page.addInitScript(() => {
-      const paused = new WeakMap<HTMLMediaElement, boolean>();
-      const times = new WeakMap<HTMLMediaElement, number>();
-      Object.defineProperty(HTMLMediaElement.prototype, 'paused', { get() { return paused.get(this) ?? true; } });
-      Object.defineProperty(HTMLMediaElement.prototype, 'readyState', { get() { return 4; } });
-      Object.defineProperty(HTMLMediaElement.prototype, 'duration', { get() { return 280; } });
-      Object.defineProperty(HTMLMediaElement.prototype, 'currentTime', { get() { return times.get(this) ?? 0; }, set(value) { times.set(this, value); } });
-      HTMLMediaElement.prototype.play = function () { paused.set(this, false); this.dispatchEvent(new Event('loadedmetadata')); this.dispatchEvent(new Event('play')); return Promise.resolve(); };
-      HTMLMediaElement.prototype.pause = function () { paused.set(this, true); this.dispatchEvent(new Event('pause')); };
-    });
-    await page.route('**/api/items', route => route.fulfill({ json: tracks }));
-    await page.route('**/api/items/*/duration', route => route.fulfill({ status: 204 }));
-    await page.route('**/api/playlists', route => route.fulfill({ json: [] }));
-    await page.route('**/api/tags', route => route.fulfill({ json: { enabled: false, items: {} } }));
-    await page.route('**/api/discovery', route => route.fulfill({ json: { sources: [], entries: [] } }));
-    await page.route('**/api/log', route => route.fulfill({ status: 200 }));
-    await page.route('**/ui/play', route => route.fulfill({ status: 200 }));
-    await page.route('**/audio/*.mp3', route => route.fulfill({ contentType: 'audio/mpeg', body: '' }));
-    await page.routeWebSocket('**/updates', () => {});
-    await page.goto('/#browse/library');
-    await page.getByRole('button', { name: 'Play Chemtrails', exact: true }).click();
-    await expect.poll(() => (sharedSession.snapshot.state as SharedPlaybackState)?.currentItemId).toBe(ids[0]);
-    const playing = () => page.evaluate(() => document.querySelector('audio')?.paused === false);
-    await expect.poll(playing).toBe(true);
+    const playing = await startOwnedAudio(page, sharedSession);
 
     let unreachable = true;
     await page.route('**/api/playback-session', route => unreachable
@@ -62,6 +67,19 @@ for (const differentOwner of [false, true]) {
     }
   });
 }
+
+test('owned browser audio saves the next song after a save is lost twice, without an error', async ({ page, sharedSession }) => {
+  const playing = await startOwnedAudio(page, sharedSession);
+  let lost = 0;
+  await page.route('**/api/playback-session', route => route.request().method() === 'POST' && lost++ < 2
+    ? route.abort('timedout') : route.fallback());
+  await page.evaluate(() => document.querySelector('audio')!.dispatchEvent(new Event('ended')));
+  await expect.poll(() => (sharedSession.snapshot.state as SharedPlaybackState).currentItemId).toBe(ids[1]);
+  expect(lost).toBeGreaterThan(2);
+  expect(await playing()).toBe(true);
+  await expect(page.getByRole('alert')).toHaveCount(0);
+  await expect(page.locator('.session-banner')).toHaveCount(0);
+});
 
 test('a worker completion before its CAS reply keeps the latest same-revision sync status', async ({ page, sharedSession }) => {
   await page.route('**/api/items', route => route.fulfill({ json: tracks }));

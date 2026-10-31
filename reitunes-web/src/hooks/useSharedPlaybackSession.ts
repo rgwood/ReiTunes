@@ -23,6 +23,8 @@ let refreshing: Promise<void> | null = null;
 let generation = 0;
 let lastProgressSave = 0;
 
+const LOST_SAVE_RETRY_MILLIS = 1_000;
+
 export function getSharedPlaybackSnapshot() { return accepted; }
 
 function takeReceivedSnapshot(): SharedPlaybackSnapshot | null {
@@ -226,20 +228,47 @@ export async function flushSharedSession(): Promise<boolean> {
   playbackChanged = false;
   const requestGeneration = generation;
   let httpStatus: number | undefined;
+  let resentLostSave = false;
+  let refreshAfterWrite = false;
+  const recordSaveFailure = (error: unknown, outcome: string) => {
+    const contextIds = new Set(next.queue.contextItemIds);
+    recordPlaybackEvent('session-save-failed', {
+      operationId, expectedRevision, httpStatus, target: next.target.kind, outcome,
+      errorName: error instanceof Error ? error.name : 'Error',
+      errorMessage: error instanceof Error ? error.message : 'Could not save playback.',
+      contextCount: next.queue.contextItemIds.length, manualQueueCount: next.queue.manualQueue.length,
+      shuffleEnabled: next.queue.shuffleEnabled, shuffledCount: next.queue.shuffledIds.length,
+      staleShuffleCount: next.queue.shuffledIds.filter(id => !contextIds.has(id)).length,
+      duplicateShuffleCount: next.queue.shuffledIds.length - new Set(next.queue.shuffledIds).size,
+    });
+  };
   writing = (async () => {
     try {
       let response: Response;
-      for (let attempt = 0; ; attempt++) {
-        response = await fetch('/api/playback-session', {
-          method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ operationId, expectedRevision, state: next }), signal: AbortSignal.timeout(20_000),
-        });
+      for (;;) {
+        httpStatus = undefined;
+        try {
+          response = await fetch('/api/playback-session', {
+            method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ operationId, expectedRevision, state: next }), signal: AbortSignal.timeout(20_000),
+          });
+        } catch (error) {
+          if (resentLostSave || requestGeneration !== generation) throw error;
+          // No reply says nothing about whether the write committed. Resending
+          // the same operation is safe: the server answers a committed one from
+          // its receipt, and CAS rejects it if another controller moved on.
+          resentLostSave = true;
+          recordSaveFailure(error, 'retrying');
+          await new Promise(resolve => setTimeout(resolve, LOST_SAVE_RETRY_MILLIS));
+          if (requestGeneration !== generation) return false;
+          continue;
+        }
         httpStatus = response.status;
         if (requestGeneration !== generation) return false;
         if (response.status !== 409) break;
         const reply = await response.json() as SharedPlaybackSnapshot;
         const canonical = received && received.revision > reply.revision ? received : reply;
-        const rebased = attempt === 0 && selectedPlayback && localVersion === version
+        const rebased = !rebasedSelection && selectedPlayback && localVersion === version
           && canonical.revision >= accepted.revision
           ? rebaseSonosSelection(base, next, canonical.state) : null;
         recordPlaybackEvent('session-save-conflict', {
@@ -302,16 +331,8 @@ export async function flushSharedSession(): Promise<boolean> {
       return true;
     } catch (error) {
       if (requestGeneration !== generation) return false;
-      const contextIds = new Set(next.queue.contextItemIds);
-      recordPlaybackEvent('session-save-failed', {
-        operationId, expectedRevision, httpStatus, target: next.target.kind,
-        errorName: error instanceof Error ? error.name : 'Error',
-        errorMessage: error instanceof Error ? error.message : 'Could not save playback.',
-        contextCount: next.queue.contextItemIds.length, manualQueueCount: next.queue.manualQueue.length,
-        shuffleEnabled: next.queue.shuffleEnabled, shuffledCount: next.queue.shuffledIds.length,
-        staleShuffleCount: next.queue.shuffledIds.filter(id => !contextIds.has(id)).length,
-        duplicateShuffleCount: next.queue.shuffledIds.length - new Set(next.queue.shuffledIds).size,
-      });
+      const unreachable = httpStatus === undefined;
+      recordSaveFailure(error, 'gave-up');
       // A reply can be lost after the write committed. Read back rather than
       // blindly replaying a whole old queue or assigning ownership twice.
       let canContinueOwnedAudio = ownsBrowserPlayback(usePlaybackTargetStore.getState().target);
@@ -326,16 +347,28 @@ export async function flushSharedSession(): Promise<boolean> {
           applyQueueSyncStatus(canonical);
           useSharedSessionStore.setState({ revision: canonical.revision });
         }
+        // The server is answering again, so a network blip needn't wait for the user.
+        refreshAfterWrite = unreachable;
       } catch { /* Preserve an already owned audio element until ownership can be checked. */ }
       dirty = canContinueOwnedAudio;
       playbackChanged = canContinueOwnedAudio;
       useSharedSessionStore.setState({ ready: canContinueOwnedAudio, connected: false });
-      setError(`${error instanceof Error ? error.message : 'Could not save playback.'} Refresh the session before trying again.`);
+      setError(unreachable
+        ? 'Could not reach ReiTunes to save playback. Check your connection, then press Retry.'
+        : `${error instanceof Error ? error.message : 'Could not save playback.'} Refresh the session before trying again.`);
       return false;
     }
   })();
   const success = await writing;
   writing = null;
+  if (refreshAfterWrite) {
+    const keptOwnedAudio = dirty;
+    await refreshSharedSession();
+    if (!keptOwnedAudio && useSharedSessionStore.getState().connected) {
+      setError('Could not confirm your last change was saved. The current session is shown; please check it and try again.');
+    }
+    return false;
+  }
   if (received && received.revision > accepted.revision) {
     const remote = received;
     received = null;

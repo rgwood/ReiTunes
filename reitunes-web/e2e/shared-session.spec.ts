@@ -1,4 +1,4 @@
-import { test, expect, type Page, type WebSocketRoute } from './fixtures/test';
+import { test, expect, type Page, type Route, type WebSocketRoute } from './fixtures/test';
 import type { SharedPlaybackState } from '../src/stores/sharedSessionStore';
 
 const firstId = '11111111-1111-4111-8111-111111111111';
@@ -170,6 +170,70 @@ for (const jsonError of [true, false]) {
     await expect(page.getByRole('button', { name: 'Pause Sonos', exact: true })).toBeEnabled();
   });
 }
+
+async function toggleShuffleAndFlush(page: Page) {
+  await page.evaluate(async () => {
+    const queuePath = '/src/hooks/useQueue.ts';
+    const sessionPath = '/src/hooks/useSharedPlaybackSession.ts';
+    const { useQueueStore } = await import(queuePath);
+    const { flushSharedSession } = await import(sessionPath);
+    useQueueStore.getState().toggleShuffle();
+    await flushSharedSession();
+  });
+}
+
+test('a save lost to the network is resent as the same operation without bothering the user', async ({ page, sharedSession }) => {
+  sharedSession.snapshot = { revision: 7, state: state() };
+  await install(page);
+  await page.goto('/');
+  await expect(page.getByRole('button', { name: 'Pause Sonos', exact: true })).toBeEnabled();
+  const lost: string[] = [];
+  await page.route('**/api/playback-session', route => {
+    if (route.request().method() !== 'POST' || lost.length) return route.fallback();
+    lost.push(route.request().postDataJSON().operationId);
+    return route.abort('timedout');
+  });
+  await toggleShuffleAndFlush(page);
+  const saves = sharedSession.requests.filter(request => request.method === 'POST');
+  expect(saves.map(request => request.body?.operationId)).toEqual(lost);
+  expect(sharedSession.snapshot.revision).toBe(8);
+  await expect(page.getByRole('alert')).toHaveCount(0);
+  await expect(page.locator('.session-banner')).toHaveCount(0);
+});
+
+test('a save lost twice reconnects by itself once the server answers, and says the change is unconfirmed', async ({ page, sharedSession }) => {
+  sharedSession.snapshot = { revision: 7, state: state() };
+  await install(page);
+  await page.goto('/');
+  await expect(page.getByRole('button', { name: 'Pause Sonos', exact: true })).toBeEnabled();
+  await page.route('**/api/playback-session', route =>
+    route.request().method() === 'POST' ? route.abort('timedout') : route.fallback());
+  await toggleShuffleAndFlush(page);
+  await expect(page.getByRole('alert').filter({ hasText: 'Could not confirm your last change' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Pause Sonos', exact: true })).toBeEnabled();
+  expect(await page.evaluate(async () => {
+    const queuePath = '/src/hooks/useQueue.ts';
+    const { useQueueStore } = await import(queuePath);
+    return useQueueStore.getState().shuffleEnabled;
+  })).toBe(false);
+});
+
+test('a save lost while the server stays unreachable explains itself, then Retry recovers', async ({ page, sharedSession }) => {
+  sharedSession.snapshot = { revision: 7, state: state() };
+  await install(page);
+  await page.goto('/');
+  await expect(page.getByRole('button', { name: 'Pause Sonos', exact: true })).toBeEnabled();
+  const outage = (route: Route) => route.abort('timedout');
+  await page.route('**/api/playback-session', outage);
+  await toggleShuffleAndFlush(page);
+  const alert = page.getByRole('alert').filter({ hasText: 'Could not reach ReiTunes' });
+  await expect(alert).toBeVisible();
+  await expect(alert).not.toContainText('net::');
+  await page.unroute('**/api/playback-session', outage);
+  await alert.getByRole('button', { name: 'Retry' }).click();
+  await expect(alert).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Pause Sonos', exact: true })).toBeEnabled();
+});
 
 test('a fresh phone attaches to the desktop Sonos session without playing or replacing its queue', async ({ page, sharedSession }) => {
   sharedSession.snapshot = { revision: 7, state: state() };
