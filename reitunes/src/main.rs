@@ -36,6 +36,7 @@ use crate::storage::S3Storage;
 mod llm;
 mod metadata;
 mod durations;
+mod event_history;
 mod file_info;
 mod import_metadata;
 mod smapi;
@@ -281,6 +282,7 @@ async fn main() -> Result<()> {
                 .merge(discovery::router(discovery))
                 .merge(tagging::router(tagging))
                 .route("/items", get(items_handler))
+                .route("/events", get(event_history::list))
                 .route("/playback-session", get(playback_session::get).post(playback_session::update))
                 .route("/playback-session/queue-sync", post(playback_session::retry_queue_sync))
                 .route("/items/{id}/duration", axum::routing::put(durations::save))

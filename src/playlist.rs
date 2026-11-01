@@ -217,32 +217,35 @@ impl PlaylistStore {
     /// Rebuild all playlists from events in chronological order.
     pub fn build_from_events(events: Vec<PlaylistEventWithMetadata>) -> Self {
         let mut store = PlaylistStore::new();
+        for event in &events {
+            store.apply(event);
+        }
+        store
+    }
 
-        for event in events {
-            match &event.event {
-                PlaylistEvent::PlaylistCreatedEvent { name, .. } => {
-                    let mut playlist = Playlist::new(event.aggregate_id, name.clone(), event.created_time_utc);
-                    playlist.apply(&event.event);
-                    store.playlists.insert(
-                        event.aggregate_id,
-                        playlist,
+    /// Apply one stored event, creating the playlist if this is its first.
+    pub fn apply(&mut self, event: &PlaylistEventWithMetadata) {
+        match &event.event {
+            PlaylistEvent::PlaylistCreatedEvent { name, .. } => {
+                let mut playlist = Playlist::new(event.aggregate_id, name.clone(), event.created_time_utc);
+                playlist.apply(&event.event);
+                self.playlists.insert(
+                    event.aggregate_id,
+                    playlist,
+                );
+            }
+            playlist_event => {
+                if let Some(playlist) = self.playlists.get_mut(&event.aggregate_id) {
+                    playlist.apply(playlist_event);
+                } else {
+                    warn!(
+                        playlist_id = %event.aggregate_id,
+                        ?playlist_event,
+                        "Ignoring playlist event without a creation event"
                     );
-                }
-                playlist_event => {
-                    if let Some(playlist) = store.playlists.get_mut(&event.aggregate_id) {
-                        playlist.apply(playlist_event);
-                    } else {
-                        warn!(
-                            playlist_id = %event.aggregate_id,
-                            ?playlist_event,
-                            "Ignoring playlist event without a creation event"
-                        );
-                    }
                 }
             }
         }
-
-        store
     }
 
     /// Get non-deleted playlists

@@ -92,6 +92,9 @@ export function LibrarySidebar({ active, items, playlists, now, tagItems, discov
       </button>
       <button className="source-item" aria-label="Discover" aria-current={active === 'discover' ? 'page' : undefined} onClick={() => onSelect('discover')}>
         <span className="source-icon"><MusicIcon name="discover" size={16} /></span><span className="source-name">Discover</span><span className="source-count" aria-hidden="true">{discoveryCount}</span>
+      </button>
+      <button className="source-item" aria-label="Event history" aria-current={active === 'events' ? 'page' : undefined} onClick={() => onSelect('events')}>
+        <span className="source-icon"><MusicIcon name="clock" size={16} /></span><span className="source-name">Event history</span>
       </button></section>
       <section><h2>Smart Playlists</h2>{playlists.filter(p => p.smart_rules).map(playlistButton)}</section>
       <section><h2>Playlists</h2>{playlists.filter(p => !p.smart_rules).map(playlistButton)}</section>

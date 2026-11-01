@@ -1,0 +1,28 @@
+.event-history { display: flex; flex-direction: column; height: 100%; font-size: 12px; background: var(--surface); }
+.event-toolbar { display: flex; align-items: center; gap: 8px; padding: 4px 9px; border-bottom: 1px solid var(--line); }
+.event-toolbar select { max-width: 280px; }
+.event-focus { max-width: 240px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--accent); }
+.event-summary { margin-left: auto; color: var(--muted); white-space: nowrap; }
+.event-replay-ok { color: var(--cyan); }
+.event-replay-bad { color: var(--error); font-weight: 600; }
+.event-scroll { flex: 1; min-height: 0; overflow: auto; }
+.event-table { width: 100%; border-collapse: collapse; line-height: 18px; }
+.event-table thead { position: sticky; top: 0; z-index: 1; }
+.event-table th { height: 24px; padding: 0 6px; background: var(--header); border-bottom: 1px solid var(--border-strong); font-weight: 400; text-align: left; white-space: nowrap; }
+.event-table td { padding: 3px 6px; vertical-align: top; border-bottom: 1px solid var(--line); }
+.event-table tbody tr { cursor: pointer; }
+.event-table tbody tr:hover { background: var(--hover); }
+.event-time, .event-machine { color: var(--muted); white-space: nowrap; }
+.event-type { white-space: nowrap; }
+.event-kind { margin-right: 5px; color: var(--muted); }
+.event-name { max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.event-name button { color: inherit; text-align: left; }
+.event-name button:hover { color: var(--accent); text-decoration: underline; }
+.event-changes { width: 100%; overflow-wrap: anywhere; }
+.event-field { color: var(--muted); }
+.event-old { color: var(--muted); text-decoration: line-through; }
+.event-new { color: var(--text); }
+.event-noop { color: var(--muted); font-style: italic; }
+.event-table .event-detail { cursor: auto; background: var(--panel); }
+.event-detail pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 11px; }
+.event-more { display: block; margin: 8px auto; color: var(--accent); }

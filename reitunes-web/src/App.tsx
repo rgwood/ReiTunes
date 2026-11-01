@@ -32,6 +32,7 @@ import type { PlaybackRange } from './stores/playerStore';
 import { SonosModal } from './components/SonosModal';
 import { SettingsDialog } from './components/SettingsDialog';
 import { Discover } from './components/Discover';
+import { EventHistory } from './components/EventHistory';
 import { TagPanel } from './components/TagPanel';
 import { TagBrowser } from './components/TagBrowser';
 import { MobileLibrary } from './components/MobileLibrary';
@@ -63,11 +64,12 @@ function LibrarySelectionCount({ store }: { store: StoreApi<{ count: number }> }
 
 function AppContent() {
   const { isMobile, iosStandalone, route: mobileRoute, navigate: navigateMobile } = useMobileNavigation();
-  const [desktopView, setView] = useState<'library' | 'discover' | 'bookmarks'>('library');
+  const [desktopView, setView] = useState<'library' | 'discover' | 'bookmarks' | 'events'>('library');
   const view = isMobile ? mobileRoute.browse === 'discover' || mobileRoute.browse === 'bookmarks' ? mobileRoute.browse : 'library' : desktopView;
   const [librarySearch, setLibrarySearch] = useState('');
   const [discoverySearch, setDiscoverySearch] = useState('');
   const [bookmarkSearch, setBookmarkSearch] = useState('');
+  const [eventSearch, setEventSearch] = useState('');
   const [playlistDraft, setPlaylistDraft] = useState<PlaylistDraft | null>(null);
   const [now, setNow] = useState(Date.now);
   const density = useLibraryPreferences(state => state.density);
@@ -75,8 +77,8 @@ function AppContent() {
     const timer = window.setInterval(() => setNow(Date.now()), 60000);
     return () => window.clearInterval(timer);
   }, []);
-  const searchQuery = view === 'discover' ? discoverySearch : view === 'bookmarks' ? bookmarkSearch : librarySearch;
-  const setSearchQuery = view === 'discover' ? setDiscoverySearch : view === 'bookmarks' ? setBookmarkSearch : setLibrarySearch;
+  const searchQuery = view === 'discover' ? discoverySearch : view === 'bookmarks' ? bookmarkSearch : view === 'events' ? eventSearch : librarySearch;
+  const setSearchQuery = view === 'discover' ? setDiscoverySearch : view === 'bookmarks' ? setBookmarkSearch : view === 'events' ? setEventSearch : setLibrarySearch;
   const deferredSearch = useDeferredValue(searchQuery);
   const deferredLibrarySearch = useDeferredValue(librarySearch);
   const [selectedCollection, setCollection] = useState<Collection>('all');
@@ -366,7 +368,7 @@ function AppContent() {
   };
   const activeSource = view !== 'library' ? view : selectedPlaylistId ? `playlist:${selectedPlaylistId}` : collection;
   const selectSource = (source: string) => {
-    if (source === 'discover' || source === 'bookmarks') {
+    if (source === 'discover' || source === 'bookmarks' || source === 'events') {
       setView(source);
       if (source === 'bookmarks') setBookmarkItemId(null);
     } else if (source.startsWith('playlist:')) {
@@ -454,8 +456,8 @@ function AppContent() {
           <div className="library-search">
             <MusicIcon name="search" size={14} />
             <input ref={searchRef} type="search"
-              aria-label={view === 'discover' ? 'Search discovery' : view === 'bookmarks' ? 'Filter bookmarks' : 'Search library'}
-              placeholder={view === 'discover' ? 'Search sets and sources' : view === 'bookmarks' ? 'Filter bookmarks' : selectedPlaylist ? `Search ${selectedPlaylist.name}` : 'Search library'}
+              aria-label={view === 'discover' ? 'Search discovery' : view === 'bookmarks' ? 'Filter bookmarks' : view === 'events' ? 'Search events' : 'Search library'}
+              placeholder={view === 'discover' ? 'Search sets and sources' : view === 'bookmarks' ? 'Filter bookmarks' : view === 'events' ? 'Song or playlist name, or ID' : selectedPlaylist ? `Search ${selectedPlaylist.name}` : 'Search library'}
               value={searchQuery} autoComplete="off" onChange={event => setSearchQuery(event.target.value)}
               onKeyDown={event => { if (event.key === 'Escape') { setSearchQuery(''); searchRef.current?.blur(); } }} />
             {searchQuery ? <button aria-label="Clear search" onClick={() => { setSearchQuery(''); searchRef.current?.focus(); }}><MusicIcon name="close" size={13} /></button> : <kbd>/</kbd>}
@@ -536,7 +538,8 @@ function AppContent() {
         <div className="library-results" aria-busy={(view !== 'discover' && isLoading) || searchQuery !== deferredSearch}>
           {view === 'discover' ? <Discover searchQuery={deferredSearch} pauseForPreview={() => previewPauseRef.current?.() ?? Promise.resolve(false)} onOpenLibrary={id => {
             chooseCollection('all'); setLibrarySearch(''); setRevealRequest({ itemId: id });
-          }} /> : error ? <div className="library-message" role="alert">Couldn’t load the library. <button onClick={() => void queryClient.invalidateQueries({ queryKey: ['library'] })}>Retry</button></div>
+          }} /> : view === 'events' ? <EventHistory searchQuery={deferredSearch} />
+            : error ? <div className="library-message" role="alert">Couldn’t load the library. <button onClick={() => void queryClient.invalidateQueries({ queryKey: ['library'] })}>Retry</button></div>
             : isLoading || !sharedSession.ready ? <div className="library-message" role="status">Loading…</div>
             : view === 'bookmarks' ? <div className="bookmark-main-view">
               <BookmarkSidebar items={items} onPlay={playBookmark} getPlaybackTime={getBookmarkPlaybackTime} onClearItem={() => setBookmarkItemId(null)}
@@ -564,6 +567,7 @@ function AppContent() {
           <footer className="library-status" role="status">
             {view === 'discover' ? <span>{discoveryCount} sets in inbox · {discovery?.sources.length ?? 0} sources</span>
               : view === 'bookmarks' ? <span>{items.reduce((n, item) => n + Object.keys(item.bookmarks).length, 0)} bookmarks</span>
+              : view === 'events' ? <span>Newest first · click a row for the raw event</span>
               : <span>{filteredItems.length.toLocaleString()}{!selectedPlaylist && filteredItems.length !== items.length && ` of ${items.length.toLocaleString()}`} {filteredItems.length === 1 ? 'track' : 'tracks'}{selectedPlaylist && totalDurationLabel(filteredItems) && `, ${totalDurationLabel(filteredItems)}`}{selectedPlaylist && ` · ${selectedPlaylist.name}`}
                 <LibrarySelectionCount store={selectionCountStore} /></span>}
             {view === 'library' && selectedPlaylist?.smart_rules && <button onClick={() => setPlaylistDraft({ playlist: selectedPlaylist, smart: true })}>Edit rules…</button>}
