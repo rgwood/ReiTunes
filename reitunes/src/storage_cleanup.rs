@@ -12,6 +12,13 @@ use uuid::Uuid;
 use crate::storage::{valid_file_path, S3Storage};
 
 #[derive(Debug, PartialEq, Eq)]
+struct CleanupPass {
+    deleted: usize,
+    /// Deletions that failed and need another attempt.
+    failed: usize,
+}
+
+#[derive(Debug, PartialEq, Eq)]
 struct DeletedFile {
     event_id: Uuid,
     file_path: String,
@@ -50,20 +57,44 @@ pub fn start(
     tokio::spawn(async move {
         let mut interval = tokio::time::interval(Duration::from_secs(30));
         interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+        let mut finished_revision = None;
         loop {
             interval.tick().await;
-            if let Err(error) = cleanup_once(&pool, &library, &storage).await {
+            if let Err(error) = cleanup_if_needed(&pool, &library, &storage, &mut finished_revision).await {
                 warn!(?error, "Deleted audio cleanup failed; will retry");
             }
         }
     });
 }
 
+/// A pass replays the whole event log, so skip it unless there can be new work: the library
+/// has changed since the last pass that finished, or that pass still has failures to retry.
+/// This also covers files that stop being shared when another song's path changes. Returns
+/// whether a pass ran.
+async fn cleanup_if_needed(
+    pool: &Pool<SqliteConnectionManager>,
+    library: &RwLock<Library>,
+    storage: &S3Storage,
+    finished_revision: &mut Option<u64>,
+) -> Result<bool> {
+    // Read this before the log. Writers save and apply under the write lock, so an event
+    // this pass misses has a later revision and triggers the next one.
+    let revision = library.read().await.revision;
+    if *finished_revision == Some(revision) {
+        return Ok(false);
+    }
+    let pass = cleanup_once(pool, library, storage).await?;
+    if pass.failed == 0 {
+        *finished_revision = Some(revision);
+    }
+    Ok(true)
+}
+
 async fn cleanup_once(
     pool: &Pool<SqliteConnectionManager>,
     library: &RwLock<Library>,
     storage: &S3Storage,
-) -> Result<usize> {
+) -> Result<CleanupPass> {
     let pending = {
         let conn = pool.get()?;
         let events = load_all_events_from_db(&conn)?;
@@ -77,7 +108,7 @@ async fn cleanup_once(
             .filter(|file| !completed.contains(&file.event_id.to_string()))
             .collect::<Vec<_>>()
     };
-    let mut count = 0;
+    let mut pass = CleanupPass { deleted: 0, failed: 0 };
     for file in pending {
         if !valid_file_path(&file.file_path) {
             warn!(event_id = %file.event_id, "Skipping deleted song with a non-storage path");
@@ -100,16 +131,17 @@ async fn cleanup_once(
                     "INSERT OR IGNORE INTO storage_deletions (StorageScope, DeletionEventId, FilePath) VALUES (?1, ?2, ?3)",
                     params![storage.scope(), file.event_id.to_string(), file.file_path],
                 )?;
-                count += 1;
+                pass.deleted += 1;
                 info!(event_id = %file.event_id, "Deleted audio object; cleanup complete");
             }
             result => {
+                pass.failed += 1;
                 warn!(event_id = %file.event_id, ?result, "Audio object deletion failed; will retry")
             }
         }
         drop(current);
     }
-    Ok(count)
+    Ok(pass)
 }
 
 #[cfg(test)]
@@ -245,12 +277,12 @@ mod tests {
             .write()
             .await
             .apply(&created(active_id, "old #.mp3"));
-        assert_eq!(cleanup_once(&pool, &library, &storage).await.unwrap(), 0);
+        assert_eq!(cleanup_once(&pool, &library, &storage).await.unwrap().deleted, 0);
         assert!(fake.requests.lock().unwrap().is_empty());
         library.write().await.apply(&deleted(active_id));
 
         fake.fail.store(true, Ordering::SeqCst);
-        assert_eq!(cleanup_once(&pool, &library, &storage).await.unwrap(), 0);
+        assert_eq!(cleanup_once(&pool, &library, &storage).await.unwrap().deleted, 0);
         let receipts = || {
             pool.get()
                 .unwrap()
@@ -261,7 +293,7 @@ mod tests {
         };
         assert_eq!(receipts(), 0);
         fake.fail.store(false, Ordering::SeqCst);
-        assert_eq!(cleanup_once(&pool, &library, &storage).await.unwrap(), 1);
+        assert_eq!(cleanup_once(&pool, &library, &storage).await.unwrap().deleted, 1);
         assert_eq!(receipts(), 1);
         assert_eq!(
             *fake.requests.lock().unwrap(),
@@ -270,7 +302,7 @@ mod tests {
         // Opening a fresh pool simulates restart: successful deletes are not repeated.
         let reopened = open_connection_pool(db_path.to_str().unwrap()).unwrap();
         assert_eq!(
-            cleanup_once(&reopened, &library, &storage).await.unwrap(),
+            cleanup_once(&reopened, &library, &storage).await.unwrap().deleted,
             0
         );
         assert_eq!(fake.requests.lock().unwrap().len(), 2);
@@ -281,7 +313,7 @@ mod tests {
             .unwrap()
             .execute("DELETE FROM storage_deletions", [])
             .unwrap();
-        assert_eq!(cleanup_once(&pool, &library, &storage).await.unwrap(), 1);
+        assert_eq!(cleanup_once(&pool, &library, &storage).await.unwrap().deleted, 1);
         fake.versioned.store(true, Ordering::SeqCst);
         assert!(storage.delete("another.mp3").await.is_err());
         for path in [
@@ -295,6 +327,58 @@ mod tests {
             assert!(storage.delete(path).await.is_err());
         }
         assert_eq!(fake.requests.lock().unwrap().len(), 3);
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn cleanup_only_runs_when_the_library_changed_or_a_deletion_failed() {
+        let fake = FakeStorage::default();
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let endpoint = format!("http://{}", listener.local_addr().unwrap());
+        let server = tokio::spawn(
+            axum::serve(listener, Router::new().fallback(handle_storage).with_state(fake.clone()))
+                .into_future(),
+        );
+        let storage = S3Storage::new(&endpoint, "test", Some("prod"), "test", "test").await.unwrap();
+        let directory = tempfile::tempdir().unwrap();
+        let pool = open_connection_pool(directory.path().join("library.db").to_str().unwrap()).unwrap();
+        let library = RwLock::new(Library::new());
+        let mut finished = None;
+        let mut run = async || cleanup_if_needed(&pool, &library, &storage, &mut finished).await.unwrap();
+
+        // The first pass always runs, so deletions interrupted by a restart get finished.
+        assert!(run().await);
+        assert!(!run().await);
+
+        // A deleted song wakes it. A failed deletion keeps it retrying with nothing new.
+        let id = Uuid::new_v4();
+        for event in [created(id, "gone.mp3"), deleted(id)] {
+            save_event_to_db(&pool.get().unwrap(), &event).unwrap();
+            library.write().await.apply(&event);
+        }
+        fake.fail.store(true, Ordering::SeqCst);
+        assert!(run().await);
+        assert!(run().await);
+        fake.fail.store(false, Ordering::SeqCst);
+        assert!(run().await);
+        assert!(!run().await);
+
+        // A song sharing a deleted song's file blocks the deletion until its path changes,
+        // which isn't a delete event but still has to free the file.
+        let (first, second) = (Uuid::new_v4(), Uuid::new_v4());
+        for event in [created(first, "shared.mp3"), created(second, "shared.mp3"), deleted(first)] {
+            save_event_to_db(&pool.get().unwrap(), &event).unwrap();
+            library.write().await.apply(&event);
+        }
+        assert!(run().await);
+        assert!(!run().await);
+        let requests = || fake.requests.lock().unwrap().clone();
+        assert!(!requests().iter().any(|path| path.ends_with("shared.mp3")));
+        let moved = EventWithMetadata::new(second, Event::LibraryItemFilePathChangedEvent { new_file_path: "moved.mp3".into() }).unwrap();
+        save_event_to_db(&pool.get().unwrap(), &moved).unwrap();
+        library.write().await.apply(&moved);
+        assert!(run().await);
+        assert!(requests().iter().any(|path| path.ends_with("shared.mp3")));
         server.abort();
     }
 }
