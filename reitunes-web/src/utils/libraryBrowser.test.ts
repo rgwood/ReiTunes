@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { LibraryItem } from '../types';
-import { matchesLibrarySearch, tagSearch } from './libraryBrowser';
+import { albumSearch, albumTracks, matchesLibrarySearch, searchedAlbum, tagSearch } from './libraryBrowser';
 
 function item(id: string, changes: Partial<LibraryItem> = {}): LibraryItem {
   return {
@@ -65,5 +65,33 @@ describe('library search', () => {
     ).toBe(true);
     expect(matchesLibrarySearch(track, 'artist:"Bonobo" piano')).toBe(false);
     expect(matchesLibrarySearch(track, 'night absent')).toBe(false);
+  });
+});
+
+describe('albums', () => {
+  it('round-trips album names through an album search', () => {
+    for (const album of ['Ys', 'Heaven or Las Vegas', 'The "Quoted" One', 'Back\\slash']) {
+      expect(searchedAlbum(albumSearch(album))).toBe(album);
+      expect(matchesLibrarySearch(item('a', { album }), albumSearch(album))).toBe(true);
+    }
+    expect(searchedAlbum('album:Ys')).toBe('Ys');
+  });
+
+  it('only treats a search that is just one album as an album view', () => {
+    expect(searchedAlbum('album:Ys artist:"Joanna Newsom"')).toBeNull();
+    expect(searchedAlbum('album:Ys emily')).toBeNull();
+    expect(searchedAlbum('Ys')).toBeNull();
+    expect(searchedAlbum('')).toBeNull();
+  });
+
+  it('lists an album in track order with unnumbered songs last', () => {
+    const songs = [
+      item('bonus', { album: 'Ys', track_number: null }),
+      item('three', { album: 'YS', track_number: 3 }),
+      item('other', { album: 'Ys Live', track_number: 1 }),
+      item('one', { album: 'Ys', track_number: 1 }),
+      item('demo', { album: 'Ys', track_number: null }),
+    ];
+    expect(albumTracks(songs, 'ys').map(song => song.id)).toEqual(['one', 'three', 'bonus', 'demo']);
   });
 });

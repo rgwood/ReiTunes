@@ -118,25 +118,59 @@ async function playingRowIsRevealed(page: Page) {
   });
 }
 
-test('context menu filters use exact album and artist names', async ({ page }) => {
-  const items = [
-    { ...libraryItems[0], name: 'Cosmia', artist: 'Joanna Newsom', album: 'Ys' },
-    { ...libraryItems[1], name: 'Emily', artist: 'Joanna Newsom', album: 'Ys' },
-    { ...libraryItems[2], name: 'Another song', artist: 'Joanna Newsom and friends', album: 'Days' },
-  ];
-  await mockLibrary(page, items);
+const ys: LibraryItem[] = [
+  ['Cosmia', 5, true], ['Emily', 1, false], ['Bonus demo', null, false], ['Sawdust & Diamonds', 3, false], ['Monkey & Bear', 2, false],
+].map(([name, track_number, is_favorite], index) => ({
+  ...libraryItems[index], name: name as string, track_number: track_number as number | null, is_favorite: is_favorite as boolean,
+  artist: 'Joanna Newsom', album: 'Ys', bookmarks: {},
+  // Newest first, so the default sort is nothing like track order.
+  created_time_utc: `2026-08-${String(28 - index).padStart(2, '0')}T12:00:00`,
+}));
+const albumItems = [...ys, { ...libraryItems[5], name: 'Another song', artist: 'Joanna Newsom and friends', album: 'Days', bookmarks: {} }];
+const ysTrackOrder = ['Emily', 'Monkey & Bear', 'Sawdust & Diamonds', 'Cosmia', 'Bonus demo'];
+
+test('Show Album lists the whole album in track order from any view', async ({ page }) => {
+  await mockLibrary(page, albumItems);
   await page.goto('/');
   const search = page.getByRole('searchbox', { name: 'Search library' });
+  const names = page.locator('tbody tr [data-column=name]');
+  await page.getByRole('button', { name: 'Favourites' }).click();
+  await expect(names).toHaveText(['Cosmia']);
   await page.getByRole('row').filter({ hasText: 'Cosmia' }).click({ button: 'right' });
-  await page.getByText('Filter by Album', { exact: false }).click();
+  await page.getByRole('button', { name: 'Show Album' }).click();
   await expect(search).toHaveValue('album:"Ys"');
-  await expect(page.locator('tbody tr')).toHaveCount(2);
+  await expect(page.getByRole('button', { name: 'All music' })).toHaveAttribute('aria-current', 'page');
+  await expect(names).toHaveText(ysTrackOrder);
+  await expect(page.getByRole('row').filter({ hasText: 'Cosmia' })).toHaveAttribute('aria-selected', 'true');
+  await expect(page.locator('.library-status')).toContainText('· Ys');
+
+  // Double-clicking within the album keeps playing it in track order.
+  await page.getByRole('row').filter({ hasText: 'Monkey & Bear' }).dblclick();
+  await page.getByRole('button', { name: 'Queue', exact: true }).click();
+  await expect(page.getByRole('region', { name: 'From Ys' }).locator('.queue-track')).toHaveText(['Sawdust & Diamonds', 'Cosmia', 'Bonus demo'].map(name => new RegExp(name)));
+
+  // Leaving the album puts the library back in its own order.
+  await search.fill('');
+  await expect(names.first()).toHaveText('Cosmia');
+
   await search.fill('ys');
-  await expect(page.locator('tbody tr')).toHaveCount(3);
+  await expect(names).toHaveCount(6);
   await page.getByRole('row').filter({ hasText: 'Cosmia' }).click({ button: 'right' });
   await page.getByText('Filter by Artist', { exact: false }).click();
   await expect(search).toHaveValue('artist:"Joanna Newsom"');
-  await expect(page.locator('tbody tr')).toHaveCount(2);
+  await expect(names).toHaveCount(5);
+});
+
+test('Play Album starts the album from its first track', async ({ page }) => {
+  await mockLibrary(page, albumItems);
+  await page.goto('/');
+  await page.getByRole('row').filter({ hasText: 'Sawdust & Diamonds' }).click({ button: 'right' });
+  await page.getByRole('button', { name: 'Play Album' }).click();
+  await expect(page.locator('audio')).toHaveAttribute('src', new RegExp(ys[1].url));
+  await page.getByRole('button', { name: 'Queue', exact: true }).click();
+  await expect(page.getByRole('region', { name: 'From Ys' }).locator('.queue-track')).toHaveText(ysTrackOrder.slice(1).map(name => new RegExp(name)));
+  // Playing an album doesn't move you away from what you were looking at.
+  await expect(page.getByRole('searchbox', { name: 'Search library' })).toHaveValue('');
 });
 
 test('current song shortcuts reveal and select without changing playback or queue', async ({ page }) => {

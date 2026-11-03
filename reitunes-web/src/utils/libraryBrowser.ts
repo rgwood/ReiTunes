@@ -31,3 +31,20 @@ export function tagSearch(tag: string): string {
   if (!/[\s"\\]/.test(tag)) return `tag:${tag}`;
   return `tag:"${tag.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
 }
+
+export function albumSearch(album: string): string {
+  return `album:"${album.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
+}
+
+/** The album a search shows, when the search is nothing but one album filter. */
+export function searchedAlbum(query: string): string | null {
+  const match = /^\s*album:(?:"((?:[^"\\]|\\.)*)"|(\S+))\s*$/i.exec(query);
+  return match ? (match[1] ?? match[2]).replace(/\\(["\\])/g, '$1') : null;
+}
+
+/** An album's songs in track order. Songs without a track number go last, in library order. */
+export function albumTracks(items: LibraryItem[], album: string): LibraryItem[] {
+  const name = album.toLowerCase();
+  return items.filter(item => item.album.toLowerCase() === name)
+    .sort((a, b) => (a.track_number ?? Infinity) - (b.track_number ?? Infinity) || 0);
+}

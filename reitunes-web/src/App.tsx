@@ -48,7 +48,7 @@ import { usePlayerStore } from './stores/playerStore';
 import { usePlaybackTargetStore } from './stores/playbackTargetStore';
 import { ownsBrowserPlayback } from './stores/sharedSessionStore';
 import type { LibraryItem } from './types';
-import { createLibrarySearch, tagSearch } from './utils/libraryBrowser';
+import { albumSearch, albumTracks, createLibrarySearch, searchedAlbum, tagSearch } from './utils/libraryBrowser';
 import './App.css';
 import './LibraryLayout.css';
 import './components/Tags.css';
@@ -240,11 +240,16 @@ function AppContent() {
       ? previous : { key: viewKey, items: visibleItems });
   }, [viewKey]);
   const collectionName = selectedPlaylist?.name ?? ({ all: 'All music', favourites: 'Favourites', recent: 'Recently added', unplayed: 'Unplayed' } as const)[collection];
-  const currentViewName = deferredLibrarySearch.trim() ? `${collectionName} · “${deferredLibrarySearch.trim()}”` : collectionName;
+  // Searching for just one album lists it in track order, as its own view.
+  const viewedAlbum = searchedAlbum(deferredLibrarySearch);
+  const albumItems = useMemo(() => viewedAlbum === null ? filteredItems : albumTracks(filteredItems, viewedAlbum), [filteredItems, viewedAlbum]);
+  const albumName = viewedAlbum !== null && !selectedPlaylist && collection === 'all' ? albumItems[0]?.album || viewedAlbum : null;
+  const tableView = `${selectedPlaylistId || collection}${viewedAlbum === null ? '' : `:album:${viewedAlbum.toLowerCase()}`}`;
+  const currentViewName = albumName ?? (deferredLibrarySearch.trim() ? `${collectionName} · “${deferredLibrarySearch.trim()}”` : collectionName);
   const viewAvailable = view === 'library' && !isLoading && !error && librarySearch === deferredLibrarySearch &&
     (!selectedPlaylistId || !!selectedPlaylist) && !(isMobile && mobileRoute.browse === 'playlists' && !mobileRoute.playlistId);
   const currentQueueView = viewAvailable && (isMobile || gridView?.key === viewKey)
-    ? { name: currentViewName, items: isMobile ? filteredItems : gridView!.items } : null;
+    ? { name: currentViewName, items: isMobile ? albumItems : gridView!.items } : null;
   const mobileQueueSources = useMemo(() => isMobile && mobileRoute.tab === 'queue'
     ? [{ id: 'library', name: 'Your library', items }, ...playlists.map(playlist => ({
       id: playlist.id, name: playlist.name, items: playlistItems(playlist, items, now, tags.data?.items),
@@ -395,6 +400,17 @@ function AppContent() {
   const manageBookmarks = useCallback((item: LibraryItem) => {
     setBookmarkItemId(item.id); setPanel('bookmarks');
   }, []);
+  const showAlbum = useCallback((item: LibraryItem) => {
+    setView('library'); setCollection('all'); setSelectedPlaylistId(null);
+    setLibrarySearch(albumSearch(item.album)); setRevealRequest({ itemId: item.id, focus: true });
+    if (isMobile) navigateMobile({ tab: 'browse', browse: 'library' });
+  }, [isMobile, navigateMobile]);
+  const playAlbum = useCallback((item: LibraryItem) => {
+    const tracks = albumTracks(items, item.album);
+    if (!tracks.length) return;
+    setContext(tracks, 0, item.album);
+    void play(tracks[0], 0, 'album');
+  }, [items, setContext, play]);
   const newPlaylistFromSelection = useCallback((itemIds: string[]) => {
     setPlaylistDraft({ smart: false, itemIds });
   }, []);
@@ -522,8 +538,9 @@ function AppContent() {
                   {playlistActionError && <p role="alert">{playlistActionError}</p>}</div>
                   : <div className="mobile-library-filter"><label>Show<select aria-label="Library collection" value={collection} onChange={event => chooseCollection(event.target.value as Collection)}>
                     <option value="all">All songs</option><option value="favourites">Favourites</option><option value="recent">Recently added</option><option value="unplayed">Unplayed</option></select></label><span>{filteredItems.length.toLocaleString()} songs</span></div>}
-                <MobileLibrary key={`${selectedPlaylistId || collection}:${deferredLibrarySearch}`} items={filteredItems} playlists={playlists} disabled={sessionBusy}
+                <MobileLibrary key={`${selectedPlaylistId || collection}:${deferredLibrarySearch}`} items={albumItems} playlists={playlists} disabled={sessionBusy}
                   contextName={currentViewName} onTags={manageTags} onBookmarks={manageBookmarks}
+                  onShowAlbum={showAlbum} onPlayAlbum={playAlbum}
                   onNewPlaylist={newPlaylistFromSelection} />
                 {!filteredItems.length && <p className="mobile-empty">{items.length ? 'No matching songs.' : 'Your library is empty.'}</p>}
               </>}
@@ -546,18 +563,20 @@ function AppContent() {
                 query={deferredSearch} onQueryChange={setBookmarkSearch} hideSearch onNextMoment={nextMoment} />
             </div> : <>
               <div className="song-table">
-                <LibraryTable key={selectedPlaylistId || collection} items={filteredItems} searchQuery="" playbackState={playbackState}
+                <LibraryTable key={tableView} items={filteredItems} searchQuery="" playbackState={playbackState}
                   onlyFavouriteTracks={collection === 'favourites' || selectedPlaylist?.smart_rules?.favourites_only === true}
-                  viewId={selectedPlaylistId || collection}
+                  viewId={tableView} trackOrder={viewedAlbum !== null}
                   playlistId={selectedPlaylist?.smart_rules ? null : selectedPlaylistId}
                   contextName={currentViewName} allowReordering={!deferredLibrarySearch && !!selectedPlaylist && !selectedPlaylist.smart_rules}
                   onNewPlaylist={newPlaylistFromSelection}
                   onSelectionCountChange={reportSelectionCount}
                   onViewItemsChange={reportViewItems}
-                  onSearchChange={setLibrarySearch} revealRequest={revealRequest} onRevealed={finishReveal}
+                  onSearchChange={setLibrarySearch} onRevealed={finishReveal}
+                  // Reveal in the view the song was revealed for, not the one being left.
+                  revealRequest={librarySearch === deferredLibrarySearch ? revealRequest : null}
                   onManageTags={manageTags} onFilterTag={browseTag} tagItems={tags.data?.items}
                   selectedTagItemId={panel === 'tags' ? tagItemId : null}
-                  onManageBookmarks={manageBookmarks} />
+                  onManageBookmarks={manageBookmarks} onShowAlbum={showAlbum} onPlayAlbum={playAlbum} />
               </div>
               {!filteredItems.length && <div className="library-message empty-grid-message">
                 {items.length === 0 ? <>No music. <button onClick={() => setIsImportOpen(true)}>Import files or a link</button></>
@@ -568,7 +587,7 @@ function AppContent() {
             {view === 'discover' ? <span>{discoveryCount} sets in inbox · {discovery?.sources.length ?? 0} sources</span>
               : view === 'bookmarks' ? <span>{items.reduce((n, item) => n + Object.keys(item.bookmarks).length, 0)} bookmarks</span>
               : view === 'events' ? <span>Newest first · click a row for the raw event</span>
-              : <span>{filteredItems.length.toLocaleString()}{!selectedPlaylist && filteredItems.length !== items.length && ` of ${items.length.toLocaleString()}`} {filteredItems.length === 1 ? 'track' : 'tracks'}{selectedPlaylist && totalDurationLabel(filteredItems) && `, ${totalDurationLabel(filteredItems)}`}{selectedPlaylist && ` · ${selectedPlaylist.name}`}
+              : <span>{filteredItems.length.toLocaleString()}{!selectedPlaylist && filteredItems.length !== items.length && ` of ${items.length.toLocaleString()}`} {filteredItems.length === 1 ? 'track' : 'tracks'}{(selectedPlaylist || albumName) && totalDurationLabel(filteredItems) && `, ${totalDurationLabel(filteredItems)}`}{selectedPlaylist && ` · ${selectedPlaylist.name}`}{albumName && ` · ${albumName}`}
                 <LibrarySelectionCount store={selectionCountStore} /></span>}
             {view === 'library' && selectedPlaylist?.smart_rules && <button onClick={() => setPlaylistDraft({ playlist: selectedPlaylist, smart: true })}>Edit rules…</button>}
             {view === 'bookmarks' && <button onClick={nextMoment} disabled={!moments.length}>Next saved moment</button>}

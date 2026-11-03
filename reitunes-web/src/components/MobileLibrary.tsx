@@ -18,12 +18,14 @@ interface Props {
   onTags: (item: LibraryItem) => void;
   onBookmarks: (item: LibraryItem) => void;
   onNewPlaylist: (itemIds: string[]) => void;
+  onShowAlbum: (item: LibraryItem) => void;
+  onPlayAlbum: (item: LibraryItem) => void;
 }
 
-function SongActions({ item, playlists, disabled, onClose, onTags, onBookmarks, onInfo, onTracklist, onNewPlaylist, onNotice }: {
+function SongActions({ item, playlists, disabled, onClose, onTags, onBookmarks, onInfo, onTracklist, onNewPlaylist, onShowAlbum, onPlayAlbum, onNotice }: {
   item: LibraryItem; playlists: Playlist[]; disabled: boolean; onClose: () => void;
   onTags: () => void; onBookmarks: () => void; onInfo: () => void; onTracklist: () => void;
-  onNewPlaylist: () => void; onNotice: (message: string) => void;
+  onNewPlaylist: () => void; onShowAlbum: () => void; onPlayAlbum: () => void; onNotice: (message: string) => void;
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
   const [pickingPlaylist, setPickingPlaylist] = useState(false);
@@ -62,6 +64,10 @@ function SongActions({ item, playlists, disabled, onClose, onTags, onBookmarks, 
       </> : <>
         <button disabled={disabled} onClick={() => queue(true)}><MusicIcon name="play" />Play next</button>
         <button disabled={disabled} onClick={() => queue(false)}><MusicIcon name="queue" />Add to queue</button>
+        {item.album && <>
+          <button disabled={disabled} onClick={onPlayAlbum}><MusicIcon name="play" />Play album</button>
+          <button onClick={onShowAlbum}><MusicIcon name="music" />Show album</button>
+        </>}
         <button onClick={() => setPickingPlaylist(true)}><MusicIcon name="playlist" />Add to playlist…</button>
         <button disabled={pending} onClick={async () => {
           setPending(true); setError('');
@@ -97,7 +103,7 @@ function MobileTracklist({ item, disabled, onClose, onEdit }: { item: LibraryIte
   </dialog>;
 }
 
-export const MobileLibrary = memo(function MobileLibrary({ items, playlists, contextName, disabled, onTags, onBookmarks, onNewPlaylist }: Props) {
+export const MobileLibrary = memo(function MobileLibrary({ items, playlists, contextName, disabled, onTags, onBookmarks, onNewPlaylist, onShowAlbum, onPlayAlbum }: Props) {
   const currentItemId = usePlayerStore(state => state.currentItemId);
   const play = usePlayback();
   const [actionItem, setActionItem] = useState<LibraryItem | null>(null);
@@ -130,7 +136,8 @@ export const MobileLibrary = memo(function MobileLibrary({ items, playlists, con
     {actionItem && <SongActions item={items.find(item => item.id === actionItem.id) ?? actionItem} playlists={playlists} disabled={disabled}
       onClose={() => setActionItem(null)} onTags={() => open(onTags)} onBookmarks={() => open(onBookmarks)}
       onInfo={() => open(setInfoItem)} onTracklist={() => open(item => { setTracklistItem(item); setEditingTracklist(!item.tracklist); })}
-      onNewPlaylist={() => open(item => onNewPlaylist([item.id]))} onNotice={setNotice} />}
+      onNewPlaylist={() => open(item => onNewPlaylist([item.id]))}
+      onShowAlbum={() => open(onShowAlbum)} onPlayAlbum={() => open(onPlayAlbum)} onNotice={setNotice} />}
     {infoItem && <SongInfoDialog item={items.find(item => item.id === infoItem.id) ?? infoItem} onClose={() => setInfoItem(null)} />}
     {tracklistItem && (editingTracklist
       ? <TracklistDialog item={items.find(item => item.id === tracklistItem.id) ?? tracklistItem} onClose={() => setTracklistItem(null)} onApplied={() => setNotice('Tracklist saved')} />

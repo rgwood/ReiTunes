@@ -137,6 +137,10 @@ interface LibraryTableProps {
   onViewItemsChange?: (items: LibraryItem[]) => void;
   playbackState?: 'playing' | 'paused';
   viewId?: string;
+  /** Start out sorted by album and track number rather than newest first. */
+  trackOrder?: boolean;
+  onShowAlbum?: (item: LibraryItem) => void;
+  onPlayAlbum?: (item: LibraryItem) => void;
 }
 
 type TagTableMeta = Pick<LibraryTableProps, 'onManageTags' | 'onFilterTag'>;
@@ -299,7 +303,7 @@ function formatCreatedTime(value: string, short = false): string {
   });
 }
 
-export const LibraryTable = memo(function LibraryTable({ items, searchQuery, onlyFavouriteTracks = false, playlistId, onSearchChange, revealRequest, onRevealed, onManageBookmarks, onManageTags, onFilterTag, tagItems, selectedTagItemId, contextName: sourceName, allowReordering, onNewPlaylist, onSelectionCountChange, onViewItemsChange, playbackState, viewId = 'all' }: LibraryTableProps) {
+export const LibraryTable = memo(function LibraryTable({ items, searchQuery, onlyFavouriteTracks = false, playlistId, onSearchChange, revealRequest, onRevealed, onManageBookmarks, onManageTags, onFilterTag, tagItems, selectedTagItemId, contextName: sourceName, allowReordering, onNewPlaylist, onSelectionCountChange, onViewItemsChange, playbackState, viewId = 'all', trackOrder = false, onShowAlbum, onPlayAlbum }: LibraryTableProps) {
   // TanStack Table v8 exposes mutable state through stable methods. Remove this
   // opt-out when useReactTable supports React Compiler memoization.
   'use no memo';
@@ -356,7 +360,9 @@ export const LibraryTable = memo(function LibraryTable({ items, searchQuery, onl
     }
     onRevealed?.();
   }, [revealRequest, items, onRevealed]);
-  const [sorting, setSorting] = useState<SortingState>(savedViews.get(viewId)?.sorting ?? (playlistId ? [] : [
+  const [sorting, setSorting] = useState<SortingState>(savedViews.get(viewId)?.sorting ?? (trackOrder ? [
+    { id: 'album', desc: false },
+  ] : playlistId ? [] : [
     { id: 'created_time_utc', desc: true },
   ]));
   useEffect(() => {
@@ -732,14 +738,6 @@ export const LibraryTable = memo(function LibraryTable({ items, searchQuery, onl
     if (contextMenu && onSearchChange) {
       const escaped = contextMenu.item.artist.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
       onSearchChange(`artist:"${escaped}"`);
-      setContextMenu(null);
-    }
-  }, [contextMenu, onSearchChange]);
-
-  const handleFilterByAlbum = useCallback(() => {
-    if (contextMenu && onSearchChange) {
-      const escaped = contextMenu.item.album.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
-      onSearchChange(`album:"${escaped}"`);
       setContextMenu(null);
     }
   }, [contextMenu, onSearchChange]);
@@ -1204,6 +1202,12 @@ export const LibraryTable = memo(function LibraryTable({ items, searchQuery, onl
           {contextIds.length === 1 && onManageTags && <button type="button" className="context-menu-item"
             onClick={() => { onManageTags(contextMenu.item); setContextMenu(null); }}>Edit tags…</button>}
           <div className="border-t border-solarized-base01 my-1" />
+          {contextIds.length === 1 && contextMenu.item.album && <>
+            {onPlayAlbum && <button type="button" className="context-menu-item"
+              onClick={() => { onPlayAlbum(contextMenu.item); setContextMenu(null); }}>&#9654; Play Album</button>}
+            {onShowAlbum && <button type="button" className="context-menu-item"
+              onClick={() => { onShowAlbum(contextMenu.item); setContextMenu(null); }}>Show Album</button>}
+          </>}
           {onSearchChange && (
             <>
               <button
@@ -1212,13 +1216,6 @@ export const LibraryTable = memo(function LibraryTable({ items, searchQuery, onl
                 onClick={handleFilterByArtist}
               >
                 &#128269; Filter by Artist
-              </button>
-              <button
-                type="button"
-                className="context-menu-item"
-                onClick={handleFilterByAlbum}
-              >
-                &#128269; Filter by Album
               </button>
               <div className="border-t border-solarized-base01 my-1" />
             </>

@@ -165,6 +165,23 @@ test('mobile search, song info, playlists and browser Back remain usable', async
   await expect(page.getByRole('searchbox', { name: 'Search discovery', exact: true })).toBeVisible();
 });
 
+test('mobile Show album leaves a playlist for the whole album in track order', async ({ page, sharedSession }) => {
+  sharedSession.snapshot = snapshot();
+  await page.setViewportSize({ width: 390, height: 844 });
+  await installMobile(page);
+  const album = (name: string, track_number: number, n: number): LibraryItem => ({ ...items[0], id: `44444444-4444-4444-8444-${String(n).padStart(12, '0')}`,
+    name, track_number, file_path: `${name}.mp3`, is_favorite: false });
+  // Registered last, so it wins over the default library.
+  await page.route('**/api/items', route => route.fulfill({ json: [...items, album('Fly', 2, 1), album('Hazey Jane II', 1, 2)] }));
+  await page.goto('/#browse/playlist/housewarming');
+  await page.getByRole('button', { name: 'Actions for Northern Sky', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Play album', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Show album', exact: true }).click();
+  await expect(page).toHaveURL(/#browse\/library$/);
+  await expect(page.getByRole('searchbox', { name: 'Search library', exact: true })).toHaveValue('album:"Bryter Layter"');
+  await expect(page.locator('.mobile-song-copy > span')).toHaveText(['Hazey Jane II', 'Fly', 'Northern Sky']);
+});
+
 test('now playing favourites update immediately, handle failure, and never restart Sonos', async ({ page, sharedSession }) => {
   sharedSession.snapshot = snapshot();
   await page.setViewportSize({ width: 375, height: 812 });
