@@ -161,6 +161,46 @@ test('Show Album lists the whole album in track order from any view', async ({ p
   await expect(names).toHaveCount(5);
 });
 
+test('browser Back and Forward move between library views', async ({ page }) => {
+  await mockLibrary(page, albumItems);
+  await page.goto('/');
+  const search = page.getByRole('searchbox', { name: 'Search library' });
+  const names = page.locator('tbody tr [data-column=name]');
+  const source = (name: string) => page.getByRole('navigation', { name: 'Music library' }).getByRole('button', { name, exact: true });
+
+  await search.fill('joanna');
+  await expect(names).toHaveCount(6);
+  await page.getByRole('row').filter({ hasText: 'Cosmia' }).click({ button: 'right' });
+  await page.getByRole('button', { name: 'Show Album' }).click();
+  await expect(names).toHaveText(ysTrackOrder);
+  await source('Favourites').click();
+  await expect(search).toHaveValue('album:"Ys"');
+  await expect(names).toHaveText(['Cosmia']);
+  await source('Event history').click();
+  await expect(source('Event history')).toHaveAttribute('aria-current', 'page');
+
+  await page.goBack();
+  await expect(source('Favourites')).toHaveAttribute('aria-current', 'page');
+  // A focused row leaves the browser's own Back shortcut alone.
+  const row = page.getByRole('row').filter({ hasText: 'Cosmia' });
+  await row.click();
+  await row.press('ArrowRight');
+  expect(await row.evaluate(element => !element.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft', altKey: true, bubbles: true, cancelable: true })))).toBe(false);
+  expect(await row.evaluate(element => !element.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true, cancelable: true })))).toBe(true);
+  await expect(names).toHaveText(['Cosmia']);
+  await page.goBack();
+  await expect(source('All music')).toHaveAttribute('aria-current', 'page');
+  await expect(names).toHaveText(ysTrackOrder);
+  // The search typed before leaving is still there.
+  await page.goBack();
+  await expect(search).toHaveValue('joanna');
+  await expect(names).toHaveCount(6);
+  await expect(names.first()).toHaveText('Cosmia');
+  await page.goForward();
+  await expect(search).toHaveValue('album:"Ys"');
+  await expect(names).toHaveText(ysTrackOrder);
+});
+
 test('Play Album starts the album from its first track', async ({ page }) => {
   await mockLibrary(page, albumItems);
   await page.goto('/');

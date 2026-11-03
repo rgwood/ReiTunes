@@ -180,6 +180,12 @@ test('mobile Show album leaves a playlist for the whole album in track order', a
   await expect(page).toHaveURL(/#browse\/library$/);
   await expect(page.getByRole('searchbox', { name: 'Search library', exact: true })).toHaveValue('album:"Bryter Layter"');
   await expect(page.locator('.mobile-song-copy > span')).toHaveText(['Hazey Jane II', 'Fly', 'Northern Sky']);
+  await page.goBack();
+  await expect(page).toHaveURL(/#browse\/playlist\/housewarming$/);
+  await expect(page.locator('.mobile-song-copy > span')).toHaveText(['Northern Sky', 'Chemtrails']);
+  await page.goForward();
+  await expect(page).toHaveURL(/#browse\/library$/);
+  await expect(page.getByRole('searchbox', { name: 'Search library', exact: true })).toHaveValue('album:"Bryter Layter"');
 });
 
 test('now playing favourites update immediately, handle failure, and never restart Sonos', async ({ page, sharedSession }) => {

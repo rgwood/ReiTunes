@@ -7,6 +7,7 @@ import {
   useMemo,
   useRef,
   useDeferredValue,
+  useLayoutEffect,
 } from 'react';
 import {
   QueryClient,
@@ -56,6 +57,11 @@ import './components/MobileShell.css';
 
 const queryClient = new QueryClient();
 type Collection = 'all' | 'favourites' | 'recent' | 'unplayed';
+type DesktopView = 'library' | 'discover' | 'bookmarks' | 'events';
+/** Where you are in the library. Browser history entries remember it, so Back returns there. */
+interface Place { view: DesktopView; collection: Collection; playlistId: string | null; search: string }
+const samePlace = (a: Place, b: Place) =>
+  a.view === b.view && a.collection === b.collection && a.playlistId === b.playlistId && a.search === b.search;
 
 function LibrarySelectionCount({ store }: { store: StoreApi<{ count: number }> }) {
   const count = useStore(store, state => state.count);
@@ -64,7 +70,7 @@ function LibrarySelectionCount({ store }: { store: StoreApi<{ count: number }> }
 
 function AppContent() {
   const { isMobile, iosStandalone, route: mobileRoute, navigate: navigateMobile } = useMobileNavigation();
-  const [desktopView, setView] = useState<'library' | 'discover' | 'bookmarks' | 'events'>('library');
+  const [desktopView, setView] = useState<DesktopView>('library');
   const view = isMobile ? mobileRoute.browse === 'discover' || mobileRoute.browse === 'bookmarks' ? mobileRoute.browse : 'library' : desktopView;
   const [librarySearch, setLibrarySearch] = useState('');
   const [discoverySearch, setDiscoverySearch] = useState('');
@@ -123,6 +129,34 @@ function AppContent() {
     null
   );
   const selectedPlaylistId = isMobile ? mobileRoute.playlistId ?? null : desktopPlaylistId;
+  const place = useRef<Place>({ view: desktopView, collection: selectedCollection, playlistId: desktopPlaylistId, search: librarySearch });
+  useLayoutEffect(() => {
+    place.current = { view: desktopView, collection: selectedCollection, playlistId: desktopPlaylistId, search: librarySearch };
+  }, [desktopView, selectedCollection, desktopPlaylistId, librarySearch]);
+  const showPlace = useCallback((next: Place) => {
+    place.current = next;
+    setView(next.view); setCollection(next.collection); setSelectedPlaylistId(next.playlistId); setLibrarySearch(next.search);
+  }, []);
+  // Moving somewhere new adds a history entry, so Back (Alt+Left, Cmd+[ or a mouse
+  // button) returns. The entry being left is updated first, which catches up on
+  // any searches typed there without adding an entry per keystroke.
+  const goTo = useCallback((changes: Partial<Place>, hash?: string) => {
+    const current = place.current;
+    const next = { ...current, ...changes };
+    if (!samePlace(next, current) || (hash !== undefined && hash !== window.location.hash)) {
+      window.history.replaceState({ ...window.history.state, reitunesPlace: current }, '');
+      window.history.pushState({ reitunesPlace: next }, '', hash);
+    }
+    showPlace(next);
+  }, [showPlace]);
+  useEffect(() => {
+    const restore = (event: PopStateEvent) => {
+      const saved = (event.state as { reitunesPlace?: Place } | null)?.reitunesPlace;
+      if (saved) showPlace(saved);
+    };
+    window.addEventListener('popstate', restore);
+    return () => window.removeEventListener('popstate', restore);
+  }, [showPlace]);
   const [isSonosOpen, setIsSonosOpen] = useState(
     () =>
       window.location.hash === '#sonos=connected' ||
@@ -304,25 +338,17 @@ function AppContent() {
     if (!targets.length) return;
     const next = targets[Math.floor(Math.random() * targets.length)];
     void play(next.item, next.position, 'ctrl-e', next.range);
-    if (!filteredItems.some((item) => item.id === next.item.id)) {
-      setLibrarySearch('');
-      setCollection('all');
-      setSelectedPlaylistId(null);
-    }
-    setView('library');
+    goTo(filteredItems.some((item) => item.id === next.item.id) ? { view: 'library' }
+      : { view: 'library', collection: 'all', playlistId: null, search: '' });
     setRevealRequest({ itemId: next.item.id });
-  }, [items, play, filteredItems]);
+  }, [items, play, filteredItems, goTo]);
 
   const revealCurrentSong = useCallback(() => {
     if (!currentItemId || !items.some(item => item.id === currentItemId)) return;
-    if (librarySearch !== deferredLibrarySearch || !filteredItems.some(item => item.id === currentItemId)) {
-      setLibrarySearch('');
-      setCollection('all');
-      setSelectedPlaylistId(null);
-    }
-    setView('library');
+    goTo(librarySearch !== deferredLibrarySearch || !filteredItems.some(item => item.id === currentItemId)
+      ? { view: 'library', collection: 'all', playlistId: null, search: '' } : { view: 'library' });
     setRevealRequest({ itemId: currentItemId, focus: true });
-  }, [currentItemId, items, filteredItems, librarySearch, deferredLibrarySearch]);
+  }, [currentItemId, items, filteredItems, librarySearch, deferredLibrarySearch, goTo]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -364,20 +390,18 @@ function AppContent() {
     return () => document.removeEventListener('keydown', onKeyDown);
   }, [randomFavourite, revealCurrentSong, isMobile]);
 
-  const chooseCollection = (next: Collection) => {
-    setView('library');
-    setCollection(next);
-    setSelectedPlaylistId(null);
+  const chooseCollection = (next: Collection, changes: Partial<Place> = {}) => {
+    goTo({ view: 'library', collection: next, playlistId: null, ...changes }, isMobile ? '#browse/library' : undefined);
     if (next === 'recent')
       setRecentCutoff(Date.now() - 30 * 24 * 60 * 60 * 1000);
   };
   const activeSource = view !== 'library' ? view : selectedPlaylistId ? `playlist:${selectedPlaylistId}` : collection;
   const selectSource = (source: string) => {
     if (source === 'discover' || source === 'bookmarks' || source === 'events') {
-      setView(source);
+      goTo({ view: source });
       if (source === 'bookmarks') setBookmarkItemId(null);
     } else if (source.startsWith('playlist:')) {
-      setSelectedPlaylistId(source.slice(9)); setCollection('all'); setView('library');
+      goTo({ view: 'library', collection: 'all', playlistId: source.slice(9) });
     } else chooseCollection(source as Collection);
   };
   const browseMobile = (browse: MobileBrowse, playlistId?: string) => {
@@ -387,10 +411,11 @@ function AppContent() {
   };
   const toggleQueue = () => setPanel(panel === 'queue' ? null : 'queue');
   const browseTag = useCallback((tag: string) => {
-    setView('library'); setCollection('all'); setSelectedPlaylistId(null);
-    setLibrarySearch(tagSearch(tag)); setPanel(null);
+    goTo({ view: 'library', collection: 'all', playlistId: null, search: tagSearch(tag) }, isMobile ? '#browse/library' : undefined);
+    setPanel(null);
     if (isMobile) navigateMobile({ tab: 'browse', browse: 'library' });
-  }, [isMobile, navigateMobile]);
+  }, [isMobile, navigateMobile, goTo]);
+  const filterLibrary = useCallback((search: string) => goTo({ search }), [goTo]);
   const manageTags = useCallback((item: LibraryItem) => {
     tagReturnFocus.current = isMobile ? document.querySelector<HTMLElement>(`li[data-item-id="${CSS.escape(item.id)}"] .mobile-song-more`)
       : document.activeElement instanceof HTMLElement && document.activeElement.matches('.row-tag-edit')
@@ -401,10 +426,10 @@ function AppContent() {
     setBookmarkItemId(item.id); setPanel('bookmarks');
   }, []);
   const showAlbum = useCallback((item: LibraryItem) => {
-    setView('library'); setCollection('all'); setSelectedPlaylistId(null);
-    setLibrarySearch(albumSearch(item.album)); setRevealRequest({ itemId: item.id, focus: true });
+    goTo({ view: 'library', collection: 'all', playlistId: null, search: albumSearch(item.album) }, isMobile ? '#browse/library' : undefined);
+    setRevealRequest({ itemId: item.id, focus: true });
     if (isMobile) navigateMobile({ tab: 'browse', browse: 'library' });
-  }, [isMobile, navigateMobile]);
+  }, [isMobile, navigateMobile, goTo]);
   const playAlbum = useCallback((item: LibraryItem) => {
     const tracks = albumTracks(items, item.album);
     if (!tracks.length) return;
@@ -520,7 +545,7 @@ function AppContent() {
               </button>)}
               {!playlistError && !playlists.length && <p>No playlists yet. Create one to collect your songs.</p>}
             </div> : mobileRoute.browse === 'discover' ? <Discover searchQuery={deferredSearch} pauseForPreview={() => previewPauseRef.current?.() ?? Promise.resolve(false)} onOpenLibrary={() => {
-              chooseCollection('all'); setLibrarySearch(''); browseMobile('library');
+              chooseCollection('all', { search: '' }); browseMobile('library');
             }} /> : error ? <div className="library-message" role="alert">Couldn’t load the library. <button onClick={() => void queryClient.invalidateQueries({ queryKey: ['library'] })}>Retry</button></div>
               : isLoading ? <p className="mobile-loading" role="status">Loading music…</p>
               : mobileRoute.browse === 'bookmarks' ? <BookmarkSidebar items={items} onPlay={playBookmark} getPlaybackTime={getBookmarkPlaybackTime}
@@ -554,7 +579,7 @@ function AppContent() {
           onImport={() => setIsImportOpen(true)} onSettings={() => setIsSettingsOpen(true)} />
         <div className="library-results" aria-busy={(view !== 'discover' && isLoading) || searchQuery !== deferredSearch}>
           {view === 'discover' ? <Discover searchQuery={deferredSearch} pauseForPreview={() => previewPauseRef.current?.() ?? Promise.resolve(false)} onOpenLibrary={id => {
-            chooseCollection('all'); setLibrarySearch(''); setRevealRequest({ itemId: id });
+            chooseCollection('all', { search: '' }); setRevealRequest({ itemId: id });
           }} /> : view === 'events' ? <EventHistory searchQuery={deferredSearch} />
             : error ? <div className="library-message" role="alert">Couldn’t load the library. <button onClick={() => void queryClient.invalidateQueries({ queryKey: ['library'] })}>Retry</button></div>
             : isLoading || !sharedSession.ready ? <div className="library-message" role="status">Loading…</div>
@@ -571,7 +596,7 @@ function AppContent() {
                   onNewPlaylist={newPlaylistFromSelection}
                   onSelectionCountChange={reportSelectionCount}
                   onViewItemsChange={reportViewItems}
-                  onSearchChange={setLibrarySearch} onRevealed={finishReveal}
+                  onSearchChange={filterLibrary} onRevealed={finishReveal}
                   // Reveal in the view the song was revealed for, not the one being left.
                   revealRequest={librarySearch === deferredLibrarySearch ? revealRequest : null}
                   onManageTags={manageTags} onFilterTag={browseTag} tagItems={tags.data?.items}
@@ -619,7 +644,7 @@ function AppContent() {
         </button>)}
       </nav>}
       {playlistDraft && <PlaylistDialog draft={playlistDraft} items={items} tagItems={tags.data?.items} tagError={tags.isError} onClose={() => setPlaylistDraft(null)}
-        onSaved={id => { setPlaylistDraft(null); selectSource('playlist:' + id); if (isMobile) browseMobile('playlists', id); }} />}
+        onSaved={id => { setPlaylistDraft(null); if (isMobile) browseMobile('playlists', id); else selectSource('playlist:' + id); }} />}
       {isDragging && <div className="global-drop-overlay">Drop audio files to import</div>}
       <ImportMusic
         isOpen={isImportOpen}
@@ -628,8 +653,7 @@ function AppContent() {
         onDroppedFilesConsumed={() => setDroppedFiles([])}
         onImported={() => {
           setIsImportOpen(false);
-          chooseCollection('recent');
-          setLibrarySearch('');
+          chooseCollection('recent', { search: '' });
           if (isMobile) browseMobile('library');
         }}
       />

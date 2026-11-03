@@ -1068,7 +1068,9 @@ export const LibraryTable = memo(function LibraryTable({ items, searchQuery, onl
                     } else if (event.key === 'F2') {
                       event.preventDefault();
                       beginCellEdit(row.original, field);
-                    } else if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(event.key)) {
+                    } else if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(event.key)
+                      // Leave Alt+Left and Cmd+Left etc. to the browser, for Back and Forward.
+                      && !event.altKey && !event.metaKey) {
                       event.preventDefault();
                       if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
                         const index = Math.max(0, Math.min(visibleEditableFields.length - 1, visibleEditableFields.indexOf(field) + (event.key === 'ArrowLeft' ? -1 : 1)));
