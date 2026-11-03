@@ -300,6 +300,8 @@ test('plays a filtered album and queues another track from the grid', async ({ p
   await mockLibrary(page);
   await page.goto('/');
   await page.getByRole('searchbox', { name: 'Search library' }).fill('album:"Bryter Layter"');
+  // The search is deferred, so wait for it before playing from the filtered view.
+  await expect(page.locator('tbody tr')).toHaveCount(2);
   await page.getByRole('row').filter({ hasText: 'Northern Sky' }).dblclick();
   await expect.poll(() => page.evaluate(() => {
     const player = JSON.parse(localStorage.getItem('reitunes-player') || '{}');
