@@ -2,7 +2,9 @@
   width: min(560px, calc(100vw - 2rem));
   max-width: none;
   max-height: 80vh;
-  margin: auto;
+  /* Pinned near the top rather than centred, so the speakers loading in below
+     don't move "This browser" out from under the pointer. */
+  margin: 10vh auto auto;
   padding: 0;
   border: 0;
   overflow: visible;

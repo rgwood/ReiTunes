@@ -72,3 +72,23 @@ test('a group can be saved as the preferred group', async ({ page }) => {
   await expect(output.getByTestId('preferred-sonos-group')).toContainText('2 of 2 speakers grouped');
   expect(saved).toEqual({ householdId: 'home', name: 'Whole house', playerIds: ['A', 'B'], playerNames: ['Kitchen', 'Den'] });
 });
+
+test('This browser stays put while speakers load in below it', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  let releaseGroups!: () => void;
+  const groupsHeld = new Promise<void>(resolve => { releaseGroups = resolve; });
+  await page.route('**/api/sonos/households/home/groups', async route => {
+    await groupsHeld;
+    await route.fulfill({ json: split });
+  });
+  await page.route('**/api/sonos/preferred-group', route => route.fulfill({ json: null }));
+  await page.goto('/');
+  await page.getByTitle('Choose playback output').click();
+  const output = page.getByRole('dialog', { name: 'Sonos', exact: true });
+  const browser = output.getByText('This browser', { exact: true });
+  await expect(browser).toBeVisible();
+  const before = await browser.boundingBox();
+  releaseGroups();
+  await expect(output.getByRole('button', { name: 'Use this group' })).toHaveCount(2);
+  expect((await browser.boundingBox())?.y).toBe(before?.y);
+});
