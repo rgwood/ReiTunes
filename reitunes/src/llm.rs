@@ -139,7 +139,7 @@ const MISSING_PLACEHOLDERS: &[&str] = &[
 ];
 
 /// Treat empty strings and the various "no value" placeholders as missing.
-fn normalize_missing(value: Option<String>) -> Option<String> {
+pub fn normalize_missing(value: Option<String>) -> Option<String> {
     value.map(|s| s.trim().to_owned()).filter(|s| {
         let trimmed = s.trim();
         !trimmed.is_empty()

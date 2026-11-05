@@ -1777,15 +1777,9 @@ struct AddItemRequest {
     duration_seconds: Option<f64>,
 }
 
-#[debug_handler]
-async fn add_item_handler(
-    State(app_state): State<AppState>,
-    JsonExtractor(request): JsonExtractor<AddItemRequest>,
-) -> Result<impl IntoResponse, AppError> {
-    info!(file_path = &request.file_path, "Adding new item");
-    let item_id = Uuid::new_v4();
-
-    let metadata = match llm::extract_song_metadata(&request.file_path).await {
+/// Infer metadata from the filename, falling back to discovery's cached title.
+async fn filename_metadata(request: &AddItemRequest) -> SongMetadata {
+    match llm::extract_song_metadata(&request.file_path).await {
         Ok(metadata) => metadata,
         Err(e) => {
             warn!(
@@ -1818,6 +1812,38 @@ async fn add_item_handler(
                 album: cached.as_ref().and_then(|metadata| metadata.album.clone()),
             }
         }
+    }
+}
+
+#[debug_handler]
+async fn add_item_handler(
+    State(app_state): State<AppState>,
+    JsonExtractor(request): JsonExtractor<AddItemRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    info!(file_path = &request.file_path, "Adding new item");
+    let item_id = Uuid::new_v4();
+
+    // Files from Soulseek or a CD rip carry real tags, which beat guessing from
+    // the filename. Downloader files usually have none, so the guess fills the gaps.
+    let url = app_state.storage.url(&request.file_path);
+    let tags = tokio::task::spawn_blocking(move || file_info::tags(&url)).await?
+        .unwrap_or_else(|error| {
+            warn!(file_path = &request.file_path, %error, "Could not read tags from storage");
+            crate::metadata::AudioMetadata::default()
+        });
+    let title = llm::normalize_missing(tags.title);
+    let artist = llm::normalize_missing(tags.artist);
+    let album = llm::normalize_missing(tags.album);
+    let metadata = match (title, artist) {
+        (Some(name), Some(artist)) => SongMetadata { name, artist: Some(artist), album },
+        (title, artist) => {
+            let guessed = filename_metadata(&request).await;
+            SongMetadata {
+                name: title.unwrap_or(guessed.name),
+                artist: artist.or(guessed.artist),
+                album: album.or(guessed.album),
+            }
+        }
     };
 
     let duration_path = request.file_path.clone();
@@ -1825,7 +1851,7 @@ async fn add_item_handler(
         name: metadata.name,
         artist: metadata.artist,
         album: metadata.album,
-        track_number: None, // LLM extraction doesn't provide track number
+        track_number: tags.track_number,
         file_path: request.file_path,
     };
     let event_with_metadata = EventWithMetadata::new(item_id, event)?;

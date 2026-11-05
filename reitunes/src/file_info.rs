@@ -126,6 +126,15 @@ fn inspect(url: &str) -> Result<FileInfo> {
     Ok(info)
 }
 
+/// Read a stored file's tags over byte ranges. Audio frames and cover art are
+/// skipped, so this usually fetches only the blocks holding the tags.
+pub fn tags(url: &str) -> Result<crate::metadata::AudioMetadata> {
+    let mut reader = RemoteFile::open(url)?;
+    let options = ParseOptions::new().read_properties(false).read_cover_art(false);
+    let file = Probe::new(&mut reader).options(options).guess_file_type()?.read()?;
+    Ok(crate::metadata::from_tagged_file(&file))
+}
+
 fn properties(reader: &mut (impl Read + Seek)) -> Result<(String, Option<String>, FileProperties)> {
     let kind = Probe::new(&mut *reader)
         .guess_file_type()?
@@ -398,6 +407,29 @@ mod tests {
         assert_eq!(result.bit_depth, Some(16));
         assert_eq!(result.duration_seconds, Some(1.0));
         assert!(requests.load(Ordering::SeqCst) <= 2);
+    }
+
+    #[tokio::test]
+    async fn reads_tags_over_ranges() {
+        use lofty::{config::WriteOptions, prelude::*, tag::{Tag, TagType}};
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("tagged.wav");
+        std::fs::write(&path, wav()).unwrap();
+        let mut tag = Tag::new(TagType::Id3v2);
+        tag.set_title("Hummingbird".into());
+        tag.set_artist("Born Ruffians".into());
+        tag.set_album("Red, Yellow & Blue".into());
+        tag.set_track(3);
+        tag.save_to_path(&path, WriteOptions::default()).unwrap();
+
+        let (url, requests, task) = server(std::fs::read(&path).unwrap(), true).await;
+        let result = tokio::task::spawn_blocking(move || tags(&url)).await.unwrap().unwrap();
+        task.abort();
+        assert_eq!(result.title.as_deref(), Some("Hummingbird"));
+        assert_eq!(result.artist.as_deref(), Some("Born Ruffians"));
+        assert_eq!(result.album.as_deref(), Some("Red, Yellow & Blue"));
+        assert_eq!(result.track_number, Some(3));
+        assert!(requests.load(Ordering::SeqCst) <= 4);
     }
 
     #[tokio::test]

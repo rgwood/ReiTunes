@@ -1,6 +1,7 @@
 use anyhow::{Context, Result};
 use lofty::file::AudioFile;
 use lofty::prelude::*;
+use lofty::file::TaggedFile;
 use lofty::probe::Probe;
 use std::path::Path;
 use std::time::Duration;
@@ -35,36 +36,7 @@ pub fn extract_metadata(path: &Path) -> Result<AudioMetadata> {
         .read()
         .context("Failed to read audio file")?;
 
-    let properties = tagged_file.properties();
-    let duration = properties.duration();
-
-    // Try to get primary tag first, then any tag
-    let tag = tagged_file.primary_tag().or_else(|| tagged_file.first_tag());
-
-    let metadata = if let Some(tag) = tag {
-        AudioMetadata {
-            title: tag.title().map(|s| s.to_string()),
-            artist: tag.artist().map(|s| s.to_string()),
-            album: tag.album().map(|s| s.to_string()),
-            track_number: tag.track(),
-            year: tag.year(),
-            genre: tag.genre().map(|s| s.to_string()),
-            duration: if duration.is_zero() {
-                None
-            } else {
-                Some(duration)
-            },
-        }
-    } else {
-        AudioMetadata {
-            duration: if duration.is_zero() {
-                None
-            } else {
-                Some(duration)
-            },
-            ..Default::default()
-        }
-    };
+    let metadata = from_tagged_file(&tagged_file);
 
     info!(
         title = ?metadata.title,
@@ -75,6 +47,26 @@ pub fn extract_metadata(path: &Path) -> Result<AudioMetadata> {
     );
 
     Ok(metadata)
+}
+
+/// Read the useful tags and duration from an already parsed file.
+pub fn from_tagged_file(tagged_file: &TaggedFile) -> AudioMetadata {
+    let duration = tagged_file.properties().duration();
+    let duration = if duration.is_zero() { None } else { Some(duration) };
+
+    // Try to get primary tag first, then any tag
+    match tagged_file.primary_tag().or_else(|| tagged_file.first_tag()) {
+        Some(tag) => AudioMetadata {
+            title: tag.title().map(|s| s.to_string()),
+            artist: tag.artist().map(|s| s.to_string()),
+            album: tag.album().map(|s| s.to_string()),
+            track_number: tag.track(),
+            year: tag.year(),
+            genre: tag.genre().map(|s| s.to_string()),
+            duration,
+        },
+        None => AudioMetadata { duration, ..Default::default() },
+    }
 }
 
 #[cfg(test)]
