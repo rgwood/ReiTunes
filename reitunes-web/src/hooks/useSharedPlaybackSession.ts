@@ -16,6 +16,10 @@ let received: SharedPlaybackSnapshot | null = null;
 let applying = false;
 let dirty = false;
 let playbackChanged = false;
+// Pending changes that came from a person. Tidying the queue after a library change is automatic: every
+// open screen does it at once, so a screen that loses that race has nothing of the user's to report.
+let userEdit = false;
+let automaticEdit = false;
 let localVersion = 0;
 let timer: ReturnType<typeof setTimeout> | undefined;
 let writing: Promise<boolean> | null = null;
@@ -188,12 +192,19 @@ function setError(message: string) {
   useSharedSessionStore.setState({ error: message });
 }
 
+/** Run a queue change the user didn't make (e.g. dropping a deleted song) so a save conflict stays quiet. */
+export function tidyQueueAutomatically(change: () => void) {
+  automaticEdit = true;
+  try { change(); } finally { automaticEdit = false; }
+}
+
 function markDirty(includePlayback = false, delay = 0) {
   const session = useSharedSessionStore.getState();
   if (applying || !session.enabled || !session.ready) return;
   const unavailable = session.refreshing || !session.connected;
   if (unavailable && !ownsBrowserPlayback(usePlaybackTargetStore.getState().target)) return;
   dirty = true;
+  if (!automaticEdit) userEdit = true;
   playbackChanged ||= includePlayback;
   localVersion += 1;
   if (timer) clearTimeout(timer);
@@ -224,6 +235,8 @@ export async function flushSharedSession(): Promise<boolean> {
   let expectedRevision = accepted.revision;
   let operationId = crypto.randomUUID();
   let rebasedSelection = false;
+  const automaticOnly = !userEdit;
+  userEdit = false;
   dirty = false;
   playbackChanged = false;
   const requestGeneration = generation;
@@ -281,7 +294,8 @@ export async function flushSharedSession(): Promise<boolean> {
           dirty = false;
           playbackChanged = false;
           applySharedPlaybackSnapshot(canonical);
-          setError('Playback changed while saving. Your last change was not applied; the current session is shown. Please try again.');
+          // Another screen won the race. If this was only queue tidying, its result is already in `canonical`.
+          if (!automaticOnly) setError('Playback changed while saving. Your last change was not applied; the current session is shown. Please try again.');
           return false;
         }
         // A new operation ID is required because this is a different CAS write.
@@ -375,7 +389,8 @@ export async function flushSharedSession(): Promise<boolean> {
     if (dirty) {
       dirty = false;
       playbackChanged = false;
-      setError('Playback changed on another screen. Your pending change was not applied; please try again.');
+      if (userEdit) setError('Playback changed on another screen. Your pending change was not applied; please try again.');
+      userEdit = false;
     }
     applySharedPlaybackSnapshot(remote);
   } else {

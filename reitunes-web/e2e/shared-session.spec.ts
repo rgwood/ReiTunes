@@ -91,6 +91,35 @@ test('a live library deletion removes the song from the shared shuffle order', a
   await expect(page.getByRole('alert')).toHaveCount(0);
 });
 
+test('two screens tidying the queue after the same deletion do not report a conflict', async ({ page, context, sharedSession }) => {
+  const saved = state();
+  sharedSession.snapshot = { revision: 7, state: saved };
+  let socket: WebSocketRoute | undefined;
+  let otherSocket: WebSocketRoute | undefined;
+  await install(page, connected => { socket = connected; });
+  await page.goto('/');
+  await expect(page.getByRole('button', { name: 'Pause Sonos', exact: true })).toBeEnabled();
+  const other = await context.newPage();
+  await install(other, connected => { otherSocket = connected; });
+  await other.goto('/');
+  await expect(other.getByRole('button', { name: 'Pause Sonos', exact: true })).toBeEnabled();
+  await expect.poll(() => Boolean(socket && otherSocket)).toBe(true);
+  // Both screens drop the deleted song from their queue and save that tidy-up. One loses the race.
+  const removal = JSON.stringify({ type: 'delete', id: secondId });
+  socket!.send(removal);
+  otherSocket!.send(removal);
+  await expect.poll(() => sharedSession.snapshot.revision).toBe(8);
+  expect((sharedSession.snapshot.state as SharedPlaybackState).queue).toMatchObject({
+    contextItemIds: [firstId], manualQueue: [],
+  });
+  // Neither screen did anything by hand, so losing the race is not worth an error.
+  await page.waitForTimeout(500);
+  await expect(page.getByRole('alert')).toHaveCount(0);
+  await expect(other.getByRole('alert')).toHaveCount(0);
+  expect((await queueState(page)).songs).toEqual([]);
+  expect((await queueState(other)).songs).toEqual([]);
+});
+
 test('a session containing a deleted shuffled song can be edited after hydration', async ({ page, sharedSession }) => {
   const saved = state();
   const deletedId = '33333333-3333-4333-8333-333333333333';

@@ -38,7 +38,7 @@ import { TagPanel } from './components/TagPanel';
 import { TagBrowser } from './components/TagBrowser';
 import { MobileLibrary } from './components/MobileLibrary';
 import { useMobileNavigation, type MobileBrowse } from './hooks/useMobileNavigation';
-import { useSharedPlaybackSession } from './hooks/useSharedPlaybackSession';
+import { tidyQueueAutomatically, useSharedPlaybackSession } from './hooks/useSharedPlaybackSession';
 import { effectiveTags, useTags } from './hooks/useTags';
 import { isInboxEntry, useDiscovery } from './hooks/useDiscovery';
 import { useLibrary } from './hooks/useLibrary';
@@ -213,7 +213,7 @@ function AppContent() {
 
   useEffect(() => {
     if (isLoading || error || !sharedSession.ready) return;
-    reconcileWithLibrary(items);
+    tidyQueueAutomatically(() => reconcileWithLibrary(items));
     if (!currentItemId) return;
     const libraryItem = items.find((item) => item.id === currentItemId);
     if (!libraryItem) clearCurrentItem();
