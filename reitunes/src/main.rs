@@ -260,6 +260,7 @@ async fn main() -> Result<()> {
             let api_router = Router::new()
                 .route("/add", post(add_item_handler))
                 .route("/update", post(update_handler))
+                .route("/delete", post(delete_handler))
                 .route("/allevents", get(all_events_handler))
                 .route_layer(middleware::from_fn(api_key_auth));
 
@@ -1935,6 +1936,9 @@ async fn delete_handler(
     State(app_state): State<AppState>,
     JsonExtractor(request): JsonExtractor<DeleteRequest>,
 ) -> Result<impl IntoResponse, AppError> {
+    if !app_state.library.read().await.items.contains_key(&request.id) {
+        return Ok(StatusCode::NOT_FOUND);
+    }
     let event = Event::LibraryItemDeletedEvent;
     let event_with_metadata = EventWithMetadata::new(request.id, event)?;
 
