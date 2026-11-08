@@ -1,5 +1,7 @@
 # ReiTunes
 
+> **Note:** This repo isn't being actively updated any more.
+
 My personal music library system. It's gone through a few iterations.
 
 <img width="2420" height="1496" alt="image" src="https://github.com/user-attachments/assets/d9ff57dd-f882-4dd0-8457-7c153a4dcd8a" />
