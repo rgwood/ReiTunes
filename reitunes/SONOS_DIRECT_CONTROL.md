@@ -16,8 +16,9 @@ ReiTunes can use either the current browser or a Sonos speaker group as its play
 - reuse of ReiTunes's existing playback session for later song choices
 - a persisted browser/Sonos output selector in the web UI
 - play, pause, mute, and group-volume controls
+- per-speaker volume and mute for groups with two or more speakers
 - current track and playhead tracking, with local interpolation between Sonos status polls
-- signed playback and group-volume event callbacks, pushed to browsers over ReiTunes's WebSocket
+- signed playback, group-volume and player-volume event callbacks, pushed to browsers over ReiTunes's WebSocket
 
 The Cloud Queue snapshots use a separate random bearer token. The public endpoints do not accept the ReiTunes session cookie and do not reveal queue metadata without that token.
 
@@ -61,6 +62,14 @@ The callback is public because Sonos cannot send the ReiTunes session cookie. Re
 Sonos does not send events as the playhead advances normally, so the browser advances the visible time locally while playback is active. Playback and volume are also polled every 30 and 60 seconds respectively as recovery for missed events; Sonos does not backlog or replay them.
 
 Volume is sent when the user releases the slider, rather than on every fractional movement. This avoids flooding a multi-speaker group with volume transactions.
+
+## Speaker volumes
+
+When the selected group has two or more speakers, a speakers button next to the group volume opens a slider and mute button for each one. On phones they sit under the group volume, behind `Adjust speakers`.
+
+Sonos treats group volume as the average of its speakers. Changing the group moves every speaker, and changing one speaker moves the group. So after a speaker change ReiTunes rereads the group volume, and when the group volume changes, the open speaker list rereads each speaker. Speakers with fixed volume (for example, a line-out set to fixed) show as such and can't be changed.
+
+ReiTunes subscribes to a speaker's `playerVolume` events the first time the speaker list reads it, rather than when playback starts, since most of the time nobody looks at individual speakers. Like the group subscriptions, these renew after two days.
 
 ## Still missing
 

@@ -23,6 +23,18 @@ export interface SonosPlaybackTarget {
 
 export type PlaybackTarget = BrowserPlaybackTarget | SonosPlaybackTarget;
 
+export interface SonosSpeaker {
+  id: string;
+  name: string;
+}
+
+/** The target's speakers, or none when per-speaker control wouldn't add anything. */
+export function speakersOf(target: SonosPlaybackTarget): SonosSpeaker[] {
+  const ids = target.playerIds ?? [];
+  if (ids.length < 2) return [];
+  return ids.map((id, index) => ({ id, name: target.playerNames[index] || id }));
+}
+
 interface PersistedPlaybackTargetState {
   target: PlaybackTarget;
   takeoverRequired: boolean;

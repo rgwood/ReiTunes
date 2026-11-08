@@ -36,3 +36,14 @@ pub(crate) fn connected_control(base_url: &str, db: Pool<SqliteConnectionManager
 pub(crate) fn playback_signature(control: &SonosControl, sequence: &str) -> String {
     control.event_signature(sequence, "playback", "playbackStatus", "groupId", "group-1")
 }
+
+pub(crate) fn event_signature(
+    control: &SonosControl,
+    sequence: &str,
+    namespace: &str,
+    event_type: &str,
+    target_type: &str,
+    target_value: &str,
+) -> String {
+    control.event_signature(sequence, namespace, event_type, target_type, target_value)
+}

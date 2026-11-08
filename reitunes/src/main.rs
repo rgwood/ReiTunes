@@ -342,6 +342,14 @@ async fn main() -> Result<()> {
                     post(sonos_set_group_mute_handler),
                 )
                 .route(
+                    "/sonos/players/{player_id}/volume",
+                    get(sonos_player_volume_handler).post(sonos_set_player_volume_handler),
+                )
+                .route(
+                    "/sonos/players/{player_id}/mute",
+                    post(sonos_set_player_mute_handler),
+                )
+                .route(
                     "/sonos/households/{household_id}/groups",
                     get(sonos_groups_handler),
                 )
@@ -739,8 +747,10 @@ async fn sonos_event_handler(
             sonos_group_playback_response(&app_state, &control, target_id, playback)?;
         reconcile_sonos_session(&app_state, target_id, &response)?;
         serde_json::to_value(response).map_err(|error| sonos_failure(error.into()))?
-    } else if namespace == "groupVolume" && event_type == "groupVolume" {
-        let volume: sonos::SonosGroupVolume = serde_json::from_value(payload)
+    } else if (namespace == "groupVolume" && event_type == "groupVolume")
+        || (namespace == "playerVolume" && event_type == "playerVolume")
+    {
+        let volume: sonos::SonosVolume = serde_json::from_value(payload)
             .map_err(|error| sonos_event_rejection(&error.to_string()))?;
         serde_json::to_value(volume).map_err(|error| sonos_failure(error.into()))?
     } else {
@@ -1095,7 +1105,7 @@ async fn sonos_group_seek_handler(
 async fn sonos_group_volume_handler(
     State(app_state): State<AppState>,
     Path(group_id): Path<String>,
-) -> SonosApiResult<Json<sonos::SonosGroupVolume>> {
+) -> SonosApiResult<Json<sonos::SonosVolume>> {
     let control = app_state.sonos.ok_or_else(sonos_unavailable)?;
     control
         .group_volume(&group_id)
@@ -1109,11 +1119,7 @@ struct SonosSetVolumeRequest {
     volume: u8,
 }
 
-async fn sonos_set_group_volume_handler(
-    State(app_state): State<AppState>,
-    Path(group_id): Path<String>,
-    JsonExtractor(request): JsonExtractor<SonosSetVolumeRequest>,
-) -> SonosApiResult<StatusCode> {
+fn validate_sonos_volume(request: &SonosSetVolumeRequest) -> SonosApiResult<()> {
     if request.volume > 100 {
         return Err(cloud_queue_failure(
             cloud_queue::CloudQueueError::InvalidRequest(
@@ -1121,6 +1127,15 @@ async fn sonos_set_group_volume_handler(
             ),
         ));
     }
+    Ok(())
+}
+
+async fn sonos_set_group_volume_handler(
+    State(app_state): State<AppState>,
+    Path(group_id): Path<String>,
+    JsonExtractor(request): JsonExtractor<SonosSetVolumeRequest>,
+) -> SonosApiResult<StatusCode> {
+    validate_sonos_volume(&request)?;
     let control = app_state.sonos.ok_or_else(sonos_unavailable)?;
     control
         .set_group_volume(&group_id, request.volume)
@@ -1142,6 +1157,49 @@ async fn sonos_set_group_mute_handler(
     let control = app_state.sonos.ok_or_else(sonos_unavailable)?;
     control
         .set_group_mute(&group_id, request.muted)
+        .await
+        .map_err(sonos_failure)?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn sonos_player_volume_handler(
+    State(app_state): State<AppState>,
+    Path(player_id): Path<String>,
+) -> SonosApiResult<Json<sonos::SonosVolume>> {
+    let control = app_state.sonos.ok_or_else(sonos_unavailable)?;
+    let volume = control.player_volume(&player_id).await.map_err(sonos_failure)?;
+    // Subscribe in the background so opening the speaker list stays quick;
+    // polling covers anything missed until the subscription lands.
+    tokio::spawn(async move {
+        if let Err(error) = control.ensure_player_volume_subscription(&player_id).await {
+            warn!(error = %error, player_id, "Could not subscribe to Sonos player volume");
+        }
+    });
+    Ok(Json(volume))
+}
+
+async fn sonos_set_player_volume_handler(
+    State(app_state): State<AppState>,
+    Path(player_id): Path<String>,
+    JsonExtractor(request): JsonExtractor<SonosSetVolumeRequest>,
+) -> SonosApiResult<StatusCode> {
+    validate_sonos_volume(&request)?;
+    let control = app_state.sonos.ok_or_else(sonos_unavailable)?;
+    control
+        .set_player_volume(&player_id, request.volume)
+        .await
+        .map_err(sonos_failure)?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn sonos_set_player_mute_handler(
+    State(app_state): State<AppState>,
+    Path(player_id): Path<String>,
+    JsonExtractor(request): JsonExtractor<SonosSetMuteRequest>,
+) -> SonosApiResult<StatusCode> {
+    let control = app_state.sonos.ok_or_else(sonos_unavailable)?;
+    control
+        .set_player_mute(&player_id, request.muted)
         .await
         .map_err(sonos_failure)?;
     Ok(StatusCode::NO_CONTENT)

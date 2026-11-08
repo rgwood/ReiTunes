@@ -7,7 +7,7 @@ import { usePlayback } from '../hooks/usePlayback';
 import { useTrackNavigation } from '../hooks/useTrackNavigation';
 import { useSonosControls } from '../hooks/useSonosControls';
 import { useSonosQueueSync } from '../hooks/useSonosQueueSync';
-import { usePlaybackTargetStore } from '../stores/playbackTargetStore';
+import { speakersOf, usePlaybackTargetStore } from '../stores/playbackTargetStore';
 import type { LibraryItem } from '../types';
 import { audioDiagnostics, observePlaybackMedia, recordPlaybackEvent } from '../utils/playbackDiagnostics';
 import { useLastFmListening } from '../hooks/useLastFmListening';
@@ -15,6 +15,7 @@ import { stageSharedPlayback } from '../hooks/useSharedPlaybackSession';
 import { createAudioRecovery, isRetryableMediaError, type AudioRecoveryStatus } from '../utils/audioRecovery';
 import { saveDuration, trackDuration } from '../utils/duration';
 import { MusicIcon } from './MusicIcon';
+import { SonosSpeakerVolumeButton, SonosSpeakerVolumeList } from './SonosSpeakerVolumes';
 import { showMessage } from '../stores/dialogStore';
 import { ownsBrowserPlayback, useSharedSessionStore } from '../stores/sharedSessionStore';
 import { missingPreferredSpeakers, usePreferredSonosGroupStore } from '../stores/preferredSonosGroupStore';
@@ -228,6 +229,7 @@ export function AudioPlayer({ audioRef: sharedAudioRef, items, onPlaybackPositio
   const [currentTime, setCurrentTimeLocal] = useState(0);
   const [loadedDuration, setDurationLocal] = useState(0);
   const [sonosVolumeDraft, setSonosVolumeDraft] = useState<number | null>(null);
+  const [showSpeakerVolumes, setShowSpeakerVolumes] = useState(false);
   const [sonosSeekDraft, setSonosSeekDraft] = useState<number | null>(null);
   const [bookmarkFeedback, setBookmarkFeedback] = useState<'idle' | 'success' | 'error'>('idle');
   const [localPlaybackError, setLocalPlaybackError] = useState<string | null>(null);
@@ -860,6 +862,14 @@ export function AudioPlayer({ audioRef: sharedAudioRef, items, onPlaybackPositio
   };
   const displayedSonosVolume = sonosVolumeDraft ?? sonos.requestedVolume ?? sonos.volume?.volume ?? 0;
   const sonosVolumeDisabled = !canControlSession || !sonos.volume || sonos.volume.fixed || (sonos.isVolumePending && sonos.requestedVolume === null) || isSending || isSwitchingOutput;
+  const speakers = target.kind === 'sonos' ? speakersOf(target) : [];
+  const speakerVolumeProps = {
+    speakers,
+    disabled: !canControlSession || isSending || isSwitchingOutput,
+    groupVolumeKey: `${sonos.volume?.volume}:${sonos.volume?.muted}:${sonos.isVolumePending}`,
+    // A speaker change moves the group's average volume too.
+    onSpeakerChanged: () => void sonos.refreshVolume().catch(() => undefined),
+  };
   const adjustBrowserVolume = (step: number) => {
     setVolume(Math.min(100, Math.max(0, Math.round((isMuted ? 0 : volume) * 100) + step)) / 100);
     setMuted(false);
@@ -919,7 +929,12 @@ export function AudioPlayer({ audioRef: sharedAudioRef, items, onPlaybackPositio
               onPointerUp={event => { setSonosVolumeDraft(null); void sonos.setGroupVolume(Number(event.currentTarget.value)); }}
               onPointerCancel={() => setSonosVolumeDraft(null)}
               onKeyUp={event => { setSonosVolumeDraft(null); void sonos.setGroupVolume(Number(event.currentTarget.value)); }} />
-          </div></div> : <p className="mobile-device-volume">Use your device’s volume controls</p>}
+          </div>
+          {speakers.length > 0 && <div className="mobile-speaker-volumes">
+            <button type="button" aria-expanded={showSpeakerVolumes} onClick={() => setShowSpeakerVolumes(!showSpeakerVolumes)}>
+              {showSpeakerVolumes ? 'Hide speakers' : 'Adjust speakers'}</button>
+            {showSpeakerVolumes && <SonosSpeakerVolumeList {...speakerVolumeProps} touch />}
+          </div>}</div> : <p className="mobile-device-volume">Use your device’s volume controls</p>}
         <div className="mobile-player-actions" role="group" aria-label="Playback options">
           <button type="button" aria-label={shuffleEnabled ? 'Shuffle on' : 'Shuffle off'} aria-pressed={shuffleEnabled} onClick={toggleShuffle} disabled={!canControlSession || isSending || isSwitchingOutput}>{Icons.shuffle}<span>Shuffle</span></button>
           {!remote && <button type="button" aria-label={`Repeat ${repeatMode}`} aria-pressed={repeatMode !== 'off'} onClick={cycleRepeatMode} disabled={!canPlayLocally}>{Icons.repeat}<span>{repeatMode === 'one' ? 'Repeat one' : 'Repeat'}</span></button>}
@@ -1080,6 +1095,7 @@ export function AudioPlayer({ audioRef: sharedAudioRef, items, onPlaybackPositio
             <span className="text-xs text-solarized-base0 w-8 text-right tabular-nums" title={sonos.requestedVolume !== null ? "Updating Sonos volume…" : undefined}>
               {sonos.volume ? displayedSonosVolume : '—'}
             </span>
+            {speakers.length > 0 && <SonosSpeakerVolumeButton groupName={target.groupName} {...speakerVolumeProps} />}
           </div>
         </div>
       </div>

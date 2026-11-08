@@ -1,0 +1,26 @@
+.speaker-volume-popover { z-index: 51; width: min(300px, calc(100vw - 8px)); padding: 9px 12px 8px; border: 1px solid var(--border-strong); border-radius: 6px; background: var(--surface); color: var(--text); box-shadow: 0 6px 24px #0003; font: 13px/1.45 system-ui, sans-serif; }
+.speaker-volume-popover h2 { margin: 0 0 4px; overflow: hidden; color: var(--muted); font-size: 11px; font-weight: 400; letter-spacing: .04em; text-transform: uppercase; text-overflow: ellipsis; white-space: nowrap; }
+
+.speaker-volume-row { display: grid; grid-template-columns: 23px minmax(0, 92px) minmax(0, 1fr) 26px; align-items: center; gap: 4px; min-height: 28px; }
+.speaker-volume-row button { display: grid; place-items: center; width: 23px; height: 23px; padding: 0; border-radius: 3px; color: var(--text); }
+.speaker-volume-row button:hover:not(:disabled) { background: var(--hover); }
+.speaker-volume-row button:disabled { opacity: .4; cursor: default; }
+.speaker-volume-row button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.speaker-volume-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.speaker-volume-row .volume-slider { appearance: none; -webkit-appearance: none; display: block; width: 100%; height: 20px; margin: 0; padding: 0; border: 0; background: transparent; cursor: pointer; }
+.speaker-volume-row .volume-slider:disabled { opacity: .4; cursor: default; }
+.speaker-volume-row .volume-slider::-webkit-slider-thumb { background: var(--chrome-tertiary, var(--accent)); }
+.speaker-volume-row .volume-slider::-moz-range-thumb { background: var(--chrome-tertiary, var(--accent)); }
+.speaker-volume-value { color: var(--muted); font-size: 10px; font-variant-numeric: tabular-nums; text-align: right; }
+.speaker-volume-row[data-fixed] .speaker-volume-name { color: var(--muted); }
+.speaker-volume-fixed { grid-column: 3 / -1; color: var(--muted); font-size: 11px; }
+.speaker-volume-error { grid-column: 2 / -1; margin: 0 0 4px; color: var(--color-solarized-red); font-size: 11px; }
+
+.player-bar .speaker-volume-trigger[aria-expanded='true'] { color: var(--accent); background: var(--selection); }
+
+/* The mobile sheet uses touch-sized rows. */
+.mobile-speaker-volumes { margin-top: 6px; }
+.music-app .mobile-player .mobile-speaker-volumes > button { padding: 6px 0; color: var(--accent); font-size: 14px; }
+.mobile-speaker-volumes .speaker-volume-row { grid-template-columns: 44px minmax(0, 110px) minmax(0, 1fr) 32px; min-height: 44px; font-size: 14px; }
+.mobile-speaker-volumes .speaker-volume-row button { width: 44px; height: 44px; }
+.mobile-speaker-volumes .speaker-volume-value { font-size: 13px; }

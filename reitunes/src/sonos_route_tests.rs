@@ -569,6 +569,40 @@ async fn sonos_event_route_forwards_only_new_authenticated_observations() {
 }
 
 #[tokio::test]
+async fn sonos_player_volume_events_reach_browsers_in_the_volume_shape() {
+    let harness = Harness::new().await;
+    let mut events = harness.state.update_tx.subscribe();
+    let signature = sonos::test_support::event_signature(
+        harness.state.sonos.as_ref().unwrap(),
+        "3",
+        "playerVolume",
+        "playerVolume",
+        "playerId",
+        "player-1",
+    );
+    let response = harness
+        .client
+        .post(format!("{}api/sonos/events", harness.server.url))
+        .header("X-Sonos-Event-Seq-Id", "3")
+        .header("X-Sonos-Namespace", "playerVolume")
+        .header("X-Sonos-Type", "playerVolume")
+        .header("X-Sonos-Target-Type", "playerId")
+        .header("X-Sonos-Target-Value", "player-1")
+        .header("X-Sonos-Event-Signature", signature)
+        .json(&json!({"volume": 30, "muted": false, "fixed": false, "somethingNew": true}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let FrontendUpdate::Sonos { namespace, target_id, payload, .. } = events.try_recv().unwrap() else {
+        panic!("Expected Sonos event")
+    };
+    assert_eq!(namespace, "playerVolume");
+    assert_eq!(target_id, "player-1");
+    assert_eq!(payload, json!({"volume": 30, "muted": false, "fixed": false}));
+}
+
+#[tokio::test]
 async fn shared_session_routes_authenticate_broadcast_and_reject_stale_playback() {
     let harness = Harness::new().await;
     let endpoint = format!("{}api/playback-session", harness.server.url);

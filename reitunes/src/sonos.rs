@@ -215,8 +215,9 @@ pub struct SonosPlaybackActions {
     pub can_pause: Option<bool>,
 }
 
+// Groups and individual players report volume in the same shape.
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
-pub struct SonosGroupVolume {
+pub struct SonosVolume {
     pub volume: u8,
     pub muted: bool,
     pub fixed: bool,
@@ -659,7 +660,7 @@ impl SonosControl {
         .await
     }
 
-    pub async fn group_volume(&self, group_id: &str) -> Result<SonosGroupVolume> {
+    pub async fn group_volume(&self, group_id: &str) -> Result<SonosVolume> {
         let url = self.control_url(&["groups", group_id, "groupVolume"])?;
         self.get_url(url).await
     }
@@ -674,6 +675,21 @@ impl SonosControl {
         self.post_empty(url, &SetMuteRequest { muted }).await
     }
 
+    pub async fn player_volume(&self, player_id: &str) -> Result<SonosVolume> {
+        let url = self.control_url(&["players", player_id, "playerVolume"])?;
+        self.get_url(url).await
+    }
+
+    pub async fn set_player_volume(&self, player_id: &str, volume: u8) -> Result<()> {
+        let url = self.control_url(&["players", player_id, "playerVolume"])?;
+        self.post_empty(url, &SetVolumeRequest { volume }).await
+    }
+
+    pub async fn set_player_mute(&self, player_id: &str, muted: bool) -> Result<()> {
+        let url = self.control_url(&["players", player_id, "playerVolume", "mute"])?;
+        self.post_empty(url, &SetMuteRequest { muted }).await
+    }
+
     pub fn has_playback_session(&self, group_id: &str) -> Result<bool> {
         Ok(self
             .playback_sessions
@@ -683,13 +699,7 @@ impl SonosControl {
     }
 
     pub async fn ensure_event_subscriptions(&self, group_id: &str) -> Result<()> {
-        let is_fresh = self
-            .event_subscriptions
-            .lock()
-            .map_err(|_| anyhow::anyhow!("Sonos event subscription lock was poisoned"))?
-            .get(group_id)
-            .is_some_and(|created| created.elapsed() < EVENT_SUBSCRIPTION_RENEW_AFTER);
-        if is_fresh {
+        if self.subscription_is_fresh(group_id)? {
             return Ok(());
         }
 
@@ -697,10 +707,36 @@ impl SonosControl {
             let url = self.control_url(&["groups", group_id, namespace, "subscription"])?;
             self.post_empty(url, &serde_json::json!({})).await?;
         }
+        self.mark_subscribed(group_id.to_string())
+    }
+
+    /// Speaker volumes are only shown on request, so they subscribe on first
+    /// read rather than when playback starts.
+    pub async fn ensure_player_volume_subscription(&self, player_id: &str) -> Result<()> {
+        // Player IDs can't contain NUL, so these keys never collide with group IDs.
+        let key = format!("player\0{player_id}");
+        if self.subscription_is_fresh(&key)? {
+            return Ok(());
+        }
+        let url = self.control_url(&["players", player_id, "playerVolume", "subscription"])?;
+        self.post_empty(url, &serde_json::json!({})).await?;
+        self.mark_subscribed(key)
+    }
+
+    fn subscription_is_fresh(&self, key: &str) -> Result<bool> {
+        Ok(self
+            .event_subscriptions
+            .lock()
+            .map_err(|_| anyhow::anyhow!("Sonos event subscription lock was poisoned"))?
+            .get(key)
+            .is_some_and(|created| created.elapsed() < EVENT_SUBSCRIPTION_RENEW_AFTER))
+    }
+
+    fn mark_subscribed(&self, key: String) -> Result<()> {
         self.event_subscriptions
             .lock()
             .map_err(|_| anyhow::anyhow!("Sonos event subscription lock was poisoned"))?
-            .insert(group_id.to_string(), Instant::now());
+            .insert(key, Instant::now());
         Ok(())
     }
 
@@ -1572,6 +1608,65 @@ mod tests {
         control.seek("group-1", "queue-item-1", 72_000).await.unwrap();
         control.set_group_volume("group-1", 63).await.unwrap();
         control.set_group_mute("group-1", true).await.unwrap();
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn reads_and_controls_individual_player_volume() {
+        async fn volume() -> Json<serde_json::Value> {
+            Json(serde_json::json!({ "volume": 24, "muted": true, "fixed": false }))
+        }
+
+        async fn set_volume(Json(body): Json<serde_json::Value>) -> axum::http::StatusCode {
+            assert_eq!(body, serde_json::json!({ "volume": 55 }));
+            axum::http::StatusCode::OK
+        }
+
+        async fn set_mute(Json(body): Json<serde_json::Value>) -> axum::http::StatusCode {
+            assert_eq!(body, serde_json::json!({ "muted": false }));
+            axum::http::StatusCode::OK
+        }
+
+        async fn subscribe(State(count): State<Arc<AtomicUsize>>) -> axum::http::StatusCode {
+            count.fetch_add(1, Ordering::SeqCst);
+            axum::http::StatusCode::OK
+        }
+
+        let subscriptions = Arc::new(AtomicUsize::new(0));
+        let router = Router::new()
+            .route(
+                "/control/api/v1/players/player-1/playerVolume",
+                get(volume).post(set_volume),
+            )
+            .route(
+                "/control/api/v1/players/player-1/playerVolume/mute",
+                axum::routing::post(set_mute),
+            )
+            .route(
+                "/control/api/v1/players/player-1/playerVolume/subscription",
+                axum::routing::post(subscribe),
+            )
+            .with_state(subscriptions.clone());
+        let (control, _temp_dir, server) = test_control_with_server(router).await;
+        control
+            .save_tokens(&StoredTokenSet {
+                access_token: "access-token".to_string(),
+                refresh_token: "refresh-token".to_string(),
+                token_type: "Bearer".to_string(),
+                scope: Some(SONOS_SCOPE.to_string()),
+                expires_at_unix: u64::MAX,
+            })
+            .unwrap();
+
+        assert_eq!(
+            control.player_volume("player-1").await.unwrap(),
+            SonosVolume { volume: 24, muted: true, fixed: false }
+        );
+        control.set_player_volume("player-1", 55).await.unwrap();
+        control.set_player_mute("player-1", false).await.unwrap();
+        control.ensure_player_volume_subscription("player-1").await.unwrap();
+        control.ensure_player_volume_subscription("player-1").await.unwrap();
+        assert_eq!(subscriptions.load(Ordering::SeqCst), 1);
         server.abort();
     }
 
